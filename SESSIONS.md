@@ -4,6 +4,66 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-06 — `mcp-server-rbac-scripts`
+
+### What we did
+- Read the `kubernetes-mcp-server` getting-started docs (Kubernetes setup + Claude Code integration)
+- Created the `mcp` namespace and `mcp-viewer` ServiceAccount imperatively (one-time cluster state)
+- Created `ClusterRoleBinding mcp-viewer-crb` binding the built-in `view` ClusterRole cluster-wide
+- Minted a service account token and built `~/.kube/mcp-viewer.kubeconfig`
+- Created `scripts/mcp.sh` — a single script with three subcommands (`setup`, `cleanup`, `renew-token`) that codifies all of the above so the operations are repeatable
+- Connected the `kubernetes-mcp-server` MCP tool to Claude Code via `claude mcp add-json` using the dedicated kubeconfig
+- Verified the MCP connection by listing cluster namespaces through the tool
+
+### Files created / modified
+| File | Change |
+|------|--------|
+| `scripts/mcp.sh` | Created — `setup` / `cleanup` / `renew-token` subcommands for MCP ServiceAccount lifecycle |
+
+### Decisions made
+- Single script with subcommands (mirrors `bootstrap.sh` pattern) rather than three separate files
+- Default token duration is **8h** (practical for a work day; overridable per-invocation, e.g. `./scripts/mcp.sh renew-token 24h`)
+- `setup` is fully idempotent — re-running on an existing cluster skips already-present resources and issues a fresh token
+- RBAC uses the built-in `view` ClusterRole cluster-wide (Option A from the docs) — appropriate for a read-only observability tool; no custom ClusterRole needed
+- Kubeconfig is written to `~/.kube/mcp-viewer.kubeconfig` (separate from the admin kubeconfig, scoped credentials)
+
+### Learned / noted
+- `kubectl create token` duration format (`8h`) uses Go's `time.Duration` syntax — GNU `date -d` requires `8 hours`; a `sed` transform bridges the two in the expiry display
+- The `mcp` namespace, ServiceAccount, and ClusterRoleBinding were created imperatively and are **not** currently managed by Flux; `scripts/mcp.sh setup` serves as the source of truth for reproducing them
+
+---
+
+## 2026-05-06 — `flux-ssh-secret-setup`
+
+### What we did
+- Diagnosed and resolved Flux failing to reconcile the private GitHub repo
+- Fixed three incorrect values in `kubernetes/apps/flux-system/flux-instance/app/helm/values.yaml`:
+  - URL: HTTPS → SSH (`ssh://git@github.com/qnimbus/home-lab`)
+  - Secret reference: `secretRef.name` → `pullSecret` (correct FluxInstance CRD field name)
+  - Ref: `main` → `refs/heads/main` (FluxInstance `ref` must be a full Git ref path, not a branch shortname)
+  - Added missing `path: ./kubernetes/flux/cluster` and `interval: 5m0s`
+- Created the `flux-system` SSH deploy key secret imperatively in the cluster (`identity`, `identity.pub`, `known_hosts`)
+- Patched the live `FluxInstance` directly to propagate `pullSecret` and correct ref without waiting for a Helmfile re-run
+- Confirmed Flux is fully operational: `GitRepository READY`, `cluster-meta` and `cluster-apps` kustomizations applying
+
+### Files created / modified
+| File | Change |
+|------|--------|
+| `kubernetes/apps/flux-system/flux-instance/app/helm/values.yaml` | Fixed URL, ref, path, interval; replaced `secretRef` with `pullSecret` |
+
+### Decisions made
+- SSH deploy key (`flux-deploy-key`) created with `ssh-keygen -t ed25519`; public key added as read-only GitHub deploy key; private key stored in `flux-system` Kubernetes secret and backed up to 1Password alongside `age.key`
+- The `flux-system` SSH secret must be created imperatively during bootstrap — this is the one permanent exception to GitOps; all other cluster state goes through Git
+- Bootstrap step 13a added to workflow: create `flux-system` SSH secret immediately after `helmfile sync`, before `git push`
+- `helmfile sync` is the correct mechanism to update bootstrap-layer components (not `kubectl apply`)
+
+### Learned / noted
+- The `flux-instance` Helm chart (v0.23.0) does **not** expose all `FluxInstance` CRD fields as Helm values — `secretRef` is silently dropped; the correct values key is `pullSecret` (a plain string, not an object with a `name` key)
+- The `FluxInstance` CRD `spec.sync.ref` expects a full Git ref (`refs/heads/main`), not a branch shortname; shortname produces `unable to resolve ref 'main' to a specific commit`
+- `KUBECONFIG=$(pwd)/kubeconfig` must be exported in every new shell session; add to devcontainer env to avoid repeated manual export
+
+---
+
 ## 2026-05-06 — `add-sops-plaintext-hook`
 
 ### What we did

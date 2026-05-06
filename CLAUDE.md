@@ -4,10 +4,15 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-06 | `mcp-server-rbac-scripts` | Created `scripts/mcp.sh` (setup/cleanup/renew-token); connected kubernetes-mcp-server MCP tool |
+> | 2026-05-06 | `flux-ssh-secret-setup` | Fixed FluxInstance values (SSH URL, pullSecret, refs/heads/main); Flux now fully reconciling |
 > | 2026-05-06 | `add-sops-plaintext-hook` | Added PreToolUse hook blocking git add/commit on plaintext `*.sops.yaml` files |
 > | 2026-05-06 | `setup-sops-age-key-devcontainer` | Created CLAUDE.md; set `SOPS_AGE_KEY_FILE` via `devcontainer.json` `remoteEnv` |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
+
+> For a high-level overview of the cluster and FluxCD structure, see [CLUSTER.md](CLUSTER.md).
+> Keep `CLUSTER.md` up to date as the cluster evolves: when adding new components, changing core infrastructure (CNI, DNS, storage, secrets strategy), or completing major bootstrap phases, update the relevant section. Keep entries concise and high-level — implementation details belong in code or `CLAUDE.md`.
 
 ---
 
@@ -132,10 +137,11 @@ All bootstrap operations go through `scripts/bootstrap.sh`. Run `./scripts/boots
 11. ./scripts/bootstrap.sh kubeconfig → fetch kubeconfig
 12. kubectl get nodes -o wide          → verify all nodes Ready
 13. helmfile sync -f kubernetes/bootstrap/helmfile.yaml   → install CNI, DNS, Flux (use sync not apply — apply pre-diffs all releases in parallel and fails on flux-instance because FluxInstance CRD doesn't exist until flux-operator installs it)
+13a. kubectl create secret generic flux-system -n flux-system --from-file=identity=flux-deploy-key --from-file=identity.pub=flux-deploy-key.pub --from-file=known_hosts=known_hosts   → SSH deploy key secret (must exist before Flux can pull the repo; only imperative step post-bootstrap)
 14. git push → Flux takes over and reconciles kubernetes/apps/
 ```
 
-Steps 1–13 are complete. Step 14 is next: push to GitHub so Flux can sync.
+Steps 1–14 are complete. Flux is fully operational and reconciling from the private GitHub repo.
 
 ---
 
@@ -193,12 +199,12 @@ Use `strategy: Recreate` for any workload with `ReadWriteOnce` PVCs. Use `Rollin
 | Talos machine configs         | ✅ Done    | 3 CP nodes, patches, schematic registered       |
 | Bootstrap script              | ✅ Done    | All phases iso→kubeconfig                       |
 | SOPS age key + rules          | ✅ Done    | `age.key` generated, `.sops.yaml` configured    |
-| Cluster bootstrapped          | 🔲 TODO    | Steps 1–12 of workflow above                    |
-| kubernetes/ directory         | 🔲 TODO    | Helmfile + Flux structure to be created         |
-| Cilium                        | 🔲 TODO    | Bootstrap via Helmfile                          |
-| CoreDNS                       | 🔲 TODO    | Bootstrap via Helmfile                          |
-| cert-manager                  | 🔲 TODO    | Bootstrap via Helmfile                          |
-| Flux (operator + instance)    | 🔲 TODO    | Bootstrap via Helmfile                          |
+| Cluster bootstrapped          | ✅ Done    | All 14 bootstrap steps complete                 |
+| kubernetes/ directory         | ✅ Done    | Helmfile + Flux structure in place              |
+| Cilium                        | ✅ Done    | Running via Helmfile bootstrap                  |
+| CoreDNS                       | ✅ Done    | Running via Helmfile bootstrap                  |
+| cert-manager                  | ✅ Done    | Running via Helmfile bootstrap                  |
+| Flux (operator + instance)    | ✅ Done    | Reconciling from private repo via SSH           |
 | External Secrets + 1Password  | 🔲 TODO    | First GitOps apps                               |
 | Storage (Rook/Ceph or NFS)    | 🔲 TODO    | Storage network ready, Rook not decided yet     |
 | Split DNS (ExternalDNS)       | 🔲 TODO    | Internal (home.arpa) + external (Cloudflare)    |
