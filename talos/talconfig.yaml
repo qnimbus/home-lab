@@ -24,8 +24,68 @@ nodes:
   # Verify installDisk on talos-cp-01 (MS-A2 may use /dev/nvme0n1).
   # MS-A2 RJ45 driver assumed r8169 (Realtek RTL8125) — verify: lspci -k | grep -A2 Ethernet
 
-  - hostname: "talos-cp-01"                         # Minisforum MS-A2 (AMD, 32 cores, 92GB, X710)
+  - hostname: "talos-cp-01"                         # Lenovo M920Q #1 (i5-8500T, 16GB, X520-DA2)
     ipAddress: "10.60.0.201"
+    installDisk: "/dev/nvme0n1"
+    machineSpec:
+      secureboot: false
+    talosImageURL: "${talosImageURL}"
+    controlPlane: true
+    networkInterfaces:
+      # Management — single Intel I219-LM RJ45 (driver: e1000e)
+      - deviceSelector:
+          driver: e1000e
+        dhcp: false
+        addresses:
+          - "10.60.0.201/24"
+        routes:
+          - network: "0.0.0.0/0"
+            gateway: "10.60.0.1"
+        mtu: 1500
+        vip:
+          ip: "${clusterEndpoint}"
+      # Storage — LACP bond of 2x SFP+ ports (Intel X520-DA2, driver: ixgbe)
+      - interface: bond0
+        bond: &ixgbe-storage-bond
+          mode: 802.3ad
+          lacpRate: fast
+          miimon: 100
+          xmitHashPolicy: layer3+4
+          deviceSelectors:
+            - driver: ixgbe
+        dhcp: false
+        addresses:
+          - "10.200.0.201/24"
+        mtu: 1500                                   # TODO: Configure and enable jumbo frames for storage traffic
+
+  - hostname: "talos-cp-02"                         # Lenovo M920Q #2 (i5-8500T, 16GB, X520-DA2)
+    ipAddress: "10.60.0.202"
+    installDisk: "/dev/nvme0n1"
+    machineSpec:
+      secureboot: false
+    talosImageURL: "${talosImageURL}"
+    controlPlane: true
+    networkInterfaces:
+      - deviceSelector:
+          driver: e1000e
+        dhcp: false
+        addresses:
+          - "10.60.0.202/24"
+        routes:
+          - network: "0.0.0.0/0"
+            gateway: "10.60.0.1"
+        mtu: 1500
+        vip:
+          ip: "${clusterEndpoint}"
+      - interface: bond0
+        bond: *ixgbe-storage-bond
+        dhcp: false
+        addresses:
+          - "10.200.0.202/24"
+        mtu: 1500                                   # TODO: Configure and enable jumbo frames for storage
+
+  - hostname: "talos-cp-03"                         # Minisforum MS-A2 (AMD, 32 cores, 92GB, X710)
+    ipAddress: "10.60.0.203"
     installDisk: "/dev/nvme0n1"                       # MS-A2 uses M.2 NVMe
     machineSpec:
       secureboot: false
@@ -45,7 +105,7 @@ nodes:
             - driver: igc     # enp4s0 — Intel I225/I226
         dhcp: false
         addresses:
-          - "10.60.0.201/24"
+          - "10.60.0.203/24"
         routes:
           - network: "0.0.0.0/0"
             gateway: "10.60.0.1"
@@ -63,68 +123,8 @@ nodes:
             - driver: i40e
         dhcp: false
         addresses:
-          - "10.200.0.201/24"
-        mtu: 1500                                   # TODO: Configure and enable jumbo frames for storage traffic
-
-  - hostname: "talos-cp-02"                         # Lenovo M920Q #1 (i5-8500T, 16GB, X520-DA2)
-    ipAddress: "10.60.0.202"
-    installDisk: "/dev/nvme0n1"
-    machineSpec:
-      secureboot: false
-    talosImageURL: "${talosImageURL}"
-    controlPlane: true
-    networkInterfaces:
-      # Management — single Intel I219-LM RJ45 (driver: e1000e)
-      - deviceSelector:
-          driver: e1000e
-        dhcp: false
-        addresses:
-          - "10.60.0.202/24"
-        routes:
-          - network: "0.0.0.0/0"
-            gateway: "10.60.0.1"
-        mtu: 1500
-        vip:
-          ip: "${clusterEndpoint}"
-      # Storage — LACP bond of 2x SFP+ ports (Intel X520-DA2, driver: ixgbe)
-      - interface: bond0
-        bond: &ixgbe-storage-bond
-          mode: 802.3ad
-          lacpRate: fast
-          miimon: 100
-          xmitHashPolicy: layer3+4
-          deviceSelectors:
-            - driver: ixgbe
-        dhcp: false
-        addresses:
-          - "10.200.0.202/24"
-        mtu: 1500                                   # TODO: Configure and enable jumbo frames for storage traffic
-
-  - hostname: "talos-cp-03"                         # Lenovo M920Q #2 (i5-8500T, 16GB, X520-DA2)
-    ipAddress: "10.60.0.203"
-    installDisk: "/dev/nvme0n1"
-    machineSpec:
-      secureboot: false
-    talosImageURL: "${talosImageURL}"
-    controlPlane: true
-    networkInterfaces:
-      - deviceSelector:
-          driver: e1000e
-        dhcp: false
-        addresses:
-          - "10.60.0.203/24"
-        routes:
-          - network: "0.0.0.0/0"
-            gateway: "10.60.0.1"
-        mtu: 1500
-        vip:
-          ip: "${clusterEndpoint}"
-      - interface: bond0
-        bond: *ixgbe-storage-bond
-        dhcp: false
-        addresses:
           - "10.200.0.203/24"
-        mtu: 1500                                   # TODO: Configure and enable jumbo frames for storage
+        mtu: 1500                                   # TODO: Configure and enable jumbo frames for storage traffic
 
 patches:
   - "@./patches/global/machine-features.yaml"

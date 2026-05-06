@@ -98,6 +98,24 @@ tasks:
       - {msg: "talosctl not found", sh: "which talosctl"}
       - {msg: "yq not found", sh: "which yq"}
 
+  reboot-node:
+    desc: Reboot a single Talos node [IP=required]
+    cmd: talosctl reboot --nodes {{.IP}}
+    requires:
+      vars: [IP]
+    preconditions:
+      - {msg: "talosconfig not found", sh: "test -f {{.TALOSCONFIG}}"}
+      - {msg: "talosctl not found", sh: "which talosctl"}
+
+  shutdown-node:
+    desc: Gracefully power off a single Talos node [IP=required]
+    cmd: talosctl shutdown --nodes {{.IP}}
+    requires:
+      vars: [IP]
+    preconditions:
+      - {msg: "talosconfig not found", sh: "test -f {{.TALOSCONFIG}}"}
+      - {msg: "talosctl not found", sh: "which talosctl"}
+
   upgrade-k8s:
     desc: Upgrade Kubernetes to the version in talenv.yaml
     dir: '{{.TALOS_DIR}}'
@@ -126,6 +144,29 @@ tasks:
     preconditions:
       - {msg: "talconfig.yaml not found", sh: "test -f {{.TALOS_DIR}}/talconfig.yaml"}
       - {msg: "nc not found", sh: "which nc"}
+      - {msg: "yq not found", sh: "which yq"}
+
+  wait-bootstrap:
+    desc: Wait (poll) until all nodes are Ready (then print kubectl get nodes -o wide)
+    silent: true
+    vars:
+      NODE_COUNT:
+        sh: yq '.nodes | length' {{.TALOS_DIR}}/talconfig.yaml
+    cmd: |
+      EXPECTED={{.NODE_COUNT}}
+      printf 'Waiting for %d node(s) to become Ready' "${EXPECTED}"
+      until
+        READY=$(kubectl get nodes --no-headers 2>/dev/null | awk '$2 == "Ready" {c++} END {print c+0}')
+        [ "${READY}" -ge "${EXPECTED}" ]
+      do
+        printf '.'; sleep 10
+      done
+      printf ' done\n'
+      kubectl get nodes -o wide
+    preconditions:
+      - {msg: "kubeconfig not found", sh: "test -f {{.ROOT_DIR}}/kubeconfig"}
+      - {msg: "talconfig.yaml not found", sh: "test -f {{.TALOS_DIR}}/talconfig.yaml"}
+      - {msg: "kubectl not found", sh: "which kubectl"}
       - {msg: "yq not found", sh: "which yq"}
 
   reset:

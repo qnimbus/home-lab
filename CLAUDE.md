@@ -4,7 +4,8 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
-> | 2026-05-06 | `cp02-disk-cleanup` | Wiped Proxmox LVM (nvme1n1) from talos-cp-02 via `talosctl reset --wipe-mode=user-disks`; documented cluster disk inventory in CLUSTER.md |
+> | 2026-05-06 | `node-hw-correction-and-runbook-updates` | Corrected node hardware assignments in talconfig.yaml (cp-01/cp-02 = M920Q, cp-03 = MS-A2); added `talos:wait-bootstrap` task; added Day-2 Config Changes section to CLUSTER.md |
+| 2026-05-06 | `cp02-disk-cleanup` | Wiped Proxmox LVM (nvme1n1) from talos-cp-02 via `talosctl reset --wipe-mode=user-disks`; documented cluster disk inventory in CLUSTER.md |
 > | 2026-05-06 | `cluster-bootstrap-runbook` | Full bootstrap validated end-to-end; added `talos:wait-maintenance` task; Bootstrap Runbook in CLUSTER.md; fixed flux-secret.sh cleanup trap bug; auto-reconcile after flux-secret |
 > | 2026-05-06 | `devcontainer-secret-management` | Created `scripts/flux-secret.sh` (fetch Flux SSH deploy key from 1Password); `bootstrap:flux-secret` task |
 > | 2026-05-06 | `mcp-server-rbac-scripts` | Created `scripts/mcp.sh` (setup/cleanup/renew-token); connected kubernetes-mcp-server MCP tool |
@@ -84,9 +85,9 @@ Three bare-metal control-plane nodes; no dedicated workers (`allowSchedulingOnCo
 
 | Hostname       | Hardware                              | Mgmt IP       | Storage IP     | Notes                        |
 |----------------|---------------------------------------|---------------|----------------|------------------------------|
-| talos-cp-01    | Minisforum MS-A2 (AMD, 32c, 92GB)    | 10.60.0.201   | 10.200.0.201   | bond0: 2x RTL8125+igc, bond1: 2x i40e (X710) |
-| talos-cp-02    | Lenovo M920Q #1 (i5-8500T, 16GB)     | 10.60.0.202   | 10.200.0.202   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
-| talos-cp-03    | Lenovo M920Q #2 (i5-8500T, 16GB)     | 10.60.0.203   | 10.200.0.203   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
+| talos-cp-01    | Lenovo M920Q #1 (i5-8500T, 16GB)     | 10.60.0.201   | 10.200.0.201   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
+| talos-cp-02    | Lenovo M920Q #2 (i5-8500T, 16GB)     | 10.60.0.202   | 10.200.0.202   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
+| talos-cp-03    | Minisforum MS-A2 (AMD, 32c, 92GB)    | 10.60.0.203   | 10.200.0.203   | bond0: 2x RTL8125+igc, bond1: 2x i40e (X710) |
 
 - **VIP**: `10.60.0.2` (kube-vip via ARP, all three CPs compete)
 - **Pod CIDR**: `10.42.0.0/16` | **Service CIDR**: `10.43.0.0/16`
