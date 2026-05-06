@@ -26,6 +26,25 @@ Dependency chain: `cert-manager` → `external-secrets` → `onepassword-connect
 
 ---
 
+### Talos + Kubernetes Upgrade Strategy
+
+Research and implement a repeatable upgrade path for Talos Linux and Kubernetes. Renovate intentionally does not track these versions — a dedicated mechanism is needed.
+
+Options to evaluate:
+- **[system-upgrade-controller](https://github.com/rancher/system-upgrade-controller)** (SUC) — runs as a DaemonSet; applies Talos upgrades node-by-node via `Plan` CRDs; already referenced in `CLAUDE.md` as the intended upgrade path
+- **Manual `talosctl upgrade` + `talosctl upgrade-k8s`** — imperative, full control, lower automation; suitable until SUC is deployed
+- **Renovate + `allowedVersions` fence** — re-enable Talos/k8s tracking in Renovate but gate on a `allowedVersions` constraint so PRs are informational only; operator still applies the upgrade manually
+
+Rough steps (if going SUC route):
+- Deploy `system-upgrade-controller` as a HelmRelease in `system-upgrade` namespace
+- Grant the controller Talos API access (ServiceAccount + RBAC in `system-upgrade` namespace — already noted in `CLAUDE.md`)
+- Define `Plan` CRDs for Talos upgrades (referencing `factory.talos.dev` installer image) and Kubernetes upgrades
+- Test single-node cordon/drain/upgrade cycle before rolling out to all three CPs
+
+Dependency chain: cluster stable → `system-upgrade-controller` → Talos `Plan` → k8s `Plan`
+
+---
+
 ## Completed
 
 | Area                          | Notes                                           |
