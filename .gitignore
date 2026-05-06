@@ -1,0 +1,14 @@
+.archive/
+.claude/settings.local.json
+
+# Ignore build artifacts and assets (e.g. iso images, VM images, etc.)
+assets/
+
+# Ignore sensitive files and environment variables
+kubeconfig
+age.key
+.env
+.mcp.json
+known_hosts
+flux-deploy-key*
+flux-deploy-key

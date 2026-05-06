@@ -1,0 +1,147 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/budimanjojo/talhelper/master/pkg/config/schemas/talconfig.json
+---
+clusterName: kubernetes
+
+talosVersion: "${talosVersion}"
+kubernetesVersion: "${kubernetesVersion}"
+
+endpoint: https://${clusterEndpoint}:6443
+additionalApiServerCertSans: &sans
+  - "127.0.0.1"
+  - "${clusterEndpoint}"
+additionalMachineCertSans: *sans
+
+clusterPodNets: ["10.42.0.0/16"]
+clusterSvcNets: ["10.43.0.0/16"]
+
+# Disable built-in CNI — Cilium will be installed via GitOps
+cniConfig:
+  name: none
+
+nodes:
+  # Remaining: configure switch LACP for MS-A2 RJ45+SFP+ ports and M920Q SFP+ ports,
+  # then run: ./scripts/bootstrap.sh genconfig && ./scripts/bootstrap.sh apply all
+  # Verify installDisk on talos-cp-01 (MS-A2 may use /dev/nvme0n1).
+  # MS-A2 RJ45 driver assumed r8169 (Realtek RTL8125) — verify: lspci -k | grep -A2 Ethernet
+
+  - hostname: "talos-cp-01"                         # Minisforum MS-A2 (AMD, 32 cores, 92GB, X710)
+    ipAddress: "10.60.0.201"
+    installDisk: "/dev/nvme0n1"                       # MS-A2 uses M.2 NVMe
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/381c216b7cd0730f65ddd4f4795178f38d40c06221ece25259891865819c1712
+    controlPlane: true
+    networkInterfaces:
+      # Management — LACP bond of 2x RJ45 NICs (Realtek RTL8125, driver: r8169)
+      # If lspci shows Intel I225/I226 instead, change driver to igc
+      - interface: bond0
+        bond:
+          mode: 802.3ad
+          lacpRate: fast
+          miimon: 100
+          xmitHashPolicy: layer3+4
+          deviceSelectors:
+            - driver: r8169   # enp3s0 — Realtek RTL8125
+            - driver: igc     # enp4s0 — Intel I225/I226
+        dhcp: false
+        addresses:
+          - "10.60.0.201/24"
+        routes:
+          - network: "0.0.0.0/0"
+            gateway: "10.60.0.1"
+        mtu: 1500
+        vip:
+          ip: "${clusterEndpoint}"                   # shared VIP — all 3 CPs compete via ARP
+      # Storage — LACP bond of 2x SFP+ ports (Intel X710, driver: i40e)
+      - interface: bond1
+        bond:
+          mode: 802.3ad
+          lacpRate: fast
+          miimon: 100
+          xmitHashPolicy: layer3+4
+          deviceSelectors:
+            - driver: i40e
+        dhcp: false
+        addresses:
+          - "10.200.0.201/24"
+        mtu: 1500                                   # TODO: Configure and enable jumbo frames for storage traffic
+
+  - hostname: "talos-cp-02"                         # Lenovo M920Q #1 (i5-8500T, 16GB, X520-DA2)
+    ipAddress: "10.60.0.202"
+    installDisk: "/dev/nvme0n1"
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/381c216b7cd0730f65ddd4f4795178f38d40c06221ece25259891865819c1712
+    controlPlane: true
+    networkInterfaces:
+      # Management — single Intel I219-LM RJ45 (driver: e1000e)
+      - deviceSelector:
+          driver: e1000e
+        dhcp: false
+        addresses:
+          - "10.60.0.202/24"
+        routes:
+          - network: "0.0.0.0/0"
+            gateway: "10.60.0.1"
+        mtu: 1500
+        vip:
+          ip: "${clusterEndpoint}"
+      # Storage — LACP bond of 2x SFP+ ports (Intel X520-DA2, driver: ixgbe)
+      - interface: bond0
+        bond:
+          mode: 802.3ad
+          lacpRate: fast
+          miimon: 100
+          xmitHashPolicy: layer3+4
+          deviceSelectors:
+            - driver: ixgbe
+        dhcp: false
+        addresses:
+          - "10.200.0.202/24"
+        mtu: 1500                                   # TODO: Configure and enable jumbo frames for storage traffic
+
+  - hostname: "talos-cp-03"                         # Lenovo M920Q #2 (i5-8500T, 16GB, X520-DA2)
+    ipAddress: "10.60.0.203"
+    installDisk: "/dev/nvme0n1"
+    machineSpec:
+      secureboot: false
+    talosImageURL: factory.talos.dev/installer/381c216b7cd0730f65ddd4f4795178f38d40c06221ece25259891865819c1712
+    controlPlane: true
+    networkInterfaces:
+      - deviceSelector:
+          driver: e1000e
+        dhcp: false
+        addresses:
+          - "10.60.0.203/24"
+        routes:
+          - network: "0.0.0.0/0"
+            gateway: "10.60.0.1"
+        mtu: 1500
+        vip:
+          ip: "${clusterEndpoint}"
+      - interface: bond0
+        bond:
+          mode: 802.3ad
+          lacpRate: fast
+          miimon: 100
+          xmitHashPolicy: layer3+4
+          deviceSelectors:
+            - driver: ixgbe
+        dhcp: false
+        addresses:
+          - "10.200.0.203/24"
+        mtu: 1500                                   # TODO: Configure and enable jumbo frames for storage
+
+patches:
+  - "@./patches/global/machine-features.yaml"
+  - "@./patches/global/machine-files.yaml"
+  - "@./patches/global/machine-kubelet.yaml"
+  - "@./patches/global/machine-network.yaml"
+  - "@./patches/global/machine-sysctls.yaml"
+  - "@./patches/global/machine-time.yaml"
+
+controlPlane:
+  patches:
+    - "@./patches/controller/machine-features.yaml"
+    - "@./patches/controller/admission-controller-patch.yaml"
+    - "@./patches/controller/cluster.yaml"

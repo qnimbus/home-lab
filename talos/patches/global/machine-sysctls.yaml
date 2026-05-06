@@ -1,0 +1,6 @@
+machine:
+  sysctls:
+    fs.inotify.max_user_watches: "1048576"   # prevent inotify exhaustion under heavy workloads
+    fs.inotify.max_user_instances: "8192"
+    net.core.rmem_max: "7500000"             # QUIC/UDP buffer sizing (Cloudflared, etc.)
+    net.core.wmem_max: "7500000"

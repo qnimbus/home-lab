@@ -1,0 +1,50 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /workspaces/home-lab/.claude/hooks/check-sops.sh",
+            "statusMessage": "Checking SOPS encryption..."
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(claude mcp *)",
+      "Bash(/usr/local/share/nvm/current/bin/node /usr/local/share/nvm/current/lib/node_modules/npm/bin/npx-cli.js -y @upstash/context7-mcp)",
+      "Bash(kill %1)",
+      "Bash(echo \"Exit: $?\")",
+      "Read(//home/vscode/**)",
+      "Bash(talosctl version *)",
+      "Bash(talhelper --version)",
+      "WebSearch",
+      "WebFetch(domain:hub.docker.com)",
+      "WebFetch(domain:developer.1password.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.1password.community)",
+      "WebFetch(domain:blog.gripdev.xyz)",
+      "WebFetch(domain:external-secrets.io)",
+      "WebFetch(domain:blog.cyberwatchdoug.com)",
+      "WebFetch(domain:andreivasiliu.com)",
+      "WebFetch(domain:budimanjojo.github.io)",
+      "WebFetch(domain:paulocurado.com)",
+      "WebFetch(domain:mcjones.ca)",
+      "mcp__context7__resolve-library-id",
+      "mcp__context7__query-docs",
+      "Bash(xargs ls -la)",
+      "Bash(git -C /workspaces/home-lab remote -v)"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "context7"
+  ],
+  "outputStyle": "Explanatory"
+}

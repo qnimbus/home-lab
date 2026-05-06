@@ -1,0 +1,12 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/source.toolkit.fluxcd.io/ocirepository_v1.json
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: coredns
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: oci://ghcr.io/coredns/charts/coredns
+  ref:
+    semver: ">=1.30.0"

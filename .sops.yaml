@@ -1,0 +1,15 @@
+---
+# Generate a new age key:  age-keygen -o age.key   (add age.key to .gitignore)
+# Get the public key:      age-keygen -y age.key
+# Then replace the placeholder below with your public key.
+creation_rules:
+  - path_regex: talos/.*\.sops\.ya?ml
+    mac_only_encrypted: true
+    age: &age_key "age1j8a4krypwu2xwdc8wgsmvpxru0dwaayk9njcevy9ddzw6kwvcaks7wzhv5"
+  - path_regex: (bootstrap|kubernetes)/.*\.sops\.ya?ml
+    encrypted_regex: "^(data|stringData)$"
+    mac_only_encrypted: true
+    age: *age_key
+stores:
+  yaml:
+    indent: 2
