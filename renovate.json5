@@ -18,6 +18,10 @@
   // Never touch SOPS-encrypted files — contents are ciphertext, not real versions
   ignorePaths: ["**/*.sops.*"],
 
+  // 1password CLI is distributed via AgileBits' own servers (not GitHub releases);
+  // Renovate has no compatible datasource to track it — manage version manually.
+  ignoreDeps: ["1password"],
+
   // ── Manager file-pattern overrides ──────────────────────────────────────────
   // Renovate's built-in managers each have a default set of filename globs they
   // scan. These overrides extend those defaults to cover this repo's structure.
