@@ -13,6 +13,19 @@ Three-node bare-metal Talos Linux cluster (all control-plane, scheduling allowed
 
 ---
 
+## Node Disk Inventory
+
+| Node | Device | Size | Model | Role |
+|------|--------|------|-------|------|
+| talos-cp-01 | nvme0n1 | 2.0 TB | Crucial CT2000P310SSD8 | Talos system disk |
+| talos-cp-02 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G | Talos system disk |
+| talos-cp-02 | nvme1n1 | 1.0 TB | IRP-SSDPR-P44N-01T-30 | **Free** — available for storage (wiped 2026-05-06) |
+| talos-cp-03 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G | Talos system disk |
+
+Only `talos-cp-02` has a second disk today. For Rook/Ceph to run across all three nodes, `talos-cp-01` and `talos-cp-03` will need additional drives designated as OSDs.
+
+---
+
 ## FluxCD
 
 Flux is bootstrapped via Helmfile (`kubernetes/bootstrap/helmfile.yaml`), not `flux bootstrap`. Two charts from the [flux-operator](https://fluxcd.control-plane.io/operator/) are used:
@@ -170,6 +183,7 @@ flux-system GitRepository → cluster-meta Kustomization → cluster-apps Kustom
 | `bootstrap:apps` fails on `flux-instance` | Running `helmfile apply` instead of `sync` | Always use `task bootstrap:apps` |
 | Flux shows `Secret not found` | `flux-system` secret missing | Run `task bootstrap:flux-secret` |
 | Flux shows `unable to clone` | SSH key not in GitHub deploy keys | Add `identity.pub` to repo deploy keys |
+| `kubeconfig` accidentally deleted | File is gitignored, not in repo | Run `task talos:kubeconfig` — fetches it live from the Talos API (requires `talos/clusterconfig/talosconfig` and a reachable control-plane node) |
 
 ---
 

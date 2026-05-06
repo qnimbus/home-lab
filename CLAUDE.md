@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-06 | `cp02-disk-cleanup` | Wiped Proxmox LVM (nvme1n1) from talos-cp-02 via `talosctl reset --wipe-mode=user-disks`; documented cluster disk inventory in CLUSTER.md |
 > | 2026-05-06 | `cluster-bootstrap-runbook` | Full bootstrap validated end-to-end; added `talos:wait-maintenance` task; Bootstrap Runbook in CLUSTER.md; fixed flux-secret.sh cleanup trap bug; auto-reconcile after flux-secret |
 > | 2026-05-06 | `devcontainer-secret-management` | Created `scripts/flux-secret.sh` (fetch Flux SSH deploy key from 1Password); `bootstrap:flux-secret` task |
 > | 2026-05-06 | `mcp-server-rbac-scripts` | Created `scripts/mcp.sh` (setup/cleanup/renew-token); connected kubernetes-mcp-server MCP tool |
