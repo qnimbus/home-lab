@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-06 | `cluster-bootstrap-runbook` | Full bootstrap validated end-to-end; added `talos:wait-maintenance` task; Bootstrap Runbook in CLUSTER.md; fixed flux-secret.sh cleanup trap bug; auto-reconcile after flux-secret |
 > | 2026-05-06 | `devcontainer-secret-management` | Created `scripts/flux-secret.sh` (fetch Flux SSH deploy key from 1Password); `bootstrap:flux-secret` task |
 > | 2026-05-06 | `mcp-server-rbac-scripts` | Created `scripts/mcp.sh` (setup/cleanup/renew-token); connected kubernetes-mcp-server MCP tool |
 > | 2026-05-06 | `flux-ssh-secret-setup` | Fixed FluxInstance values (SSH URL, pullSecret, refs/heads/main); Flux now fully reconciling |
@@ -14,6 +15,8 @@ This repository provisions and manages a bare-metal Talos Linux Kubernetes clust
 
 > For a high-level overview of the cluster and FluxCD structure, see [CLUSTER.md](CLUSTER.md).
 > Keep `CLUSTER.md` up to date as the cluster evolves: when adding new components, changing core infrastructure (CNI, DNS, storage, secrets strategy), or completing major bootstrap phases, update the relevant section. Keep entries concise and high-level — implementation details belong in code or `CLAUDE.md`.
+>
+> For pending and in-progress work items, see [ROADMAP.md](ROADMAP.md). Update it when tasks are started, completed, or reprioritized.
 
 ---
 

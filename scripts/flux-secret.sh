@@ -47,7 +47,6 @@ cmd_setup() {
         fi
     fi
 
-    local tmp_identity tmp_pub tmp_known_hosts
     tmp_identity="$(mktemp)"
     tmp_pub="$(mktemp)"
     tmp_known_hosts="$(mktemp)"

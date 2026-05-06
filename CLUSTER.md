@@ -57,6 +57,122 @@ GitOps:   cluster-meta → cluster-apps → <individual app Kustomizations>
 
 ---
 
+## Bootstrap Runbook
+
+Step-by-step guide for bootstrapping the cluster from scratch or after a full reset. All commands run from the repo root inside the devcontainer.
+
+### Phase 0 — Reset (re-bootstrap only)
+
+> Skip on first bootstrap — nodes are already in maintenance mode after OS installation.
+
+```bash
+task talos:reset
+```
+
+Confirm the interactive prompt. The task wipes the `STATE` and `EPHEMERAL` Talos partitions on all three nodes and reboots them. The OS installation is preserved; no re-flashing is required.
+
+Wait ~3–5 minutes, then poll until all nodes respond in maintenance mode:
+
+```bash
+task talos:wait-maintenance
+```
+
+Exits automatically once all three nodes return their Talos version.
+
+> **Important**: `talsecret.sops.yaml` must **not** be regenerated on a running or previously-bootstrapped cluster. The CA certificates and bootstrap tokens it contains are baked into every node's machine config. The `bootstrap:cluster` task guards against accidental regeneration — it only generates the file if it does not already exist.
+
+### Phase 1 — Bootstrap the cluster
+
+```bash
+task bootstrap:cluster
+```
+
+Runs these steps in sequence, with retries on the network-sensitive ones:
+
+| Step | Command | Notes |
+|------|---------|-------|
+| 1 | `gensecret` guard | Skipped if `talsecret.sops.yaml` already exists |
+| 2 | `task talos:genconfig` | Renders `talconfig.yaml` → machine configs in `clusterconfig/` |
+| 3 | `task talos:apply-all` | Pushes configs to all nodes (insecure / maintenance mode) |
+| 4 | `task talos:bootstrap` | Bootstraps etcd on the first control-plane node (retries until ready) |
+| 5 | `task talos:kubeconfig` | Fetches `kubeconfig` to repo root (retries until API server responds) |
+
+**Expected duration**: ~5–10 minutes
+
+Verify all three nodes are `Ready`:
+
+```bash
+kubectl get nodes -o wide
+```
+
+### Phase 2 — Bootstrap apps (Helmfile)
+
+```bash
+task bootstrap:apps
+```
+
+Installs charts in strict dependency order via `helmfile sync`:
+
+| # | Chart | Namespace | Purpose |
+|---|-------|-----------|---------|
+| 1 | `cilium` | `kube-system` | CNI + kube-proxy replacement |
+| 2 | `coredns` | `kube-system` | Cluster DNS |
+| 3 | `spegel` | `kube-system` | P2P container image mirror |
+| 4 | `cert-manager` | `cert-manager` | Certificate management |
+| 5 | `flux-operator` | `flux-system` | Flux controller lifecycle manager |
+| 6 | `flux-instance` | `flux-system` | `FluxInstance` CR — wires Flux to this repo |
+
+> **Note**: the task uses `helmfile sync`, not `helmfile apply`. The `apply` subcommand pre-diffs all releases in parallel and fails on `flux-instance` because the `FluxInstance` CRD does not exist until `flux-operator` finishes installing.
+
+**Expected duration**: ~5–10 minutes
+
+### Phase 3 — Flux SSH deploy key secret
+
+This is the only imperative step post-bootstrap. The secret cannot come from Git because Flux needs it to pull from Git in the first place.
+
+```bash
+task bootstrap:flux-secret
+```
+
+Fetches the SSH deploy key from 1Password (`homelab` vault → `flux-deploy-key` item), creates the `flux-system` secret in the `flux-system` namespace with keys `identity`, `identity.pub`, and `known_hosts`, then immediately reconciles the `flux-system` GitRepository so Flux picks up the new secret without waiting for the next poll interval.
+
+To verify the secret independently:
+
+```bash
+scripts/flux-secret.sh verify
+```
+
+### Phase 4 — Hand off to GitOps
+
+```bash
+git push    # push any uncommitted changes first
+```
+
+Flux polls the repository every 5 minutes. Verify reconciliation:
+
+```bash
+flux get all -A
+kubectl get gitrepository,kustomization -A
+```
+
+All sources and Kustomizations should show `Ready = True`. The full sync path is:
+
+```
+flux-system GitRepository → cluster-meta Kustomization → cluster-apps Kustomization → <per-app Kustomizations>
+```
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `talosctl version --insecure` times out | Node still rebooting | Wait and retry |
+| `apply-all` fails with `connection refused` | Node not yet in maintenance mode | Wait and retry |
+| `bootstrap:apps` fails on `flux-instance` | Running `helmfile apply` instead of `sync` | Always use `task bootstrap:apps` |
+| Flux shows `Secret not found` | `flux-system` secret missing | Run `task bootstrap:flux-secret` |
+| Flux shows `unable to clone` | SSH key not in GitHub deploy keys | Add `identity.pub` to repo deploy keys |
+
+---
+
 ## Secrets
 
 | Secret type | Mechanism | Location |

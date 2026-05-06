@@ -111,6 +111,23 @@ tasks:
       - {msg: "talosctl not found", sh: "which talosctl"}
       - {msg: "yq not found", sh: "which yq"}
 
+  wait-maintenance:
+    desc: Wait (poll) until all nodes respond in maintenance mode
+    dir: '{{.TALOS_DIR}}'
+    silent: true
+    cmd: |
+      while IFS= read -r ip; do
+        printf 'Waiting for %s' "${ip}"
+        until nc -z -w 3 "${ip}" 50000 >/dev/null 2>&1; do
+          printf '.'; sleep 5
+        done
+        printf ' ready\n'
+      done < <(yq '.nodes[].ipAddress' talconfig.yaml)
+    preconditions:
+      - {msg: "talconfig.yaml not found", sh: "test -f {{.TALOS_DIR}}/talconfig.yaml"}
+      - {msg: "nc not found", sh: "which nc"}
+      - {msg: "yq not found", sh: "which yq"}
+
   reset:
     desc: Reset all nodes back to maintenance mode (DESTRUCTIVE)
     dir: '{{.TALOS_DIR}}'
