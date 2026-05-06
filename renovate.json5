@@ -18,9 +18,14 @@
   // Never touch SOPS-encrypted files — contents are ciphertext, not real versions
   ignorePaths: ["**/*.sops.*"],
 
-  // 1password CLI is distributed via AgileBits' own servers (not GitHub releases);
-  // Renovate has no compatible datasource to track it — manage version manually.
-  ignoreDeps: ["1password"],
+  // Dependencies managed outside Renovate — do not open PRs for these.
+  // 1password: distributed via AgileBits' servers, no compatible datasource.
+  // siderolabs/*: Talos + Kubernetes versions are managed via a separate upgrade mechanism.
+  ignoreDeps: [
+    "1password",
+    "ghcr.io/siderolabs/installer",
+    "ghcr.io/siderolabs/kubelet",
+  ],
 
   // ── Manager file-pattern overrides ──────────────────────────────────────────
   // Renovate's built-in managers each have a default set of filename globs they
