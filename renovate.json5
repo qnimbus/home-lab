@@ -1,0 +1,211 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+
+  extends: [
+    "config:recommended",    // Sensible defaults: PR limits, grouping minor+patch, etc.
+    "docker:enableMajor",    // Also open PRs for major Docker image bumps (Talos, k8s use docker datasource)
+    ":dependencyDashboard",  // Maintain a GitHub Issue listing every pending update — your control panel
+    ":disableRateLimiting",  // Remove the default cap on concurrent PRs (fine for a home lab)
+    ":semanticCommits",      // Conventional commit messages on Renovate's own commits
+  ],
+
+  dependencyDashboard: true,
+  dependencyDashboardTitle: "Renovate Dashboard",
+
+  // Only scan on weekends — avoids noise during the week; change to "at any time" to run continuously
+  schedule: ["every weekend"],
+
+  // Never touch SOPS-encrypted files — contents are ciphertext, not real versions
+  ignorePaths: ["**/*.sops.*"],
+
+  // ── Manager file-pattern overrides ──────────────────────────────────────────
+  // Renovate's built-in managers each have a default set of filename globs they
+  // scan. These overrides extend those defaults to cover this repo's structure.
+
+  flux: {
+    // Pick up HelmRelease, GitRepository, OCIRepository in kubernetes/
+    managerFilePatterns: ["/(^|/)kubernetes/.+\\.ya?ml$/"],
+  },
+  "helm-values": {
+    // Pick up image tags inside helm/values.yaml files
+    managerFilePatterns: ["/(^|/)kubernetes/.+\\.ya?ml$/"],
+  },
+  helmfile: {
+    // Native helmfile manager handles chart: + version: pairs with # renovate: hints
+    managerFilePatterns: ["/(^|/)helmfile\\.ya?ml$/"],
+  },
+  kubernetes: {
+    // Raw Kubernetes manifests (image: fields, etc.)
+    managerFilePatterns: ["/(^|/)kubernetes/.+\\.ya?ml$/"],
+  },
+  kustomize: {
+    managerFilePatterns: ["/^kustomization\\.ya?ml$/"],
+  },
+
+  // ── Package rules ────────────────────────────────────────────────────────────
+  // Rules are evaluated top-to-bottom; multiple rules can apply to one package.
+  // Use groupName to merge related updates into a single PR.
+
+  packageRules: [
+
+    // ── Grouping ────────────────────────────────────────────────────────────────
+
+    {
+      description: "Group Talos + Kubernetes version bumps into one PR",
+      groupName: "Talos + Kubernetes",
+      matchDatasources: ["docker"],
+      matchPackageNames: [
+        "ghcr.io/siderolabs/installer",
+        "ghcr.io/siderolabs/kubelet",
+      ],
+    },
+    {
+      description: "Group Flux Operator + Instance into one PR",
+      groupName: "Flux",
+      matchPackageNames: [
+        "/flux-operator/",
+        "/flux-instance/",
+        "ghcr.io/fluxcd/flux-operator",
+      ],
+    },
+    {
+      description: "Group cert-manager chart + image bumps",
+      groupName: "cert-manager",
+      matchPackageNames: ["/cert-manager/"],
+    },
+    {
+      description: "Group CoreDNS chart + image bumps",
+      groupName: "CoreDNS",
+      matchPackageNames: ["/coredns/"],
+    },
+    {
+      description: "Group Spegel chart + image bumps",
+      groupName: "Spegel",
+      matchPackageNames: ["/spegel/"],
+    },
+
+    // ── Auto-merge ──────────────────────────────────────────────────────────────
+    // automergeType: "branch" means Renovate pushes directly to the branch and
+    // merges when clean — no PR is created unless the branch has conflicts.
+    // ignoreTests: true is needed because this repo has no CI to wait for.
+
+    {
+      description: "Auto-merge mise tool updates (minor + patch only)",
+      matchManagers: ["mise"],
+      automerge: true,
+      automergeType: "branch",
+      matchUpdateTypes: ["minor", "patch"],
+      ignoreTests: true,
+    },
+    {
+      description: "Auto-merge GitHub Actions (minor + patch + digest) after 3-day soak",
+      matchManagers: ["github-actions"],
+      automerge: true,
+      automergeType: "branch",
+      matchUpdateTypes: ["minor", "patch", "digest"],
+      minimumReleaseAge: "3 days",  // Gives the community time to catch regressions
+      ignoreTests: true,
+    },
+
+    // ── Semantic commit message formatting ──────────────────────────────────────
+
+    {
+      matchUpdateTypes: ["major"],
+      semanticCommitType: "feat",
+      commitMessagePrefix: "{{semanticCommitType}}({{semanticCommitScope}})!:",
+      commitMessageExtra: "( {{currentVersion}} → {{newVersion}} )",
+    },
+    {
+      matchUpdateTypes: ["minor"],
+      semanticCommitType: "feat",
+      commitMessageExtra: "( {{currentVersion}} → {{newVersion}} )",
+    },
+    {
+      matchUpdateTypes: ["patch"],
+      semanticCommitType: "fix",
+      commitMessageExtra: "( {{currentVersion}} → {{newVersion}} )",
+    },
+    {
+      matchUpdateTypes: ["digest"],
+      semanticCommitType: "chore",
+      commitMessageExtra: "( {{currentDigestShort}} → {{newDigestShort}} )",
+    },
+
+    // ── Semantic commit scopes (one per datasource/manager) ─────────────────────
+
+    {
+      matchDatasources: ["docker"],
+      semanticCommitScope: "container",
+      commitMessageTopic: "image {{depName}}",
+    },
+    {
+      matchDatasources: ["helm"],
+      semanticCommitScope: "helm",
+      commitMessageTopic: "chart {{depName}}",
+    },
+    {
+      matchManagers: ["github-actions"],
+      semanticCommitType: "ci",
+      semanticCommitScope: "github-action",
+      commitMessageTopic: "action {{depName}}",
+    },
+    {
+      matchDatasources: ["github-releases"],
+      semanticCommitScope: "github-release",
+      commitMessageTopic: "release {{depName}}",
+    },
+    {
+      matchManagers: ["mise"],
+      semanticCommitScope: "mise",
+      commitMessageTopic: "tool {{depName}}",
+    },
+
+    // ── Labels ──────────────────────────────────────────────────────────────────
+    // These combine: a PR for a minor Helm chart update gets both type/minor and renovate/helm
+
+    { matchUpdateTypes: ["major"], labels: ["type/major"] },
+    { matchUpdateTypes: ["minor"], labels: ["type/minor"] },
+    { matchUpdateTypes: ["patch"], labels: ["type/patch"] },
+
+    { matchDatasources: ["docker"],          addLabels: ["renovate/container"] },
+    { matchDatasources: ["helm"],            addLabels: ["renovate/helm"] },
+    { matchManagers: ["github-actions"],     addLabels: ["renovate/github-action"] },
+    { matchDatasources: ["github-releases"], addLabels: ["renovate/github-release"] },
+    { matchManagers: ["mise"],               addLabels: ["renovate/mise"] },
+
+    // ── Ignoring specific packages (examples — uncomment to use) ────────────────
+    //
+    // Permanently disable a package by name:
+    // { matchPackageNames: ["some/package"], enabled: false },
+    //
+    // Pin to a version range (stay on 1.x, ignore 2.0):
+    // { matchPackageNames: ["ghcr.io/siderolabs/installer"], allowedVersions: "<2.0.0" },
+    //
+    // Mute a specific update type globally (e.g. never open major Talos PRs):
+    // { matchPackageNames: ["ghcr.io/siderolabs/installer"], matchUpdateTypes: ["major"], enabled: false },
+
+  ],
+
+  // ── Custom regex manager ─────────────────────────────────────────────────────
+  // Handles files Renovate doesn't natively understand (talenv.yaml, scripts, etc.)
+  // Only activated when a "# renovate: datasource=..." annotation precedes the version line.
+
+  customManagers: [
+    {
+      description: "Process '# renovate: datasource=' annotations in YAML and shell files",
+      customType: "regex",
+      managerFilePatterns: [
+        "/(^|/).+\\.ya?ml$/",
+        "/(^|/).+\\.sh$/",
+        "/(^|/).+\\.env$/",
+      ],
+      matchStrings: [
+        // Matches annotation + value on the next line, e.g.:
+        //   # renovate: datasource=docker depName=ghcr.io/siderolabs/installer
+        //   talosVersion: v1.10.6
+        "datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( repository=(?<registryUrl>\\S+))?\\n.+(:\\s|=)(&\\S+\\s)?(?<currentValue>\\S+)",
+      ],
+      datasourceTemplate: "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
+    },
+  ],
+}
