@@ -50,6 +50,7 @@
   "forwardPorts": [],
   "mounts": [
     "source=claude-home,target=/home/vscode/.claude,type=volume",
-    "source=home-local,target=/home/vscode/.local,type=volume"
+    "source=home-local,target=/home/vscode/.local,type=volume",
+    "source=home-kub,target=/home/vscode/.kube,type=volume"
   ]
 }

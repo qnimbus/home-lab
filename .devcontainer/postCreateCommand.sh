@@ -10,6 +10,15 @@ sudo apt-get update
 # sudo apt-get install -y gnupg ca-certificates iputils-ping dnsutils trash-cli tree libgtk2.0-0 libgtk-3-0 libgbm-dev libnotify-dev libnss3 libxss1 libasound2 libxtst6 xauth xvfb nmap
 sudo apt-get install -y netcat-openbsd nmap iputils-ping
 
+# Find the most recent .claude.json backup in ~/.claude/backups and restore it to ~/.claude.json
+BACKUP_FILE=$(ls -t ~/.claude/backups/.*.json.backup* 2>/dev/null | head -n 1)
+if [ -f "$BACKUP_FILE" ]; then
+    cp "$BACKUP_FILE" ~/.claude.json
+    echo "Restored Claude settings from backup: $BACKUP_FILE"
+else
+    echo "No backup found in ~/.claude/backups. Skipping restore."
+fi
+
 # Download and install Claude Code
 curl -fsSL https://claude.ai/install.sh | bash
 
@@ -25,5 +34,9 @@ source ~/.bashrc
 mise trust
 mise install
 
+# Activate mise for the current session
+eval "$(~/.local/bin/mise activate bash)"
+
 # Install helm plugins (helm-diff is required by helmfile)
-helm plugin install https://github.com/databus23/helm-diff --verify=false || true
+helm plugin list | awk '{print $1}' | grep -qx diff \
+  || helm plugin install https://github.com/databus23/helm-diff --verify=false
