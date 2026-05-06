@@ -26,18 +26,6 @@ Dependency chain: `cert-manager` → `external-secrets` → `onepassword-connect
 
 ---
 
-### Configure Renovate dependency management
-
-Set up [Renovate](https://docs.renovatebot.com/) to automatically open PRs for version bumps across the repo.
-
-Rough steps:
-- Add `renovate.json` (or `renovate.json5`) at the repo root with a base config
-- Verify `# renovate: datasource=...` annotations in `talenv.yaml` and Helmfile lock files are picked up
-- Ensure Helm chart versions in `kubernetes/` HelmReleases are tracked
-- Configure automerge policy (e.g. patch-level digest bumps for trusted sources)
-
----
-
 ## Completed
 
 | Area                          | Notes                                           |
@@ -51,3 +39,4 @@ Rough steps:
 | CoreDNS                       | Running via Helmfile bootstrap                  |
 | cert-manager                  | Running via Helmfile bootstrap                  |
 | Flux (operator + instance)    | Reconciling from private repo via SSH           |
+| Renovate                      | `renovate.json5` in place; GitHub App installed; Talos/k8s versions intentionally excluded (managed separately) |

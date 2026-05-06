@@ -4,6 +4,36 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-06 — `renovate-setup`
+
+### What we did
+- Added `renovate.json5` at the repo root to configure the Mend Renovate GitHub App
+- Installed the Mend Renovate GitHub App on `qnimbus/home-lab` (browser step, user-performed)
+- Fixed a lookup failure for the `1password` mise tool — added to `ignoreDeps` because the CLI is distributed via AgileBits' own servers, not GitHub; Renovate defaults to `github-tags` for unknown mise tools and finds nothing
+- Disabled Talos + Kubernetes version tracking in Renovate at user request — those versions will be managed via a separate upgrade mechanism; added both `ghcr.io/siderolabs/installer` and `ghcr.io/siderolabs/kubelet` to `ignoreDeps`
+
+### Files created / modified
+| File | Change |
+|------|--------|
+| `renovate.json5` | Created — full Renovate config (see decisions below) |
+
+### Decisions made
+- **`ignoreDeps` over `packageRules[enabled:false]`** for manually-managed packages: `ignoreDeps` is an early filter evaluated before any manager or `packageRule`, making the intent ("don't touch these") explicit and up-front rather than buried in a rule
+- **`docker:enableMajor` preset included** — without it Renovate silently skips major Docker image bumps; Talos and Kubernetes use `datasource=docker`, so this would suppress major version notifications for those packages (and any future ones tracked the same way)
+- **`schedule: ["every weekend"]`** — avoids weekday PR noise on a home lab; can be changed to `"at any time"` for continuous scanning
+- **`automergeType: "branch"` for mise and GitHub Actions** — Renovate merges directly to the branch when clean, no PR required; `ignoreTests: true` needed because this repo has no CI
+- **`minimumReleaseAge: "3 days"` on GitHub Actions auto-merge** — gives the community a soak window to catch regressions before an update lands automatically
+- **Grouped `Talos + Kubernetes`, `Flux`, `cert-manager`, `CoreDNS`, `Spegel`** — components that always ship together or should be reviewed together produce a single PR rather than one each
+- **Custom regex manager** uses `datasource=` annotation format (e.g. in `talenv.yaml`); the native helmfile manager uses the `registryUrl=` annotation format — they look similar but feed different Renovate subsystems
+- **`ignorePaths: ["**/*.sops.*"]`** — prevents Renovate from treating encrypted ciphertext as version strings
+
+### Learned / noted
+- Two annotation styles coexist in the repo: `# renovate: registryUrl=... chart=...` (read by the native `helmfile` manager from `helmfile.yaml`) and `# renovate: datasource=... depName=...` (read by the custom regex manager from `talenv.yaml`). They are not interchangeable
+- Renovate's `mise` manager reads `.mise.toml` natively but falls back to `github-tags` for any tool it doesn't recognise. The `1password` tool resolves via `aqua:1password/cli` in the mise registry (an AgileBits download, not GitHub), so the `github-tags` lookup returns no results
+- The `$schema` URL in `renovate.json5` triggers a VS Code JSON language-server warning in the devcontainer ("location untrusted") because the container cannot reach `docs.renovatebot.com` at schema-load time — the config is valid and Renovate itself reads the schema correctly when running remotely; the warning is a false positive
+
+---
+
 ## 2026-05-06 — `node-hw-correction-and-runbook-updates`
 
 ### What we did
