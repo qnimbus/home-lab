@@ -45,7 +45,8 @@
   },
   "remoteEnv": {
     "SOPS_AGE_KEY_FILE": "${containerWorkspaceFolder}/age.key",
-    "KUBECONFIG": "${containerWorkspaceFolder}/kubeconfig"
+    "KUBECONFIG": "${containerWorkspaceFolder}/kubeconfig",
+    "OP_SERVICE_ACCOUNT_TOKEN": "${localEnv:OP_SERVICE_ACCOUNT_TOKEN}"
   },
   "forwardPorts": [],
   "mounts": [

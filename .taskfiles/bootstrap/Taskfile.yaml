@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+---
+version: '3'
+
+tasks:
+
+  cluster:
+    desc: Full cluster bootstrap sequence (gensecret, genconfig, apply-all, bootstrap, kubeconfig)
+    dir: '{{.TALOS_DIR}}'
+    cmds:
+      - '[ -f talsecret.sops.yaml ] || talhelper gensecret | sops --filename-override talos/talsecret.sops.yaml --encrypt /dev/stdin > talsecret.sops.yaml'
+      - task talos:genconfig
+      - task talos:apply-all
+      - task talos:bootstrap
+      - task talos:kubeconfig
+    preconditions:
+      - {msg: ".sops.yaml not found", sh: "test -f {{.ROOT_DIR}}/.sops.yaml"}
+      - {msg: "age key not found", sh: "test -f {{.SOPS_AGE_KEY_FILE}}"}
+      - {msg: "talconfig.yaml not found", sh: "test -f {{.TALOS_DIR}}/talconfig.yaml"}
+      - {msg: "talenv.yaml not found", sh: "test -f {{.TALOS_DIR}}/talenv.yaml"}
+      - {msg: "talhelper not found", sh: "which talhelper"}
+      - {msg: "talosctl not found", sh: "which talosctl"}
+      - {msg: "sops not found", sh: "which sops"}
+
+  flux-secret:
+    desc: Fetch Flux SSH deploy key from 1Password and create the flux-system secret
+    cmd: '{{.ROOT_DIR}}/scripts/flux-secret.sh setup'
+    preconditions:
+      - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
+      - {msg: "op not found — install 1Password CLI", sh: "which op"}
+      - {msg: "kubectl not found", sh: "which kubectl"}
+
+  apps:
+    desc: Bootstrap apps into the cluster via helmfile (Cilium → CoreDNS → Spegel → cert-manager → Flux)
+    cmd: helmfile sync -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.yaml
+    preconditions:
+      - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
+      - {msg: "helmfile.yaml not found", sh: "test -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.yaml"}
+      - {msg: ".sops.yaml not found", sh: "test -f {{.ROOT_DIR}}/.sops.yaml"}
+      - {msg: "age key not found", sh: "test -f {{.SOPS_AGE_KEY_FILE}}"}
+      - {msg: "helmfile not found", sh: "which helmfile"}

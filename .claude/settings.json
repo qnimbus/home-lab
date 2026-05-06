@@ -25,6 +25,7 @@
       "Bash(talosctl version *)",
       "Bash(talhelper --version)",
       "Read(//home/vscode/**)",
+      "Bash(task --list)",
       "WebSearch",
       "WebFetch(domain:hub.docker.com)",
       "WebFetch(domain:developer.1password.com)",

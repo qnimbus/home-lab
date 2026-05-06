@@ -65,4 +65,6 @@ GitOps:   cluster-meta → cluster-apps → <individual app Kustomizations>
 | Flux SSH deploy key | Kubernetes secret (imperative) | `flux-system/flux-system` |
 | Application secrets | External Secrets Operator + 1Password Connect | `kubernetes/apps/` |
 
+**Talos secret generation (`talsecret.sops.yaml`)** — generated once via `talhelper gensecret` and encrypted in-flight through `sops` before touching disk. This file must never be regenerated on a running cluster: the CA certificates and bootstrap tokens it contains are baked into every node's machine config. Regenerating invalidates all nodes and requires re-applying configs. The `bootstrap:cluster` task guards against accidental regeneration with `[ -f talsecret.sops.yaml ] || ...`. To intentionally start fresh, `rm talos/talsecret.sops.yaml` explicitly first.
+
 See `CLAUDE.md` for full secrets management detail and SOPS rules.

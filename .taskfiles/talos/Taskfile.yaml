@@ -1,0 +1,128 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+---
+version: '3'
+
+tasks:
+
+  iso:
+    desc: Register schematic with factory.talos.dev, download ISO, and update talenv.yaml
+    dir: '{{.TALOS_DIR}}'
+    vars:
+      TALOS_VERSION:
+        sh: yq '.talosVersion' {{.TALOS_DIR}}/talenv.yaml
+    cmds:
+      - |
+        RESPONSE=$(curl -sf -X POST \
+          --header "Content-Type: application/yaml" \
+          --data-binary @schematic.yaml \
+          "https://factory.talos.dev/schematics") \
+          || { echo "ERROR: failed to reach factory.talos.dev — check network and schematic.yaml" >&2; exit 1; }
+        SCHEMATIC_ID=$(printf '%s' "${RESPONSE}" | jq -r '.id')
+        printf '%s\n' "${SCHEMATIC_ID}" > .schematic-id
+        echo "Schematic ID: ${SCHEMATIC_ID}"
+        IMAGE_URL="factory.talos.dev/installer/${SCHEMATIC_ID}"
+        yq -i '.talosImageURL = "'"${IMAGE_URL}"'"' {{.TALOS_DIR}}/talenv.yaml
+        echo "Updated talenv.yaml: talosImageURL = ${IMAGE_URL}"
+        ISO_URL="https://factory.talos.dev/image/${SCHEMATIC_ID}/{{.TALOS_VERSION}}/metal-amd64.iso"
+        ISO_PATH="{{.ROOT_DIR}}/assets/talos-{{.TALOS_VERSION}}.iso"
+        mkdir -p "{{.ROOT_DIR}}/assets"
+        curl -L --progress-bar -o "${ISO_PATH}" "${ISO_URL}"
+        echo "Saved: assets/talos-{{.TALOS_VERSION}}.iso"
+    preconditions:
+      - {msg: "schematic.yaml not found", sh: "test -f {{.TALOS_DIR}}/schematic.yaml"}
+      - {msg: "talenv.yaml not found", sh: "test -f {{.TALOS_DIR}}/talenv.yaml"}
+      - {msg: "curl not found", sh: "which curl"}
+      - {msg: "jq not found", sh: "which jq"}
+      - {msg: "yq not found", sh: "which yq"}
+
+  genconfig:
+    desc: Generate Talos machine configs from talconfig.yaml
+    dir: '{{.TALOS_DIR}}'
+    cmd: talhelper genconfig
+    preconditions:
+      - {msg: "talconfig.yaml not found", sh: "test -f {{.TALOS_DIR}}/talconfig.yaml"}
+      - {msg: ".sops.yaml not found", sh: "test -f {{.ROOT_DIR}}/.sops.yaml"}
+      - {msg: "age key not found", sh: "test -f {{.SOPS_AGE_KEY_FILE}}"}
+      - {msg: "talhelper not found", sh: "which talhelper"}
+
+  apply:
+    desc: Apply Talos config to a specific node in maintenance mode [IP=required]
+    dir: '{{.TALOS_DIR}}'
+    cmd: talhelper gencommand apply --node {{.IP}} --extra-flags='--insecure' | bash
+    requires:
+      vars: [IP]
+    preconditions:
+      - {msg: "talconfig.yaml not found", sh: "test -f {{.TALOS_DIR}}/talconfig.yaml"}
+      - {msg: "clusterconfig/ not found", sh: "test -d {{.TALOS_DIR}}/clusterconfig"}
+      - {msg: "talhelper not found", sh: "which talhelper"}
+
+  apply-all:
+    desc: Apply Talos config to all nodes in maintenance mode (insecure)
+    dir: '{{.TALOS_DIR}}'
+    cmd: talhelper gencommand apply --extra-flags="--insecure" | bash
+    preconditions:
+      - {msg: "talconfig.yaml not found", sh: "test -f {{.TALOS_DIR}}/talconfig.yaml"}
+      - {msg: "clusterconfig/ not found", sh: "test -d {{.TALOS_DIR}}/clusterconfig"}
+      - {msg: "talhelper not found", sh: "which talhelper"}
+
+  bootstrap:
+    desc: Bootstrap etcd on the first control-plane node (run once after apply-all)
+    dir: '{{.TALOS_DIR}}'
+    cmd: until talhelper gencommand bootstrap | bash; do sleep 10; done
+    preconditions:
+      - {msg: "talosconfig not found", sh: "test -f {{.TALOSCONFIG}}"}
+      - {msg: "talhelper not found", sh: "which talhelper"}
+      - {msg: "talosctl not found", sh: "which talosctl"}
+
+  kubeconfig:
+    desc: Fetch kubeconfig from the cluster
+    dir: '{{.TALOS_DIR}}'
+    cmd: until talhelper gencommand kubeconfig --extra-flags="{{.ROOT_DIR}} --force" | bash; do sleep 10; done
+    preconditions:
+      - {msg: "talosconfig not found", sh: "test -f {{.TALOSCONFIG}}"}
+      - {msg: "talhelper not found", sh: "which talhelper"}
+      - {msg: "talosctl not found", sh: "which talosctl"}
+
+  upgrade-node:
+    desc: Upgrade Talos on a single node [IP=required]
+    dir: '{{.TALOS_DIR}}'
+    cmd: talhelper gencommand upgrade --node {{.IP}} --extra-flags "--image='{{.TALOS_IMAGE}}' --timeout=10m" | bash
+    vars:
+      TALOS_IMAGE:
+        sh: yq '.talosImageURL' {{.TALOS_DIR}}/talenv.yaml
+    requires:
+      vars: [IP]
+    preconditions:
+      - {msg: "talosconfig not found", sh: "test -f {{.TALOSCONFIG}}"}
+      - {msg: "talhelper not found", sh: "which talhelper"}
+      - {msg: "talosctl not found", sh: "which talosctl"}
+      - {msg: "yq not found", sh: "which yq"}
+
+  upgrade-k8s:
+    desc: Upgrade Kubernetes to the version in talenv.yaml
+    dir: '{{.TALOS_DIR}}'
+    cmd: talhelper gencommand upgrade-k8s --extra-flags "--to '{{.KUBERNETES_VERSION}}'" | bash
+    vars:
+      KUBERNETES_VERSION:
+        sh: yq '.kubernetesVersion' {{.TALOS_DIR}}/talenv.yaml
+    preconditions:
+      - {msg: "talosconfig not found", sh: "test -f {{.TALOSCONFIG}}"}
+      - {msg: "talhelper not found", sh: "which talhelper"}
+      - {msg: "talosctl not found", sh: "which talosctl"}
+      - {msg: "yq not found", sh: "which yq"}
+
+  reset:
+    desc: Reset all nodes back to maintenance mode (DESTRUCTIVE)
+    dir: '{{.TALOS_DIR}}'
+    prompt: This will destroy your cluster and reset all nodes to maintenance mode... continue?
+    cmd: talhelper gencommand reset --extra-flags="--reboot {{- if eq .CLI_FORCE false }} --system-labels-to-wipe STATE --system-labels-to-wipe EPHEMERAL{{ end }} --graceful=false --wait=false" | bash
+    preconditions:
+      - {msg: "talhelper not found", sh: "which talhelper"}
+      - {msg: "talosconfig not found", sh: "test -f {{.TALOSCONFIG}}"}
+
+  health:
+    desc: Check cluster health via talosctl
+    cmd: talosctl health
+    preconditions:
+      - {msg: "talosconfig not found", sh: "test -f {{.TALOSCONFIG}}"}
+      - {msg: "talosctl not found", sh: "which talosctl"}

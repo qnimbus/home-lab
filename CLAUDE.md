@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-06 | `devcontainer-secret-management` | Created `scripts/flux-secret.sh` (fetch Flux SSH deploy key from 1Password); `bootstrap:flux-secret` task |
 > | 2026-05-06 | `mcp-server-rbac-scripts` | Created `scripts/mcp.sh` (setup/cleanup/renew-token); connected kubernetes-mcp-server MCP tool |
 > | 2026-05-06 | `flux-ssh-secret-setup` | Fixed FluxInstance values (SSH URL, pullSecret, refs/heads/main); Flux now fully reconciling |
 > | 2026-05-06 | `add-sops-plaintext-hook` | Added PreToolUse hook blocking git add/commit on plaintext `*.sops.yaml` files |
@@ -22,8 +23,12 @@ This repository provisions and manages a bare-metal Talos Linux Kubernetes clust
 📁 /
 ├── 📁 .archive/          # Previous cluster config — reference only, do not replicate wholesale
 ├── 📁 .devcontainer/     # VS Code dev container (Python base, mise toolchain)
+├── Taskfile.yaml         # Root go-task entry-point — run `task` to list all tasks
+├── 📁 .taskfiles/
+│   ├── talos/            # Talos node tasks (iso, genconfig, apply, bootstrap, upgrade, reset…)
+│   └── bootstrap/        # Cluster bootstrap sequence (cluster, apps)
 ├── 📁 scripts/
-│   └── bootstrap.sh      # Single entry-point for all bootstrap phases (see Workflow below)
+│   └── mcp.sh            # MCP server ServiceAccount lifecycle (setup/cleanup/renew-token)
 ├── 📁 talos/             # Talos machine configs managed by talhelper
 │   ├── talconfig.yaml    # Node definitions, network, patches references
 │   ├── talenv.yaml       # Variables injected into talconfig (versions, IPs) — Renovate-tracked
@@ -56,6 +61,7 @@ All tools are pinned in `.mise.toml` and installed via `mise install`. Never ins
 
 | Tool         | Purpose                                      |
 |--------------|----------------------------------------------|
+| `task`       | Task runner — replaces scripts/bootstrap.sh  |
 | `talosctl`   | Talos node control                           |
 | `talhelper`  | Renders talconfig.yaml → machine configs     |
 | `kubectl`    | Kubernetes cluster control                   |
@@ -121,27 +127,29 @@ Add this to your shell profile or devcontainer env so it is always present.
 
 ## Bootstrap Workflow
 
-All bootstrap operations go through `scripts/bootstrap.sh`. Run `./scripts/bootstrap.sh` with no args for help.
+All bootstrap operations go through `task`. Run `task` with no args to list available tasks.
 
 ```
 1.  Edit talos/talconfig.yaml — verify MACs, IPs, installDisk per node
-2.  ./scripts/bootstrap.sh iso        → register schematic, download ISO, note schematic ID
-3.  Update talosImageURL in talconfig.yaml with the schematic ID
-4.  Flash ISO: dd if=assets/talos-*.iso of=/dev/sdX bs=4M status=progress
-5.  Boot nodes → enter maintenance mode (DHCP)
-6.  ./scripts/bootstrap.sh genconfig  → generate machine configs + cluster secrets
-7.  sops --encrypt --in-place talos/talsecret.sops.yaml
-8.  ./scripts/bootstrap.sh apply all  → push configs (enter each node's DHCP/maintenance IP)
-9.  Nodes reboot with static IPs + Talos fully installed
-10. ./scripts/bootstrap.sh bootstrap  → initialise etcd on first control plane
-11. ./scripts/bootstrap.sh kubeconfig → fetch kubeconfig
-12. kubectl get nodes -o wide          → verify all nodes Ready
-13. helmfile sync -f kubernetes/bootstrap/helmfile.yaml   → install CNI, DNS, Flux (use sync not apply — apply pre-diffs all releases in parallel and fails on flux-instance because FluxInstance CRD doesn't exist until flux-operator installs it)
-13a. kubectl create secret generic flux-system -n flux-system --from-file=identity=flux-deploy-key --from-file=identity.pub=flux-deploy-key.pub --from-file=known_hosts=known_hosts   → SSH deploy key secret (must exist before Flux can pull the repo; only imperative step post-bootstrap)
-14. git push → Flux takes over and reconciles kubernetes/apps/
+2.  task talos:iso          → register schematic, download ISO, auto-update talenv.yaml
+3.  Flash ISO: dd if=assets/talos-*.iso of=/dev/sdX bs=4M status=progress
+4.  Boot nodes → enter maintenance mode (DHCP)
+5.  task talos:genconfig    → generate machine configs + cluster secrets
+6.  sops --encrypt --in-place talos/talsecret.sops.yaml
+7.  task talos:apply-all    → push configs to all nodes (insecure/maintenance mode)
+8.  Nodes reboot with static IPs + Talos fully installed
+9.  task talos:bootstrap    → initialise etcd on first control plane
+10. task talos:kubeconfig   → fetch kubeconfig
+11. kubectl get nodes -o wide → verify all nodes Ready
+12. task bootstrap:apps     → install CNI, DNS, Flux via helmfile (use helmfile sync, not apply —
+    apply pre-diffs all releases in parallel and fails on flux-instance because FluxInstance CRD
+    doesn't exist until flux-operator installs it)
+12a. kubectl create secret generic flux-system -n flux-system --from-file=identity=flux-deploy-key --from-file=identity.pub=flux-deploy-key.pub --from-file=known_hosts=known_hosts
+    → SSH deploy key secret (must exist before Flux can pull the repo; only imperative step post-bootstrap)
+13. git push → Flux takes over and reconciles kubernetes/apps/
 ```
 
-Steps 1–14 are complete. Flux is fully operational and reconciling from the private GitHub repo.
+Steps 1–13 are complete. Flux is fully operational and reconciling from the private GitHub repo.
 
 ---
 
@@ -197,7 +205,7 @@ Use `strategy: Recreate` for any workload with `ReadWriteOnce` PVCs. Use `Rollin
 | Area                          | Status     | Notes                                           |
 |-------------------------------|------------|-------------------------------------------------|
 | Talos machine configs         | ✅ Done    | 3 CP nodes, patches, schematic registered       |
-| Bootstrap script              | ✅ Done    | All phases iso→kubeconfig                       |
+| Bootstrap script              | ✅ Done    | go-task Taskfile replaces scripts/bootstrap.sh  |
 | SOPS age key + rules          | ✅ Done    | `age.key` generated, `.sops.yaml` configured    |
 | Cluster bootstrapped          | ✅ Done    | All 14 bootstrap steps complete                 |
 | kubernetes/ directory         | ✅ Done    | Helmfile + Flux structure in place              |
@@ -221,4 +229,5 @@ Use `strategy: Recreate` for any workload with `ReadWriteOnce` PVCs. Use `Rollin
 - **Do** keep `talenv.yaml` as the single source of truth for versions and network variables; patch files reference these
 - **Do** add `# renovate: datasource=...` comments when pinning versions so Renovate can track them
 - Secrets files: always encrypt before committing; verify with `sops --decrypt <file> | head`
-- The `kubeconfig` file (repo root, gitignored) is written by `bootstrap.sh kubeconfig`; set `KUBECONFIG=$(pwd)/kubeconfig`
+- **Do** use `task` (no args) to list available tasks; use `task talos:genconfig`, `task talos:iso`, etc. instead of the retired `scripts/bootstrap.sh`
+- The `kubeconfig` file (repo root, gitignored) is written by `task talos:kubeconfig`; set `KUBECONFIG=$(pwd)/kubeconfig`
