@@ -86,7 +86,7 @@ nodes:
 
   - hostname: "talos-cp-03"                         # Minisforum MS-A2 (AMD, 32 cores, 92GB, X710)
     ipAddress: "10.60.0.203"
-    installDisk: "/dev/nvme0n1"                       # MS-A2 uses M.2 NVMe
+    installDisk: "/dev/nvme1n1"                       # 128GB M.2 NVMe (system); nvme0n1 2TB freed for storage
     machineSpec:
       secureboot: false
     talosImageURL: "${talosImageURL}"

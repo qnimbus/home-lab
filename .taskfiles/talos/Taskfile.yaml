@@ -46,12 +46,15 @@ tasks:
       - {msg: "talhelper not found", sh: "which talhelper"}
 
   apply:
-    desc: Apply Talos config to a specific node in maintenance mode [IP=required]
+    desc: Apply Talos config to a node [IP=required] [INSECURE=true for maintenance/bootstrap mode]
     dir: '{{.TALOS_DIR}}'
-    cmd: talhelper gencommand apply --node {{.IP}} --extra-flags='--insecure' | bash
+    vars:
+      INSECURE: '{{.INSECURE | default "false"}}'
+    cmd: talhelper gencommand apply --node {{.IP}}{{if eq .INSECURE "true"}} --extra-flags="--insecure"{{end}} | bash
     requires:
       vars: [IP]
     preconditions:
+      - {msg: "talosconfig not found", sh: "test -f {{.TALOSCONFIG}}"}
       - {msg: "talconfig.yaml not found", sh: "test -f {{.TALOS_DIR}}/talconfig.yaml"}
       - {msg: "clusterconfig/ not found", sh: "test -d {{.TALOS_DIR}}/clusterconfig"}
       - {msg: "talhelper not found", sh: "which talhelper"}

@@ -4,6 +4,57 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-07 — `cp03-nvme-swap-and-apply-task-refactor`
+
+### What we did
+- Powered down talos-cp-03 via `talosctl shutdown` to install a spare 128 GB NVMe drive
+- Verified live disk layout after reboot with `talosctl get discoveredvolumes`: new drive landed
+  as `nvme1n1` (128 GB, former Linux install — EFI + swap + ext4); existing 2 TB is `nvme0n1`
+- Updated `talos/talconfig.yaml`: changed `installDisk` for cp-03 from `/dev/nvme0n1` to
+  `/dev/nvme1n1`; plan is to reinstall Talos onto the 128 GB drive and free the 2 TB for storage
+- Discovered `talos:apply` uses `--insecure` and only works in maintenance mode — fails with TLS
+  error against a running node; added a new task to cover the day-2 case
+- Refactored: rather than two separate tasks, merged into a single `talos:apply` with an
+  `INSECURE=true` flag; default (no flag) is authenticated for running nodes
+- Updated Day-2 Config Changes runbook in `CLUSTER.md` and bootstrap workflow note in `CLAUDE.md`
+
+### Files created / modified
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | `installDisk` for cp-03: `/dev/nvme0n1` → `/dev/nvme1n1` |
+| `.taskfiles/talos/Taskfile.yaml` | `apply` task refactored — `INSECURE=true` flag selects maintenance mode; default is authenticated day-2 |
+| `CLUSTER.md` | Day-2 Config Changes section updated to use new `task talos:apply IP=x` form |
+| `CLAUDE.md` | Bootstrap workflow note updated; session log row added |
+
+### Decisions made
+
+**Single `apply` task with `INSECURE` flag over separate tasks**
+Merging maintenance-mode and running-node applies into one task with an explicit flag keeps the
+interface minimal and makes the exceptional case (`INSECURE=true`) visibly distinct at the call
+site. The common path (day-2 on running nodes) is the safe default.
+
+**`apply-all` left unchanged**
+`apply-all` is bootstrap-only — it will never be used on running nodes. No flag needed; its
+description already says "maintenance mode". Adding a flag would add noise for no practical gain.
+
+**Talos reinstall flow for cp-03**
+Goal: Talos on 128 GB nvme1n1; 2 TB nvme0n1 freed for Longhorn OSD. Procedure:
+1. `task talos:apply IP=10.60.0.203` — push updated config (new installDisk) to running node
+2. `task talos:upgrade-node IP=10.60.0.203` — triggers reinstall to nvme1n1, node reboots
+3. After reboot: add `machine.disks` for nvme0n1 with `wipe: true` to clean the old Talos
+   partition table before handing it to Longhorn
+
+### Learned / noted
+- `talosctl disks` deprecated — use `talosctl get discoveredvolumes`
+- `talosctl upgrade` with the same image/version is the supported mechanism to change `installDisk`
+  on a running node — it re-runs the installer against the new target disk
+- New 128 GB drive had a prior Linux partition table (EFI + swap + ext4); Talos installer will
+  wipe and repartition it completely — no manual pre-cleaning needed
+- After Talos migrates to 128 GB, the 2 TB nvme0n1 will retain its old Talos partition table
+  until explicitly wiped via `machine.disks` `wipe: true` in talconfig.yaml
+
+---
+
 ## 2026-05-07 — `persistent-storage-roadmap`
 
 ### What we did

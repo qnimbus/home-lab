@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-07 | `cp03-nvme-swap-and-apply-task-refactor` | Installed 128GB NVMe on cp-03; updated installDisk to nvme1n1; refactored `talos:apply` with `INSECURE=true` flag; updated Day-2 runbook |
 > | 2026-05-07 | `persistent-storage-roadmap` | Added Persistent Storage entry to ROADMAP.md; researched Talos system-disk partitioning (not viable); discovered cp-01 also has free nvme1n1; corrected CLUSTER.md disk inventory; staged Longhorn rollout plan |
 > | 2026-05-06 | `renovate-setup` | Added `renovate.json5`; installed Mend Renovate GitHub App; configured Helm/Flux/mise tracking; excluded Talos+k8s (managed separately); fixed 1password lookup failure |
 > | 2026-05-06 | `node-hw-correction-and-runbook-updates` | Corrected node hardware assignments in talconfig.yaml (cp-01/cp-02 = M920Q, cp-03 = MS-A2); added `talos:wait-bootstrap` task; added Day-2 Config Changes section to CLUSTER.md |
@@ -153,7 +154,8 @@ All bootstrap operations go through `task`. Run `task` with no args to list avai
 4.  Boot nodes → enter maintenance mode (DHCP)
 5.  task talos:genconfig    → generate machine configs + cluster secrets
 6.  sops --encrypt --in-place talos/talsecret.sops.yaml
-7.  task talos:apply-all    → push configs to all nodes (insecure/maintenance mode)
+7.  task talos:apply-all    → push configs to all nodes (--insecure, maintenance mode only)
+    # Day-2 on running nodes: task talos:apply IP=<node-ip>  (authenticated, no INSECURE flag)
 8.  Nodes reboot with static IPs + Talos fully installed
 9.  task talos:bootstrap    → initialise etcd on first control plane
 10. task talos:kubeconfig   → fetch kubeconfig

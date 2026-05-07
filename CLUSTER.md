@@ -185,7 +185,7 @@ Runs these steps in sequence, with retries on the network-sensitive ones:
 |------|---------|-------|
 | 1 | `gensecret` guard | Skipped if `talsecret.sops.yaml` already exists |
 | 2 | `task talos:genconfig` | Renders `talconfig.yaml` → machine configs in `clusterconfig/` |
-| 3 | `task talos:apply-all` | Pushes configs to all nodes (insecure / maintenance mode) |
+| 3 | `task talos:apply-all` | Pushes configs to all nodes (`--insecure`, maintenance mode only) |
 | 4 | `task talos:bootstrap` | Bootstraps etcd on the first control-plane node (retries until ready) |
 | 5 | `task talos:kubeconfig` | Fetches `kubeconfig` to repo root (retries until API server responds) |
 
@@ -269,13 +269,18 @@ Use this when modifying `talconfig.yaml` on a running cluster (patch changes, no
 # 1. Edit talos/talconfig.yaml as needed, then regenerate machine configs:
 task talos:genconfig
 
-# 2a. Push to all nodes at once:
-task talos:apply-all
+# 2a. Push to all running nodes (repeat per node):
+task talos:apply IP=10.60.0.201
+task talos:apply IP=10.60.0.202
+task talos:apply IP=10.60.0.203
 
-# 2b. Or push to a single node only:
+# 2b. Or push to a single running node:
 task talos:apply IP=10.60.0.201
 ```
 
+> `talos:apply` defaults to authenticated mode (mutual TLS via talosconfig) for **running** nodes.
+> Pass `INSECURE=true` only during **bootstrap/maintenance mode**: `task talos:apply IP=x INSECURE=true`.
+> `talos:apply-all` always uses `--insecure` and is for **bootstrap only**.
 > `talos:genconfig` is run automatically inside `bootstrap:cluster` (Phase 1, Step 2). For day-2 edits you call it directly — `bootstrap:cluster` is for first-boot only.
 
 ---
