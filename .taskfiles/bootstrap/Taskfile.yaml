@@ -23,15 +23,36 @@ tasks:
       - {msg: "sops not found", sh: "which sops"}
 
   flux-secret:
-    desc: Fetch Flux SSH deploy key from 1Password, create the flux-system secret, and reconcile
+    desc: Fetch Flux SSH deploy key from 1Password, create flux-system secret, reconcile [VAULT=homelab ITEM=flux-deploy-key]
+    vars:
+      VAULT: '{{.VAULT | default "homelab"}}'
+      ITEM:  '{{.ITEM  | default "flux-deploy-key"}}'
+    env:
+      OP_VAULT: '{{.VAULT}}'
+      OP_ITEM:  '{{.ITEM}}'
     cmds:
       - '{{.ROOT_DIR}}/scripts/flux-secret.sh setup'
       - flux reconcile source git flux-system -n flux-system --timeout=2m
     preconditions:
-      - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
+      - {msg: "kubeconfig not found",                 sh: "test -f {{.KUBECONFIG}}"}
       - {msg: "op not found — install 1Password CLI", sh: "which op"}
-      - {msg: "kubectl not found", sh: "which kubectl"}
-      - {msg: "flux not found", sh: "which flux"}
+      - {msg: "kubectl not found",                    sh: "which kubectl"}
+      - {msg: "flux not found",                       sh: "which flux"}
+
+  age-key:
+    desc: Fetch SOPS age private key from 1Password and write to age.key [VAULT=homelab ITEM="SOPS age key" FIELD=text]
+    vars:
+      VAULT: '{{.VAULT | default "homelab"}}'
+      ITEM:  '{{.ITEM  | default "SOPS age key"}}'
+      FIELD: '{{.FIELD | default "text"}}'
+    env:
+      OP_VAULT: '{{.VAULT}}'
+      OP_ITEM:  '{{.ITEM}}'
+      OP_FIELD: '{{.FIELD}}'
+    cmds:
+      - '{{.ROOT_DIR}}/scripts/age-key.sh fetch'
+    preconditions:
+      - {msg: "op not found — install 1Password CLI", sh: "which op"}
 
   apps:
     desc: Bootstrap apps into the cluster via helmfile (Cilium → CoreDNS → Spegel → cert-manager → Flux)

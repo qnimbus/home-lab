@@ -4,6 +4,31 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-07 — `bootstrap-task-params-and-age-key`
+
+### What we did
+- Added optional `VAULT` and `ITEM` parameters to `bootstrap:flux-secret` — previously the task silently accepted `OP_VAULT`/`OP_ITEM` env vars (known only to the script), now they are first-class Taskfile parameters with defaults shown in the task description
+- Created `scripts/age-key.sh` — fetches the SOPS age private key from 1Password and writes it to `age.key`; mirrors the structure of `flux-secret.sh` exactly (same colour helpers, `op whoami` check, `--force` guard, `trap cleanup EXIT`, validation before write)
+- Added `bootstrap:age-key` task wiring `VAULT`, `ITEM`, `FIELD` as optional task parameters
+
+### Files created / modified
+| File | Change |
+|------|--------|
+| `.taskfiles/bootstrap/Taskfile.yaml` | `flux-secret`: added `vars:` + `env:` for `VAULT`/`ITEM`; updated `desc` to advertise params. Added new `age-key` task with `VAULT`/`ITEM`/`FIELD` params |
+| `scripts/age-key.sh` | Created — `fetch` / `verify` subcommands; fetches age key from 1Password, validates `AGE-SECRET-KEY-1` prefix, writes to `$SOPS_AGE_KEY_FILE`, `chmod 600` |
+
+### Decisions made
+- **`vars:` + `env:` two-step** — Taskfile `vars:` resolves the `| default` template; `env:` then sets the shell environment variable the script reads. This is the only way to apply Taskfile template functions and still have the result visible to a subprocess
+- **Param names `VAULT`/`ITEM`/`FIELD`** (not `OP_VAULT` etc.) — task parameters follow the project convention of short uppercase names (cf. `IP=required` in talos tasks); the `OP_` prefix is the script's internal convention
+- **Validate before write** — script checks the retrieved value starts with `AGE-SECRET-KEY-1` before moving the temp file to `age.key`; a wrong field name (e.g. pointing at the public key comment) would otherwise silently corrupt the key file
+- **Defaults `ITEM="SOPS age key"`, `FIELD="text"`** — updated to match the actual 1Password item structure; overridable at call site for portability
+
+### Learned / noted
+- `trap cleanup EXIT` fires at *script* exit, not at function return — any variable the `cleanup` function references must be in scope at process exit. A `local` variable inside the function that sets the trap is out of scope by that point; with `set -u` this kills the script with `unbound variable`. Fix: omit `local` for temp-file vars that the trap handler touches (same pattern already used in `flux-secret.sh`)
+- `task bootstrap:age-key -- verify` does not forward the subcommand to the script; extra args after `--` in go-task CLI syntax are passed as `CLI_ARGS`, not appended to `cmds`. Call the script directly for subcommands that are not wired as separate tasks
+
+---
+
 ## 2026-05-06 — `renovate-setup`
 
 ### What we did
