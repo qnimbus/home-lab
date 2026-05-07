@@ -1,6 +1,8 @@
 [tools]
 kubectl = "1.36.0"
 talosctl = "1.13.0"
+# etcd version must match the etcd bundled with the running Talos version — check with: talosctl etcd status
+etcd = "3.5.21"
 talhelper = "3.1.9"
 sops = "3.12.2"
 age = "1.3.1"

@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-07 | `etcd-learner-recovery-and-toolchain` | Fixed cp-03 stuck etcd LEARNER (dual peer URLs from DHCP during LACP-off ISO boot); manual `etcdctl member promote`; added `etcd` to mise; excluded `talosctl`+`etcd` from Renovate |
 > | 2026-05-07 | `cp03-nvme-swap-and-disk-migration` | Migrated cp-03 Talos to 128GB AirDisk via ISO boot; all nodes switched to `installDiskSelector` by model; 2TB Crucial now free for storage; `talos:apply` refactored with `INSECURE=true` flag |
 > | 2026-05-07 | `persistent-storage-roadmap` | Added Persistent Storage entry to ROADMAP.md; researched Talos system-disk partitioning (not viable); discovered cp-01 also has free nvme1n1; corrected CLUSTER.md disk inventory; staged Longhorn rollout plan |
 > | 2026-05-06 | `renovate-setup` | Added `renovate.json5`; installed Mend Renovate GitHub App; configured Helm/Flux/mise tracking; excluded Talos+k8s (managed separately); fixed 1password lookup failure |

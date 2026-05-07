@@ -4,6 +4,61 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-07 — `etcd-learner-recovery-and-toolchain`
+
+### What we did
+- Diagnosed why cp-03 KVM console showed `STAGE: Booting READY: False` after disk migration
+- Root cause: LACP was disabled on switch ports during ISO maintenance boot so the bare NIC could
+  get DHCP connectivity; cp-03 received `10.60.0.16` via DHCP and advertised it as an etcd peer
+  URL alongside the correct static IP `10.60.0.203` — both URLs got permanently recorded in the
+  etcd member list for the LEARNER entry
+- Once LACP was restored, `10.60.0.16` no longer existed; the LEARNER could never be promoted
+  because etcd couldn't reach all its own peer URLs
+- Fixed in three steps:
+  1. `talosctl etcd remove-member <stale-id>` — removed the corrupt LEARNER entry; cp-03 immediately
+     re-added itself with only the correct `10.60.0.203` peer URL
+  2. Waited for raft log sync (raft applied index matched across all three nodes within seconds)
+  3. Manually promoted via `etcdctl member promote <member-id-hex>` — Talos does not auto-promote
+     LEARNER members and has no `talosctl etcd promote` subcommand
+- Added `etcd = "3.5.21"` to `.mise.toml` (version must track Talos-bundled etcd — check with
+  `talosctl etcd status` after any Talos upgrade)
+- Added `talosctl` and `etcd` to `ignoreDeps` in `renovate.json5` — both must track the running
+  cluster version, not upstream releases; auto-merge rule would otherwise silently bump them
+
+### Files created / modified
+| File | Change |
+|------|--------|
+| `CLUSTER.md` | New troubleshooting row: dual peer URLs / stuck LEARNER after LACP-disabled ISO boot |
+| `.mise.toml` | Added `etcd = "3.5.21"` with coupling comment |
+| `renovate.json5` | Added `talosctl` and `etcd` to `ignoreDeps` with explanatory comments |
+
+### Decisions made
+
+**Manual etcdctl promotion required**
+Talos does not auto-promote etcd LEARNER members to voting members. The `talosctl etcd` subcommands
+do not include `promote`. The only path is `etcdctl member promote <hex-id>` using admin TLS certs
+extracted via `talosctl read /system/secrets/etcd/{ca,admin}.{crt,key}`.
+
+**etcd pinned to cluster-bundled version, excluded from Renovate**
+`etcd` in mise must match the etcd version bundled with the running Talos release. Allowing Renovate
+to bump it independently would create a version mismatch with the server. Same reasoning applies to
+`talosctl`, which was not yet excluded from Renovate despite already being in the toolchain.
+
+### Lessons learned
+
+**Disable LACP on switch AND remove the extra peer URL before leaving maintenance mode**
+When doing ISO maintenance with LACP-bonded nodes, the plain NIC gets a DHCP address that etcd
+records as a peer URL. Once LACP is re-enabled the DHCP IP vanishes and the LEARNER is permanently
+stuck. Fix: after any such maintenance, immediately check `talosctl etcd members` for dual peer
+URLs. If present: remove the stale member, let the node rejoin cleanly, then manually promote.
+
+**etcd admin certs live at `/system/secrets/etcd/` on each Talos node**
+Files: `ca.crt`, `admin.crt`, `admin.key` (and `peer.crt`/`peer.key`/`server.crt`/`server.key`).
+Extract with `talosctl read /system/secrets/etcd/<file> --nodes <node>`. Use `admin.crt` + `admin.key`
+as the etcdctl client identity — `server.crt` is for the etcd server TLS, not client auth.
+
+---
+
 ## 2026-05-07 — `cp03-nvme-swap-and-disk-migration`
 
 ### What we did

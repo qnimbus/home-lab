@@ -21,10 +21,14 @@
   // Dependencies managed outside Renovate — do not open PRs for these.
   // 1password: distributed via AgileBits' servers, no compatible datasource.
   // siderolabs/*: Talos + Kubernetes versions are managed via a separate upgrade mechanism.
+  // talosctl: must match the running Talos server version exactly — managed with Talos upgrades.
+  // etcd: must match the etcd version bundled with the running Talos release — check via `talosctl etcd status`.
   ignoreDeps: [
     "1password",
     "ghcr.io/siderolabs/installer",
     "ghcr.io/siderolabs/kubelet",
+    "talosctl",
+    "etcd",
   ],
 
   // ── Manager file-pattern overrides ──────────────────────────────────────────
