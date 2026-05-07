@@ -26,6 +26,41 @@ Dependency chain: `cert-manager` → `external-secrets` → `onepassword-connect
 
 ---
 
+### Talos Config, Image Extensions & Patch Audit
+
+Review the current Talos configuration end-to-end to identify missing extensions, suboptimal patches, and any node-specific tuning gaps. The schematic currently ships `intel-ucode` and `amd-ucode` with several extensions commented out; patches exist for kubelet, network, sysctls, NFS defaults, and machine features — but these were written incrementally and have not been audited holistically.
+
+Areas to investigate:
+
+**Image extensions (`talos/schematic.yaml`)**
+- `siderolabs/iscsi-tools` — required if Rook/Ceph or TrueNAS iSCSI is added (storage roadmap item)
+- `siderolabs/util-linux-tools` — provides `lsblk`, `blkid`, etc.; useful for storage debugging
+- `siderolabs/drbd` — needed if DRBD-backed HA storage is considered
+- `siderolabs/nfs-utils` (or confirm kernel NFS client suffices for NFS mounts)
+- `siderolabs/i915-ucode` / `siderolabs/amd-gpu-firmware` — relevant if any node is repurposed to run GPU workloads
+- `siderolabs/stargz-snapshotter` — lazy image pulling; worth evaluating for large workloads
+- Check [factory.talos.dev](https://factory.talos.dev) for any new official extensions added since cluster was built
+
+**Global patches (`talos/patches/global/`)**
+- `machine-sysctls.yaml` — verify values are tuned for 10 GbE bonds (e.g. `net.core.rmem_max`, `net.ipv4.tcp_rmem`, `net.ipv4.tcp_wmem`)
+- `machine-kubelet.yaml` — check `maxPods`, `evictionHard`, `kubeReserved` / `systemReserved` are appropriate for the hardware
+- `machine-network.yaml` — confirm bond MTU TODO is addressed (jumbo frames / 9000 MTU for storage VLAN)
+- `machine-files.yaml` — audit NFS mount defaults; verify `nfsvers=4.2` and `nconnect=16` are still best practice
+- `machine-time.yaml` — confirm NTP servers and stratum are appropriate for home lab
+
+**Controller-plane patches (`talos/patches/controller/`)**
+- `admission-controller-patch.yaml` — review enabled admission plugins against current Kubernetes best practices
+- `cluster.yaml` — re-check etcd subnet advertising, Talos API + kubelet subnet restrictions
+- `machine-features.yaml` (controller) — confirm KubePrism, `hostDNS`, and any other beta features are intentional
+
+**Per-node considerations**
+- cp-03 (MS-A2, 32c/92GB) may benefit from NUMA-aware kubelet configuration
+- Confirm `installDisk` is consistent with actual disk layout (nvme0n1 vs nvme1n1) post-wipe
+
+Deliverable: a PR updating `schematic.yaml` and the relevant patch files with reasoned changes; update `talenv.yaml` if the schematic ID changes (re-register at factory.talos.dev).
+
+---
+
 ### Talos + Kubernetes Upgrade Strategy
 
 Research and implement a repeatable upgrade path for Talos Linux and Kubernetes. Renovate intentionally does not track these versions — a dedicated mechanism is needed.
