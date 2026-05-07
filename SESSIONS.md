@@ -4,6 +4,49 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-07 — `persistent-storage-roadmap`
+
+### What we did
+- Added a comprehensive **Persistent Storage** entry to `ROADMAP.md` covering: hardware snapshot,
+  Talos system-disk partitioning research, storage option comparison, and a 4-stage rollout plan
+- Ran `talosctl get discoveredvolumes` against all three nodes to get ground-truth disk inventory
+- Discovered **cp-01 also has a free nvme1n1 (1 TB, no partition table)** — not previously documented;
+  only cp-03 still lacks a secondary drive
+- Corrected `CLUSTER.md` disk inventory and updated the storage row in `CLAUDE.md`'s status table
+
+### Files created / modified
+| File | Change |
+|------|--------|
+| `ROADMAP.md` | New "Persistent Storage" section added before External Secrets; covers hardware, Talos partitioning verdict, option table, and 4-stage rollout |
+| `CLUSTER.md` | Disk inventory table updated — cp-01 nvme1n1 added; closing note corrected |
+| `CLAUDE.md` | Storage row in "What is Complete vs. Planned" updated; session log row added |
+
+### Decisions made / researched
+
+**Talos system-disk partitioning — not viable**
+The `EPHEMERAL` partition grows to fill 100% of remaining disk space at install time (confirmed
+live: cp-01 nvme0n1p4 = 999 GB, cp-03 nvme0n1p4 = 2.0 TB). `machine.disks` only targets
+non-system disks; the `UserVolume` API (Talos 1.9+) does not carve space from `EPHEMERAL` either.
+Hostpath-inside-EPHEMERAL is possible but shares IOPS/capacity with the OS — avoid for stateful data.
+
+**Recommended storage path (staged)**
+1. **OpenEBS LocalPV** — deploy now, no hardware needed, hostpath storage class for cache/CI
+2. **Longhorn on cp-01 + cp-02** — use both free nvme1n1 drives; 2-replica HA immediately
+3. **One NVMe for cp-03** — completes 3-node set; promote to 3 replicas or evaluate Rook/Ceph
+4. **NFS/SMB CSI** — if/when a NAS is added; ReadWriteMany workloads, wired via ExternalSecret
+
+**Longhorn handles asymmetric disk sizes fine**
+Longhorn is replica-based (not pool-based), so a 2 TB OSD on cp-03 vs 1 TB on the others is a
+non-issue. Each volume replica is sized to the volume, not the disk. The larger disk simply
+absorbs more replicas/volumes and has more scheduling headroom.
+
+### Learned / noted
+- `talosctl disks` is deprecated in Talos 1.10+; use `talosctl get discoveredvolumes` instead
+- The live node inventory contradicted the documented disk inventory — worth verifying hardware
+  state with `talosctl` rather than relying solely on documentation from prior sessions
+
+---
+
 ## 2026-05-07 — `bootstrap-task-params-and-age-key`
 
 ### What we did

@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-07 | `persistent-storage-roadmap` | Added Persistent Storage entry to ROADMAP.md; researched Talos system-disk partitioning (not viable); discovered cp-01 also has free nvme1n1; corrected CLUSTER.md disk inventory; staged Longhorn rollout plan |
 > | 2026-05-06 | `renovate-setup` | Added `renovate.json5`; installed Mend Renovate GitHub App; configured Helm/Flux/mise tracking; excluded Talos+k8s (managed separately); fixed 1password lookup failure |
 > | 2026-05-06 | `node-hw-correction-and-runbook-updates` | Corrected node hardware assignments in talconfig.yaml (cp-01/cp-02 = M920Q, cp-03 = MS-A2); added `talos:wait-bootstrap` task; added Day-2 Config Changes section to CLUSTER.md |
 | 2026-05-06 | `cp02-disk-cleanup` | Wiped Proxmox LVM (nvme1n1) from talos-cp-02 via `talosctl reset --wipe-mode=user-disks`; documented cluster disk inventory in CLUSTER.md |
@@ -242,7 +243,7 @@ Community configs reflect their authors' constraints, mistakes, and historical b
 | cert-manager                  | ✅ Done    | Running via Helmfile bootstrap                  |
 | Flux (operator + instance)    | ✅ Done    | Reconciling from private repo via SSH           |
 | External Secrets + 1Password  | 🔲 TODO    | First GitOps apps                               |
-| Storage (Rook/Ceph or NFS)    | 🔲 TODO    | Storage network ready, Rook not decided yet     |
+| Storage (Longhorn / Rook-Ceph) | 🔲 TODO    | cp-01+cp-02 have free nvme1n1; cp-03 needs 1 drive; Longhorn preferred first step; see ROADMAP.md |
 | Split DNS (ExternalDNS)       | 🔲 TODO    | Internal (home.arpa) + external (Cloudflare)    |
 | Renovate                      | 🔲 TODO    | Configure once kubernetes/ exists               |
 
