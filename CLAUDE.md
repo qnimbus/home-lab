@@ -193,6 +193,18 @@ Define all `HelmRepository` / `OCIRepository` sources in `kubernetes/flux/meta/r
 
 Use `strategy: Recreate` for any workload with `ReadWriteOnce` PVCs. Use `RollingUpdate` only for stateless workloads or those with `ReadWriteMany` storage.
 
+### Community research before new deployments
+
+Before planning any new application deployment or writing a new Kustomization, search **[kubesearch.dev](https://kubesearch.dev/)** for the chart or app name. This indexes public home-lab GitOps repos and surfaces real-world `HelmRelease`, `values.yaml`, and `ExternalSecret` patterns used by other home labbers running the same stack (Talos + Flux + Cilium).
+
+Use what you find as **research input only** — not a template to copy. For every pattern encountered:
+- Understand *why* a value is set the way it is before adopting it
+- Cross-check against the chart's official docs and upstream defaults
+- Evaluate whether it applies to this cluster's specific hardware, network layout, and secrets strategy
+- Prefer the simplest configuration that satisfies the actual requirements over one that mirrors what others have done
+
+Community configs reflect their authors' constraints, mistakes, and historical baggage. Treat them as data points, not ground truth. The goal is to arrive at a well-reasoned configuration for *this* cluster — not to reproduce someone else's.
+
 ---
 
 ## Key Architectural Decisions
