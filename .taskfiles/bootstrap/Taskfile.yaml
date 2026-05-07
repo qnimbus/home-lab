@@ -34,10 +34,11 @@ tasks:
       - '{{.ROOT_DIR}}/scripts/flux-secret.sh setup'
       - flux reconcile source git flux-system -n flux-system --timeout=2m
     preconditions:
-      - {msg: "kubeconfig not found",                 sh: "test -f {{.KUBECONFIG}}"}
-      - {msg: "op not found — install 1Password CLI", sh: "which op"}
-      - {msg: "kubectl not found",                    sh: "which kubectl"}
-      - {msg: "flux not found",                       sh: "which flux"}
+      - {msg: "kubeconfig not found",                                                                              sh: "test -f {{.KUBECONFIG}}"}
+      - {msg: "op not found — install 1Password CLI",                                                             sh: "which op"}
+      - {msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer", sh: "test -n \"$OP_SERVICE_ACCOUNT_TOKEN\""}
+      - {msg: "kubectl not found",                                                                                 sh: "which kubectl"}
+      - {msg: "flux not found",                                                                                    sh: "which flux"}
 
   age-key:
     desc: Fetch SOPS age private key from 1Password and write to age.key [VAULT=homelab ITEM="SOPS age key" FIELD=text]
@@ -52,7 +53,8 @@ tasks:
     cmds:
       - '{{.ROOT_DIR}}/scripts/age-key.sh fetch'
     preconditions:
-      - {msg: "op not found — install 1Password CLI", sh: "which op"}
+      - {msg: "op not found — install 1Password CLI",                                                              sh: "which op"}
+      - {msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer", sh: "test -n \"$OP_SERVICE_ACCOUNT_TOKEN\""}
 
   apps:
     desc: Bootstrap apps into the cluster via helmfile (Cilium → CoreDNS → Spegel → cert-manager → Flux)

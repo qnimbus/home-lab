@@ -121,11 +121,21 @@ SOPS creation rules (`.sops.yaml`):
 - `talos/**/*.sops.yaml` → full-file encryption, `mac_only_encrypted: true`
 - `kubernetes/**/*.sops.yaml` → `encrypted_regex: "^(data|stringData)$"` (only secret values, not keys)
 
-**Required env var** — SOPS will not find the age key without this set:
+**Required env vars** — both must be present for secrets tooling to work:
+
+| Variable | Purpose | Where to set |
+|----------|---------|--------------|
+| `SOPS_AGE_KEY_FILE` | Points SOPS at the age private key | `devcontainer.json` `remoteEnv` (already configured) |
+| `OP_SERVICE_ACCOUNT_TOKEN` | Authenticates the `op` CLI as a service account | WSL2 host environment — forwarded into the container via `${localEnv:...}` |
+
+`SOPS_AGE_KEY_FILE` is set automatically by the devcontainer. `OP_SERVICE_ACCOUNT_TOKEN` must be exported in your **WSL2 host shell** (e.g. `~/.bashrc` or `~/.profile`) before the devcontainer starts — Docker reads `localEnv` at container creation time and passes an empty string if the variable is absent, causing `op whoami` to fail with a misleading auth error.
+
 ```sh
-export SOPS_AGE_KEY_FILE=/workspaces/home-lab/age.key
+# WSL2 host ~/.bashrc (or ~/.profile)
+export OP_SERVICE_ACCOUNT_TOKEN="<your-service-account-token>"
 ```
-Add this to your shell profile or devcontainer env so it is always present.
+
+Tasks that depend on `OP_SERVICE_ACCOUNT_TOKEN`: `bootstrap:flux-secret`, `bootstrap:age-key`.
 
 **Never commit plaintext secrets. Always run `sops --encrypt --in-place <file>` before staging.**
 
