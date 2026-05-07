@@ -99,7 +99,8 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 | talos-cp-01 | nvme1n1 | 1.0 TB | (unidentified — blank, no GPT) | **Free** — available for storage |
 | talos-cp-02 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G | Talos system disk |
 | talos-cp-02 | nvme1n1 | 1.0 TB | IRP-SSDPR-P44N-01T-30 | **Free** — available for storage (wiped 2026-05-06) |
-| talos-cp-03 | nvme0n1 | 2.0 TB | Crucial CT2000P310SSD8 | Talos system disk |
+| talos-cp-03 | nvme0n1 | 128 GB | AirDisk 128GB SSD | Talos system disk |
+| talos-cp-03 | nvme1n1 | 2.0 TB | Crucial CT2000P310SSD8 | **Free** — available for storage (blank, no GPT) |
 
 `talos-cp-01` and `talos-cp-02` each have a free secondary disk. `talos-cp-03` has no additional drive — one more NVMe is needed there before 3-replica distributed storage (Longhorn/Ceph) is achievable.
 

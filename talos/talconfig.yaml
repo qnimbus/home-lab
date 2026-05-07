@@ -19,14 +19,12 @@ cniConfig:
   name: none
 
 nodes:
-  # Remaining: configure switch LACP for MS-A2 RJ45+SFP+ ports and M920Q SFP+ ports,
-  # then run: ./scripts/bootstrap.sh genconfig && ./scripts/bootstrap.sh apply all
-  # Verify installDisk on talos-cp-01 (MS-A2 may use /dev/nvme0n1).
   # MS-A2 RJ45 driver assumed r8169 (Realtek RTL8125) — verify: lspci -k | grep -A2 Ethernet
 
   - hostname: "talos-cp-01"                         # Lenovo M920Q #1 (i5-8500T, 16GB, X520-DA2)
     ipAddress: "10.60.0.201"
-    installDisk: "/dev/nvme0n1"
+    installDiskSelector:
+      model: "KINGSTON SNV3S1000G"                   # stable selector — avoids device path instability with 2 NVMe drives
     machineSpec:
       secureboot: false
     talosImageURL: "${talosImageURL}"
@@ -60,7 +58,8 @@ nodes:
 
   - hostname: "talos-cp-02"                         # Lenovo M920Q #2 (i5-8500T, 16GB, X520-DA2)
     ipAddress: "10.60.0.202"
-    installDisk: "/dev/nvme0n1"
+    installDiskSelector:
+      model: "KINGSTON SNV3S1000G"                   # stable selector — avoids device path instability with 2 NVMe drives
     machineSpec:
       secureboot: false
     talosImageURL: "${talosImageURL}"
@@ -86,7 +85,8 @@ nodes:
 
   - hostname: "talos-cp-03"                         # Minisforum MS-A2 (AMD, 32 cores, 92GB, X710)
     ipAddress: "10.60.0.203"
-    installDisk: "/dev/nvme1n1"                       # 128GB M.2 NVMe (system); nvme0n1 2TB freed for storage
+    installDiskSelector:
+      model: "AirDisk 128GB SSD"                      # stable selector — device path not reliable with 2 NVMe drives
     machineSpec:
       secureboot: false
     talosImageURL: "${talosImageURL}"
