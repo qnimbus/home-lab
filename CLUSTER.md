@@ -13,6 +13,84 @@ Three-node bare-metal Talos Linux cluster (all control-plane, scheduling allowed
 
 ---
 
+## Running Components
+
+**Talos v1.10.6 / Kubernetes v1.33.4.** All Helm-deployed components are installed via Helmfile during bootstrap (`kubernetes/bootstrap/helmfile.yaml`); version pins are tracked by Renovate.
+
+### Kubernetes control plane · `kube-system`
+
+Managed by Talos as **static pods** — one instance per control-plane node, no Helm chart involved. Talos regenerates these pods from `talconfig.yaml`; never edit their manifests directly.
+
+| Component | Version | Replicas | Role |
+|-----------|---------|----------|------|
+| `kube-apiserver` | v1.33.4 | 3 (one/node) | REST gateway for all cluster operations; the authoritative source of cluster state |
+| `kube-controller-manager` | v1.33.4 | 3 (one/node) | Runs built-in reconciliation loops — Deployments, ReplicaSets, node lifecycle, service accounts |
+| `kube-scheduler` | v1.33.4 | 3 (one/node) | Assigns pending Pods to nodes based on resources, affinity rules, and taints |
+| `etcd` | (Talos-managed) | 3 (one/node) | Distributed key-value store holding all cluster state; runs as a Talos service, not a pod |
+
+> **kube-proxy is not running.** Cilium replaces it entirely (`kubeProxyReplacement: true`).
+
+---
+
+### Cilium · `v1.19.3` · `kube-system`
+
+**CNI (Container Network Interface)** — the cluster's network data-plane. Installed via Helmfile; values in `kubernetes/apps/kube-system/cilium/app/helm/values.yaml`.
+
+| Pod | Type | Replicas | Role |
+|-----|------|----------|------|
+| `cilium` | DaemonSet | 3 (one/node) | Per-node agent that programs eBPF maps for pod networking, kube-proxy replacement, and network policy enforcement |
+| `cilium-envoy` | DaemonSet | 3 (one/node) | Envoy proxy sidecar used by Cilium for L7-aware network policies and observability |
+| `cilium-operator` | Deployment | 1 | Cluster-wide control-plane for Cilium — manages IP allocation (IPAM), CiliumNode objects, and Helm lifecycle |
+| `cilium-secrets` namespace | — | — | Holds TLS material for Cilium's mutual-auth features; created and owned by the Cilium Helm chart |
+
+---
+
+### CoreDNS · `v1.43.0` (chart) · `kube-system`
+
+**Cluster DNS.** Resolves `<service>.<namespace>.svc.cluster.local` names for all pods. Installed via Helmfile with image pulled from `mirror.gcr.io/coredns/coredns` (avoids Docker Hub rate limits). Talos's built-in CoreDNS is disabled — this Helm-managed instance is the sole DNS server.
+
+| Pod | Type | Replicas | Role |
+|-----|------|----------|------|
+| `coredns` | Deployment | 2 | DNS server; handles in-cluster service discovery and forwards external queries upstream |
+
+---
+
+### Spegel · `v0.4.0` · `kube-system`
+
+**P2P container image mirror.** Each node runs a Spegel agent that advertises locally-cached image layers to the other nodes via a peer-to-peer registry protocol. When a node pulls an image already present on a sibling node, it fetches layers locally over the cluster network instead of from the public registry — reducing pull latency and external bandwidth, and making the cluster resilient to registry outages.
+
+| Pod | Type | Replicas | Role |
+|-----|------|----------|------|
+| `spegel` | DaemonSet | 3 (one/node) | Per-node OCI registry mirror; participates in P2P layer distribution |
+
+---
+
+### cert-manager · `v1.17.2` · `cert-manager`
+
+**Certificate lifecycle manager.** Issues and renews X.509 certificates inside the cluster via `Certificate` and `Issuer`/`ClusterIssuer` CRDs. Not yet wired to any issuers (Let's Encrypt, internal CA) — present at bootstrap because it is a dependency for several planned add-ons (ingress controllers, external-secrets, etc.).
+
+| Pod | Role |
+|-----|------|
+| `cert-manager` | Core controller — watches `Certificate` objects, triggers issuance/renewal via the configured issuer |
+| `cert-manager-cainjector` | Injects CA bundles into `MutatingWebhookConfiguration` and `ValidatingWebhookConfiguration` objects so Kubernetes trusts cert-manager's own webhooks |
+| `cert-manager-webhook` | Admission webhook that validates and mutates cert-manager CRD objects at creation time |
+
+---
+
+### FluxCD · `v2.6.4` · `flux-system`
+
+**GitOps engine.** Continuously reconciles the cluster state against this Git repository. Installed in two layers: `flux-operator` (Helm chart, manages the Flux controllers) and `flux-instance` (a `FluxInstance` CR that wires Flux to the repo). After bootstrap, Flux owns its own Helm values files — the operator re-reconciles itself from Git.
+
+| Pod | Role |
+|-----|------|
+| `flux-operator` | Lifecycle manager for Flux — installs, upgrades, and health-checks the four core Flux controllers |
+| `source-controller` | Fetches sources (GitRepository, HelmRepository, OCIRepository) and makes their content available to other controllers |
+| `kustomize-controller` | Applies Kustomization objects — renders and `kubectl apply`s manifests from Git paths |
+| `helm-controller` | Reconciles `HelmRelease` objects — installs/upgrades Helm charts from sources |
+| `notification-controller` | Handles `Alert` and `Receiver` objects for event-driven reconciliation triggers and outbound notifications |
+
+---
+
 ## Node Disk Inventory
 
 | Node | Device | Size | Model | Role |
