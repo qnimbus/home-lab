@@ -41,6 +41,13 @@
       "mcp__kubernetes-mcp-server__namespaces_list",
       "mcp__context7__resolve-library-id",
       "mcp__context7__query-docs",
+      "mcp__kubernetes-mcp-server__pods_list",
+      "Bash(/workspaces/home-lab/scripts/mcp.sh renew-token *)",
+      "Bash(/workspaces/home-lab/scripts/mcp.sh setup *)",
+      "Bash(talosctl get *)",
+      "Bash(kubectl get nodes *)",
+      "Bash(kubectl get *)",
+      "Bash(flux get *)",
       "Bash(xargs ls -la)",
       "Bash(git -C /workspaces/home-lab remote -v)"
     ]
