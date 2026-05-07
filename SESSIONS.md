@@ -4,54 +4,82 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
-## 2026-05-07 — `cp03-nvme-swap-and-apply-task-refactor`
+## 2026-05-07 — `cp03-nvme-swap-and-disk-migration`
 
 ### What we did
-- Powered down talos-cp-03 via `talosctl shutdown` to install a spare 128 GB NVMe drive
-- Verified live disk layout after reboot with `talosctl get discoveredvolumes`: new drive landed
-  as `nvme1n1` (128 GB, former Linux install — EFI + swap + ext4); existing 2 TB is `nvme0n1`
-- Updated `talos/talconfig.yaml`: changed `installDisk` for cp-03 from `/dev/nvme0n1` to
-  `/dev/nvme1n1`; plan is to reinstall Talos onto the 128 GB drive and free the 2 TB for storage
-- Discovered `talos:apply` uses `--insecure` and only works in maintenance mode — fails with TLS
-  error against a running node; added a new task to cover the day-2 case
-- Refactored: rather than two separate tasks, merged into a single `talos:apply` with an
-  `INSECURE=true` flag; default (no flag) is authenticated for running nodes
-- Updated Day-2 Config Changes runbook in `CLUSTER.md` and bootstrap workflow note in `CLAUDE.md`
+- Powered down talos-cp-03 (`talosctl shutdown`) to install a spare 128 GB NVMe (AirDisk)
+- Verified live disk layout with `talosctl get discoveredvolumes`: new drive landed as `nvme1n1`
+  (128 GB, prior Linux install — EFI + swap + ext4); 2 TB Crucial remained `nvme0n1`
+- Refactored `talos:apply` task: merged maintenance-mode and running-node apply into one task
+  with `INSECURE=true` flag; default is authenticated (running node); updated Day-2 runbook
+- Switched all three nodes from `installDisk` (device path) to `installDiskSelector` (model name)
+  after discovering NVMe device names are not stable when drives are added/removed
+- Attempted to migrate Talos to the 128 GB drive via `talosctl upgrade` — failed (see below)
+- Successfully migrated Talos to the 128 GB AirDisk via ISO boot + maintenance mode apply
+- cp-03 now runs Talos from nvme0n1 (128 GB AirDisk); nvme1n1 (2 TB Crucial) is blank and free
+- Updated ROADMAP.md, CLUSTER.md disk inventory; all three nodes now have free dedicated OSD drives
 
 ### Files created / modified
 | File | Change |
 |------|--------|
-| `talos/talconfig.yaml` | `installDisk` for cp-03: `/dev/nvme0n1` → `/dev/nvme1n1` |
-| `.taskfiles/talos/Taskfile.yaml` | `apply` task refactored — `INSECURE=true` flag selects maintenance mode; default is authenticated day-2 |
-| `CLUSTER.md` | Day-2 Config Changes section updated to use new `task talos:apply IP=x` form |
-| `CLAUDE.md` | Bootstrap workflow note updated; session log row added |
+| `talos/talconfig.yaml` | All nodes: `installDisk` → `installDiskSelector` by model name; cp-03 system disk changed to AirDisk 128 GB |
+| `.taskfiles/talos/Taskfile.yaml` | `apply` task: `INSECURE=true` flag for maintenance mode; default authenticated |
+| `CLUSTER.md` | Disk inventory updated (cp-03 AirDisk as system, 2 TB free); Day-2 runbook updated; troubleshooting entries added |
+| `CLAUDE.md` | Session log updated; bootstrap workflow note updated |
+| `ROADMAP.md` | Hardware snapshot updated; Stages 2–3 revised (hardware gap now closed) |
 
 ### Decisions made
 
-**Single `apply` task with `INSECURE` flag over separate tasks**
-Merging maintenance-mode and running-node applies into one task with an explicit flag keeps the
-interface minimal and makes the exceptional case (`INSECURE=true`) visibly distinct at the call
-site. The common path (day-2 on running nodes) is the safe default.
+**`installDiskSelector` by model name over `installDisk` by path**
+NVMe device names (`nvme0n1`/`nvme1n1`) are assigned by the kernel at boot based on PCIe
+enumeration order, which changes when drives are added or removed. During this session, adding
+the 128 GB drive caused the 2 TB to shift from `nvme0n1` to `nvme1n1` across reboots. Model-
+based selectors (`model: "KINGSTON SNV3S1000G"`, `model: "AirDisk 128GB SSD"`) are stable
+regardless of enumeration order. All three nodes were switched.
 
-**`apply-all` left unchanged**
-`apply-all` is bootstrap-only — it will never be used on running nodes. No flag needed; its
-description already says "maintenance mode". Adding a flag would add noise for no practical gain.
+**Single `apply` task with `INSECURE` flag**
+Merged maintenance-mode and running-node apply variants into one task. `INSECURE=true` is the
+explicit exceptional case (bootstrap/maintenance); default is the safe authenticated day-2 path.
 
-**Talos reinstall flow for cp-03**
-Goal: Talos on 128 GB nvme1n1; 2 TB nvme0n1 freed for Longhorn OSD. Procedure:
-1. `task talos:apply IP=10.60.0.203` — push updated config (new installDisk) to running node
-2. `task talos:upgrade-node IP=10.60.0.203` — triggers reinstall to nvme1n1, node reboots
-3. After reboot: add `machine.disks` for nvme0n1 with `wipe: true` to clean the old Talos
-   partition table before handing it to Longhorn
+**ISO boot for disk migration, not `talosctl upgrade`**
+`talosctl upgrade` always reinstalls to the currently-running system disk — it does not respect
+`installDisk`/`installDiskSelector` to pick a new target disk. ISO boot gives a clean installer
+that reads `diskSelector` from the applied config with no "current system disk" bias.
 
-### Learned / noted
-- `talosctl disks` deprecated — use `talosctl get discoveredvolumes`
-- `talosctl upgrade` with the same image/version is the supported mechanism to change `installDisk`
-  on a running node — it re-runs the installer against the new target disk
-- New 128 GB drive had a prior Linux partition table (EFI + swap + ext4); Talos installer will
-  wipe and repartition it completely — no manual pre-cleaning needed
-- After Talos migrates to 128 GB, the 2 TB nvme0n1 will retain its old Talos partition table
-  until explicitly wiped via `machine.disks` `wipe: true` in talconfig.yaml
+### Lessons learned / failures
+
+**`talosctl upgrade` does NOT change the system disk**
+Three upgrade attempts all reinstalled Talos to the 2 TB (current system disk), ignoring
+`installDiskSelector: model: "AirDisk 128GB SSD"` in the config. This is by design — upgrade
+is an in-place operation. To migrate to a different physical disk, boot from ISO instead.
+
+**Device names swap on reboot after adding an NVMe drive**
+After physically installing the 128 GB drive, the 2 TB (previously `nvme0n1`) became `nvme1n1`
+and vice versa. Any config using device paths would target the wrong disk. Use model selectors.
+
+**`wipe: true` is required to install to a disk with existing non-Talos partitions**
+With `wipe: false` (default), the Talos installer refuses to touch disks that have non-Talos
+partition tables (e.g. the Linux EFI+swap+ext4 on the AirDisk). Adding `wipe: true` as a
+temporary node-level patch forced the installer to wipe and repartition the target disk.
+Remove the patch after the migration — it's not needed for future upgrades.
+
+**talosctl 1.13.0 client cannot run `upgrade` against Talos 1.10.6 server**
+The newer client sends more aggressive gRPC keepalive pings, triggering `ENHANCE_YOUR_CALM /
+too_many_pings` GOAWAY from the older server. Fix: `mise exec talosctl@1.10.6 -- talosctl ...`
+to use a version-matched client. Install with `mise install talosctl@1.10.6`.
+
+**`talosctl reset --system-labels-to-wipe STATE EPHEMERAL` puts node in maintenance mode**
+but the node may boot back to normal Talos if the EFI entry for the existing install is intact
+and the installer doesn't run (no config applied in time). ISO boot is more reliable for
+guaranteed maintenance mode entry.
+
+**Disk migration procedure (validated)**
+1. Cordon + drain the node
+2. Boot from Talos ISO (virtual media or physical)
+3. `task talos:apply IP=<node> INSECURE=true` — installer installs to `diskSelector` target
+4. `kubectl wait --for=condition=Ready node/<node> --timeout=300s`
+5. `kubectl uncordon <node>`
+6. Remove any temporary `wipe: true` patch; `task talos:genconfig && task talos:apply IP=<node>`
 
 ---
 

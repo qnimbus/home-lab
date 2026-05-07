@@ -21,11 +21,12 @@ apps, monitoring stacks) cannot run reliably. This item tracks the decision and 
 
 | Node  | System disk              | Dedicated storage disk                  |
 |-------|--------------------------|-----------------------------------------|
-| cp-01 | nvme0n1 1 TB Kingston    | **nvme1n1 1 TB** (blank, no GPT, free)  |
-| cp-02 | nvme0n1 1 TB Kingston    | **nvme1n1 1 TB** (wiped, free)          |
-| cp-03 | nvme0n1 2 TB Crucial     | — (none; one additional NVMe needed)    |
+| cp-01 | nvme0n1 1 TB Kingston SNV3S1000G   | **nvme1n1 1 TB IRP-SSDPR** (blank, free)  |
+| cp-02 | nvme0n1 1 TB Kingston SNV3S1000G   | **nvme1n1 1 TB IRP-SSDPR** (wiped, free)  |
+| cp-03 | nvme0n1 128 GB AirDisk (system)    | **nvme1n1 2 TB Crucial CT2000P310SSD8** (blank, free) |
 
 All nodes have dedicated 10 GbE storage bonds (`10.200.0.0/24`). Jumbo frames are a separate TODO.
+**Hardware gap closed** — all three nodes now have a free dedicated storage drive.
 
 #### Talos system-disk partitioning — researched, not viable
 
@@ -38,20 +39,19 @@ no free tail to reclaim. Key findings:
 - Mounting a hostpath *within* `EPHEMERAL` (e.g. `/var/mnt/longhorn-storage`) is possible but shares IOPS and capacity with container images — risky for stateful data and not recommended.
 - cp-03's 2 TB system disk has notional slack (~1.9 TB after OS use) but it is inside `EPHEMERAL`; Kubernetes workloads cannot claim it cleanly without a dedicated disk.
 
-**Verdict**: cp-01 and cp-02 already have free nvme1n1 drives (verified live via `talosctl get discoveredvolumes`). Only cp-03 needs an additional NVMe before full 3-replica storage is achievable. `machine.disks` in `talconfig.yaml` is the correct mechanism for both existing free disks.
+**Verdict**: all three nodes now have free nvme1n1 drives (verified live; cp-03's 2 TB Crucial freed after migrating Talos to a 128 GB AirDisk). `machine.disks` in `talconfig.yaml` is the correct mechanism for all three storage drives. No hardware purchases needed.
 
 #### Storage options
 
 | Option | HA? | Works today? | Notes |
 |--------|-----|-------------|-------|
 | **OpenEBS LocalPV** | No (node-local) | ✅ yes | Hostpath provisioner; zero hardware; good for cache/CI volumes |
-| **Longhorn** | With 3 disks | Partial (cp-02, 1 replica) | Archive precedent; GUI; VolSync integration; simpler than Ceph |
-| **Rook/Ceph** | ✅ full | ❌ needs 2 more drives | RWO + RWX + S3 object store; production-grade; ~2–3 GB RAM/OSD node |
+| **Longhorn** | ✅ 3-replica | ✅ yes | Archive precedent; GUI; VolSync integration; simpler than Ceph |
+| **Rook/Ceph** | ✅ full | ✅ yes | RWO + RWX + S3 object store; production-grade; ~2–3 GB RAM/OSD node |
 | **NFS/SMB CSI** | External | If NAS exists | ReadWriteMany; offloads storage to external NAS; archive has full patterns |
 | **TopoLVM** | With LVM VG | With dedicated VG | Thin provisioning; less home-lab traction |
 
-**Rook/Ceph requires one OSD per failure domain** — with 3 nodes that means 3 dedicated disks.
-Until cp-01 and cp-03 have additional drives, full Ceph replication is not achievable.
+**All three nodes now have a free dedicated disk** — full 3-replica Longhorn or 3-OSD Ceph is achievable with no hardware purchases. cp-03's 2 TB Crucial (freed by migrating Talos to a 128 GB AirDisk) gives that node considerably more OSD capacity than cp-01/cp-02.
 
 #### Recommended staged rollout
 
@@ -59,17 +59,18 @@ Until cp-01 and cp-03 have additional drives, full Ceph replication is not achie
 Deploy **OpenEBS LocalPV** (`openebs-hostpath` storage class, base path `/var/mnt/openebs/local`).
 Unlocks stateful apps immediately. Archive pattern: `oci://ghcr.io/home-operations/charts-mirror/openebs`.
 
-**Stage 2 — Short term (cp-01 + cp-02 nvme1n1, 2 OSDs)**
-Add `machine.disks` entries for both cp-01 and cp-02's nvme1n1 in `talconfig.yaml`; partition
-and mount at `/var/mnt/longhorn-storage`. Deploy **Longhorn** with `defaultClassReplicaCount: 2`
-(2-replica HA across two nodes). This gives real replicated block storage before cp-03 gets a disk.
+**Stage 2 — All three nodes (hardware complete)**
+Add `machine.disks` entries for all three nvme1n1 drives in `talconfig.yaml`; partition and
+mount at `/var/mnt/longhorn-storage`. Deploy **Longhorn** with `defaultClassReplicaCount: 3`
+for full 3-replica HA from day one. No hardware purchases needed — cp-03's 2 TB Crucial gives
+that node significantly more OSD capacity than the 1 TB drives on cp-01/cp-02 (Longhorn handles
+the asymmetry transparently). Add `siderolabs/iscsi-tools` + `siderolabs/util-linux-tools` to
+`talos/schematic.yaml` before deploying (overlaps with the Talos Config Audit item).
 
-**Stage 3 — Medium term (purchase 1 NVMe drive for cp-03)**
-One additional NVMe (Kingston SNV3S 1 TB or equivalent M.2 NVMe) on cp-03 completes the
-3-node set. Add `machine.disks` for cp-03; promote Longhorn to `defaultClassReplicaCount: 3`
-for full HA, or evaluate migrating to **Rook/Ceph** if S3 object storage or RWX block
-volumes are needed. Add `siderolabs/iscsi-tools` + `siderolabs/util-linux-tools` to
-`talos/schematic.yaml` at this point (overlaps with the Talos Config Audit item).
+**Stage 3 — Evaluate Rook/Ceph if object storage or RWX block is needed**
+Once Longhorn is stable, consider migrating to **Rook/Ceph** for S3-compatible object storage,
+`ReadWriteMany` block volumes, or more granular replication controls. The 3-disk hardware layout
+supports it directly. Not required if Longhorn meets all workload needs.
 
 **Stage 4 — If/when a NAS is added**
 Deploy **NFS CSI** (`csi-driver-nfs`) and/or **SMB CSI** (`csi-driver-smb`) for ReadWriteMany
@@ -81,8 +82,8 @@ workloads (photo libraries, shared media). Wire SMB/NFS credentials via External
 ```
 cert-manager → external-secrets → onepassword-connect   ← needed for NFS/SMB credentials (Stage 4)
 OpenEBS LocalPV                                          ← Stage 1, no deps
-machine.disks (cp-02) → Longhorn                        ← Stage 2
-hardware → machine.disks (all nodes) → Longhorn 3x / Rook-Ceph ← Stage 3
+machine.disks (all 3 nodes) → Longhorn 3x               ← Stage 2, hardware complete
+Longhorn stable → evaluate Rook-Ceph                    ← Stage 3, optional
 ```
 
 ---
