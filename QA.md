@@ -18,6 +18,9 @@ Concise answers to questions that came up during cluster operation. Each entry c
 - [Why does `charts/tuppr` not support cosign, when `charts-mirror/openebs` does?](#why-does-ghcriohome-operationschartstuppr-not-support-cosign-verification-when-ghcriohome-operationscharts-mirroropenebs-does)
 - [Why does `valuesFrom` require both a `configMapGenerator` and a `kustomizeconfig.yaml`?](#why-does-every-app-that-uses-valuesfrom-need-both-a-configmapgenerator-and-a-kustomizeconfigyaml)
 
+**Kubernetes Workloads**
+- [A healthy Deployment shows both `Available` and `Progressing` — is something wrong?](#a-healthy-deployment-shows-both-available-and-progressing--is-something-wrong)
+
 **Upgrades (tuppr + Renovate)**
 - [Does Renovate create incremental PRs per minor version, or one PR to the latest?](#does-renovate-create-incremental-prs-for-each-talosk8s-minor-version-or-one-pr-jumping-to-the-latest)
 
@@ -210,6 +213,38 @@ nameReference:
 ```
 
 **Why bother with the hash at all?** It makes values changes self-propagating in GitOps — Kustomize produces a new ConfigMap name, Flux detects the HelmRelease spec changed, and triggers a Helm upgrade automatically. Without the hash, editing `values.yaml` and pushing would *not* trigger a reconcile because the HelmRelease manifest itself wouldn't change.
+
+---
+
+## Kubernetes Workloads
+
+### A healthy Deployment shows both `Available` and `Progressing` — is something wrong?
+
+**Short answer:** No. `Progressing=True` is the permanent **success** state after a rollout completes. It does not mean the rollout is still running.
+
+**Detail:** Kubernetes Deployments carry three conditions:
+
+| Condition | Meaning |
+|-----------|---------|
+| `Available` | The deployment has at least the desired number of ready pods right now |
+| `Progressing` | The last rollout completed successfully (`NewReplicaSetAvailable`) — or is actively rolling out |
+| `ReplicaFailure` | Pods could not be created (e.g. image pull error, resource quota) |
+
+The counter-intuitive part: Kubernetes sets `Progressing=True` when a rollout completes and **never clears it**. A fully healthy, idle deployment that rolled out days ago will still show `Progressing=True`. UIs (Lens, k9s) often render this condition alongside `Available`, making it look alarming.
+
+**The only bad `Progressing` state** is `Progressing=False` with reason `ProgressDeadlineExceeded` — meaning a rollout *started* but stalled before completing within `spec.progressDeadlineSeconds` (default 600 s). That is the signal to investigate.
+
+**How to check from the CLI:**
+
+```bash
+# Quick sanity check — look for Progressing=False or ReplicaFailure=True
+kubectl describe deployment <name> -n <ns> | grep -A3 "Conditions:"
+
+# All conditions at once
+kubectl get deployment <name> -n <ns> -o jsonpath='{.status.conditions[*]}'
+```
+
+**Common trigger in this cluster:** Running `task reconcile` or pushing a commit causes Flux to reconcile and possibly issue a Helm upgrade. This creates a new ReplicaSet (visible in the Deployment's "Deploy Revisions" in Lens), the old one scales to 0, and `Progressing` reflects the completed rollout. The old ReplicaSet lingers at 0 replicas (Kubernetes keeps a history for rollback); that is also normal.
 
 ---
 
