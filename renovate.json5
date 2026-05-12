@@ -20,13 +20,12 @@
 
   // Dependencies managed outside Renovate — do not open PRs for these.
   // 1password: distributed via AgileBits' servers, no compatible datasource.
-  // siderolabs/*: Talos + Kubernetes versions are managed via a separate upgrade mechanism.
-  // talosctl: must match the running Talos server version exactly — managed with Talos upgrades.
-  // etcd: must match the etcd version bundled with the running Talos release — check via `talosctl etcd status`.
+  // talosctl: CLI tool in .mise.toml — must match the running Talos server version; bump manually alongside Talos PRs.
+  // etcd: CLI tool in .mise.toml — must match the etcd version bundled with the running Talos release.
+  // Note: ghcr.io/siderolabs/installer + kubelet are intentionally NOT ignored — tuppr manages upgrades via
+  // TalosUpgrade/KubernetesUpgrade CRDs, and Renovate drives version bumps via separateMinorPatch PRs.
   ignoreDeps: [
     "1password",
-    "ghcr.io/siderolabs/installer",
-    "ghcr.io/siderolabs/kubelet",
     "talosctl",
     "etcd",
   ],
@@ -64,13 +63,25 @@
     // ── Grouping ────────────────────────────────────────────────────────────────
 
     {
-      description: "Group Talos + Kubernetes version bumps into one PR",
-      groupName: "Talos + Kubernetes",
+      // One PR per minor Talos version — tuppr enforces sequential minor upgrades at runtime,
+      // and Renovate must mirror that by not bundling v1.10→v1.12 into a single PR.
+      // Each PR bumps both talos/talenv.yaml:talosVersion and the TalosUpgrade CRD version.
+      description: "Talos — one PR per minor version (sequential upgrade path)",
       matchDatasources: ["docker"],
-      matchPackageNames: [
-        "ghcr.io/siderolabs/installer",
-        "ghcr.io/siderolabs/kubelet",
-      ],
+      matchPackageNames: ["ghcr.io/siderolabs/installer"],
+      groupName: "Talos",
+      separateMajorMinor: true,
+      separateMinorPatch: true,
+    },
+    {
+      // Same rationale as Talos above — Kubernetes also requires sequential minor upgrades.
+      // Each PR bumps both talos/talenv.yaml:kubernetesVersion and the KubernetesUpgrade CRD version.
+      description: "Kubernetes — one PR per minor version (sequential upgrade path)",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["ghcr.io/siderolabs/kubelet"],
+      groupName: "Kubernetes",
+      separateMajorMinor: true,
+      separateMinorPatch: true,
     },
     {
       description: "Group Flux Operator + Instance into one PR",
