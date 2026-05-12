@@ -29,6 +29,13 @@ nodes:
       secureboot: false
     talosImageURL: "${talosImageURL}"
     controlPlane: true
+    patches:
+      - |-
+        machine:
+          disks:
+            - device: /dev/disk/by-id/nvme-IRP-SSDPR-P44N-01T-30_G4E004578
+              partitions:
+                - mountpoint: /var/mnt/longhorn-storage
     networkInterfaces:
       # Management — single Intel I219-LM RJ45 (driver: e1000e)
       - deviceSelector:
@@ -91,6 +98,13 @@ nodes:
       secureboot: false
     talosImageURL: "${talosImageURL}"
     controlPlane: true
+    patches:
+      - |-
+        machine:
+          disks:
+            - device: /dev/disk/by-id/nvme-CT2000P310SSD8_252450B1A33B
+              partitions:
+                - mountpoint: /var/mnt/longhorn-storage
     networkInterfaces:
       # Management — LACP bond of 2x RJ45 NICs (Realtek RTL8125, driver: r8169)
       # If lspci shows Intel I225/I226 instead, change driver to igc

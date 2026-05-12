@@ -6,6 +6,6 @@ customization:
     officialExtensions:
       - siderolabs/intel-ucode        # CPU microcode — loads only on Intel nodes (M920Q)
       - siderolabs/amd-ucode          # CPU microcode — loads only on AMD nodes (MS-A2)
+      - siderolabs/iscsi-tools        # Required for Longhorn iSCSI initiator
+      - siderolabs/util-linux-tools   # Provides lsblk, blkid for storage debugging
       # - siderolabs/i915-ucode       # Intel GPU firmware (optional for headless servers)
-      # - siderolabs/iscsi-tools      # Required for iSCSI-backed storage (e.g. TrueNAS SCALE)
-      # - siderolabs/util-linux-tools
