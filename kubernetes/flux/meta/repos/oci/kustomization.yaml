@@ -5,4 +5,5 @@ kind: Kustomization
 namespace: flux-system
 resources:
   - ./coredns.yaml
+  - ./openebs.yaml
   - ./spegel.yaml

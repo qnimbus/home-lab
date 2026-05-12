@@ -1,0 +1,95 @@
+---
+# see: https://github.com/longhorn/charts/blob/v1.9.x/charts/longhorn/values.yaml
+
+persistence:
+  defaultClass: true
+  defaultFsType: ext4
+  # 2 replicas until talos-cp-02 storage disk installed; bump to 3 when ready
+  defaultClassReplicaCount: 2
+  volumeBindingMode: WaitForFirstConsumer
+  defaultDataLocality: best-effort
+  reclaimPolicy: Delete
+
+csi:
+  kubeletRootDir: /var/lib/kubelet
+
+defaultSettings:
+  defaultDataPath: /var/mnt/longhorn-storage
+  # 2 replicas until talos-cp-02 storage disk installed; bump to 3 when ready
+  defaultReplicaCount: 2
+  createDefaultDiskLabeledNodes: true
+  allowEmptyDiskSelectorVolume: true
+  storageOverProvisioningPercentage: 200
+  storageMinimalAvailablePercentage: 10
+  guaranteedEngineManagerCPU: 12
+  guaranteedReplicaManagerCPU: 12
+  concurrentAutomaticEngineUpgradePerNodeLimit: 1
+  concurrentReplicaRebuildPerNodeLimit: 2
+  orphanAutoDeletion: true
+  nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
+
+service:
+  ui:
+    type: ClusterIP
+
+longhornManager:
+  priorityClass: system-cluster-critical
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: 25m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+longhornDriver:
+  priorityClass: system-cluster-critical
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+longhornInstanceManager:
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
+
+longhornUI:
+  replicas: 1
+
+preUpgradeChecker:
+  jobEnabled: false
