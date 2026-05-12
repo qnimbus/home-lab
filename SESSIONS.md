@@ -4,6 +4,46 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-12 — `storage-storageclasses-and-conventions`
+
+### What we did
+- Added `longhorn-retain` StorageClass — identical parameters to the default `longhorn` class but
+  with `reclaimPolicy: Retain`; for stateful workloads where accidental PVC deletion must not
+  silently destroy data (databases, media libraries)
+- Added `longhorn-single` StorageClass — single replica, `reclaimPolicy: Retain`; for workloads
+  that manage their own application-level replication (CloudNativePG streaming replication, Redis
+  Sentinel) to avoid double replication overhead
+- Added doc-comment convention to CLAUDE.md: all cluster YAML should carry comments explaining
+  the *why* of non-obvious values, provisional settings, and operational implications
+- Discussed and clarified: `Recreate` vs `RollingUpdate` for RWO PVCs; `longhorn` vs
+  `longhorn-static` StorageClass differences; reclaim policy scoping (StorageClass vs PV);
+  double replication trade-off with CNPG; `staleReplicaTimeout` behaviour
+
+### Final StorageClass inventory
+| StorageClass | Reclaim | Replicas | Use case |
+|---|---|---|---|
+| `longhorn` *(default)* | Delete | 2 | Ephemeral/replaceable volumes |
+| `longhorn-retain` | Retain | 2 | Stateful workloads, irreplaceable data |
+| `longhorn-single` | Retain | 1 | App-managed replication (CNPG, Redis Sentinel) |
+| `longhorn-static` | Delete | — | Manual static binding / disaster recovery |
+| `openebs-hostpath` | Delete | — | Node-local scratch volumes |
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/longhorn-system/longhorn/app/storageclass-retain.yaml` | NEW |
+| `kubernetes/apps/longhorn-system/longhorn/app/storageclass-single.yaml` | NEW |
+| `kubernetes/apps/longhorn-system/longhorn/app/kustomization.yaml` | Add both new StorageClasses |
+| `CLAUDE.md` | Add doc-comment convention under GitOps Conventions |
+
+### Notes
+- `numberOfReplicas: "2"` in both new StorageClasses must be bumped to `"3"` when cp-02 drive
+  arrives (same trigger as the Longhorn HelmRelease values)
+- `staleReplicaTimeout: 30` means replicas offline >30 min are rebuilt from scratch rather than
+  incrementally re-synced; fine for home lab, raise to 120 for longer maintenance windows
+
+---
+
 ## 2026-05-12 — `persistent-storage-deploy-and-fix`
 
 ### What we did
