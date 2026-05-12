@@ -84,6 +84,22 @@ kubectl delete pods -A --field-selector=status.phase=Failed
 
 This is safe as long as the owning Deployments/DaemonSets show healthy desired/ready counts beforehand. The controllers will not create new replacements because they already have the desired number of running pods.
 
+**Safer alternative — script that verifies owner health first:**
+
+`scripts/purge-failed-pods.sh` (also exposed as `task purge-failed-pods`) walks the full ownership chain (Pod → ReplicaSet → Deployment) and checks controller health before deleting anything. It skips pods whose owner is not confirmed healthy, and skips unrecognised owner kinds (e.g. Jobs) entirely.
+
+```bash
+task purge-failed-pods              # dry-run: prints what would be deleted, no changes made
+task purge-failed-pods DELETE=true  # live: deletes only pods with a confirmed-healthy owner
+```
+
+Health criteria used by the script:
+- **Deployment** — `Available` condition is `True`
+- **DaemonSet** — `numberReady == desiredNumberScheduled`
+- **StatefulSet** — `readyReplicas == replicas`
+
+Use this instead of the broad `kubectl delete pods -A` sweep when you want an automated check rather than a manual pre-flight.
+
 **Why cp-03 accumulates more than the other nodes:** The scheduler preferentially places workloads on cp-03 (AMD, 32c, 92 GB) due to resource fit. More pods means more `ContainerStatusUnknown` events after a crash.
 
 ---

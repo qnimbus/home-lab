@@ -32,3 +32,13 @@ tasks:
     preconditions:
       - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
       - {msg: "flux not found", sh: "which flux"}
+
+  purge-failed-pods:
+    desc: Delete Failed pods whose owner is healthy [DELETE=true to apply, default is dry-run]
+    vars:
+      DELETE: '{{.DELETE | default "false"}}'
+    cmd: bash {{.ROOT_DIR}}/scripts/purge-failed-pods.sh{{if eq .DELETE "true"}} --delete{{end}}
+    preconditions:
+      - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
+      - {msg: "kubectl not found", sh: "which kubectl"}
+      - {msg: "jq not found", sh: "which jq"}

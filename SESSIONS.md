@@ -4,6 +4,26 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-12 — `purge-failed-pods-script`
+
+### What we did
+- Created `scripts/purge-failed-pods.sh` — walks the ownership chain (Pod → ReplicaSet →
+  Deployment/DaemonSet/StatefulSet), verifies controller health before deleting, and defaults to
+  dry-run mode; pass `--delete` to apply
+- Added `task purge-failed-pods` to root `Taskfile.yaml` with `DELETE=true` var mirroring the
+  script flag; follows the same `VAR=value` convention as `INSECURE=true` in `talos:apply`
+- Updated `QA.md` — extended the Cluster Recovery / Unclean Shutdown fix section with a reference
+  to the script, the task invocation, and the health criteria used per controller kind
+
+### Files changed
+| File | Change |
+|------|--------|
+| `scripts/purge-failed-pods.sh` | NEW — dry-run/live pod cleanup script |
+| `Taskfile.yaml` | Add `purge-failed-pods` task |
+| `QA.md` | Extend unclean-shutdown fix section with script/task reference |
+
+---
+
 ## 2026-05-12 — `tuppr-upgrade-controller-deployment`
 
 ### What we did
