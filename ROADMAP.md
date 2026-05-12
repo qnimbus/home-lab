@@ -6,12 +6,6 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 
 ## In Progress
 
-_(nothing currently in progress)_
-
----
-
-## Pending
-
 ### Persistent Storage
 
 The cluster has no persistent storage layer. Without one, stateful workloads (databases, media
@@ -21,12 +15,12 @@ apps, monitoring stacks) cannot run reliably. This item tracks the decision and 
 
 | Node  | System disk              | Dedicated storage disk                  |
 |-------|--------------------------|-----------------------------------------|
-| cp-01 | nvme0n1 1 TB Kingston SNV3S1000G   | **nvme1n1 1 TB IRP-SSDPR** (blank, free)  |
-| cp-02 | nvme0n1 1 TB Kingston SNV3S1000G   | **nvme1n1 1 TB IRP-SSDPR** (wiped, free)  |
-| cp-03 | nvme0n1 128 GB AirDisk (system)    | **nvme1n1 2 TB Crucial CT2000P310SSD8** (blank, free) |
+| cp-01 | nvme0n1 1 TB Kingston SNV3S1000G   | **nvme1n1 1 TB GoodRam IRDM PRO NANO** (IRP-SSDPR-P44N-01T-30, via M.2 A/E adapter) — by-id pinned in talconfig |
+| cp-02 | nvme0n1 1 TB Kingston SNV3S1000G   | **Crucial P310 1TB 2230 + M.2 A/E adapter — on order, not yet installed** |
+| cp-03 | nvme0n1 128 GB AirDisk (system)    | **nvme1n1 2 TB Crucial CT2000P310SSD8** — by-id pinned in talconfig |
 
 All nodes have dedicated 10 GbE storage bonds (`10.200.0.0/24`). Jumbo frames are a separate TODO.
-**Hardware gap closed** — all three nodes now have a free dedicated storage drive.
+**cp-01 and cp-03 ready** — by-id disk patches in `talconfig.yaml`, Talos schematic updated with `iscsi-tools` + `util-linux-tools`. **cp-02 blocked** — storage drive (Crucial P310 1TB 2230) on order.
 
 #### Talos system-disk partitioning — researched, not viable
 
@@ -55,17 +49,23 @@ no free tail to reclaim. Key findings:
 
 #### Recommended staged rollout
 
-**Stage 1 — Now (no hardware required)**
-Deploy **OpenEBS LocalPV** (`openebs-hostpath` storage class, base path `/var/mnt/openebs/local`).
-Unlocks stateful apps immediately. Archive pattern: `oci://ghcr.io/home-operations/charts-mirror/openebs`.
+**Stage 1 — ✅ Done**
+**OpenEBS LocalPV** deployed via `kubernetes/apps/openebs/`. `openebs-hostpath` StorageClass
+(non-default), base path `/var/mnt/openebs/local` (EPHEMERAL). Flux manifests committed;
+will reconcile on next push.
 
-**Stage 2 — All three nodes (hardware complete)**
-Add `machine.disks` entries for all three nvme1n1 drives in `talconfig.yaml`; partition and
-mount at `/var/mnt/longhorn-storage`. Deploy **Longhorn** with `defaultClassReplicaCount: 3`
-for full 3-replica HA from day one. No hardware purchases needed — cp-03's 2 TB Crucial gives
-that node significantly more OSD capacity than the 1 TB drives on cp-01/cp-02 (Longhorn handles
-the asymmetry transparently). Add `siderolabs/iscsi-tools` + `siderolabs/util-linux-tools` to
-`talos/schematic.yaml` before deploying (overlaps with the Talos Config Audit item).
+**Stage 2 — Talos prereqs ✅ done; Kubernetes manifests ✅ committed; awaiting cp-02 drive**
+Talos prerequisites complete: `iscsi-tools` + `util-linux-tools` in schematic; per-node
+`machine.disks` patches applied for cp-01 (GoodRam IRDM PRO NANO, serial `G4E004578`) and
+cp-03 (Crucial CT2000P310SSD8, serial `252450B1A33B`); cp-02 upgraded to new schematic but
+no disk patch yet (Crucial P310 1TB 2230 on order).
+
+**Longhorn** manifests committed to `kubernetes/apps/longhorn-system/`. Currently configured
+with `defaultClassReplicaCount: 2` (provisional — only cp-01 and cp-03 have storage disks).
+talos-cp-02 node-config has `allowScheduling: false`. When cp-02's drive arrives:
+- `talosctl get disks --nodes 10.60.0.202` → grab serial; add `machine.disks` inline patch for cp-02; `task talos:apply IP=10.60.0.202`
+- Set `allowScheduling: true` in `node-configs/talos-cp-02.yaml`
+- Bump `defaultClassReplicaCount` and `defaultReplicaCount` to `3` in `helm/values.yaml`
 
 **Stage 3 — Evaluate Rook/Ceph if object storage or RWX block is needed**
 Once Longhorn is stable, consider migrating to **Rook/Ceph** for S3-compatible object storage,
@@ -81,8 +81,8 @@ workloads (photo libraries, shared media). Wire SMB/NFS credentials via External
 
 ```
 cert-manager → external-secrets → onepassword-connect   ← needed for NFS/SMB credentials (Stage 4)
-OpenEBS LocalPV                                          ← Stage 1, no deps
-machine.disks (all 3 nodes) → Longhorn 3x               ← Stage 2, hardware complete
+OpenEBS LocalPV                                ← ✅ Stage 1 — committed, deploy on push
+cp-02 disk installed → allowScheduling: true + replicaCount: 3 → Longhorn 3x ← Stage 2, cp-02 drive pending
 Longhorn stable → evaluate Rook-Ceph                    ← Stage 3, optional
 ```
 

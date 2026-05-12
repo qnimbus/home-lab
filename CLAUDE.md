@@ -4,6 +4,8 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-07 | `persistent-storage-k8s-app-layer` | Full Flux app layer for OpenEBS LocalPV + Longhorn committed; 2-replica provisional config until cp-02 drive arrives; Flux Kustomization CRs in flux-system namespace |
+> | 2026-05-07 | `persistent-storage-talos-prereqs` | iscsi-tools + util-linux-tools in schematic; per-node by-id disk patches for cp-01/cp-03; rolling upgrade all 3 nodes; fixed bootstrap:cluster doubled-path bug |
 > | 2026-05-07 | `etcd-learner-recovery-and-toolchain` | Fixed cp-03 stuck etcd LEARNER (dual peer URLs from DHCP during LACP-off ISO boot); manual `etcdctl member promote`; added `etcd` to mise; excluded `talosctl`+`etcd` from Renovate |
 > | 2026-05-07 | `cp03-nvme-swap-and-disk-migration` | Migrated cp-03 Talos to 128GB AirDisk via ISO boot; all nodes switched to `installDiskSelector` by model; 2TB Crucial now free for storage; `talos:apply` refactored with `INSECURE=true` flag |
 > | 2026-05-07 | `persistent-storage-roadmap` | Added Persistent Storage entry to ROADMAP.md; researched Talos system-disk partitioning (not viable); discovered cp-01 also has free nvme1n1; corrected CLUSTER.md disk inventory; staged Longhorn rollout plan |
@@ -249,9 +251,11 @@ Community configs reflect their authors' constraints, mistakes, and historical b
 | cert-manager                  | ✅ Done    | Running via Helmfile bootstrap                  |
 | Flux (operator + instance)    | ✅ Done    | Reconciling from private repo via SSH           |
 | External Secrets + 1Password  | 🔲 TODO    | First GitOps apps                               |
-| Storage (Longhorn / Rook-Ceph) | 🔲 TODO    | cp-01+cp-02 have free nvme1n1; cp-03 needs 1 drive; Longhorn preferred first step; see ROADMAP.md |
+| OpenEBS LocalPV               | 🔄 Committed | Flux manifests in `kubernetes/apps/openebs/`; push to deploy |
+| Longhorn (2-replica interim)  | 🔄 Committed | Flux manifests in `kubernetes/apps/longhorn-system/`; 2-replica until cp-02 drive installed; push to deploy |
+| External Secrets + 1Password  | 🔲 TODO    | First GitOps apps                               |
 | Split DNS (ExternalDNS)       | 🔲 TODO    | Internal (home.arpa) + external (Cloudflare)    |
-| Renovate                      | 🔲 TODO    | Configure once kubernetes/ exists               |
+| Renovate                      | ✅ Done    | `renovate.json5` in place; GitHub App installed; Talos/k8s versions intentionally excluded (managed separately) |
 
 ---
 

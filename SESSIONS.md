@@ -4,6 +4,162 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-07 — `persistent-storage-k8s-app-layer`
+
+### What we did
+- Created the full Flux GitOps app layer for **OpenEBS LocalPV** and **Longhorn** — both are now
+  committed and ready to reconcile once pushed to the repo
+- Added two new Flux sources to `kubernetes/flux/meta/repos/`:
+  - `oci/openebs.yaml` — OCIRepository pointing to `ghcr.io/home-operations/charts-mirror/openebs`
+    tag `4.3.2`, cosign-verified
+  - `helm/longhorn.yaml` — HelmRepository pointing to `https://charts.longhorn.io`
+- Created `kubernetes/apps/openebs/` — full Flux Kustomization + HelmRelease for OpenEBS LocalPV:
+  - `openebs-hostpath` StorageClass, non-default, base path `/var/mnt/openebs/local` (EPHEMERAL)
+  - All engines except `localpv-provisioner` disabled; no snapshot-controller dependency
+- Created `kubernetes/apps/longhorn-system/` — full Flux Kustomization + HelmRelease + node-configs:
+  - Chart pinned at `1.9.0` from the longhorn HelmRepository
+  - `defaultClassReplicaCount: 2` and `defaultReplicaCount: 2` (provisional — cp-02 has no drive
+    yet; bump both to 3 when Crucial P310 arrives)
+  - talos-cp-01 and talos-cp-03 node-configs: `allowScheduling: true` (drives mounted)
+  - talos-cp-02 node-config: `allowScheduling: false` (drive pending; won't attempt replica placement)
+  - Values passed via configMapGenerator + `kustomizeconfig.yaml` nameReference pattern
+  - `csi.kubeletRootDir: /var/lib/kubelet` (Talos requirement)
+  - Control-plane tolerations on longhornManager, longhornDriver, longhornInstanceManager
+- Wired up `kubernetes/apps/kustomization.yaml` — added `./openebs` and `./longhorn-system`
+- Both Flux Kustomization CRs placed in `flux-system` namespace (not app namespaces) to avoid
+  bootstrap chicken-and-egg: a CR in e.g. `openebs` namespace can't be stored before that
+  namespace exists; `flux-system` always exists and HelmRelease uses `createNamespace: true`
+- Both ks.yaml files carry `substitution.flux.home.arpa/disabled: "true"` to opt out of the
+  cluster-apps postBuild substitution patch (cluster-settings/cluster-secrets don't exist yet)
+
+### Files created / modified
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/openebs.yaml` | NEW — OCIRepository for openebs chart |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added openebs |
+| `kubernetes/flux/meta/repos/helm/longhorn.yaml` | NEW — HelmRepository for longhorn chart |
+| `kubernetes/flux/meta/repos/helm/kustomization.yaml` | Added longhorn |
+| `kubernetes/apps/kustomization.yaml` | Added `./openebs` and `./longhorn-system` |
+| `kubernetes/apps/openebs/kustomization.yaml` | NEW — namespace-level kustomization |
+| `kubernetes/apps/openebs/openebs/ks.yaml` | NEW — Flux Kustomization CR |
+| `kubernetes/apps/openebs/openebs/app/kustomization.yaml` | NEW |
+| `kubernetes/apps/openebs/openebs/app/helmrelease.yaml` | NEW — HelmRelease |
+| `kubernetes/apps/longhorn-system/kustomization.yaml` | NEW — namespace-level kustomization |
+| `kubernetes/apps/longhorn-system/longhorn/ks.yaml` | NEW — Flux Kustomization CR |
+| `kubernetes/apps/longhorn-system/longhorn/app/kustomization.yaml` | NEW — configMapGenerator |
+| `kubernetes/apps/longhorn-system/longhorn/app/helmrelease.yaml` | NEW — HelmRelease |
+| `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml` | NEW — Longhorn values |
+| `kubernetes/apps/longhorn-system/longhorn/app/helm/kustomizeconfig.yaml` | NEW — nameReference |
+| `kubernetes/apps/longhorn-system/longhorn/app/node-configs/talos-cp-01.yaml` | NEW |
+| `kubernetes/apps/longhorn-system/longhorn/app/node-configs/talos-cp-02.yaml` | NEW — `allowScheduling: false` |
+| `kubernetes/apps/longhorn-system/longhorn/app/node-configs/talos-cp-03.yaml` | NEW |
+
+### Decisions made
+
+**Flux Kustomization CRs in `flux-system`, not app namespaces**
+On a fresh cluster, placing a Flux Kustomization CR in e.g. `longhorn-system` fails because
+that namespace doesn't exist yet — the CR cannot be stored. Keeping all CRs in `flux-system`
+(which always exists) and relying on `HelmRelease.install.createNamespace: true` eliminates
+the bootstrapping deadlock entirely.
+
+**No `spec.targetNamespace` on Longhorn Kustomization**
+Longhorn's node-config files contain `kind: Node` objects, which are cluster-scoped (no
+namespace). Setting `targetNamespace` would cause Kustomize to inject a namespace onto them,
+which the Kubernetes API server rejects. Each resource declares its own namespace explicitly.
+
+**`defaultClassReplicaCount: 2` until cp-02 hardware arrives**
+With only 2 nodes having storage disks, a 3-replica PVC cannot be scheduled. Setting to 2
+means Longhorn can provision volumes immediately on cp-01/cp-03. When cp-02's Crucial P310
+1TB 2230 is installed, update both `defaultClassReplicaCount` and `defaultReplicaCount` to 3
+and flip `allowScheduling: true` in `node-configs/talos-cp-02.yaml`.
+
+### Next steps when resuming
+1. `git push` → Flux will reconcile and deploy OpenEBS and Longhorn
+2. Verify: `kubectl get helmrelease -A` and `kubectl get storageclass`
+3. Test with a PVC against `openebs-hostpath` and `longhorn` storage classes
+4. When cp-02's Crucial P310 arrives:
+   - `talosctl get disks --nodes 10.60.0.202` → grab serial
+   - Add inline `machine.disks` patch for cp-02 in `talos/talconfig.yaml`
+   - `task talos:apply IP=10.60.0.202`
+   - Set `allowScheduling: true` in `node-configs/talos-cp-02.yaml`
+   - Bump `defaultClassReplicaCount` and `defaultReplicaCount` to `3` in `helm/values.yaml`
+
+---
+
+## 2026-05-07 — `persistent-storage-talos-prereqs`
+
+### What we did
+- Decided on dual storage tier: **OpenEBS LocalPV** (node-local, no replication) + **Longhorn** (3-replica HA) — complementary, not redundant
+- Added `siderolabs/iscsi-tools` and `siderolabs/util-linux-tools` to `talos/schematic.yaml`
+- Added per-node inline `machine.disks` patches to `talconfig.yaml` for cp-01 and cp-03 using
+  `/dev/disk/by-id/` serial-based paths (more robust than device-path selectors)
+- Diagnosed cp-02's missing storage disk — confirmed physically not installed (Crucial P310 1TB
+  2230 + M.2 A/E adapter ordered; not a hardware fault, just not yet installed)
+- Re-registered schematic at factory.talos.dev → new ID:
+  `1aaf751348ca0f837eca199fa21933d3375641d972f9fb0d816e7bf87c81f1fc`
+- Rolling apply + upgrade across all three nodes (one at a time to preserve etcd quorum):
+  - cp-01: config applied with reboot (disk patch diff); then OS upgraded; `ext-iscsid` confirmed started; `/var/mnt/longhorn-storage` mounted XFS on `/dev/nvme1n1p1`
+  - cp-02: config applied without reboot (no disk patch); OS upgraded; `ext-iscsid` confirmed started
+  - cp-03: config applied with reboot (disk patch diff); then OS upgraded; disk enumeration swapped
+    (nvme0n1 ↔ nvme1n1) but by-id path targeted the correct Crucial drive — `/var/mnt/longhorn-storage`
+    mounted XFS on `/dev/nvme0n1p1` (2 TB Crucial, now enumerated as nvme0n1)
+- Fixed bug in `bootstrap:cluster`: shell `task talos:genconfig` calls replaced with `task:` map
+  references; `dir:` removed from the task; all paths made absolute — prevents spurious `talos/talos/`
+  directory creation caused by CWD ambiguity when subtasks were called as shell subprocesses
+- Removed stale `talos/talos/clusterconfig/` artifact (empty talosconfig left by the bug above)
+- Updated `CLUSTER.md` disk inventory with correct drive models, by-id paths, and cp-02 status
+- Used `talosctl@1.10.6` (via `mise exec`) for upgrade commands — required due to client (1.13.0) /
+  server (1.10.6) version mismatch causing `ENHANCE_YOUR_CALM` gRPC errors with the default client
+
+### Files created / modified
+| File | Change |
+|------|--------|
+| `talos/schematic.yaml` | Enabled `iscsi-tools` and `util-linux-tools` extensions |
+| `talos/talconfig.yaml` | Per-node inline `machine.disks` patches for cp-01 (IRP-SSDPR serial `G4E004578`) and cp-03 (CT2000P310SSD8 serial `252450B1A33B`) |
+| `talos/talenv.yaml` | Auto-updated by `task talos:iso` with new schematic `talosImageURL` |
+| `CLUSTER.md` | Corrected disk inventory: GoodRam IRDM PRO NANO on cp-01 (via M.2 A/E adapter), Crucial P310 on order for cp-02, Crucial CT2000P310SSD8 on cp-03; by-id paths documented |
+| `ROADMAP.md` | Updated hardware snapshot; moved Persistent Storage to In Progress |
+| `.taskfiles/bootstrap/Taskfile.yaml` | Fixed `bootstrap:cluster`: shell `task` calls → `task:` references; `dir:` removed; gensecret command uses absolute `{{.TALOS_DIR}}` paths throughout |
+
+### Decisions made
+
+**Per-node by-id serial paths over global `/dev/nvme1n1`**
+A global patch using the device path would have partitioned the wrong disk on cp-03 when its
+NVMe enumeration order swapped after the upgrade (AirDisk and Crucial switched positions). Serial-
+based `/dev/disk/by-id/nvme-<MODEL>_<SERIAL>` paths are stable across enumeration changes and are
+the correct approach for bare-metal NVMe on any multi-drive node.
+
+**cp-02 Longhorn deployment gated on drive arrival**
+cp-02 has no storage disk installed. Longhorn 3-replica requires a disk on all three nodes to
+place replicas. cp-02 will be configured when the Crucial P310 1TB 2230 arrives: run
+`talosctl get disks --nodes 10.60.0.202`, grab the serial, add an inline patch matching cp-01/cp-03
+pattern, then `task talos:apply IP=10.60.0.202` (no upgrade needed — already on the new schematic).
+
+**OpenEBS can deploy immediately; Longhorn waits for cp-02**
+OpenEBS LocalPV needs no dedicated disk — it uses EPHEMERAL hostpath. It can be deployed now
+to unblock node-local workloads. Longhorn HelmRelease can be committed to Git now; it will just
+sit unscheduled on cp-02 until the disk lands.
+
+### Lessons learned
+
+**go-task: always use `task:` map syntax for subtask invocations, never shell `task` commands**
+When a task has `dir:` set and calls subtasks as shell commands (`- task foo`), the `task` binary
+is spawned as a subprocess inheriting the modified CWD. Depending on go-task version and how
+ROOT_DIR is resolved from that CWD, relative path variables can double up (e.g., `talos/talos/`).
+Using `- task: foo` (map key syntax) invokes the subtask directly within go-task's own process —
+no subprocess, no CWD ambiguity, variables always resolved from the root Taskfile.
+
+**NVMe enumeration can change across reboots even without hardware changes**
+cp-03's nvme0n1 (AirDisk) and nvme1n1 (Crucial) swapped after the upgrade reboot. Device paths
+are not stable on bare-metal NVMe. `installDiskSelector: model:` and `machine.disks: device: /dev/disk/by-id/`
+are the two stable mechanisms in Talos — use them everywhere, never raw `/dev/nvme*` paths.
+
+**`talosctl disks` deprecated in newer clients; use `talosctl get disks`**
+The `talosctl disks` subcommand is deprecated in Talos 1.10+ clients and exits with code 1.
+Use `talosctl get disks` (or `talosctl get discoveredvolumes` for partition-level detail).
+
+---
+
 ## 2026-05-07 — `etcd-learner-recovery-and-toolchain`
 
 ### What we did

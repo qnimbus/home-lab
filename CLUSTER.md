@@ -96,13 +96,13 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 | Node | Device | Size | Model | Role |
 |------|--------|------|-------|------|
 | talos-cp-01 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G | Talos system disk |
-| talos-cp-01 | nvme1n1 | 1.0 TB | (unidentified — blank, no GPT) | **Free** — available for storage |
+| talos-cp-01 | nvme1n1 | 1.0 TB | GoodRam IRDM PRO NANO (IRP-SSDPR-P44N-01T-30) via M.2 A/E adapter | **Free** — Longhorn storage (`/dev/disk/by-id/nvme-IRP-SSDPR-P44N-01T-30_G4E004578`) |
 | talos-cp-02 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G | Talos system disk |
-| talos-cp-02 | nvme1n1 | 1.0 TB | IRP-SSDPR-P44N-01T-30 | **Free** — available for storage (wiped 2026-05-06) |
+| talos-cp-02 | — | — | — | **Pending** — Crucial P310 1TB 2230 + M.2 A/E adapter on order; not yet installed |
 | talos-cp-03 | nvme0n1 | 128 GB | AirDisk 128GB SSD | Talos system disk |
-| talos-cp-03 | nvme1n1 | 2.0 TB | Crucial CT2000P310SSD8 | **Free** — available for storage (blank, no GPT) |
+| talos-cp-03 | nvme1n1 | 2.0 TB | Crucial CT2000P310SSD8 | **Free** — Longhorn storage (`/dev/disk/by-id/nvme-CT2000P310SSD8_252450B1A33B`) |
 
-`talos-cp-01` and `talos-cp-02` each have a free secondary disk. `talos-cp-03` has no additional drive — one more NVMe is needed there before 3-replica distributed storage (Longhorn/Ceph) is achievable.
+`talos-cp-01` and `talos-cp-03` have free dedicated storage drives with by-id paths pinned in `talconfig.yaml`. `talos-cp-02`'s drive (Crucial P310 1TB 2230) is on order — once installed, run `talosctl get disks --nodes 10.60.0.202` to get the serial, add it as an inline node patch (same pattern as cp-01/cp-03), then `task talos:apply IP=10.60.0.202` + `task talos:upgrade-node IP=10.60.0.202`.
 
 ---
 

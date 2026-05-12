@@ -26,6 +26,7 @@
       "Bash(talhelper --version)",
       "Read(//home/vscode/**)",
       "Bash(task --list)",
+      "Bash(task talos:iso)",
       "WebSearch",
       "WebFetch(domain:hub.docker.com)",
       "WebFetch(domain:developer.1password.com)",
