@@ -71,6 +71,43 @@ This is safe as long as the owning Deployments/DaemonSets show healthy desired/r
 
 ## GitOps / Flux
 
+### When deploying a chart that installs CRDs, why must the CRD instances live in a separate Kustomization?
+
+**Short answer:** Flux dry-runs every resource in a Kustomization before applying any of them. If the Kustomization contains both the HelmRelease (which installs the CRDs) and instances of those CRDs, the dry-run fails — the API types don't exist yet at validation time.
+
+**Detail:** Before applying a Kustomization, the Flux kustomize-controller performs a server-side dry-run of every resource it is about to create or update. This validates that the API server knows about the resource types. When a HelmRelease and its CRD instances are in the same Kustomization, the dry-run order is non-deterministic — the HelmRelease itself is just a CR telling the helm-controller to do work later; it does not install the CRDs synchronously during the dry-run. So Flux tries to validate `TalosUpgrade` against the API, gets `no matches for kind "TalosUpgrade"`, and the whole Kustomization fails before anything is applied.
+
+**The fix — split into two Kustomizations:**
+
+```
+ks.yaml          # applies HelmRelease only; healthChecks the HelmRelease
+ks-upgrade.yaml  # applies CRD instances; dependsOn: <first kustomization name>
+```
+
+`dependsOn` tells Flux not to attempt `ks-upgrade.yaml` until `ks.yaml` is Ready. `ks.yaml` is only marked Ready once its `healthChecks` (the HelmRelease) pass — meaning the chart is fully installed and the CRDs exist in the API. By the time `ks-upgrade.yaml` runs its dry-run, the types are registered.
+
+**Important subtlety — `wait: false` vs `healthChecks`:** Setting `wait: false` on a Kustomization skips waiting for resources that have no explicit health check. But if you define `healthChecks` explicitly, Flux always evaluates those regardless of `wait`. So `ks.yaml` with `wait: false` + a HelmRelease `healthCheck` still correctly gates `ks-upgrade.yaml`.
+
+**This pattern applies to any chart that installs CRDs you want to use in Git** — cert-manager (Certificate, ClusterIssuer), external-secrets (ExternalSecret, SecretStore), Longhorn (custom node configs), etc. The pattern is: operator Kustomization → `dependsOn` → CRD-instance Kustomization.
+
+---
+
+### Why does `ghcr.io/home-operations/charts/tuppr` not support cosign verification, when `ghcr.io/home-operations/charts-mirror/openebs` does?
+
+**Short answer:** They are two different registry paths with different release pipelines. `charts-mirror` is a community-signed mirror of third-party charts; `charts` is the home-operations org's own first-party charts and does not go through the same signing pipeline.
+
+**Detail:** The home-operations community maintains two distinct OCI chart registries under `ghcr.io/home-operations/`:
+
+- **`charts-mirror/`** — mirrors of popular third-party charts (openebs, etc.) that the community re-signs with cosign keyless signing as part of their automated mirror pipeline. These can use `verify: provider: cosign`.
+
+- **`charts/`** — first-party charts for community-authored tools (tuppr, etc.). As of May 2026, these are pushed without cosign signatures, so `verify: provider: cosign` causes an immediate `VerificationError`.
+
+Using `verify: cosign` on an unsigned chart produces a failure that is *not retried until the next interval* (1h by default). Because the OCIRepository is a health-checked dependency of `cluster-meta`, this failure cascades: `cluster-meta` gets stuck running health checks for the bad revision, and `cluster-apps` (which `dependsOn: cluster-meta`) never unblocks. Removing the bad resource spec mid-health-check requires patching the live resource directly and force-reconciling the source — a Flux reconcile alone is not enough because the kustomization is frozen mid-health-check.
+
+**Rule of thumb:** only add `verify: provider: cosign` when you have confirmed the upstream registry signs its releases. For home-operations charts, check the release workflow in the source repo, or look for `*.sig` artifacts alongside the chart tag in GHCR.
+
+---
+
 ### Why does every app that uses `valuesFrom` need both a `configMapGenerator` and a `kustomizeconfig.yaml`?
 
 **Short answer:** Kustomize mangles ConfigMap names by appending a content hash. The `kustomizeconfig.yaml` tells it to apply the same rename to the HelmRelease's `valuesFrom` reference — otherwise Flux tries to mount a ConfigMap that doesn't exist.
