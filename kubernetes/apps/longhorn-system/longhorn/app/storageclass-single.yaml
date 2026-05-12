@@ -1,0 +1,32 @@
+---
+# longhorn-single: single-replica Longhorn StorageClass for workloads that manage their own
+# application-level replication (e.g. CloudNativePG streaming replication, Redis Sentinel).
+# Using a single storage replica avoids double replication overhead — Longhorn would otherwise
+# copy data that the application is already replicating across nodes.
+#
+# Trade-off: if the node's physical disk fails, the application must re-sync the lost instance
+# from its replication source (e.g. WAL catch-up from the Postgres primary). This is acceptable
+# when re-sync time is short — typically small-to-medium databases or apps with fast catch-up.
+# For large datasets where WAL catch-up could take hours, consider longhorn-retain (2 replicas)
+# to keep the storage layer intact even on disk failure.
+#
+# Always paired with reclaimPolicy: Retain — apps using this class manage irreplaceable data.
+# See: https://cloudnative-pg.io/documentation/current/storage/
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-single
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  numberOfReplicas: "1"
+  staleReplicaTimeout: "30"
+  fromBackup: ""
+  fsType: ext4
+  dataLocality: best-effort
+  unmapMarkSnapChainRemoved: ignored
+  disableRevisionCounter: "true"
+  dataEngine: v1
+  backupTargetName: default

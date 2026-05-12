@@ -13,6 +13,7 @@ resources:
   - ./namespace.yaml
   - ./helmrelease.yaml
   - ./storageclass-retain.yaml
+  - ./storageclass-single.yaml
   - ./node-configs/talos-cp-01.yaml
   - ./node-configs/talos-cp-02.yaml
   - ./node-configs/talos-cp-03.yaml
