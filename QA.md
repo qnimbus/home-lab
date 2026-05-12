@@ -4,6 +4,25 @@ Concise answers to questions that came up during cluster operation. Each entry c
 
 ---
 
+## Table of Contents
+
+**Networking**
+- [Why does cp-03 show many `eth0: renamed from tmp<random>` messages?](#why-does-the-talos-console-for-cp-03-show-many-eth0-renamed-from-tmprandom-kernel-messages)
+
+**Cluster Recovery / Unclean Shutdown**
+- [After a simultaneous power-off, the dashboard shows ~90 failed pods — but the cluster looks healthy. What happened?](#after-a-simultaneous-power-off-of-all-nodes-the-dashboard-shows-90-failed-pods-and-a-failed-deployment--but-the-cluster-looks-healthy-what-happened)
+
+**GitOps / Flux**
+- [When deploying a chart that installs CRDs, why must the CRD instances live in a separate Kustomization?](#when-deploying-a-chart-that-installs-crds-why-must-the-crd-instances-live-in-a-separate-kustomization)
+- [Why add `crds: CreateReplace` to operator HelmReleases?](#why-add-crds-createreplace-to-operator-helmreleases)
+- [Why does `charts/tuppr` not support cosign, when `charts-mirror/openebs` does?](#why-does-ghcriohome-operationschartstuppr-not-support-cosign-verification-when-ghcriohome-operationscharts-mirroropenebs-does)
+- [Why does `valuesFrom` require both a `configMapGenerator` and a `kustomizeconfig.yaml`?](#why-does-every-app-that-uses-valuesfrom-need-both-a-configmapgenerator-and-a-kustomizeconfigyaml)
+
+**Upgrades (tuppr + Renovate)**
+- [Does Renovate create incremental PRs per minor version, or one PR to the latest?](#does-renovate-create-incremental-prs-for-each-talosk8s-minor-version-or-one-pr-jumping-to-the-latest)
+
+---
+
 ## Networking
 
 ### Why does the Talos console for cp-03 show many `eth0: renamed from tmp<random>` kernel messages?
@@ -77,18 +96,56 @@ This is safe as long as the owning Deployments/DaemonSets show healthy desired/r
 
 **Detail:** Before applying a Kustomization, the Flux kustomize-controller performs a server-side dry-run of every resource it is about to create or update. This validates that the API server knows about the resource types. When a HelmRelease and its CRD instances are in the same Kustomization, the dry-run order is non-deterministic — the HelmRelease itself is just a CR telling the helm-controller to do work later; it does not install the CRDs synchronously during the dry-run. So Flux tries to validate `TalosUpgrade` against the API, gets `no matches for kind "TalosUpgrade"`, and the whole Kustomization fails before anything is applied.
 
-**The fix — split into two Kustomizations:**
+**The fix — split into two Kustomizations (both in one multi-document `ks.yaml`):**
 
-```
-ks.yaml          # applies HelmRelease only; healthChecks the HelmRelease
-ks-upgrade.yaml  # applies CRD instances; dependsOn: <first kustomization name>
+```yaml
+# Document 1 — operator
+kind: Kustomization
+metadata:
+  name: my-operator
+spec:
+  path: ./app          # contains HelmRelease only
+  healthChecks:
+    - kind: HelmRelease
+      name: my-operator
+      namespace: my-ns
+
+# Document 2 — CRD instances
+kind: Kustomization
+metadata:
+  name: my-operator-config
+spec:
+  path: ./config       # contains CRD instances
+  dependsOn:
+    - name: my-operator
 ```
 
-`dependsOn` tells Flux not to attempt `ks-upgrade.yaml` until `ks.yaml` is Ready. `ks.yaml` is only marked Ready once its `healthChecks` (the HelmRelease) pass — meaning the chart is fully installed and the CRDs exist in the API. By the time `ks-upgrade.yaml` runs its dry-run, the types are registered.
+`dependsOn` tells Flux not to attempt the second Kustomization until the first is Ready. `ks.yaml` is only marked Ready once its `healthChecks` (the HelmRelease) pass — meaning the chart is fully installed and the CRDs exist in the API. By the time `ks-upgrade.yaml` runs its dry-run, the types are registered.
 
 **Important subtlety — `wait: false` vs `healthChecks`:** Setting `wait: false` on a Kustomization skips waiting for resources that have no explicit health check. But if you define `healthChecks` explicitly, Flux always evaluates those regardless of `wait`. So `ks.yaml` with `wait: false` + a HelmRelease `healthCheck` still correctly gates `ks-upgrade.yaml`.
 
 **This pattern applies to any chart that installs CRDs you want to use in Git** — cert-manager (Certificate, ClusterIssuer), external-secrets (ExternalSecret, SecretStore), Longhorn (custom node configs), etc. The pattern is: operator Kustomization → `dependsOn` → CRD-instance Kustomization.
+
+---
+
+### Why add `crds: CreateReplace` to operator HelmReleases?
+
+**Short answer:** By default, Helm never updates CRDs on `helm upgrade` — only on `helm install`. Without `CreateReplace`, a chart upgrade that ships a new CRD schema silently leaves the old schema in the cluster.
+
+**Detail:** Helm's conservative default exists because CRD schema changes can be destructive — a `replace` deletes and recreates the CRD object, which briefly interrupts controllers watching that resource. Rather than risk accidental breakage, Helm chose to do nothing on upgrade. The consequence is that if an operator chart ships a new field in a CRD (e.g. a new `spec.policy.rebootMode` on `TalosUpgrade`), upgrading the HelmRelease installs the new controller binary but leaves the old CRD schema in place. Resources using the new field are silently ignored or rejected.
+
+`CreateReplace` opts in to CRD updates on both install and upgrade:
+
+```yaml
+install:
+  crds: CreateReplace
+upgrade:
+  crds: CreateReplace
+```
+
+This should be set on any HelmRelease for a chart that owns CRDs — operators, admission controllers, storage drivers, etc. It is safe for home-lab use where the tradeoff (brief CRD replacement vs. stale schema) clearly favours keeping schemas current.
+
+**Note:** `CreateReplace` is a Flux helm-controller option, not a native Helm flag. The equivalent in raw Helm is `--skip-crds=false` combined with manual CRD management, which is why the Flux field exists as a convenience.
 
 ---
 
@@ -142,7 +199,7 @@ nameReference:
 
 ## Upgrades (tuppr + Renovate)
 
-### Does Renovate create incremental PRs for each Talos/Kubernetes minor version, or one PR jumping to the latest?
+### Does Renovate create incremental PRs for each Talos/K8s minor version, or one PR jumping to the latest?
 
 **Short answer:** One PR to the latest — `separateMinorPatch: true` separates minor PRs from patch PRs, but within the minor category it still jumps to the newest available version.
 
