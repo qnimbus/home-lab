@@ -1,0 +1,25 @@
+---
+# longhorn-retain: identical to the default 'longhorn' StorageClass but with reclaimPolicy: Retain.
+# Use for stateful workloads with irreplaceable data (databases, media libraries) where accidental
+# PVC deletion must not silently destroy volume data. Deleted PVCs leave the PV in 'Released'
+# state — manual cleanup required (kubectl delete pv <name>) once data is confirmed safe.
+# See: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#reclaim-policy
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-retain
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  # 2 replicas until talos-cp-02 storage disk installed; bump to 3 when ready
+  numberOfReplicas: "2"
+  staleReplicaTimeout: "30"
+  fromBackup: ""
+  fsType: ext4
+  dataLocality: best-effort
+  unmapMarkSnapChainRemoved: ignored
+  disableRevisionCounter: "true"
+  dataEngine: v1
+  backupTargetName: default
