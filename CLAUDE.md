@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-12 | `crash-recovery-ghost-pods` | Diagnosed 91 ContainerStatusUnknown ghost pods after simultaneous 3-node power-off; deleted stale Failed pods; added unclean-shutdown diagnosis + cleanup section to QA.md |
 > | 2026-05-12 | `qa-log-and-eth0-rename` | Created QA.md operational Q&A log; explained eth0 rename kernel messages (normal Cilium CNI behaviour) |
 > | 2026-05-12 | `storage-storageclasses-and-conventions` | Added longhorn-retain + longhorn-single StorageClasses; added doc-comment convention to CLAUDE.md |
 > | 2026-05-12 | `persistent-storage-deploy-and-fix` | Deployed OpenEBS + Longhorn; fixed missing Namespace resources and ConfigMap namespace; both HelmReleases live; 3-replica upgrade deferred to cp-02 drive arrival |

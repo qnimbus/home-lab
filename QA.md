@@ -18,6 +18,57 @@ Bursts of these messages (e.g. many within a second) indicate pods being created
 
 ---
 
+## Cluster Recovery / Unclean Shutdown
+
+### After a simultaneous power-off of all nodes, the dashboard shows ~90 failed pods and a failed Deployment — but the cluster looks healthy. What happened?
+
+**Short answer:** Ghost pods from an unclean shutdown. The cluster is fine; the pod objects need manual deletion.
+
+**Detail:** When all nodes lose power simultaneously, kubelets never get a chance to write terminal status for their running containers. On restart, the kubelet can no longer find those containers and reports their status as `ContainerStatusUnknown`, which transitions the pod to `Failed` phase. Kubernetes does **not** automatically garbage-collect `Failed` pods (only `Succeeded` ones are eligible for GC by default).
+
+Meanwhile the Deployment controller sees the failed pods and creates replacements — potentially dozens of times before one stabilises. The result is a large number of stale `Failed` pod objects in etcd that have no containers behind them, but are never cleaned up automatically.
+
+In this cluster the pattern after a full 3-node shutdown was:
+- ~91 `cilium-operator` pods in `kube-system`, all `ContainerStatusUnknown`, all on `talos-cp-03`
+- `cilium-operator` Deployment showing `1/1` (healthy) despite the pod count
+- Dashboard reporting "Failed: 1" for Deployment and ReplicaSet — it counts pod failures, not desired/ready state
+- `openebs` Flux Kustomization throwing transient health-check timeouts during boot sequencing (self-resolved)
+
+**How to confirm this is the issue (not a real failure):**
+
+```bash
+# Are all failed pods for the same workload and ContainerStatusUnknown?
+kubectl get pods -A --field-selector=status.phase=Failed
+
+# Is the Deployment itself healthy?
+kubectl get deployment -n kube-system cilium-operator
+# Expect: READY 1/1
+
+# Are there NodeShutdown events matching the outage timestamp?
+kubectl get events -n kube-system --field-selector=reason=NodeShutdown
+```
+
+**Fix — delete the stale pods (safe, no config change needed):**
+
+```bash
+# Generalised: delete all Failed pods in a namespace for a specific workload
+kubectl delete pods -n kube-system \
+  -l app.kubernetes.io/name=cilium-operator \
+  --field-selector=status.phase=Failed
+```
+
+If the outage affected multiple workloads across namespaces, run a broader sweep:
+
+```bash
+kubectl delete pods -A --field-selector=status.phase=Failed
+```
+
+This is safe as long as the owning Deployments/DaemonSets show healthy desired/ready counts beforehand. The controllers will not create new replacements because they already have the desired number of running pods.
+
+**Why cp-03 accumulates more than the other nodes:** The scheduler preferentially places workloads on cp-03 (AMD, 32c, 92 GB) due to resource fit. More pods means more `ContainerStatusUnknown` events after a crash.
+
+---
+
 ## GitOps / Flux
 
 ### Why does every app that uses `valuesFrom` need both a `configMapGenerator` and a `kustomizeconfig.yaml`?
