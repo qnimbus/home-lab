@@ -1,0 +1,16 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+configMapGenerator:
+  - name: tuppr-values
+    namespace: system-upgrade
+    files:
+      - values.yaml=./helm/values.yaml
+configurations:
+  - ./helm/kustomizeconfig.yaml
+resources:
+  - ./namespace.yaml
+  - ./helmrelease.yaml
+  - ./talosupgrade.yaml
+  - ./kubernetesupgrade.yaml

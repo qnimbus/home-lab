@@ -5,4 +5,4 @@ machine:
       allowedRoles:
         - os:admin
       allowedKubernetesNamespaces:
-        - system-upgrade   # used by system-upgrade-controller for Talos/k8s upgrades
+        - system-upgrade   # used by tuppr for Talos/k8s upgrades

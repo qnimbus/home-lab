@@ -5,3 +5,4 @@ kind: Kustomization
 resources:
   - ./openebs
   - ./longhorn-system
+  - ./system-upgrade
