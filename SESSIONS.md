@@ -4,6 +4,58 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-12 — `tuppr-upgrade-controller-deployment`
+
+### What we did
+- Researched automated Talos + Kubernetes upgrade tooling; selected **tuppr** (home-operations/tuppr
+  v0.1.26) as the community-standard GitOps-native successor to the archived `jfroy/tnu`
+- Deployed tuppr: OCIRepository source, Flux Kustomization pair, HelmRelease with `crds:
+  CreateReplace`, `TalosUpgrade` + `KubernetesUpgrade` CRD instances pinned to current running
+  versions (v1.10.6 / v1.33.4) — upgrades are idle until Renovate bumps them
+- Updated Renovate config: removed `installer` + `kubelet` from `ignoreDeps`; replaced single
+  grouped rule with two separate `separateMinorPatch: true` rules to prevent dangerous minor-skip PRs
+- **Fixed two rollout errors discovered during live reconciliation:**
+  1. **cosign verification failure** — copied `verify: provider: cosign` from openebs OCIRepository
+     without checking; `charts/` (first-party) is unsigned, only `charts-mirror/` is cosign-signed;
+     required patching the live OCIRepository resource directly to break cluster-meta's frozen
+     health-check before flux reconcile could proceed
+  2. **CRD chicken-and-egg dry-run failure** — `TalosUpgrade`/`KubernetesUpgrade` instances were
+     in the same Kustomization as the HelmRelease; Flux dry-runs all resources before applying any,
+     so the CRD types didn't exist yet; fixed by splitting into two Kustomizations with `dependsOn`
+- Researched `.archive` for CRD ordering patterns; confirmed split-Kustomization + `dependsOn` is
+  the canonical approach; refactored to archive convention of multi-document `ks.yaml`
+- Added five Q&A entries to `QA.md`: CRD chicken-and-egg, `crds: CreateReplace`, cosign registry
+  split, `valuesFrom` + configMapGenerator + kustomizeconfig.yaml, Renovate minor vs patch PRs
+- Added ToC to `QA.md`
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/tuppr.yaml` | NEW — OCIRepository for tuppr chart (no cosign) |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Add tuppr.yaml |
+| `kubernetes/apps/system-upgrade/kustomization.yaml` | NEW — namespace-level entry-point |
+| `kubernetes/apps/kustomization.yaml` | Add system-upgrade |
+| `kubernetes/apps/system-upgrade/tuppr/ks.yaml` | NEW — multi-doc: tuppr + tuppr-upgrade Kustomizations |
+| `kubernetes/apps/system-upgrade/tuppr/app/kustomization.yaml` | NEW — configMapGenerator + helmrelease |
+| `kubernetes/apps/system-upgrade/tuppr/app/namespace.yaml` | NEW |
+| `kubernetes/apps/system-upgrade/tuppr/app/helmrelease.yaml` | NEW — `crds: CreateReplace` |
+| `kubernetes/apps/system-upgrade/tuppr/app/helm/values.yaml` | NEW |
+| `kubernetes/apps/system-upgrade/tuppr/app/helm/kustomizeconfig.yaml` | NEW — valuesFrom name rewrite |
+| `kubernetes/apps/system-upgrade/tuppr/upgrade/kustomization.yaml` | NEW |
+| `kubernetes/apps/system-upgrade/tuppr/upgrade/talosupgrade.yaml` | NEW — v1.10.6, parallelism: 1 |
+| `kubernetes/apps/system-upgrade/tuppr/upgrade/kubernetesupgrade.yaml` | NEW — v1.33.4 |
+| `renovate.json5` | Remove installer+kubelet from ignoreDeps; add per-package separateMinorPatch rules |
+| `talos/patches/controller/machine-features.yaml` | Comment: system-upgrade-controller → tuppr |
+| `QA.md` | Add ToC; add 5 new entries covering rollout lessons |
+
+### Notes
+- Cluster bootstraps cleanly from current repo state: `dependsOn` ordering guarantees CRDs are
+  registered before instances are applied on a fresh install
+- Next Renovate PRs for Talos/k8s will target `talosupgrade.yaml` and `kubernetesupgrade.yaml`;
+  merge one minor at a time (Talos and Kubernetes both require sequential minor upgrades)
+
+---
+
 ## 2026-05-12 — `qa-log-and-eth0-rename`
 
 ### What we did

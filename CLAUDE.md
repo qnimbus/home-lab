@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-12 | `tuppr-upgrade-controller-deployment` | Deployed tuppr as GitOps upgrade controller; fixed cosign + CRD chicken-and-egg rollout errors; updated Renovate for separateMinorPatch; added 5 QA entries |
 > | 2026-05-12 | `crash-recovery-ghost-pods` | Diagnosed 91 ContainerStatusUnknown ghost pods after simultaneous 3-node power-off; deleted stale Failed pods; added unclean-shutdown diagnosis + cleanup section to QA.md |
 > | 2026-05-12 | `qa-log-and-eth0-rename` | Created QA.md operational Q&A log; explained eth0 rename kernel messages (normal Cilium CNI behaviour) |
 > | 2026-05-12 | `storage-storageclasses-and-conventions` | Added longhorn-retain + longhorn-single StorageClasses; added doc-comment convention to CLAUDE.md |
@@ -184,7 +185,7 @@ Steps 1–13 are complete. Flux is fully operational and reconciling from the pr
 
 ---
 
-## GitOps Conventions (kubernetes/ — to be built)
+## GitOps Conventions
 
 Follow the archive's proven pattern (`/.archive/kubernetes/`) adapted for this cluster:
 
@@ -234,6 +235,35 @@ All cluster YAML files (Talos patches, HelmRelease values, StorageClasses, Kusto
 - Boilerplate that every Kubernetes resource has (`apiVersion`, `kind`, `metadata.name`)
 - Comments that restate the YAML in prose ("sets the replica count to 2")
 
+### Multi-document ks.yaml for operator + CRD instances
+
+When an operator installs CRDs and you also want to deploy instances of those CRDs via Git, split
+into two Kustomizations in a **single multi-document `ks.yaml`** file:
+
+1. **Operator Kustomization** — deploys the HelmRelease; has explicit `healthChecks` for the HelmRelease
+2. **CRD-instance Kustomization** — deploys CRD instances; has `dependsOn` pointing at the operator Kustomization
+
+This is required because Flux dry-runs every resource in a Kustomization before applying any. If
+instances and the HelmRelease are in the same Kustomization, the dry-run fails — the CRD types
+don't exist yet. `dependsOn` + `healthChecks` ensures the operator is fully installed before the
+instance Kustomization's dry-run runs.
+
+Single file keeps the dependency relationship visible in one place (archive convention).
+
+### `crds: CreateReplace` on operator HelmReleases
+
+Add `crds: CreateReplace` to both `install` and `upgrade` blocks on any HelmRelease for a chart
+that owns CRDs (operators, admission controllers, storage drivers). Helm's default is to never
+update CRDs on upgrade — without this, a chart upgrade that ships a new CRD schema leaves the old
+schema in the cluster, silently breaking resources that use new fields.
+
+```yaml
+install:
+  crds: CreateReplace
+upgrade:
+  crds: CreateReplace
+```
+
 ### Community research before new deployments
 
 Before planning any new application deployment or writing a new Kustomization, search **[kubesearch.dev](https://kubesearch.dev/)** for the chart or app name. This indexes public home-lab GitOps repos and surfaces real-world `HelmRelease`, `values.yaml`, and `ExternalSecret` patterns used by other home labbers running the same stack (Talos + Flux + Cilium).
@@ -255,7 +285,7 @@ Community configs reflect their authors' constraints, mistakes, and historical b
 - **etcd on management subnet only**: `advertisedSubnets: ["10.60.0.0/24"]` keeps etcd off storage VLAN
 - **NFS defaults**: `nfsvers=4.2`, `nconnect=16`, `hard=True`, `noatime=True` (set in machine files patch)
 - **Container runtime**: unprivileged ports + ICMP enabled; image layers not discarded (cache efficiency)
-- **Upgrade path**: system-upgrade-controller + Talos API access from `system-upgrade` namespace
+- **Upgrade path**: tuppr (home-operations/tuppr) — `TalosUpgrade` + `KubernetesUpgrade` CRDs in `system-upgrade` namespace; Renovate opens PRs per minor version; tuppr performs rolling node-by-node upgrades
 
 ---
 
@@ -277,7 +307,8 @@ Community configs reflect their authors' constraints, mistakes, and historical b
 | Longhorn (2-replica interim)  | 🔄 Running | Live in 2-replica mode; bump to 3-replica when cp-02 drive installed |
 | External Secrets + 1Password  | 🔲 TODO    | First GitOps apps                               |
 | Split DNS (ExternalDNS)       | 🔲 TODO    | Internal (home.arpa) + external (Cloudflare)    |
-| Renovate                      | ✅ Done    | `renovate.json5` in place; GitHub App installed; Talos/k8s versions intentionally excluded (managed separately) |
+| Renovate                      | ✅ Done    | `renovate.json5` in place; GitHub App installed; Talos (`installer`) + k8s (`kubelet`) tracked via `separateMinorPatch` rules; `talosctl` + `etcd` still excluded (must match running server version) |
+| Talos + Kubernetes upgrades   | ✅ Done    | tuppr deployed in `system-upgrade`; `TalosUpgrade` + `KubernetesUpgrade` CRDs at current running versions; upgrades triggered by Renovate PRs |
 
 ---
 
