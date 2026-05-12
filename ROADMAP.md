@@ -50,18 +50,17 @@ no free tail to reclaim. Key findings:
 #### Recommended staged rollout
 
 **Stage 1 — ✅ Done**
-**OpenEBS LocalPV** deployed via `kubernetes/apps/openebs/`. `openebs-hostpath` StorageClass
-(non-default), base path `/var/mnt/openebs/local` (EPHEMERAL). Flux manifests committed;
-will reconcile on next push.
+**OpenEBS LocalPV** deployed and running in `openebs` namespace. `openebs-hostpath` StorageClass
+(non-default) live, base path `/var/mnt/openebs/local` (EPHEMERAL).
 
-**Stage 2 — Talos prereqs ✅ done; Kubernetes manifests ✅ committed; awaiting cp-02 drive**
+**Stage 2 — ✅ Deployed (2-replica interim); one step remaining when cp-02 drive arrives**
 Talos prerequisites complete: `iscsi-tools` + `util-linux-tools` in schematic; per-node
 `machine.disks` patches applied for cp-01 (GoodRam IRDM PRO NANO, serial `G4E004578`) and
 cp-03 (Crucial CT2000P310SSD8, serial `252450B1A33B`); cp-02 upgraded to new schematic but
 no disk patch yet (Crucial P310 1TB 2230 on order).
 
-**Longhorn** manifests committed to `kubernetes/apps/longhorn-system/`. Currently configured
-with `defaultClassReplicaCount: 2` (provisional — only cp-01 and cp-03 have storage disks).
+**Longhorn** deployed and running in `longhorn-system` namespace. Currently configured with
+`defaultClassReplicaCount: 2` (provisional — only cp-01 and cp-03 have storage disks).
 talos-cp-02 node-config has `allowScheduling: false`. When cp-02's drive arrives:
 - `talosctl get disks --nodes 10.60.0.202` → grab serial; add `machine.disks` inline patch for cp-02; `task talos:apply IP=10.60.0.202`
 - Set `allowScheduling: true` in `node-configs/talos-cp-02.yaml`
@@ -81,8 +80,8 @@ workloads (photo libraries, shared media). Wire SMB/NFS credentials via External
 
 ```
 cert-manager → external-secrets → onepassword-connect   ← needed for NFS/SMB credentials (Stage 4)
-OpenEBS LocalPV                                ← ✅ Stage 1 — committed, deploy on push
-cp-02 disk installed → allowScheduling: true + replicaCount: 3 → Longhorn 3x ← Stage 2, cp-02 drive pending
+OpenEBS LocalPV                                ← ✅ Stage 1 — deployed, running
+cp-02 disk installed → allowScheduling: true + replicaCount: 3 → Longhorn 3x ← Stage 2, Longhorn live (2-replica), cp-02 drive pending
 Longhorn stable → evaluate Rook-Ceph                    ← Stage 3, optional
 ```
 

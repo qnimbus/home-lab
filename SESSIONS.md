@@ -4,6 +4,40 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-12 — `persistent-storage-deploy-and-fix`
+
+### What we did
+- Committed all prior session changes (3 commits: Talos prereqs, K8s app layer, docs) and pushed to origin
+- Ran `task reconcile` — Flux pulled the new manifests and attempted to deploy both apps
+- Diagnosed two errors:
+  - **openebs**: `namespaces "openebs" not found` — `install.createNamespace: true` is a Helm directive and runs too late; Flux needs the namespace to already exist when it applies the HelmRelease CR
+  - **longhorn**: `ConfigMap/longhorn-values namespace not specified` — configMapGenerator entry lacked an explicit `namespace: longhorn-system`
+- Fixed both by adding explicit `Namespace` resources to each app's `app/` directory and wiring them into `kustomization.yaml`; also added `namespace: longhorn-system` to the configMapGenerator
+- Pushed fix commit, reconciled — both HelmReleases installed successfully within ~30 seconds
+
+### Result
+- **OpenEBS**: `openebs-hostpath` StorageClass live (non-default, WaitForFirstConsumer)
+- **Longhorn**: `longhorn` StorageClass live (default, WaitForFirstConsumer), 2-replica mode; full pod stack running on all 3 nodes
+- **StorageClasses**: `longhorn` (default), `longhorn-static`, `openebs-hostpath`
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/openebs/openebs/app/namespace.yaml` | NEW — explicit Namespace for openebs |
+| `kubernetes/apps/openebs/openebs/app/kustomization.yaml` | Add `./namespace.yaml` to resources |
+| `kubernetes/apps/longhorn-system/longhorn/app/namespace.yaml` | NEW — explicit Namespace for longhorn-system |
+| `kubernetes/apps/longhorn-system/longhorn/app/kustomization.yaml` | Add `./namespace.yaml`; add `namespace: longhorn-system` to configMapGenerator |
+
+### Remaining step (cp-02 drive)
+When the Crucial P310 1TB 2230 arrives:
+1. `talosctl get disks --nodes 10.60.0.202` → grab serial
+2. Add inline `machine.disks` patch for cp-02 in `talos/talconfig.yaml` (matching cp-01/cp-03 by-id pattern)
+3. `task talos:apply IP=10.60.0.202`
+4. Set `allowScheduling: true` in `kubernetes/apps/longhorn-system/longhorn/app/node-configs/talos-cp-02.yaml`
+5. Bump `defaultClassReplicaCount` and `defaultReplicaCount` from `2` → `3` in `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml`
+
+---
+
 ## 2026-05-07 — `persistent-storage-k8s-app-layer`
 
 ### What we did

@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-12 | `persistent-storage-deploy-and-fix` | Deployed OpenEBS + Longhorn; fixed missing Namespace resources and ConfigMap namespace; both HelmReleases live; 3-replica upgrade deferred to cp-02 drive arrival |
 > | 2026-05-07 | `persistent-storage-k8s-app-layer` | Full Flux app layer for OpenEBS LocalPV + Longhorn committed; 2-replica provisional config until cp-02 drive arrives; Flux Kustomization CRs in flux-system namespace |
 > | 2026-05-07 | `persistent-storage-talos-prereqs` | iscsi-tools + util-linux-tools in schematic; per-node by-id disk patches for cp-01/cp-03; rolling upgrade all 3 nodes; fixed bootstrap:cluster doubled-path bug |
 > | 2026-05-07 | `etcd-learner-recovery-and-toolchain` | Fixed cp-03 stuck etcd LEARNER (dual peer URLs from DHCP during LACP-off ISO boot); manual `etcdctl member promote`; added `etcd` to mise; excluded `talosctl`+`etcd` from Renovate |
@@ -251,8 +252,8 @@ Community configs reflect their authors' constraints, mistakes, and historical b
 | cert-manager                  | ✅ Done    | Running via Helmfile bootstrap                  |
 | Flux (operator + instance)    | ✅ Done    | Reconciling from private repo via SSH           |
 | External Secrets + 1Password  | 🔲 TODO    | First GitOps apps                               |
-| OpenEBS LocalPV               | 🔄 Committed | Flux manifests in `kubernetes/apps/openebs/`; push to deploy |
-| Longhorn (2-replica interim)  | 🔄 Committed | Flux manifests in `kubernetes/apps/longhorn-system/`; 2-replica until cp-02 drive installed; push to deploy |
+| OpenEBS LocalPV               | ✅ Done    | `openebs-hostpath` StorageClass live (non-default)           |
+| Longhorn (2-replica interim)  | 🔄 Running | Live in 2-replica mode; bump to 3-replica when cp-02 drive installed |
 | External Secrets + 1Password  | 🔲 TODO    | First GitOps apps                               |
 | Split DNS (ExternalDNS)       | 🔲 TODO    | Internal (home.arpa) + external (Cloudflare)    |
 | Renovate                      | ✅ Done    | `renovate.json5` in place; GitHub App installed; Talos/k8s versions intentionally excluded (managed separately) |
