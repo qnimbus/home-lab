@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-12 | `qa-log-and-eth0-rename` | Created QA.md operational Q&A log; explained eth0 rename kernel messages (normal Cilium CNI behaviour) |
 > | 2026-05-12 | `storage-storageclasses-and-conventions` | Added longhorn-retain + longhorn-single StorageClasses; added doc-comment convention to CLAUDE.md |
 > | 2026-05-12 | `persistent-storage-deploy-and-fix` | Deployed OpenEBS + Longhorn; fixed missing Namespace resources and ConfigMap namespace; both HelmReleases live; 3-replica upgrade deferred to cp-02 drive arrival |
 > | 2026-05-07 | `persistent-storage-k8s-app-layer` | Full Flux app layer for OpenEBS LocalPV + Longhorn committed; 2-replica provisional config until cp-02 drive arrives; Flux Kustomization CRs in flux-system namespace |
@@ -22,6 +23,8 @@
 > | 2026-05-06 | `setup-sops-age-key-devcontainer` | Created CLAUDE.md; set `SOPS_AGE_KEY_FILE` via `devcontainer.json` `remoteEnv` |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
+
+> For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](QA.md).
 
 > For a high-level overview of the cluster and FluxCD structure, see [CLUSTER.md](CLUSTER.md).
 > Keep `CLUSTER.md` up to date as the cluster evolves: when adding new components, changing core infrastructure (CNI, DNS, storage, secrets strategy), or completing major bootstrap phases, update the relevant section. Keep entries concise and high-level — implementation details belong in code or `CLAUDE.md`.

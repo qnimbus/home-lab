@@ -4,6 +4,23 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-12 — `qa-log-and-eth0-rename`
+
+### What we did
+- Explained the `eth0: renamed from tmp<random>` kernel messages visible in the Talos console on
+  cp-03 — confirmed normal CNI behaviour (Cilium veth pair creation for pod networking), not errors
+- Created `QA.md` — a persistent log of operational Q&A capturing cluster-specific behaviours
+  that look alarming but aren't, plus actionable signals for when they would indicate a real problem
+- Added a reference to `QA.md` in `CLAUDE.md` alongside the existing CLUSTER.md and SESSIONS.md pointers
+
+### Files changed
+| File | Change |
+|------|--------|
+| `QA.md` | NEW — operational Q&A log; first entry: eth0 rename messages |
+| `CLAUDE.md` | Add `QA.md` reference in the intro doc-pointer block |
+
+---
+
 ## 2026-05-12 — `storage-storageclasses-and-conventions`
 
 ### What we did
