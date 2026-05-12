@@ -150,4 +150,4 @@ Deliverable: a PR updating `schematic.yaml` and the relevant patch files with re
 | cert-manager                  | Running via Helmfile bootstrap                  |
 | Flux (operator + instance)    | Reconciling from private repo via SSH           |
 | Renovate                      | `renovate.json5` in place; GitHub App installed; Talos/k8s tracked via `separateMinorPatch` rules (PRs target tuppr CRDs) |
-| Talos + Kubernetes upgrades   | tuppr deployed; `TalosUpgrade` + `KubernetesUpgrade` CRDs at current running versions; Renovate drives version PRs one minor at a time |
+| Talos + Kubernetes upgrades   | tuppr deployed; Talos manually upgraded v1.10.6→v1.13.0 (3 incremental hops); `TalosUpgrade` CRD updated to v1.13.0; Kubernetes still at v1.33.4 — pending upgrade |

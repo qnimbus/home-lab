@@ -4,6 +4,34 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-12 — `talos-upgrade-v1.10-to-v1.13`
+
+### What we did
+- Analysed Renovate PR for `ghcr.io/siderolabs/installer` (`v1.10.6 → v1.13.1`); determined safe
+  incremental path: `v1.10.6 → v1.11.6 → v1.12.7 → v1.13.0`
+  - `v1.13.1` was a git tag but not a published GitHub release or Docker image — Renovate tracked
+    the tag; closed/ignored in favour of targeting `v1.13.0` (latest actual release)
+- **Fixed Taskfile bug** in `talos:upgrade-node`: `--image` was passed twice — once by
+  `talhelper gencommand upgrade` (correct, with `:v<version>` tag) and once via `--extra-flags`
+  (versionless, would override via cobra last-wins). Removed the redundant `--extra-flags` image
+  arg and the now-unused `TALOS_IMAGE` var
+- **Fixed `admission-controller-patch.yaml`**: was a JSON RFC 6902 `op: remove` patch; Talos v1.12
+  introduced multi-document machine configs and talhelper now rejects JSON 6902 patches for them.
+  Converted to strategic merge patch (`admissionControl: []`)
+- Upgraded all 3 nodes through each hop one at a time (preserving etcd quorum); used
+  `mise exec talosctl@<current-server-version>` for each hop; confirmed ±1 minor version skew
+  is fine (ENHANCE_YOUR_CALM only occurs beyond ±1 minor)
+- Cluster now fully on Talos `v1.13.0`, kernel `6.18.24-talos`, containerd `2.2.3`
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talenv.yaml` | `talosVersion`: `v1.10.6` → `v1.13.0` |
+| `.taskfiles/talos/Taskfile.yaml` | `upgrade-node`: remove redundant `--image` extra-flag and `TALOS_IMAGE` var |
+| `talos/patches/controller/admission-controller-patch.yaml` | Convert JSON 6902 `op: remove` to strategic merge `admissionControl: []` |
+
+---
+
 ## 2026-05-12 — `purge-failed-pods-script`
 
 ### What we did

@@ -1,2 +1,6 @@
-- op: remove
-  path: /cluster/apiServer/admissionControl
+# Strategic merge patch — removes all default admission plugins (e.g. PodSecurity).
+# Previously a JSON 6902 "op: remove" patch, which talhelper rejects for multi-document
+# machine configs introduced in Talos v1.12.
+cluster:
+  apiServer:
+    admissionControl: []
