@@ -279,6 +279,8 @@ Community configs reflect their authors' constraints, mistakes, and historical b
 ## Working in This Repo
 
 - **Do not** add `Co-Authored-By:` trailers to git commit messages.
+- **Do not** `git push` automatically — always ask for explicit confirmation before every push, no exceptions.
+- **Do not** `git fetch` or `git pull` automatically — before any `git commit`, check whether remote changes exist (`git fetch --dry-run` or `git log HEAD..origin/<branch>`) and ask for explicit confirmation before fetching or pulling.
 - **Do not** run `kubectl apply` directly — all changes go through Git → Flux
 - **Do not** edit generated files in `talos/clusterconfig/` — edit `talconfig.yaml` and re-run `genconfig`
 - **Do** consult `.archive/` for patterns and prior art but adapt rather than copy wholesale
