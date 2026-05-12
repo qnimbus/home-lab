@@ -43,7 +43,7 @@ releases:
     createNamespace: true
     chart: oci://quay.io/jetstack/charts/cert-manager
     # renovate: registryUrl=https://quay.io/jetstack/charts chart=cert-manager
-    version: v1.17.2
+    version: v1.20.2
     values: ['../apps/cert-manager/cert-manager/app/helm/values.yaml']
     needs: ['kube-system/spegel']
 
