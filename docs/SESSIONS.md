@@ -9,6 +9,28 @@ A running record of work done, files modified, and decisions made across Claude 
 ### Goal
 Execute the Longhorn 1.9.0 → 1.11.2 upgrade: fix two blocking defects in the helmrelease (missing `crds: CreateReplace`, tight instance-manager memory limit), verify CRD storedVersions on the live cluster, push fixes to the PR #19 branch, merge, and reconcile.
 
+### What we did
+- Verified all 22 Longhorn CRDs show only `v1beta2` storedVersions — no migration script needed
+- Added `crds: CreateReplace` to both `install` and `upgrade` blocks in `helmrelease.yaml` (CLAUDE.md convention; also ensures CRD schemas actually update on upgrade)
+- Raised `longhornInstanceManager.resources.limits.memory` from 64Mi → 128Mi (v1.11.x adds S.M.A.R.T. disk-health monitoring per node)
+- Updated values.yaml chart reference comment from `v1.9.x` to `v1.11.x`
+- Committed fixes to `renovate/longhorn-1.x` branch; user pushed and merged PR #19
+- **Discovered**: Longhorn enforces a one-minor-version-at-a-time upgrade gate in the manager binary — direct 1.9→1.11 is rejected at startup with fatal error; the pr-upgrade-reviewer agent incorrectly stated direct upgrade was supported
+- First merge failed: HelmRelease timed out (5m); Flux initiated rollback; HelmRelease suspended to stop retry cycle; cluster returned to healthy 1.9.0
+- Executed staged upgrade: 1.9.0 → 1.10.2 (intermediate hop, separate commit) → 1.11.2
+- Both hops succeeded via `flux reconcile ks longhorn --with-source`; all pods healthy at 1.11.2
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/longhorn-system/longhorn/app/helmrelease.yaml` | `crds: CreateReplace` added; version: 1.9.0 → 1.10.2 → 1.11.2 (staged) |
+| `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml` | instance-manager memory limit 64Mi → 128Mi; chart comment updated to v1.11.x |
+
+### Key decisions
+- **Staged upgrade required**: Longhorn only supports one minor version at a time (manager binary enforces this, not a chart-level check). The upgrade path was 1.9.0 → 1.10.2 → 1.11.2, not direct.
+- **Suspend during failed retry**: When the 1.11.2 upgrade failed, `flux suspend hr longhorn` was used to stop the retry cycle immediately rather than waiting through 2 more 5-minute timeout+rollback cycles.
+- **pr-upgrade-reviewer correction**: The agent stated direct 1.9→1.11 was "explicitly supported" — this was wrong. The manager's `checkLHUpgradePath` function rejects it. Memory note updated.
+
 ---
 
 ## 2026-05-13 — `pr-19-review`
