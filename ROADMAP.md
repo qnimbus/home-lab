@@ -101,6 +101,36 @@ Dependency chain: `cert-manager` → `external-secrets` → `onepassword-connect
 
 ---
 
+### Monitoring — kube-prometheus-stack
+
+Deploy [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) to provide cluster-wide observability: Prometheus (metrics), Alertmanager (routing), Grafana (dashboards), and kube-state-metrics (Kubernetes object metrics).
+
+**Why this matters for this cluster:**
+- Stale `Failed` pods accumulate silently — the `PodGCController` only triggers at 12,500 terminated pods, so manual sweeps (`task purge-failed-pods`) are currently the only detection mechanism
+- Longhorn, Flux, and tuppr all expose Prometheus metrics; without a scraper they go unobserved
+- Alertmanager can route to Discord/Slack/email so cluster health issues surface without requiring active dashboard monitoring
+
+**Alerting rules to add at minimum:**
+- `kube_pod_status_phase{phase=~"Failed|Unknown"} > 0` — stale pod detection (the gap identified during the PSA incident)
+- `kube_helmrelease_ready == 0` — Flux HelmRelease degraded
+- `node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.15` — disk pressure on storage nodes
+- `longhorn_volume_robustness == 2` — degraded volume (Longhorn metric, requires `serviceMonitor`)
+
+**Rough deployment steps:**
+- Add `prometheus-community` HelmRepository to `kubernetes/flux/meta/repos/helm/`
+- HelmRelease in `kubernetes/apps/monitoring/kube-prometheus-stack/`
+- Longhorn `ServiceMonitor` already supported — enable via `monitoring.enabled: true` in Longhorn values
+- Alertmanager receiver config (Discord webhook or SMTP) via ExternalSecret from 1Password
+
+**Dependencies:**
+- `cert-manager` — ✅ already running (needed for webhook TLS)
+- `external-secrets` + `onepassword-connect` — needed for alertmanager receiver credentials (can deploy stack first with a placeholder receiver and wire credentials later)
+- Longhorn — ✅ already running (enables `ServiceMonitor` integration immediately)
+
+**Resource note:** kube-prometheus-stack is the most resource-intensive item on this roadmap. Prometheus default retention is 10 days in-memory + on-disk. Use a Longhorn PVC for Prometheus storage (`longhorn-retain` StorageClass) and size the retention window conservatively for a 3-node cluster.
+
+---
+
 ### Talos Config, Image Extensions & Patch Audit
 
 Review the current Talos configuration end-to-end to identify missing extensions, suboptimal patches, and any node-specific tuning gaps. The schematic currently ships `intel-ucode` and `amd-ucode` with several extensions commented out; patches exist for kubelet, network, sysctls, NFS defaults, and machine features — but these were written incrementally and have not been audited holistically.
