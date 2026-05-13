@@ -4,7 +4,10 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: flux-system
 resources:
+  - ./cert-manager.yaml
   - ./coredns.yaml
+  - ./flux-instance.yaml
+  - ./flux-operator.yaml
   - ./openebs.yaml
   - ./spegel.yaml
   - ./tuppr.yaml

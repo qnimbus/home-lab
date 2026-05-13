@@ -56,7 +56,7 @@ tasks:
       - {msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer", sh: "test -n \"$OP_SERVICE_ACCOUNT_TOKEN\""}
 
   apps:
-    desc: Bootstrap apps into the cluster via helmfile (Cilium → CoreDNS → Spegel → cert-manager → Flux)
+    desc: "Bootstrap apps into the cluster via helmfile (Cilium → CoreDNS → Spegel → cert-manager → Flux) — FIRST BOOT ONLY; use bootstrap:upgrade for day-2 upgrades"
     cmd: helmfile sync -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.yaml
     preconditions:
       - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
@@ -64,3 +64,20 @@ tasks:
       - {msg: ".sops.yaml not found", sh: "test -f {{.ROOT_DIR}}/.sops.yaml"}
       - {msg: "age key not found", sh: "test -f {{.SOPS_AGE_KEY_FILE}}"}
       - {msg: "helmfile not found", sh: "which helmfile"}
+
+  diff:
+    desc: Preview pending version changes for bootstrap components (helmfile diff) — read-only
+    cmd: '{{.ROOT_DIR}}/scripts/upgrade-bootstrap.sh diff'
+    preconditions:
+      - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
+      - {msg: "helmfile not found", sh: "which helmfile"}
+      - {msg: "helm not found", sh: "which helm"}
+
+  upgrade:
+    desc: Upgrade bootstrap components (Cilium, CoreDNS, Spegel, cert-manager, flux-operator) to Helmfile-pinned versions
+    cmd: '{{.ROOT_DIR}}/scripts/upgrade-bootstrap.sh sync'
+    preconditions:
+      - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
+      - {msg: "helmfile not found", sh: "which helmfile"}
+      - {msg: "helm not found", sh: "which helm"}
+      - {msg: "kubectl not found", sh: "which kubectl"}

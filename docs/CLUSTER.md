@@ -115,7 +115,7 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 
 ---
 
-### Longhorn · `v1.9.0` · `longhorn-system`
+### Longhorn · `v1.11.2` · `longhorn-system`
 
 **Distributed block storage.** Provides replicated `ReadWriteOnce` PVCs across nodes using dedicated storage drives. Managed by Flux HelmRelease; values in `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml`.
 
@@ -130,7 +130,7 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 
 ---
 
-### OpenEBS · `v4.3.2` · `openebs`
+### OpenEBS · `v4.4.0` · `openebs`
 
 **Local hostpath storage.** Provides the `openebs-hostpath` StorageClass for single-node `ReadWriteOnce` PVCs backed by local NVMe (non-replicated). Managed by Flux HelmRelease.
 

@@ -4,6 +4,78 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-13 — `bootstrap-components-gitops`
+
+### Goal
+Port all six bootstrap components (Cilium, CoreDNS, Spegel, cert-manager, flux-operator, flux-instance) from Helmfile-only management to full Flux HelmReleases, so they receive automatic upgrades via Renovate PRs like every other cluster component.
+
+### What we did
+- Diagnosed the version drift: Helmfile had Renovate comments and drifted ahead (e.g. Cilium 1.19.3 vs running 1.17.6); since there were no HelmReleases, Flux had no mechanism to reconcile or upgrade these components
+- Confirmed via archive comparison: the archive cluster had OCIRepository+HelmRelease for all six components; the current repo lost those files during the initial port
+- Added three new OCI source files to `flux/meta/repos/oci/`: `cert-manager.yaml`, `flux-operator.yaml`, `flux-instance.yaml`
+- Updated `coredns.yaml` and `spegel.yaml` in meta OCI repos: replaced `semver: >=x.x.x` with pinned `tag:` + `layerSelector` + Renovate comment
+- Updated `flux/meta/repos/oci/kustomization.yaml` to include all five new/updated sources
+- Created full Flux Kustomization + HelmRelease trees for all six components:
+  - `kube-system/cilium/` — uses existing HelmRepository `cilium`; version `1.17.6`
+  - `kube-system/coredns/` — uses OCIRepository `coredns` via `chartRef`; tag `1.43.0`
+  - `kube-system/spegel/` — uses OCIRepository `spegel` via `chartRef`; tag `0.4.0`
+  - `cert-manager/cert-manager/` — uses new OCIRepository `cert-manager`; tag `v1.17.2`; `crds: CreateReplace`
+  - `flux-system/flux-operator/` — uses new OCIRepository `flux-operator`; tag `0.23.0`
+  - `flux-system/flux-instance/` — uses new OCIRepository `flux-instance`; tag `0.23.0`; `dependsOn: flux-operator`
+- Created `kubernetes/apps/kube-system/kustomization.yaml` and `kubernetes/apps/flux-system/kustomization.yaml`
+- Updated root `kubernetes/apps/kustomization.yaml`: added `./flux-system` and `./kube-system`
+- Updated `kubernetes/apps/cert-manager/kustomization.yaml`: added `./cert-manager/ks.yaml`
+- Removed all `# renovate:` comments from `kubernetes/bootstrap/helmfile.yaml` — Helmfile is now a static bootstrap ladder; Renovate tracks the meta OCI/Helm repo objects instead
+- Updated `scripts/upgrade-bootstrap.sh` usage text to reflect that Flux now owns day-2 upgrades
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/coredns.yaml` | semver → pinned tag `1.43.0` + layerSelector + Renovate comment |
+| `kubernetes/flux/meta/repos/oci/spegel.yaml` | semver → pinned tag `0.4.0` + layerSelector + Renovate comment |
+| `kubernetes/flux/meta/repos/oci/cert-manager.yaml` | New — OCIRepository for `quay.io/jetstack/charts/cert-manager` |
+| `kubernetes/flux/meta/repos/oci/flux-operator.yaml` | New — OCIRepository for `ghcr.io/controlplaneio-fluxcd/charts/flux-operator` |
+| `kubernetes/flux/meta/repos/oci/flux-instance.yaml` | New — OCIRepository for `ghcr.io/controlplaneio-fluxcd/charts/flux-instance` |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added cert-manager, flux-operator, flux-instance |
+| `kubernetes/apps/kube-system/kustomization.yaml` | New — references cilium/coredns/spegel ks.yaml |
+| `kubernetes/apps/kube-system/cilium/ks.yaml` | New — Flux Kustomization |
+| `kubernetes/apps/kube-system/cilium/app/helmrelease.yaml` | New — HelmRelease v1.17.6 via HelmRepository |
+| `kubernetes/apps/kube-system/cilium/app/kustomization.yaml` | New — configMapGenerator |
+| `kubernetes/apps/kube-system/cilium/app/helm/kustomizeconfig.yaml` | New — nameReference config |
+| `kubernetes/apps/kube-system/coredns/ks.yaml` | New |
+| `kubernetes/apps/kube-system/coredns/app/helmrelease.yaml` | New — chartRef OCIRepository |
+| `kubernetes/apps/kube-system/coredns/app/kustomization.yaml` | New |
+| `kubernetes/apps/kube-system/coredns/app/helm/kustomizeconfig.yaml` | New |
+| `kubernetes/apps/kube-system/spegel/ks.yaml` | New |
+| `kubernetes/apps/kube-system/spegel/app/helmrelease.yaml` | New — chartRef OCIRepository |
+| `kubernetes/apps/kube-system/spegel/app/kustomization.yaml` | New |
+| `kubernetes/apps/kube-system/spegel/app/helm/kustomizeconfig.yaml` | New |
+| `kubernetes/apps/cert-manager/cert-manager/ks.yaml` | New — wait: true; healthChecks on HelmRelease |
+| `kubernetes/apps/cert-manager/cert-manager/app/helmrelease.yaml` | New — chartRef OCIRepository; crds: CreateReplace |
+| `kubernetes/apps/cert-manager/cert-manager/app/kustomization.yaml` | New |
+| `kubernetes/apps/cert-manager/cert-manager/app/helm/kustomizeconfig.yaml` | New |
+| `kubernetes/apps/flux-system/kustomization.yaml` | New — references flux-operator/flux-instance ks.yaml |
+| `kubernetes/apps/flux-system/flux-operator/ks.yaml` | New |
+| `kubernetes/apps/flux-system/flux-operator/app/helmrelease.yaml` | New — chartRef OCIRepository |
+| `kubernetes/apps/flux-system/flux-operator/app/kustomization.yaml` | New |
+| `kubernetes/apps/flux-system/flux-operator/app/helm/kustomizeconfig.yaml` | New |
+| `kubernetes/apps/flux-system/flux-instance/ks.yaml` | New — dependsOn: flux-operator |
+| `kubernetes/apps/flux-system/flux-instance/app/helmrelease.yaml` | New — chartRef OCIRepository; dependsOn: flux-operator |
+| `kubernetes/apps/flux-system/flux-instance/app/kustomization.yaml` | New |
+| `kubernetes/apps/flux-system/flux-instance/app/helm/kustomizeconfig.yaml` | New |
+| `kubernetes/apps/kustomization.yaml` | Added `./flux-system` and `./kube-system` |
+| `kubernetes/apps/cert-manager/kustomization.yaml` | Added `./cert-manager/ks.yaml` |
+| `kubernetes/bootstrap/helmfile.yaml` | Removed all `# renovate:` comments |
+| `scripts/upgrade-bootstrap.sh` | Updated usage text |
+
+### Key decisions
+- **Pin at currently running versions**: HelmReleases start at live versions so the first Flux reconcile is a no-op; Renovate opens upgrade PRs from there
+- **OCIRepository for cert-manager** (not HelmRepository): consistent with how CoreDNS/Spegel/flux-operator are sourced; OCI is the vendor-preferred distribution channel
+- **Renovate comments removed from Helmfile**: the Helmfile is now a static bootstrap ladder; version tracking moves entirely to the Flux source objects in `flux/meta/repos/`
+- **`task bootstrap:upgrade` retained but repurposed**: still useful for re-bootstrap scenarios; updated usage text reflects it is no longer the day-2 upgrade mechanism
+
+---
+
 ## 2026-05-13 — `cert-manager-cluster-issuer`
 
 ### Goal

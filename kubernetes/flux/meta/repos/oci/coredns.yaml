@@ -7,6 +7,10 @@ metadata:
   namespace: flux-system
 spec:
   interval: 1h
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
   url: oci://ghcr.io/coredns/charts/coredns
   ref:
-    semver: ">=1.30.0"
+    # renovate: datasource=docker depName=ghcr.io/coredns/charts/coredns
+    tag: "1.43.0"
