@@ -4,6 +4,8 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-13 | `longhorn-1.11.2-upgrade` | Executing Longhorn 1.9.0→1.11.2 upgrade: fix crds:CreateReplace + memory limit, verify CRD storedVersions, merge PR #19, reconcile |
+> | 2026-05-13 | `pr-19-review` | Reviewed PR #19 (Longhorn 1.9.0→1.11.2); 🚨 do not merge — missing `crds: CreateReplace` + v1beta1 storedVersions migration required |
 > | 2026-05-13 | `openebs-4.4.0-upgrade` | Merged PR #18; force-reconciled Flux chain; confirmed HelmRelease upgraded to openebs@4.4.0 (UpgradeSucceeded) |
 > | 2026-05-13 | `openebs-oci-source-fix` | Diagnosed timing race (HelmRelease checked source 30s early); forced reconcile; added `crds: CreateReplace` to HelmRelease |
  | 2026-05-13 | `claude-md-session-lifecycle` | Added mandatory session open/close workflow to CLAUDE.md |

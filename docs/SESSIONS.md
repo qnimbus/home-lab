@@ -4,6 +4,38 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-13 — `longhorn-1.11.2-upgrade`
+
+### Goal
+Execute the Longhorn 1.9.0 → 1.11.2 upgrade: fix two blocking defects in the helmrelease (missing `crds: CreateReplace`, tight instance-manager memory limit), verify CRD storedVersions on the live cluster, push fixes to the PR #19 branch, merge, and reconcile.
+
+---
+
+## 2026-05-13 — `pr-19-review`
+
+### Goal
+Review PR #19 (Longhorn 1.9.0 → 1.11.2) via the pr-upgrade-reviewer agent to assess upgrade risk before merging.
+
+### What we did
+- Fetched PR #19 (Renovate-generated, Longhorn 1.9.0 → 1.11.2, two minor version steps)
+- Retrieved release notes across the full version chain (1.9.x → 1.10.x → 1.11.x)
+- Identified two blocking issues:
+  1. Missing `crds: CreateReplace` in both `install` and `upgrade` blocks of the HelmRelease (project convention violation and functional defect — CRD schemas have been frozen since first install)
+  2. v1.10.0 permanently removed `v1beta1` API; storedVersions in etcd must be verified/migrated before the upgrade hook will allow proceeding, even when jumping directly to 1.11.2
+- Identified medium risks: tight instance-manager memory limits (`64Mi`) may OOMKill under 1.11.x disk-health monitoring; stale values.yaml settings key (`orphanAutoDeletion`)
+- Confirmed v1.11.2 images are published; K8s v1.36.x compatibility clear; rollback is complex but not a one-way migration
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/SESSIONS.md` | Added this session entry |
+| `CLAUDE.md` | Added session row to log table |
+
+### Key decisions
+- Verdict: do not merge PR #19 until `crds: CreateReplace` is added to the HelmRelease and the v1beta1 storedVersions check passes on the live cluster
+
+---
+
 ## 2026-05-13 — `openebs-4.4.0-upgrade`
 
 ### Goal
