@@ -4,6 +4,30 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-13 — `openebs-oci-source-fix`
+
+### Goal
+Diagnose and fix the broken `OCIRepository/openebs` source in `flux-system` so Flux can reconcile OpenEBS again (currently stuck with "does not have an artifact").
+
+### What we did
+- Inspected live cluster state: `OCIRepository/openebs` was actually Ready (artifact stored, cosign verified); the problem was in the `HelmRelease`
+- Root cause: timing race — HelmRelease reconcile checked the OCIRepository at `12:45:08Z`, 30 seconds before the OCI artifact was stored at `12:45:38Z`; HelmRelease got stuck in `SourceNotReady` until its next 1h cycle
+- Forced an immediate reconcile with `flux reconcile helmrelease openebs -n openebs` — resolved successfully (`applied revision 4.3.2`)
+- Added missing `crds: CreateReplace` to both `install` and `upgrade` blocks in `helmrelease.yaml` (required by CLAUDE.md convention for operator charts that ship CRDs)
+- Removed completed roadmap item; added entry to Completed table
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/openebs/openebs/app/helmrelease.yaml` | Added `crds: CreateReplace` to `install` and `upgrade` blocks |
+| `docs/ROADMAP.md` | Removed OpenEBS OCIRepository fix item from In Progress; added to Completed |
+
+### Key decisions
+- The OCIRepository timing race is inherent to async Flux controllers with matching 1h intervals; no structural fix is needed — `flux reconcile` is the correct operational response
+- `crds: CreateReplace` is a correctness fix, not cosmetic — Helm silently leaves old CRD schemas in place on upgrade without it
+
+---
+
 ## 2026-05-13 — `claude-md-session-lifecycle`
 
 ### What we did

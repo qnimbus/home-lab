@@ -6,25 +6,6 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 
 ## In Progress
 
-### Fix: OpenEBS Flux OCIRepository source broken
-
-The `OCIRepository/openebs` source in `flux-system` has no artifact. Flux cannot reconcile OpenEBS — any version bump or values change will not apply until this is fixed. The Helm release itself is deployed and running at the current version; workloads are unaffected for now.
-
-**Symptom:**
-```
-OCIRepository 'flux-system/openebs' is not ready: does not have an artifact
-```
-
-**Diagnosis starting points:**
-```bash
-kubectl describe ocirepository openebs -n flux-system
-flux logs --source OCIRepository/openebs
-```
-
-Common causes: stale digest pin in the OCIRepository spec, OCI URL changed upstream, or the `spec.ref` does not resolve to a published tag.
-
----
-
 ### Persistent Storage
 
 The cluster has no persistent storage layer. Without one, stateful workloads (databases, media
@@ -262,3 +243,4 @@ cuts reconcile latency from ~5 minutes to seconds.
 | Flux (operator + instance)    | Reconciling from private repo via SSH           |
 | Renovate                      | `renovate.json5` in place; GitHub App installed; Talos/k8s tracked via `separateMinorPatch` rules (PRs target tuppr CRDs) |
 | Talos + Kubernetes upgrades   | tuppr deployed; Talos v1.13.2; Kubernetes v1.36.1; upgrades now fully automated via Renovate PRs + tuppr |
+| OpenEBS OCIRepository fix     | Transient timing race (HelmRelease checked source 30s before artifact was stored); forced reconcile cleared it; added `crds: CreateReplace` to HelmRelease |
