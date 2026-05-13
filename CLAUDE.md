@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-13 | `cp01-disk-role-swap` | Swapped cp-01 disk roles: GoodRam→system, Kingston→Longhorn storage; updated talconfig.yaml + docs; worked around talhelper 3.1.9 not supporting Talos v1.13.2; ISO-boot migration completed successfully |
 > | 2026-05-13 | `longhorn-1.11.2-upgrade` | Upgraded Longhorn 1.9.0→1.11.2 via staged hops (1.10.2 intermediate); added crds:CreateReplace; direct 1.9→1.11 rejected by manager binary |
 > | 2026-05-13 | `pr-19-review` | Reviewed PR #19 (Longhorn 1.9.0→1.11.2); 🚨 do not merge — missing `crds: CreateReplace` + v1beta1 storedVersions migration required |
 > | 2026-05-13 | `openebs-4.4.0-upgrade` | Merged PR #18; force-reconciled Flux chain; confirmed HelmRelease upgraded to openebs@4.4.0 (UpgradeSucceeded) |

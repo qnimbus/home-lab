@@ -4,6 +4,39 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-13 — `cp01-disk-role-swap`
+
+### Goal
+Swap disk roles on cp-01: move the Kingston SNV3S1000G to Longhorn storage and the GoodRam IRDM PRO NANO (IRP-SSDPR-P44N-01T-30) to Talos system disk. Also pre-configure cp-02 for the same swap once its Crucial P310 arrives.
+
+### What we did
+- Used cluster-doctor agent to verify live disk state: confirmed Kingston was system disk and GoodRam was Longhorn storage (opposite of user's recollection — roles were correctly inverted)
+- Retrieved Kingston serial (`50026B7686F8B787`) via `talosctl get disks --nodes 10.60.0.201`
+- Updated `talconfig.yaml` for cp-01: `installDiskSelector` → `IRP-SSDPR-P44N-01T-30` (GoodRam); `machine.disks` → Kingston by-id path
+- Added TODO comment to cp-02 `installDiskSelector` for when the Crucial P310 1TB 2230 arrives
+- Discovered `talhelper genconfig` (and `gencommand apply`) blocked: talhelper 3.1.9 has an embedded Talos version list compiled before v1.13.2 was released — no workaround via flags; no newer talhelper release available
+- Worked around by manually editing `talos/clusterconfig/kubernetes-talos-cp-01.yaml` (gitignored generated file): updated `diskSelector`, `machine.disks` device path, installer image tag (v1.13.0→v1.13.2), and temporarily added `wipe: true`
+- Downloaded correct Talos v1.13.2 ISO via `task talos:iso` (same schematic ID, correct version)
+- User ISO-booted cp-01, applied config via `talosctl apply-config` directly (bypassing broken `talhelper gencommand apply`)
+- Verified migration success: Kingston mounted at `/var/mnt/longhorn-storage` (XFS), node `Ready` in Kubernetes
+- Removed `wipe: true` from talconfig.yaml and clusterconfig after successful reboot
+- Added ISO-boot disk-swap migration procedure to `CLUSTER.md` for future reference (cp-02)
+- Updated disk inventory in `CLUSTER.md` and `ROADMAP.md` to reflect new live roles
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | cp-01: `installDiskSelector` → GoodRam model; `machine.disks` → Kingston by-id; cp-02: TODO comment for Crucial P310 |
+| `docs/CLUSTER.md` | Disk inventory table corrected to live roles; ISO-boot migration procedure added |
+| `docs/ROADMAP.md` | Disk inventory updated; cp-01 storage status changed from pending to live |
+
+### Key decisions
+- **GoodRam as system, Kingston as storage**: user explicitly wanted faster Kingston for Longhorn I/O; GoodRam adequate for OS
+- **talhelper workaround**: manual clusterconfig edit justified because talhelper 3.1.9 predates Talos v1.13.2 and has no skip-validate flag; the edit is temporary and will be superseded by a proper `genconfig` once talhelper 3.1.10 ships
+- **`wipe: true` required**: GoodRam had existing Longhorn partition; Talos installer refuses non-Talos disks without it; removed immediately after migration
+
+---
+
 ## 2026-05-13 — `longhorn-1.11.2-upgrade`
 
 ### Goal

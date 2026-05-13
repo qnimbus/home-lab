@@ -15,12 +15,12 @@ apps, monitoring stacks) cannot run reliably. This item tracks the decision and 
 
 | Node  | System disk              | Dedicated storage disk                  |
 |-------|--------------------------|-----------------------------------------|
-| cp-01 | nvme0n1 1 TB Kingston SNV3S1000G   | **nvme1n1 1 TB GoodRam IRDM PRO NANO** (IRP-SSDPR-P44N-01T-30, via M.2 A/E adapter) — by-id pinned in talconfig |
-| cp-02 | nvme0n1 1 TB Kingston SNV3S1000G   | **Crucial P310 1TB 2230 + M.2 A/E adapter — on order, not yet installed** |
-| cp-03 | nvme0n1 128 GB AirDisk (system)    | **nvme1n1 2 TB Crucial CT2000P310SSD8** — by-id pinned in talconfig |
+| cp-01 | 1 TB GoodRam IRDM PRO NANO (IRP-SSDPR-P44N-01T-30) | **1 TB Kingston SNV3S1000G** (`nvme-KINGSTON_SNV3S1000G_50026B7686F8B787`) — live at `/var/mnt/longhorn-storage` |
+| cp-02 | 1 TB Kingston SNV3S1000G (sole disk until Crucial arrives) | **Crucial P310 1TB 2230 + M.2 A/E adapter — on order, not yet installed** |
+| cp-03 | 128 GB AirDisk (system)    | **2 TB Crucial CT2000P310SSD8** (`nvme-CT2000P310SSD8_252450B1A33B`) — live |
 
 All nodes have dedicated 10 GbE storage bonds (`10.200.0.0/24`). Jumbo frames are a separate TODO.
-**cp-01 and cp-03 ready** — by-id disk patches in `talconfig.yaml`, Talos schematic updated with `iscsi-tools` + `util-linux-tools`. **cp-02 blocked** — storage drive (Crucial P310 1TB 2230) on order.
+**cp-01** and **cp-03**: fully live. **cp-02 blocked** — storage drive (Crucial P310 1TB 2230) on order; once installed, ISO-boot cp-02 and swap Kingston to Longhorn storage (same procedure as cp-01).
 
 #### Talos system-disk partitioning — researched, not viable
 

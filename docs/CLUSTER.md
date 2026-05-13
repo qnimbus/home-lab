@@ -130,14 +130,41 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 
 | Node | Device | Size | Model | Role |
 |------|--------|------|-------|------|
-| talos-cp-01 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G | Talos system disk |
-| talos-cp-01 | nvme1n1 | 1.0 TB | GoodRam IRDM PRO NANO (IRP-SSDPR-P44N-01T-30) via M.2 A/E adapter | **Free** — Longhorn storage (`/dev/disk/by-id/nvme-IRP-SSDPR-P44N-01T-30_G4E004578`) |
-| talos-cp-02 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G | Talos system disk |
-| talos-cp-02 | — | — | — | **Pending** — Crucial P310 1TB 2230 + M.2 A/E adapter on order; not yet installed |
+| talos-cp-01 | — | 1.0 TB | GoodRam IRDM PRO NANO (IRP-SSDPR-P44N-01T-30) via M.2 A/E adapter | Talos system disk |
+| talos-cp-01 | — | 1.0 TB | Kingston SNV3S1000G (`/dev/disk/by-id/nvme-KINGSTON_SNV3S1000G_50026B7686F8B787`) | Longhorn storage (`/var/mnt/longhorn-storage`) |
+| talos-cp-02 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G | Talos system disk (sole disk until Crucial P310 arrives) |
+| talos-cp-02 | — | — | — | **Pending** — Crucial P310 1TB 2230 + M.2 A/E adapter on order; once installed Kingston moves to Longhorn storage |
 | talos-cp-03 | nvme0n1 | 128 GB | AirDisk 128GB SSD | Talos system disk |
-| talos-cp-03 | nvme1n1 | 2.0 TB | Crucial CT2000P310SSD8 | **Free** — Longhorn storage (`/dev/disk/by-id/nvme-CT2000P310SSD8_252450B1A33B`) |
+| talos-cp-03 | nvme1n1 | 2.0 TB | Crucial CT2000P310SSD8 | Longhorn storage (`/dev/disk/by-id/nvme-CT2000P310SSD8_252450B1A33B`) |
 
-`talos-cp-01` and `talos-cp-03` have free dedicated storage drives with by-id paths pinned in `talconfig.yaml`. `talos-cp-02`'s drive (Crucial P310 1TB 2230) is on order — once installed, run `talosctl get disks --nodes 10.60.0.202` to get the serial, add it as an inline node patch (same pattern as cp-01/cp-03), then `task talos:apply IP=10.60.0.202` + `task talos:upgrade-node IP=10.60.0.202`.
+`talos-cp-01` and `talos-cp-03` are fully configured — storage disks live and mounted. `talos-cp-02`'s Crucial P310 1TB 2230 is on order — once installed, run `talosctl get disks --nodes 10.60.0.202`, update `talconfig.yaml` (change `installDiskSelector` to Crucial model, add `machine.disks` patch for Kingston), then ISO-boot cp-02 and apply in maintenance mode.
+
+#### System-disk swap migration procedure (cp-01 / cp-02)
+
+> Use this when the `installDiskSelector` has been changed to a different physical disk than the currently running system disk.
+
+1. **Longhorn safety check** — confirm all volumes are `Healthy` before touching the node:
+   ```bash
+   kubectl -n longhorn-system get volumes
+   ```
+2. **Temporarily add wipe patch** — the old storage disk has non-Talos partitions; the installer will refuse to overwrite them without this. Add to the node's inline patch in `talconfig.yaml`:
+   ```yaml
+   machine:
+     install:
+       wipe: true
+   ```
+   Run `task talos:genconfig` to regenerate configs.
+3. **Boot node from Talos ISO** — maintenance mode.
+4. **Apply config in maintenance mode**:
+   ```bash
+   task talos:apply IP=10.60.0.20x INSECURE=true
+   ```
+   Talos installs on the new system disk and reboots.
+5. **Remove wipe patch** — edit `talconfig.yaml`, remove `machine.install.wipe: true`, re-run `task talos:genconfig`, apply normally:
+   ```bash
+   task talos:apply IP=10.60.0.20x
+   ```
+6. **Kingston cleanup** — on first boot Talos will partition the old system disk (Kingston) for Longhorn via `machine.disks`. If it fails because old Talos partitions are present, add a temporary `wipeDisk: true` to the `machine.disks` entry and re-apply.
 
 ---
 
