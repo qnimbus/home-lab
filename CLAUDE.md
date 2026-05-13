@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-13 | `claude-md-session-lifecycle` | Added mandatory session open/close workflow to CLAUDE.md |
 > | 2026-05-13 | `kubernetes-upgrade-v1.35-v1.36` | Upgraded K8s v1.34.7→v1.35.4 (staggered apiserver patch mc + upgrade-k8s); v1.35.4→v1.36.0 via tuppr/Renovate native path (validated safe); documented gRPC flood / KubernetesUpgrade mismatch patterns; added Q&A entries; removed TROUBLESHOOTING.md; updated scripts/mcp.sh for reliable MCP |
 > | 2026-05-13 | `kubernetes-upgrade-v1.34-crash-recovery` | Recovered v1.34.7 crash loop (gRPC→etcd flood, rbac/bootstrap-roles fatal timeout); staggered apiserver revert to v1.33.11 then re-upgrade to v1.34.7 with feature gates removed; documented root cause |
 > | 2026-05-13 | `mcp-rbac-fix` | Replaced built-in `view` ClusterRoleBinding in `scripts/mcp.sh` with a custom `mcp-viewer` ClusterRole covering nodes, PVs, StorageClasses, Flux CRDs, and tuppr upgrade CRDs; made RBAC idempotent via `kubectl apply`; `renew-token` now re-applies RBAC before minting; added roleRef migration guard for immutable field |
@@ -247,6 +248,38 @@ Two specialized agents live in `.claude/agents/` and are invoked automatically b
 | `talos-node-manager` | Inspecting or managing Talos Linux nodes directly: health checks, service logs, dmesg, etcd state, upgrade monitoring, disk/network diagnosis at the OS layer. Uses `talosctl` exclusively. |
 
 Both agents maintain a `<!-- BEGIN/END: CLUSTER-STATE-AUTO -->` block in their own file that they self-update when live cluster state drifts from the recorded context.
+
+---
+
+## Session Lifecycle
+
+These steps are **mandatory** — not optional hygiene. Do them at the boundaries of every session.
+
+### Opening a session (first action, before any other work)
+
+1. Choose a kebab-case slug that names the work (e.g. `external-secrets-deploy`, `longhorn-3-replica-bump`).
+2. Prepend a stub entry to `docs/SESSIONS.md` immediately after the opening `---` separator:
+
+   ```markdown
+   ## YYYY-MM-DD — `session-slug`
+
+   ### Goal
+   One or two sentences describing the planned work.
+
+   ---
+   ```
+
+3. Prepend a matching row to the CLAUDE.md session log table at the top of this file (use a short placeholder summary — fill it in properly when closing).
+
+### Closing a session (last action, before stopping)
+
+1. Complete the open stub in `docs/SESSIONS.md`:
+   - Replace `### Goal` content (or keep it) and add `### What we did` (bullet list of actual work done)
+   - Add `### Files changed` table
+   - Add `### Key decisions` if any non-obvious choices were made
+2. Replace the placeholder summary in the CLAUDE.md session log table with a real one-liner.
+
+> If a session is interrupted mid-work, the stub is still useful — it records intent. Complete it in the next session under the same slug.
 
 ---
 

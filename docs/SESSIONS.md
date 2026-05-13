@@ -4,6 +4,27 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-13 — `claude-md-session-lifecycle`
+
+### What we did
+- Added a mandatory `## Session Lifecycle` section to `CLAUDE.md` defining the open/close protocol
+- Defined the stub format (slug, `### Goal`, separator) that must be prepended to `docs/SESSIONS.md` at session start
+- Defined the close steps: replace Goal with `### What we did` + `### Files changed` + optional `### Key decisions`; update the CLAUDE.md session log table summary
+- Added a note for interrupted sessions (stub is still useful — complete it next session under the same slug)
+- Opened and closed this session as a live demonstration of the new workflow
+
+### Files changed
+| File | Change |
+|------|--------|
+| `CLAUDE.md` | Added `## Session Lifecycle` section; added `claude-md-session-lifecycle` row to session log table |
+| `docs/SESSIONS.md` | Prepended this session stub; completed on close |
+
+### Key decisions
+- Placed Session Lifecycle as its own `##` section (not bullets inside "Working in This Repo") to make it prominent and easy to find via heading navigation
+- Kept the stub format minimal — just a slug, date, and `### Goal` — so opening a session has near-zero friction
+
+---
+
 ## 2026-05-13 — `kubernetes-upgrade-v1.35-v1.36`
 
 ### What we did
