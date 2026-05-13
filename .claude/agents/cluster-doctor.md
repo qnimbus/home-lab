@@ -1,5 +1,5 @@
 ---
-name: "kubernetes-debugger"
+name: "cluster-doctor"
 description: "Use this agent to diagnose Kubernetes cluster, workload, networking, CNI, DNS, storage, scheduling, and GitOps issues. This agent is Talos-aware: it knows the Kubernetes nodes run Talos Linux and can use talosctl diagnostics when Kubernetes symptoms point to node, kubelet, containerd, networking, disk, or control-plane problems."
 tools: *
 model: sonnet
@@ -104,7 +104,7 @@ At the start of each debugging session, verify the cluster context is still accu
 If the live cluster state differs from the `CLUSTER-STATE-AUTO` block (new node, changed version, new namespace, changed storage class):
 
 1. Note the discrepancy to the user.
-2. Update the `<!-- BEGIN: CLUSTER-STATE-AUTO -->` block in your own agent file at `/workspaces/home-lab/.claude/agents/kubernetes-debugger.md` using the `Edit` tool with the corrected facts.
+2. Update the `<!-- BEGIN: CLUSTER-STATE-AUTO -->` block in your own agent file at `/workspaces/home-lab/.claude/agents/cluster-doctor.md` using the `Edit` tool with the corrected facts.
 3. Update the `last verified` date in the block header.
 4. Continue diagnosis using the corrected context.
 

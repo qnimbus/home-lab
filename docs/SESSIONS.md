@@ -78,7 +78,7 @@ A running record of work done, files modified, and decisions made across Claude 
 - Root cause: the `longhorn-system` namespace manifest in Git lacked
   `pod-security.kubernetes.io/enforce: privileged`; the label is not set automatically by the
   Longhorn Helm chart — it must be declared on the namespace resource in Git
-- Diagnosis performed by kubernetes-debugger agent (read-only); agent identified PSA as the
+- Diagnosis performed by cluster-doctor agent (read-only); agent identified PSA as the
   single root error via pod events (`FailedCreate` on `longhorn-csi-plugin` DaemonSet), confirmed
   by the cascade: no CSI socket → all CSI sidecars (attacher, provisioner, resizer, snapshotter)
   in CrashLoopBackOff; only cp-02 instance-manager survived (predated enforcement trigger)

@@ -32,7 +32,7 @@ This repository provisions and manages a bare-metal Talos Linux Kubernetes clust
 📁 /
 ├── 📁 .archive/          # Previous cluster config — reference only, do not replicate wholesale
 ├── 📁 .claude/
-│   └── agents/           # Specialized Claude Code agents (kubernetes-debugger, talos-node-manager)
+│   └── agents/           # Specialized Claude Code agents (cluster-doctor, talos-node-manager)
 ├── 📁 .devcontainer/     # VS Code dev container (Python base, mise toolchain)
 ├── Taskfile.yaml         # Root go-task entry-point — run `task` to list all tasks
 ├── 📁 .taskfiles/
@@ -243,7 +243,7 @@ Two specialized agents live in `.claude/agents/` and are invoked automatically b
 
 | Agent | When to use |
 |-------|-------------|
-| `kubernetes-debugger` | Diagnosing Kubernetes workload, networking, CNI, DNS, storage, scheduling, or GitOps/Flux issues. Talos-aware: escalates to node-layer diagnostics when K8s symptoms suggest a substrate problem. Prefers MCP tools over raw kubectl. |
+| `cluster-doctor` | Diagnosing Kubernetes workload, networking, CNI, DNS, storage, scheduling, or GitOps/Flux issues. Talos-aware: escalates to node-layer diagnostics when K8s symptoms suggest a substrate problem. Prefers MCP tools over raw kubectl. |
 | `talos-node-manager` | Inspecting or managing Talos Linux nodes directly: health checks, service logs, dmesg, etcd state, upgrade monitoring, disk/network diagnosis at the OS layer. Uses `talosctl` exclusively. |
 
 Both agents maintain a `<!-- BEGIN/END: CLUSTER-STATE-AUTO -->` block in their own file that they self-update when live cluster state drifts from the recorded context.
