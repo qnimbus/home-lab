@@ -4,6 +4,63 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-13 — `cert-manager-cluster-issuer`
+
+### Goal
+Configure cert-manager with a Let's Encrypt ClusterIssuer (DNS-01 via Cloudflare) as part of the Ingress Infrastructure roadmap item — prerequisite for Cilium Gateway API, Cloudflare Tunnel, and all HTTPS workloads.
+
+### What we did
+- Scope expanded from "just ClusterIssuers" to the full prerequisite stack after user requested 1Password instead of SOPS for the Cloudflare API token
+- Added two new HelmRepositories: `external-secrets` (charts.external-secrets.io) and `onepassword-connect` (1password.github.io/connect-helm-charts)
+- Deployed **External Secrets Operator** (chart `external-secrets` 0.18.2) as a Flux-managed HelmRelease in the new `external-secrets` namespace
+- Deployed **1Password Connect** (chart `connect` 2.0.1) as a Flux-managed HelmRelease; credentials stored in `secret.sops.yaml` (SOPS-encrypted bootstrap secret — placeholder, user must fill in before committing)
+- Created **ClusterSecretStore** `onepassword` pointing at `http://onepassword-connect.external-secrets.svc.cluster.local:8080`, vault `Kubernetes`
+- Authored multi-doc `external-secrets/ks.yaml` with two Kustomizations: `external-secrets` (ESO HelmRelease) and `onepassword-store` (ClusterSecretStore, dependsOn both ESO + Connect)
+- `onepassword-connect/ks.yaml` carries explicit `decryption.provider: sops` since it decrypts the credentials secret before ESO is running
+- Created **ExternalSecret** `cert-manager-cloudflare` (in `cert-manager` namespace) pulling 1Password vault item `cloudflare`, key `api-token` → Secret `cert-manager-secret`
+- Created **ClusterIssuer** `letsencrypt-staging` and `letsencrypt-production`; both use DNS-01 via Cloudflare, `cert-manager-secret/api-token`; email and domain are `TODO_*` placeholders
+- `cluster-issuers` Kustomization `dependsOn: [onepassword-store]` so ExternalSecret can resolve before cert-manager tries to use the token
+- Reviewed all files against cluster patterns; fixed: Renovate comment format (`datasource=helm depName=... repository=...`), install remediation (`retries: -1` not `3`), added `upgrade.cleanupOnFail: true`, slimmed values.yaml to only non-default overrides, bumped cluster-issuers timeout 2m→5m for ACME registration
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/helm/external-secrets.yaml` | New — HelmRepository for ESO |
+| `kubernetes/flux/meta/repos/helm/onepassword-connect.yaml` | New — HelmRepository for 1Password Connect |
+| `kubernetes/flux/meta/repos/helm/kustomization.yaml` | Added both new repo files |
+| `kubernetes/apps/external-secrets/kustomization.yaml` | New — namespace-level kustomize entry |
+| `kubernetes/apps/external-secrets/external-secrets/ks.yaml` | New — 2-doc: ESO + onepassword-store Kustomizations |
+| `kubernetes/apps/external-secrets/external-secrets/app/namespace.yaml` | New — creates external-secrets namespace |
+| `kubernetes/apps/external-secrets/external-secrets/app/helmrelease.yaml` | New — ESO HelmRelease |
+| `kubernetes/apps/external-secrets/external-secrets/app/helm/values.yaml` | New — `installCRDs: true` only |
+| `kubernetes/apps/external-secrets/external-secrets/app/helm/kustomize-config.yaml` | New — nameReference for configMapGenerator |
+| `kubernetes/apps/external-secrets/external-secrets/app/kustomization.yaml` | New — configMapGenerator + resources |
+| `kubernetes/apps/external-secrets/external-secrets/stores/onepassword/clustersecretstore.yaml` | New — ClusterSecretStore `onepassword` |
+| `kubernetes/apps/external-secrets/external-secrets/stores/onepassword/kustomization.yaml` | New |
+| `kubernetes/apps/external-secrets/onepassword-connect/ks.yaml` | New — Kustomization with explicit SOPS decryption |
+| `kubernetes/apps/external-secrets/onepassword-connect/app/secret.sops.yaml` | New — SOPS placeholder (not yet encrypted; user must fill + encrypt before committing) |
+| `kubernetes/apps/external-secrets/onepassword-connect/app/helmrelease.yaml` | New — 1Password Connect HelmRelease |
+| `kubernetes/apps/external-secrets/onepassword-connect/app/helm/values.yaml` | New — ClusterIP + resource limits |
+| `kubernetes/apps/external-secrets/onepassword-connect/app/helm/kustomize-config.yaml` | New — nameReference for configMapGenerator |
+| `kubernetes/apps/external-secrets/onepassword-connect/app/kustomization.yaml` | New — configMapGenerator + resources |
+| `kubernetes/apps/cert-manager/kustomization.yaml` | New — namespace-level kustomize entry |
+| `kubernetes/apps/cert-manager/cluster-issuers/ks.yaml` | New — cluster-issuers Kustomization, dependsOn onepassword-store |
+| `kubernetes/apps/cert-manager/cluster-issuers/app/kustomization.yaml` | New |
+| `kubernetes/apps/cert-manager/cluster-issuers/app/externalsecret.yaml` | New — ExternalSecret pulling cloudflare/api-token |
+| `kubernetes/apps/cert-manager/cluster-issuers/app/clusterissuer-staging.yaml` | New — letsencrypt-staging ClusterIssuer (TODO placeholders) |
+| `kubernetes/apps/cert-manager/cluster-issuers/app/clusterissuer-production.yaml` | New — letsencrypt-production ClusterIssuer (TODO placeholders) |
+| `kubernetes/apps/kustomization.yaml` | Added `./cert-manager` and `./external-secrets` |
+| `CLAUDE.md` | Updated session log table |
+
+### Key decisions
+- **1Password over SOPS for app secrets**: user preference; correct long-term pattern; only the Connect bootstrap credentials (`secret.sops.yaml`) require SOPS — everything above that layer goes through ESO
+- **`secret.sops.yaml` left as unencrypted placeholder**: cannot encrypt without the user's actual credentials; file must be filled in and `sops --encrypt --in-place`'d before the commit that enables the stack is pushed
+- **`operator.create: false` in Connect values**: 1Password Operator is distinct from Connect and not needed; ESO handles secret sync natively
+- **Separate `onepassword-connect/ks.yaml` with explicit decryption**: the global `cluster-apps` substitution patch is opt-out; Connect needs explicit `decryption:` since it must decrypt its credentials before ESO exists
+- **`install.remediation.retries: -1` on ESO**: ESO webhook cert bootstrap often fails the first reconcile attempt; infinite retries avoids a permanently-failed HelmRelease during first-time install
+
+---
+
 ## 2026-05-13 — `cp01-disk-role-swap`
 
 ### Goal
