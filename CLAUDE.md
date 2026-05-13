@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-13 | `longhorn-psa-fix` | Diagnosed Longhorn fully broken (0/3 CSI pods) due to missing `pod-security.kubernetes.io/enforce: privileged` on `longhorn-system` namespace; added PSA labels to namespace.yaml; added Storage QA entry |
 > | 2026-05-12 | `talos-upgrade-v1.10-to-v1.13` | Upgraded Talos v1.10.6→v1.11.6→v1.12.7→v1.13.0; fixed upgrade-node Taskfile duplicate-`--image` bug; converted JSON 6902 admission patch to strategic merge (v1.12 multi-doc requirement); v1.13.1 is unreleased tag — targeted v1.13.0 |
 > | 2026-05-12 | `purge-failed-pods-script` | Created `scripts/purge-failed-pods.sh` + `task purge-failed-pods`; owner-health-checked dry-run/live cleanup for Failed pods after unclean shutdown; extended QA.md |
 | 2026-05-12 | `tuppr-upgrade-controller-deployment` | Deployed tuppr as GitOps upgrade controller; fixed cosign + CRD chicken-and-egg rollout errors; updated Renovate for separateMinorPatch; added 5 QA entries |

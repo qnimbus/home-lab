@@ -3,3 +3,11 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: longhorn-system
+  labels:
+    # Longhorn requires privileged pods: instance-manager and longhorn-csi-plugin use
+    # hostPath volumes, securityContext.privileged=true, and SYS_ADMIN (for mount operations).
+    # Without this label the namespace inherits the cluster baseline PSA policy, which blocks
+    # all CSI components and leaves Longhorn non-functional as a storage provider.
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
+    pod-security.kubernetes.io/audit: privileged

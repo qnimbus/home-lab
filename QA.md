@@ -6,6 +6,9 @@ Concise answers to questions that came up during cluster operation. Each entry c
 
 ## Table of Contents
 
+**Storage**
+- [Longhorn CSI components are in CrashLoopBackOff / no pods created for `longhorn-csi-plugin`](#longhorn-csi-components-are-in-crashloopbackoff--longhorn-csi-plugin-daemonset-has-0-pods)
+
 **Networking**
 - [Why does cp-03 show many `eth0: renamed from tmp<random>` messages?](#why-does-the-talos-console-for-cp-03-show-many-eth0-renamed-from-tmprandom-kernel-messages)
 
@@ -23,6 +26,59 @@ Concise answers to questions that came up during cluster operation. Each entry c
 
 **Upgrades (tuppr + Renovate)**
 - [Does Renovate create incremental PRs per minor version, or one PR to the latest?](#does-renovate-create-incremental-prs-for-each-talosk8s-minor-version-or-one-pr-jumping-to-the-latest)
+
+---
+
+## Storage
+
+### Longhorn CSI components are in CrashLoopBackOff / `longhorn-csi-plugin` DaemonSet has 0 pods
+
+**Short answer:** The `longhorn-system` namespace is missing `pod-security.kubernetes.io/enforce: privileged`. Kubernetes PSA is blocking Longhorn's privileged containers before they start.
+
+**Detail:** Longhorn's storage engine requires capabilities that the Kubernetes `baseline` PSA policy forbids:
+- `securityContext.privileged: true` — instance-manager and longhorn-csi-plugin
+- `SYS_ADMIN` capability — longhorn-csi-plugin (required for bind-mount operations)
+- Multiple `hostPath` volumes — unix domain sockets, engine binaries, kubelet directories
+
+Without the namespace label, unlabelled namespaces inherit the cluster-level PSA default. If that default is `baseline` (or `restricted`), pod creation for `longhorn-csi-plugin` fails with:
+
+```
+pods "longhorn-csi-plugin-xxxxx" is forbidden: violates PodSecurity "baseline:latest":
+  non-default capabilities (container "longhorn-csi-plugin" must not include "SYS_ADMIN" ...),
+  hostPath volumes (...), privileged (... must not set securityContext.privileged=true)
+```
+
+This triggers a cascade: no `longhorn-csi-plugin` pod → no `/csi/csi.sock` socket → every CSI sidecar (attacher, provisioner, resizer, snapshotter) crashes trying to connect to that socket → Longhorn cannot provision or attach any volumes.
+
+Note: `longhorn-manager` and `engine-image` may still run (they have lighter security requirements), making Longhorn *appear* partially healthy. The HelmRelease will also show `Ready: True` in Flux — Flux deployed the chart successfully; the PSA enforcement happens at pod-creation time, after Helm.
+
+**Confirm it is a PSA issue:**
+
+```bash
+# Look for FailedCreate events on the csi-plugin DaemonSet
+kubectl get events -n longhorn-system --field-selector=reason=FailedCreate
+
+# Check what PSA labels the namespace has (or lacks)
+kubectl get ns longhorn-system -o jsonpath='{.metadata.labels}' | jq
+```
+
+**Fix:** The `pod-security.kubernetes.io/enforce: privileged` label must be in the namespace manifest in Git — not applied imperatively — because Flux drift detection will overwrite any label that is not declared in source. The Longhorn Helm chart does **not** set this label automatically.
+
+```yaml
+# kubernetes/apps/longhorn-system/longhorn/app/namespace.yaml
+metadata:
+  name: longhorn-system
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/warn: privileged
+    pod-security.kubernetes.io/audit: privileged
+```
+
+Set all three levels (`enforce`, `warn`, `audit`) so that admission warnings and audit log entries are also emitted at the same level — this surfaces any future PSA violation before it becomes a hard failure.
+
+**This pattern applies to any privileged system workload** — Rook/Ceph OSDs, GPU driver DaemonSets, node-level agents, or any other chart that needs `privileged: true` or `SYS_ADMIN`. Always check whether the namespace has the PSA label when these components fail to start with no obvious error in their own logs.
+
+**Trigger in this cluster (2026-05-13):** The Kubernetes version revert from v1.34.7 → v1.33.11 (`e49c556`) appears to have left a stricter cluster-level PSA default active. The namespace label was never in Git (the Longhorn chart doesn't set it), and the deployment had worked previously — indicating PSA enforcement tightened during the v1.34 upgrade attempt.
 
 ---
 

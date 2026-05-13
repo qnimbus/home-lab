@@ -4,6 +4,40 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-13 — `longhorn-psa-fix`
+
+### What we did
+- Diagnosed Longhorn as completely non-functional as a CSI provider due to missing PodSecurity
+  Admission (PSA) namespace label on `longhorn-system`
+- Kubernetes PSA was enforcing the `baseline` policy on unlabelled namespaces; Longhorn requires
+  `privileged` because its core components use `securityContext.privileged=true`, `SYS_ADMIN`
+  capability, and `hostPath` volumes (required for CSI mount operations)
+- Root cause: the `longhorn-system` namespace manifest in Git lacked
+  `pod-security.kubernetes.io/enforce: privileged`; the label is not set automatically by the
+  Longhorn Helm chart — it must be declared on the namespace resource in Git
+- Diagnosis performed by kubernetes-debugger agent (read-only); agent identified PSA as the
+  single root error via pod events (`FailedCreate` on `longhorn-csi-plugin` DaemonSet), confirmed
+  by the cascade: no CSI socket → all CSI sidecars (attacher, provisioner, resizer, snapshotter)
+  in CrashLoopBackOff; only cp-02 instance-manager survived (predated enforcement trigger)
+- **No PVCs existed** — no data was at risk
+- Fixed by adding `pod-security.kubernetes.io/enforce/warn/audit: privileged` to `namespace.yaml`;
+  setting all three levels ensures audit/warn visibility as well as enforcement parity
+- Fix survives Flux reconciliation because the label is declared in the namespace manifest in Git
+  (Flux drift detection would overwrite any imperatively-added label)
+
+### Probable trigger
+The Kubernetes version revert (`e49c556`, `v1.34.7 → v1.33.11`) likely left a stricter cluster-level
+PSA default than was previously active. The namespace label was never in Git — the Helm chart
+doesn't set it — and the deployment appeared to work before because PSA was not previously
+enforcing `baseline` as the cluster default.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/longhorn-system/longhorn/app/namespace.yaml` | Add PSA `enforce/warn/audit: privileged` labels |
+
+---
+
 ## 2026-05-12 — `talos-upgrade-v1.10-to-v1.13`
 
 ### What we did
