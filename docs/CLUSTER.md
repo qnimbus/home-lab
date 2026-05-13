@@ -12,6 +12,31 @@ Three-node bare-metal Talos Linux cluster (all control-plane, scheduling allowed
 
 ---
 
+## Networks
+
+| Subnet | Purpose |
+|--------|---------|
+| `10.60.0.0/24` | Management / Kubernetes API |
+| `10.200.0.0/24` | Storage (Longhorn replication and CSI I/O) |
+| `10.42.0.0/16` | Pod network (Cilium) |
+| `10.43.0.0/16` | Service network |
+
+### Node NIC topology
+
+Each node has a dedicated 10 GbE storage bond on the `10.200.0.0/24` subnet. Longhorn replication and CSI I/O flow over this bond, keeping storage traffic off the management interface.
+
+| Node | Management | Storage bond |
+|------|------------|-------------|
+| talos-cp-01 | `eno1` — single Intel I219-LM (e1000e), `10.60.0.201/24` | `bond0` — 2× Intel X520-DA2 SFP+ (ixgbe), `10.200.0.201/24` |
+| talos-cp-02 | `eno1` — single Intel I219-LM (e1000e), `10.60.0.202/24` | `bond0` — 2× Intel X520-DA2 SFP+ (ixgbe), `10.200.0.202/24` |
+| talos-cp-03 | `bond0` — 2× NIC (RTL8125 r8169 + Intel I225 igc), `10.60.0.203/24` | `bond1` — 2× Intel X710 SFP+ (i40e), `10.200.0.203/24` |
+
+All bonds run **802.3ad LACP** (fast rate, `layer3+4` hash policy). MTU is currently 1500 on both subnets — jumbo frames (9000 MTU) for the storage bond are a pending TODO.
+
+> etcd peer traffic is restricted to the management subnet (`advertisedSubnets: ["10.60.0.0/24"]`) — it never crosses the storage VLAN.
+
+---
+
 ## Running Components
 
 **Talos v1.13.2 / Kubernetes v1.36.1.** All Helm-deployed components are installed via Helmfile during bootstrap (`kubernetes/bootstrap/helmfile.yaml`); version pins are tracked by Renovate.
