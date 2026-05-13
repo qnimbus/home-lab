@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-13 | `eso-onepassword-connect-fix` | Fixed ClusterSecretStore/onepassword: credentials double-encoding bug (base64(base64(json)) required) + wrong vault name Kubernetes→homelab; fixed bootstrap task |
 > | 2026-05-13 | `bootstrap-components-gitops` | Port Cilium/CoreDNS/Spegel/cert-manager/flux-operator/flux-instance to Flux HelmReleases; add OCIRepository sources to meta layer; remove Renovate comments from Helmfile |
 > | 2026-05-13 | `cert-manager-cluster-issuer` | Deployed ESO + 1Password Connect + ClusterSecretStore; letsencrypt-staging/production ClusterIssuers via Cloudflare DNS-01; Cloudflare token sourced from 1Password ExternalSecret |
 > | 2026-05-13 | `cp01-disk-role-swap` | Swapped cp-01 disk roles: GoodRam→system, Kingston→Longhorn storage; updated talconfig.yaml + docs; worked around talhelper 3.1.9 not supporting Talos v1.13.2; ISO-boot migration completed successfully |

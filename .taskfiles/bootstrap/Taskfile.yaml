@@ -56,7 +56,7 @@ tasks:
       - {msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer", sh: "test -n \"$OP_SERVICE_ACCOUNT_TOKEN\""}
 
   onepassword-connect-secret:
-    desc: Create 1Password Connect bootstrap secret in external-secrets namespace via op read (idempotent) [VAULT=Kubernetes]
+    desc: Create 1Password Connect bootstrap secret in external-secrets namespace via op read (idempotent) [VAULT=homelab]
     vars:
       VAULT: '{{.VAULT | default "homelab"}}'
     cmds:
@@ -64,7 +64,7 @@ tasks:
       - |
         kubectl create secret generic onepassword-connect-secrets \
           --namespace external-secrets \
-          --from-literal="1password-credentials.json=$(op read 'op://{{.VAULT}}/HomeLab Credentials File/1password-credentials.json')" \
+          --from-literal="1password-credentials.json=$(op read 'op://{{.VAULT}}/HomeLab Credentials File/1password-credentials.json' | base64 -w 0)" \
           --from-literal="token=$(op read 'op://{{.VAULT}}/HomeLab Access Token/credential')" \
           --dry-run=client -o yaml | kubectl apply -f -
     preconditions:

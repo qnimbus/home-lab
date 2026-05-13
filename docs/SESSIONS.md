@@ -4,6 +4,32 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-13 — `eso-onepassword-connect-fix`
+
+### Goal
+Fix the `ClusterSecretStore/onepassword` which was stuck in `ValidationFailed / Ready=False` due to two bugs: a double-encoding error in the 1Password Connect credentials secret, and a wrong vault name in the ClusterSecretStore spec.
+
+### What we did
+- Used cluster-doctor agent to diagnose the warning; root cause: `1password-credentials.json` stored as raw JSON, but 1Password Connect requires it to be base64-encoded JSON (the `credentialsDataFromBase64` function in Connect needs another layer of encoding on top of what Kubernetes already does)
+- Imperatively patched the live `onepassword-connect-secrets` secret: re-encoded the value from `base64(raw_json)` to `base64(base64(raw_json))` so the env var Connect receives is `base64(raw_json)` as expected
+- Restarted the `onepassword-connect` deployment to pick up the updated secret; Connect API began returning 200 OK with no errors
+- Discovered a second error after credentials fix: `Found 0 vaults with title "Kubernetes"` — the ClusterSecretStore spec had `vaults: Kubernetes: 1` but the actual 1Password vault name is `homelab`
+- Fixed `clustersecretstore.yaml`: `Kubernetes` → `homelab`
+- Fixed `task bootstrap:onepassword-connect-secret`: added `| base64 -w 0` to the credentials `op read` so re-running the task produces a correctly double-encoded secret; also fixed the `[VAULT=Kubernetes]` description tag to `[VAULT=homelab]`
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/external-secrets/external-secrets/stores/onepassword/clustersecretstore.yaml` | `vaults: Kubernetes: 1` → `vaults: homelab: 1` |
+| `.taskfiles/bootstrap/Taskfile.yaml` | `onepassword-connect-secret`: added `\| base64 -w 0` to credentials encoding; fixed VAULT default and description tag |
+
+### Key decisions
+- **Imperative patch acceptable for the secret**: the secret is deliberately not in Git (Option B decision from prior session); patching it imperatively is the correct fix path
+- **Double-encoding is by design**: 1Password Connect reads its credentials file content as base64, so the secret value must be `base64(raw_json)` — requiring Kubernetes to store it as `base64(base64(raw_json))`
+- **ClusterSecretStore vault name**: must match the exact vault title in 1Password as Connect returns it; case-sensitive
+
+---
+
 ## 2026-05-13 — `bootstrap-components-gitops`
 
 ### Goal
@@ -91,14 +117,16 @@ Configure cert-manager with a Let's Encrypt ClusterIssuer (DNS-01 via Cloudflare
 - Scope expanded from "just ClusterIssuers" to the full prerequisite stack after user requested 1Password instead of SOPS for the Cloudflare API token
 - Added two new HelmRepositories: `external-secrets` (charts.external-secrets.io) and `onepassword-connect` (1password.github.io/connect-helm-charts)
 - Deployed **External Secrets Operator** (chart `external-secrets` 0.18.2) as a Flux-managed HelmRelease in the new `external-secrets` namespace
-- Deployed **1Password Connect** (chart `connect` 2.0.1) as a Flux-managed HelmRelease; credentials stored in `secret.sops.yaml` (SOPS-encrypted bootstrap secret — placeholder, user must fill in before committing)
+- Deployed **1Password Connect** (chart `connect` 2.0.1) as a Flux-managed HelmRelease
 - Created **ClusterSecretStore** `onepassword` pointing at `http://onepassword-connect.external-secrets.svc.cluster.local:8080`, vault `Kubernetes`
 - Authored multi-doc `external-secrets/ks.yaml` with two Kustomizations: `external-secrets` (ESO HelmRelease) and `onepassword-store` (ClusterSecretStore, dependsOn both ESO + Connect)
-- `onepassword-connect/ks.yaml` carries explicit `decryption.provider: sops` since it decrypts the credentials secret before ESO is running
 - Created **ExternalSecret** `cert-manager-cloudflare` (in `cert-manager` namespace) pulling 1Password vault item `cloudflare`, key `api-token` → Secret `cert-manager-secret`
 - Created **ClusterIssuer** `letsencrypt-staging` and `letsencrypt-production`; both use DNS-01 via Cloudflare, `cert-manager-secret/api-token`; email and domain are `TODO_*` placeholders
 - `cluster-issuers` Kustomization `dependsOn: [onepassword-store]` so ExternalSecret can resolve before cert-manager tries to use the token
 - Reviewed all files against cluster patterns; fixed: Renovate comment format (`datasource=helm depName=... repository=...`), install remediation (`retries: -1` not `3`), added `upgrade.cleanupOnFail: true`, slimmed values.yaml to only non-default overrides, bumped cluster-issuers timeout 2m→5m for ACME registration
+- Added `.taskfiles/sops/Taskfile.yaml` with a `sops:encrypt` task: resolves `op://` references in a `*.sops.yaml.tpl` via `op inject | sops --filename-override ... --encrypt /dev/stdin` and writes the encrypted output alongside it; `sops` include wired into root `Taskfile.yaml`
+- Created `onepassword-connect/app/secret.sops.yaml.tpl` with `op://Kubernetes/...` references for the Connect credentials — committed as documentation; the encrypted output is **not** committed
+- Switched to **Option B** (imperative bootstrap, no Git secret): removed `secret.sops.yaml` from git and from the `onepassword-connect` Kustomization; removed `decryption` block from `onepassword-connect/ks.yaml` (now has no SOPS resources); added `task bootstrap:onepassword-connect-secret` which creates the `onepassword-connect-secrets` Secret directly via `op read` (idempotent `--dry-run=client | kubectl apply`); Flux never sees the Secret so `prune: true` will never delete it
 
 ### Files changed
 | File | Change |
