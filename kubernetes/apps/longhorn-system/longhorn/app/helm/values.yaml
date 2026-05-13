@@ -1,5 +1,5 @@
 ---
-# see: https://github.com/longhorn/charts/blob/v1.9.x/charts/longhorn/values.yaml
+# see: https://github.com/longhorn/charts/blob/v1.11.x/charts/longhorn/values.yaml
 
 persistence:
   defaultClass: true
@@ -86,7 +86,7 @@ longhornInstanceManager:
       memory: 32Mi
     limits:
       cpu: 50m
-      memory: 64Mi
+      memory: 128Mi
 
 longhornUI:
   replicas: 1
