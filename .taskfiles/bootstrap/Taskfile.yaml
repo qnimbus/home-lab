@@ -55,8 +55,26 @@ tasks:
       - {msg: "op not found — install 1Password CLI",                                                              sh: "which op"}
       - {msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer", sh: "test -n \"$OP_SERVICE_ACCOUNT_TOKEN\""}
 
+  onepassword-connect-secret:
+    desc: Create 1Password Connect bootstrap secret in external-secrets namespace via op read (idempotent) [VAULT=Kubernetes]
+    vars:
+      VAULT: '{{.VAULT | default "homelab"}}'
+    cmds:
+      - kubectl create namespace external-secrets --dry-run=client -o yaml | kubectl apply -f -
+      - |
+        kubectl create secret generic onepassword-connect-secrets \
+          --namespace external-secrets \
+          --from-literal="1password-credentials.json=$(op read 'op://{{.VAULT}}/HomeLab Credentials File/1password-credentials.json')" \
+          --from-literal="token=$(op read 'op://{{.VAULT}}/HomeLab Access Token/credential')" \
+          --dry-run=client -o yaml | kubectl apply -f -
+    preconditions:
+      - {msg: "kubeconfig not found",                                                                               sh: "test -f {{.KUBECONFIG}}"}
+      - {msg: "op not found — install 1Password CLI",                                                              sh: "which op"}
+      - {msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer", sh: "test -n \"$OP_SERVICE_ACCOUNT_TOKEN\""}
+      - {msg: "kubectl not found",                                                                                  sh: "which kubectl"}
+
   apps:
-    desc: "Bootstrap apps into the cluster via helmfile (Cilium → CoreDNS → Spegel → cert-manager → Flux) — FIRST BOOT ONLY; use bootstrap:upgrade for day-2 upgrades"
+    desc: Bootstrap apps into the cluster via helmfile (Cilium → CoreDNS → Spegel → cert-manager → Flux) — FIRST BOOT ONLY; day-2 upgrades are handled by Flux via Renovate PRs
     cmd: helmfile sync -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.yaml
     preconditions:
       - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
@@ -64,20 +82,3 @@ tasks:
       - {msg: ".sops.yaml not found", sh: "test -f {{.ROOT_DIR}}/.sops.yaml"}
       - {msg: "age key not found", sh: "test -f {{.SOPS_AGE_KEY_FILE}}"}
       - {msg: "helmfile not found", sh: "which helmfile"}
-
-  diff:
-    desc: Preview pending version changes for bootstrap components (helmfile diff) — read-only
-    cmd: '{{.ROOT_DIR}}/scripts/upgrade-bootstrap.sh diff'
-    preconditions:
-      - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
-      - {msg: "helmfile not found", sh: "which helmfile"}
-      - {msg: "helm not found", sh: "which helm"}
-
-  upgrade:
-    desc: Upgrade bootstrap components (Cilium, CoreDNS, Spegel, cert-manager, flux-operator) to Helmfile-pinned versions
-    cmd: '{{.ROOT_DIR}}/scripts/upgrade-bootstrap.sh sync'
-    preconditions:
-      - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
-      - {msg: "helmfile not found", sh: "which helmfile"}
-      - {msg: "helm not found", sh: "which helm"}
-      - {msg: "kubectl not found", sh: "which kubectl"}

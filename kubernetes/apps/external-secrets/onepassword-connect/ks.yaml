@@ -18,10 +18,6 @@ spec:
   wait: true
   prune: true
   path: ./kubernetes/apps/external-secrets/onepassword-connect/app
-  decryption:
-    provider: sops
-    secretRef:
-      name: sops-age
   sourceRef:
     kind: GitRepository
     name: flux-system

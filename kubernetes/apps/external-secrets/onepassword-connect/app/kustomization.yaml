@@ -9,5 +9,4 @@ configMapGenerator:
 configurations:
   - ./helm/kustomize-config.yaml
 resources:
-  - ./secret.sops.yaml
   - ./helmrelease.yaml
