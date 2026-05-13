@@ -1,6 +1,9 @@
 .archive/
 .claude/settings.local.json
 
+# Ignore IDE/editor specific files and folders
+.vscode/
+
 # Ignore build artifacts and assets (e.g. iso images, VM images, etc.)
 assets/
 

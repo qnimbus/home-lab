@@ -10,8 +10,11 @@ A running record of work done, files modified, and decisions made across Claude 
 Port all six bootstrap components (Cilium, CoreDNS, Spegel, cert-manager, flux-operator, flux-instance) from Helmfile-only management to full Flux HelmReleases, so they receive automatic upgrades via Renovate PRs like every other cluster component.
 
 ### What we did
-- Diagnosed the version drift: Helmfile had Renovate comments and drifted ahead (e.g. Cilium 1.19.3 vs running 1.17.6); since there were no HelmReleases, Flux had no mechanism to reconcile or upgrade these components
-- Confirmed via archive comparison: the archive cluster had OCIRepository+HelmRelease for all six components; the current repo lost those files during the initial port
+- Used cluster-doctor agent to audit live component versions against `docs/CLUSTER.md`; found Longhorn documented as v1.9.0 (running v1.11.2) and OpenEBS as v4.3.2 (running v4.4.0); fixed both entries in CLUSTER.md
+- Investigated the bootstrap Helmfile's version-drift problem: Renovate comments in the Helmfile had bumped pins (e.g. Cilium 1.19.3) but without Flux HelmReleases there was no mechanism to apply those bumps to the running cluster
+- As an interim step, created `scripts/upgrade-bootstrap.sh` and `bootstrap:diff`/`bootstrap:upgrade` Taskfile tasks; on reflection these were then removed because running `helmfile sync` on a live cluster with Flux HelmReleases would cause Flux to immediately reconcile back — the two systems would fight
+- Compared with the archive cluster and confirmed it had full OCIRepository+HelmRelease for all six bootstrap components — the current repo lost those files during the initial port from the archive
+- Decided to port the archive pattern back; `scripts/upgrade-bootstrap.sh` and the `bootstrap:diff`/`bootstrap:upgrade` tasks were removed before the final commit
 - Added three new OCI source files to `flux/meta/repos/oci/`: `cert-manager.yaml`, `flux-operator.yaml`, `flux-instance.yaml`
 - Updated `coredns.yaml` and `spegel.yaml` in meta OCI repos: replaced `semver: >=x.x.x` with pinned `tag:` + `layerSelector` + Renovate comment
 - Updated `flux/meta/repos/oci/kustomization.yaml` to include all five new/updated sources
@@ -26,11 +29,14 @@ Port all six bootstrap components (Cilium, CoreDNS, Spegel, cert-manager, flux-o
 - Updated root `kubernetes/apps/kustomization.yaml`: added `./flux-system` and `./kube-system`
 - Updated `kubernetes/apps/cert-manager/kustomization.yaml`: added `./cert-manager/ks.yaml`
 - Removed all `# renovate:` comments from `kubernetes/bootstrap/helmfile.yaml` — Helmfile is now a static bootstrap ladder; Renovate tracks the meta OCI/Helm repo objects instead
-- Updated `scripts/upgrade-bootstrap.sh` usage text to reflect that Flux now owns day-2 upgrades
+- Removed `scripts/upgrade-bootstrap.sh` and `bootstrap:diff`/`bootstrap:upgrade` tasks — would conflict with Flux on a live cluster (Helmfile upgrades; Flux immediately reconciles back to HelmRelease version); updated `bootstrap:apps` description to reflect that day-2 upgrades now go via Flux/Renovate
+- Verified reconciliation: forced `flux reconcile` after push; all six new Kustomizations reached `Ready=True` within 35 seconds; all six HelmReleases show `Helm upgrade succeeded` at the pinned versions (`.v2` release — Flux adopted the pre-existing Helmfile-installed `.v1` release with a no-op upgrade); no pod restarts
 
 ### Files changed
 | File | Change |
 |------|--------|
+| `docs/CLUSTER.md` | Longhorn version corrected v1.9.0→v1.11.2; OpenEBS v4.3.2→v4.4.0 |
+| `.taskfiles/bootstrap/Taskfile.yaml` | Updated `bootstrap:apps` description: day-2 upgrades via Flux/Renovate, not Helmfile |
 | `kubernetes/flux/meta/repos/oci/coredns.yaml` | semver → pinned tag `1.43.0` + layerSelector + Renovate comment |
 | `kubernetes/flux/meta/repos/oci/spegel.yaml` | semver → pinned tag `0.4.0` + layerSelector + Renovate comment |
 | `kubernetes/flux/meta/repos/oci/cert-manager.yaml` | New — OCIRepository for `quay.io/jetstack/charts/cert-manager` |
@@ -66,13 +72,13 @@ Port all six bootstrap components (Cilium, CoreDNS, Spegel, cert-manager, flux-o
 | `kubernetes/apps/kustomization.yaml` | Added `./flux-system` and `./kube-system` |
 | `kubernetes/apps/cert-manager/kustomization.yaml` | Added `./cert-manager/ks.yaml` |
 | `kubernetes/bootstrap/helmfile.yaml` | Removed all `# renovate:` comments |
-| `scripts/upgrade-bootstrap.sh` | Updated usage text |
 
 ### Key decisions
 - **Pin at currently running versions**: HelmReleases start at live versions so the first Flux reconcile is a no-op; Renovate opens upgrade PRs from there
 - **OCIRepository for cert-manager** (not HelmRepository): consistent with how CoreDNS/Spegel/flux-operator are sourced; OCI is the vendor-preferred distribution channel
 - **Renovate comments removed from Helmfile**: the Helmfile is now a static bootstrap ladder; version tracking moves entirely to the Flux source objects in `flux/meta/repos/`
-- **`task bootstrap:upgrade` retained but repurposed**: still useful for re-bootstrap scenarios; updated usage text reflects it is no longer the day-2 upgrade mechanism
+- **`scripts/upgrade-bootstrap.sh` and `bootstrap:diff`/`bootstrap:upgrade` removed**: would fight Flux on a live cluster — Helmfile upgrades to newer pin, Flux reconciles back to HelmRelease version; no safe use case remains once HelmReleases exist
+- **First reconcile is a no-op by design**: all HelmReleases pinned at currently running versions; Flux adopted the Helmfile-installed releases without restarting any pods; Renovate will open separate PRs for each version gap going forward
 
 ---
 
