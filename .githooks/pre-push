@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PRIMARY_REMOTE="origin"
+PRIMARY_BRANCH="refs/heads/main"
+ZERO="0000000000000000000000000000000000000000"
+
+remote_name="$1"
+remote_url="$2"
+
+# Avoid recursion / only mirror pushes to your private repo.
+if [[ "$remote_name" != "$PRIMARY_REMOTE" ]]; then
+  exit 0
+fi
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [[ "$remote_ref" != "$PRIMARY_BRANCH" ]]; then
+    continue
+  fi
+
+  # Ignore branch deletion.
+  if [[ "$local_sha" == "$ZERO" ]]; then
+    continue
+  fi
+
+  ./scripts/sync-public-history.sh "$remote_sha" "$local_sha"
+done
