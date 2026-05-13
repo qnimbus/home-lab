@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-13 | `openebs-4.4.0-upgrade` | Merged PR #18; force-reconciled Flux chain; confirmed HelmRelease upgraded to openebs@4.4.0 (UpgradeSucceeded) |
 > | 2026-05-13 | `openebs-oci-source-fix` | Diagnosed timing race (HelmRelease checked source 30s early); forced reconcile; added `crds: CreateReplace` to HelmRelease |
  | 2026-05-13 | `claude-md-session-lifecycle` | Added mandatory session open/close workflow to CLAUDE.md |
 > | 2026-05-13 | `kubernetes-upgrade-v1.35-v1.36` | Upgraded K8s v1.34.7→v1.35.4 (staggered apiserver patch mc + upgrade-k8s); v1.35.4→v1.36.0 via tuppr/Renovate native path (validated safe); documented gRPC flood / KubernetesUpgrade mismatch patterns; added Q&A entries; removed TROUBLESHOOTING.md; updated scripts/mcp.sh for reliable MCP |

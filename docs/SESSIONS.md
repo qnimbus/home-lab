@@ -4,6 +4,29 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-13 — `openebs-4.4.0-upgrade`
+
+### Goal
+Verify the OpenEBS 4.3.2 → 4.4.0 minor upgrade (PR #18) reconciled cleanly after merge.
+
+### What we did
+- Reviewed PR #18 via `pr-upgrade-reviewer` agent — assessed as low-risk (LocalPV Hostpath only; all other engines disabled)
+- Merged PR #18; confirmed Flux had not yet picked up the new tag (OCIRepository still at 4.3.2 on 1h interval)
+- Force-reconciled the chain: `flux reconcile source git flux-system` → `flux reconcile ks cluster-meta --with-source`
+- OCIRepository updated to `4.4.0`, cosign signature verified
+- HelmRelease upgraded to `openebs/openebs.v2` with chart `openebs@4.4.0` (`UpgradeSucceeded`)
+- `openebs-localpv-provisioner` pod recycled cleanly (0 restarts, label `chart=localpv-provisioner-4.4.0`)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/openebs.yaml` | OCI tag bumped `4.3.2` → `4.4.0` (via PR #18) |
+
+### Key decisions
+- No pre-merge steps were needed; `crds: CreateReplace` already in place from the previous session meant CRD schema updates were handled automatically
+
+---
+
 ## 2026-05-13 — `openebs-oci-source-fix`
 
 ### Goal
