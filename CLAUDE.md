@@ -4,6 +4,8 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-13 | `kubernetes-upgrade-v1.35-v1.36` | Upgraded K8s v1.34.7→v1.35.4 (staggered apiserver patch mc + upgrade-k8s); v1.35.4→v1.36.0 via tuppr/Renovate native path (validated safe); documented gRPC flood / KubernetesUpgrade mismatch patterns; added Q&A entries; removed TROUBLESHOOTING.md; updated scripts/mcp.sh for reliable MCP |
+> | 2026-05-13 | `kubernetes-upgrade-v1.34-crash-recovery` | Recovered v1.34.7 crash loop (gRPC→etcd flood, rbac/bootstrap-roles fatal timeout); staggered apiserver revert to v1.33.11 then re-upgrade to v1.34.7 with feature gates removed; documented root cause |
 > | 2026-05-13 | `mcp-rbac-fix` | Replaced built-in `view` ClusterRoleBinding in `scripts/mcp.sh` with a custom `mcp-viewer` ClusterRole covering nodes, PVs, StorageClasses, Flux CRDs, and tuppr upgrade CRDs; made RBAC idempotent via `kubectl apply`; `renew-token` now re-applies RBAC before minting; added roleRef migration guard for immutable field |
 > | 2026-05-13 | `longhorn-psa-fix` | Diagnosed Longhorn fully broken (0/3 CSI pods) due to missing `pod-security.kubernetes.io/enforce: privileged` on `longhorn-system` namespace; added PSA labels to namespace.yaml; added Storage QA entry |
 > | 2026-05-12 | `talos-upgrade-v1.10-to-v1.13` | Upgraded Talos v1.10.6→v1.11.6→v1.12.7→v1.13.0; fixed upgrade-node Taskfile duplicate-`--image` bug; converted JSON 6902 admission patch to strategic merge (v1.12 multi-doc requirement); v1.13.1 is unreleased tag — targeted v1.13.0 |
@@ -102,8 +104,8 @@ Three bare-metal control-plane nodes; no dedicated workers (`allowSchedulingOnCo
 
 | Hostname       | Hardware                              | Mgmt IP       | Storage IP     | Notes                        |
 |----------------|---------------------------------------|---------------|----------------|------------------------------|
-| talos-cp-01    | Lenovo M920Q #1 (i5-8500T, 16GB)     | 10.60.0.201   | 10.200.0.201   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
-| talos-cp-02    | Lenovo M920Q #2 (i5-8500T, 16GB)     | 10.60.0.202   | 10.200.0.202   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
+| talos-cp-01    | Lenovo M920Q #1 (i5-8500T, 64GB)     | 10.60.0.201   | 10.200.0.201   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
+| talos-cp-02    | Lenovo M920Q #2 (i5-8500T, 64GB)     | 10.60.0.202   | 10.200.0.202   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
 | talos-cp-03    | Minisforum MS-A2 (AMD, 32c, 92GB)    | 10.60.0.203   | 10.200.0.203   | bond0: 2x RTL8125+igc, bond1: 2x i40e (X710) |
 
 - **VIP**: `10.60.0.2` (kube-vip via ARP, all three CPs compete)
@@ -289,7 +291,11 @@ Community configs reflect their authors' constraints, mistakes, and historical b
 - **etcd on management subnet only**: `advertisedSubnets: ["10.60.0.0/24"]` keeps etcd off storage VLAN
 - **NFS defaults**: `nfsvers=4.2`, `nconnect=16`, `hard=True`, `noatime=True` (set in machine files patch)
 - **Container runtime**: unprivileged ports + ICMP enabled; image layers not discarded (cache efficiency)
-- **Upgrade path**: tuppr (home-operations/tuppr) — `TalosUpgrade` + `KubernetesUpgrade` CRDs in `system-upgrade` namespace; Renovate opens PRs per minor version; tuppr performs rolling node-by-node upgrades
+- **Upgrade path**: tuppr (home-operations/tuppr) — `TalosUpgrade` + `KubernetesUpgrade` CRDs in `system-upgrade` namespace; Renovate opens PRs per minor version; tuppr performs rolling node-by-node upgrades via `talosctl upgrade-k8s` (sequential, safe for v1.35+)
+  - **Preferred method**: merge the Renovate PR; tuppr handles the full upgrade automatically — no manual steps required and avoids the `KubernetesUpgrade` CRD mismatch problem (see QA.md)
+  - **Pre-upgrade check**: always run `talosctl upgrade-k8s --to <version> --dry-run` before merging; flags removed feature gates and deprecated API versions before any change is made
+  - **If upgrading manually** (apiserver only, via `talosctl patch mc`): use strategic merge form (`{"cluster":{"apiServer":{"image":"..."}}}`) — JSON RFC 6902 patches are rejected for multi-doc machine configs (talhelper v1.12+); wait for 2-minute stable PID per node before patching the next
+  - **After any manual `upgrade-k8s`** that advances the cluster ahead of Git: delete the `KubernetesUpgrade` resource before Flux reconcile (`kubectl delete kubernetesupgrade kubernetes -n system-upgrade`) — otherwise tuppr sees CURRENT > TARGET and starts failing downgrade jobs
 
 ---
 

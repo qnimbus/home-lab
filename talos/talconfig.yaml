@@ -21,7 +21,7 @@ cniConfig:
 nodes:
   # MS-A2 RJ45 driver assumed r8169 (Realtek RTL8125) — verify: lspci -k | grep -A2 Ethernet
 
-  - hostname: "talos-cp-01"                         # Lenovo M920Q #1 (i5-8500T, 16GB, X520-DA2)
+  - hostname: "talos-cp-01"                         # Lenovo M920Q #1 (i5-8500T, 64GB, X520-DA2)
     ipAddress: "10.60.0.201"
     installDiskSelector:
       model: "KINGSTON SNV3S1000G"                   # stable selector — avoids device path instability with 2 NVMe drives
@@ -63,7 +63,7 @@ nodes:
           - "10.200.0.201/24"
         mtu: 1500                                   # TODO: Configure and enable jumbo frames for storage traffic
 
-  - hostname: "talos-cp-02"                         # Lenovo M920Q #2 (i5-8500T, 16GB, X520-DA2)
+  - hostname: "talos-cp-02"                         # Lenovo M920Q #2 (i5-8500T, 64GB, X520-DA2)
     ipAddress: "10.60.0.202"
     installDiskSelector:
       model: "KINGSTON SNV3S1000G"                   # stable selector — avoids device path instability with 2 NVMe drives

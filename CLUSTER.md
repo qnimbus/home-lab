@@ -5,8 +5,8 @@ Three-node bare-metal Talos Linux cluster (all control-plane, scheduling allowed
 
 | Node | Hardware | Mgmt IP |
 |------|----------|---------|
-| talos-cp-01 | Lenovo M920Q (i5-8500T, 16GB) | 10.60.0.201 |
-| talos-cp-02 | Lenovo M920Q (i5-8500T, 16GB) | 10.60.0.202 |
+| talos-cp-01 | Lenovo M920Q (i5-8500T, 64GB) | 10.60.0.201 |
+| talos-cp-02 | Lenovo M920Q (i5-8500T, 64GB) | 10.60.0.202 |
 | talos-cp-03 | Minisforum MS-A2 (32c, 92GB) | 10.60.0.203 |
 
 **VIP**: `10.60.0.2` (kube-vip) | **CNI**: Cilium (kube-proxy replacement) | **DNS**: CoreDNS via HelmRelease

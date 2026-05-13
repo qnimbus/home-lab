@@ -26,6 +26,8 @@ Concise answers to questions that came up during cluster operation. Each entry c
 
 **Upgrades (tuppr + Renovate)**
 - [Does Renovate create incremental PRs per minor version, or one PR to the latest?](#does-renovate-create-incremental-prs-for-each-talosk8s-minor-version-or-one-pr-jumping-to-the-latest)
+- [Why does tuppr start failing "downgrade" jobs after a manual upgrade?](#why-does-tuppr-start-spawning-failing-downgrade-jobs-after-a-manual-kubernetes-upgrade)
+- [What caused the kube-apiserver v1.34.7 crash loop?](#what-caused-the-kube-apiserver-v1347-crash-loop-and-will-it-happen-again)
 
 ---
 
@@ -320,3 +322,40 @@ kubectl get deployment <name> -n <ns> -o jsonpath='{.status.conditions[*]}'
 3. After tuppr finishes the rolling upgrade, Renovate will re-open with the next step.
 
 Patch PRs (e.g. `v1.10.6 → v1.10.9`) are always safe to merge directly — Talos supports arbitrary patch skips within a minor.
+
+---
+
+### Why does tuppr start spawning failing "downgrade" jobs after a manual Kubernetes upgrade?
+
+**Short answer:** When you run `talosctl upgrade-k8s` manually, the cluster advances to the new version *before* Git is updated. tuppr sees `CURRENT > TARGET` and tries to reconcile backward. `talosctl` refuses downgrade paths (e.g. 1.35→1.34), so the jobs fail safely — but they loop indefinitely until the CRD is cleaned up.
+
+**Detail:** tuppr reconciles by comparing the running kubelet version against `spec.kubernetes.version` in the `KubernetesUpgrade` resource. If you run `upgrade-k8s --to v1.35.4` manually before updating `kubernetesupgrade.yaml` in Git, the CRD still declares `v1.34.7`. tuppr spawns jobs targeting `v1.34.7`, each job calls `upgrade-k8s` internally and immediately fails with "unsupported upgrade path 1.35→1.34". The admission webhook then blocks Flux from updating the spec while the phase is `Upgrading`.
+
+**Fix:**
+```bash
+kubectl delete kubernetesupgrade kubernetes -n system-upgrade
+kubectl delete jobs -n system-upgrade --all   # owned jobs cascade on CRD delete; belt-and-suspenders
+flux reconcile source git flux-system && flux reconcile kustomization tuppr-upgrade
+```
+Flux recreates the resource from the current Git state (which should already have the new version), tuppr sees `CURRENT == TARGET`, and marks it `Completed` immediately.
+
+**How to avoid it:** Use the tuppr-native path — merge the Renovate PR and let tuppr drive the upgrade. The cluster and Git advance together; no mismatch.
+
+---
+
+### What caused the kube-apiserver v1.34.7 crash loop, and will it happen again?
+
+**Short answer:** `kube-apiserver v1.34.7` opens ~100 gRPC channels to etcd *simultaneously* at startup, overwhelming etcd's TLS handshake queue. The `rbac/bootstrap-roles` PostStartHook times out fatally. On 3 nodes upgraded in rapid succession, backoff timers re-synchronise into waves that prevent recovery indefinitely.
+
+**Detail:** The crash sequence is:
+1. `kube-apiserver` starts → opens ~100 gRPC channels to etcd within 100 ms
+2. etcd's TLS handshake queue saturates → internal etcd client delays
+3. Informer cache sync delays → `rbac/bootstrap-roles` PostStartHook times out (`F0512 hooks.go:204 PostStartHook "rbac/bootstrap-roles" failed`)
+4. `F` = Fatal → kubelet restarts with exponential backoff
+5. Three nodes upgraded simultaneously → backoff waves synchronise → permanent thundering-herd
+
+**What was NOT the cause:** Talos version (stable throughout); etcd corruption (3-member quorum maintained); feature gate flags (admission controllers loaded successfully every startup — red herring).
+
+**Fix applied:** Remove feature gates (`MutatingAdmissionPolicy`, `v1alpha1` runtime-config) that would have caused unrelated errors; upgrade apiservers *one node at a time* using `talosctl patch mc` with a strategic merge patch, waiting for a 2-minute stable PID before touching the next node.
+
+**Will it recur?** v1.35.4 and v1.36.0 upgrades completed without incident using `talosctl upgrade-k8s` (sequential, not simultaneous). The thundering-herd appears to have been specific to v1.34's gRPC connection pool behaviour, or the single-node-at-a-time sequencing in `upgrade-k8s` provides sufficient spacing. Continue using tuppr's automatic path; fall back to manual `patch mc` with 2-minute windows only if a crash loop is observed.

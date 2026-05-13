@@ -4,6 +4,69 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-13 — `kubernetes-upgrade-v1.35-v1.36`
+
+### What we did
+- Executed the v1.35.4 upgrade using the manual staggered approach (Phase 2: `talosctl patch mc`
+  per node, 2-minute stable-PID verification; Phase 3: `upgrade-k8s` for remaining components)
+- Fixed a pre-existing `KubernetesUpgrade` CRD stuck in `Upgrading` phase targeting v1.33.11
+  (result of a prior revert commit that Flux reconciled before the re-upgrade commit was pushed;
+  the CRD's admission webhook blocked Flux from updating the spec while Upgrading was in progress)
+- Executed the v1.36.0 upgrade using the tuppr-native path (merged Renovate PR #13; tuppr ran
+  `upgrade-k8s` automatically via a job pod; no manual steps required; validated as safe)
+- Documented two operational patterns in QA.md: the `KubernetesUpgrade` mismatch/cleanup pattern
+  (manual upgrade-ahead-of-Git) and the v1.34.7 crash loop root cause (gRPC etcd connection flood)
+- Added Kubernetes upgrade operational rules to CLAUDE.md (preferred tuppr-native path, manual
+  fallback procedure, KubernetesUpgrade cleanup command)
+- Removed `TROUBLESHOOTING.md` (session-scoped runbook); all durable knowledge migrated to
+  `QA.md` and `CLAUDE.md`
+- Updated `scripts/mcp.sh` for reliable MCP token management
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talenv.yaml` | `kubernetesVersion`: v1.34.7 → v1.35.4 → v1.36.0 |
+| `kubernetes/apps/system-upgrade/tuppr/upgrade/kubernetesupgrade.yaml` | `spec.kubernetes.version`: v1.34.7 → v1.35.4 → v1.36.0 |
+| `QA.md` | Added: tuppr downgrade-job mismatch pattern; v1.34.7 crash loop root cause |
+| `CLAUDE.md` | Expanded upgrade-path bullet with operational rules; added session log entries |
+| `TROUBLESHOOTING.md` | Removed (content migrated to QA.md and CLAUDE.md) |
+| `scripts/mcp.sh` | Updated by user for reliable MCP token management |
+
+### Key decisions
+- **tuppr-native path is preferred** for all future Kubernetes minor upgrades: merge the Renovate
+  PR and let tuppr handle it. Manual `patch mc` only needed if a crash loop is observed on the
+  first node patched.
+- **KubernetesUpgrade mismatch cleanup**: if you ever run `upgrade-k8s` manually ahead of Git,
+  delete the `KubernetesUpgrade` resource before Flux reconcile to avoid the downgrade-job loop.
+
+---
+
+## 2026-05-13 — `kubernetes-upgrade-v1.34-crash-recovery`
+
+### What we did
+- Diagnosed cluster fully down: all 3 apiservers still on v1.34.7 and crash-looping (not reverted
+  as expected from the prior session's runbook); VIP (10.60.0.2) down; etcd healthy throughout
+- Root cause: `kube-apiserver v1.34.7` opens ~100 gRPC channels to etcd simultaneously at startup,
+  overwhelming TLS handshake queue → `rbac/bootstrap-roles` PostStartHook fatal timeout; three
+  nodes upgraded simultaneously caused synchronised backoff waves preventing recovery
+- Reverted all 3 apiservers to v1.33.11 via staggered `talosctl patch mc` (one node at a time,
+  strategic merge form); removed removed feature gates (`MutatingAdmissionPolicy`, `v1alpha1`
+  runtime-config) from `talos/patches/controller/cluster.yaml`
+- Re-upgraded to v1.34.7 using same staggered approach with 2-minute stable-PID verification
+  per node; cluster recovered successfully
+- Wrote `TROUBLESHOOTING.md` as the v1.35.4 forward-looking upgrade runbook (later removed this
+  session and migrated content to QA.md)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/patches/controller/cluster.yaml` | Removed `MutatingAdmissionPolicy=true` and `admissionregistration.k8s.io/v1alpha1` feature gates |
+| `talos/talenv.yaml` | v1.34.7 → v1.33.11 (revert) → v1.34.7 (re-upgrade) |
+| `kubernetes/apps/system-upgrade/tuppr/upgrade/kubernetesupgrade.yaml` | same version churn |
+| `kubernetes/apps/system-upgrade/tuppr/upgrade/talosupgrade.yaml` | corrected stale v1.10.6 → v1.13.0 |
+
+---
+
 ## 2026-05-13 — `longhorn-psa-fix`
 
 ### What we did
