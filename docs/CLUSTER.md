@@ -1,4 +1,3 @@
----
 # Cluster Overview
 
 Three-node bare-metal Talos Linux cluster (all control-plane, scheduling allowed). All state is declared in Git; nothing is applied imperatively post-bootstrap.
@@ -15,7 +14,7 @@ Three-node bare-metal Talos Linux cluster (all control-plane, scheduling allowed
 
 ## Running Components
 
-**Talos v1.10.6 / Kubernetes v1.33.4.** All Helm-deployed components are installed via Helmfile during bootstrap (`kubernetes/bootstrap/helmfile.yaml`); version pins are tracked by Renovate.
+**Talos v1.13.2 / Kubernetes v1.36.1.** All Helm-deployed components are installed via Helmfile during bootstrap (`kubernetes/bootstrap/helmfile.yaml`); version pins are tracked by Renovate.
 
 ### Kubernetes control plane · `kube-system`
 
@@ -23,16 +22,16 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 
 | Component | Version | Replicas | Role |
 |-----------|---------|----------|------|
-| `kube-apiserver` | v1.33.4 | 3 (one/node) | REST gateway for all cluster operations; the authoritative source of cluster state |
-| `kube-controller-manager` | v1.33.4 | 3 (one/node) | Runs built-in reconciliation loops — Deployments, ReplicaSets, node lifecycle, service accounts |
-| `kube-scheduler` | v1.33.4 | 3 (one/node) | Assigns pending Pods to nodes based on resources, affinity rules, and taints |
-| `etcd` | (Talos-managed) | 3 (one/node) | Distributed key-value store holding all cluster state; runs as a Talos service, not a pod |
+| `kube-apiserver` | v1.36.1 | 3 (one/node) | REST gateway for all cluster operations; the authoritative source of cluster state |
+| `kube-controller-manager` | v1.36.1 | 3 (one/node) | Runs built-in reconciliation loops — Deployments, ReplicaSets, node lifecycle, service accounts |
+| `kube-scheduler` | v1.36.1 | 3 (one/node) | Assigns pending Pods to nodes based on resources, affinity rules, and taints |
+| `etcd` | v3.6.11 (Talos-managed) | 3 (one/node) | Distributed key-value store holding all cluster state; runs as a Talos service, not a pod |
 
 > **kube-proxy is not running.** Cilium replaces it entirely (`kubeProxyReplacement: true`).
 
 ---
 
-### Cilium · `v1.19.3` · `kube-system`
+### Cilium · `v1.17.6` · `kube-system`
 
 **CNI (Container Network Interface)** — the cluster's network data-plane. Installed via Helmfile; values in `kubernetes/apps/kube-system/cilium/app/helm/values.yaml`.
 
@@ -77,7 +76,7 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 
 ---
 
-### FluxCD · `v2.6.4` · `flux-system`
+### FluxCD · operator `v0.23.0` · `flux-system`
 
 **GitOps engine.** Continuously reconciles the cluster state against this Git repository. Installed in two layers: `flux-operator` (Helm chart, manages the Flux controllers) and `flux-instance` (a `FluxInstance` CR that wires Flux to the repo). After bootstrap, Flux owns its own Helm values files — the operator re-reconciles itself from Git.
 
@@ -88,6 +87,42 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 | `kustomize-controller` | Applies Kustomization objects — renders and `kubectl apply`s manifests from Git paths |
 | `helm-controller` | Reconciles `HelmRelease` objects — installs/upgrades Helm charts from sources |
 | `notification-controller` | Handles `Alert` and `Receiver` objects for event-driven reconciliation triggers and outbound notifications |
+
+---
+
+### Longhorn · `v1.9.0` · `longhorn-system`
+
+**Distributed block storage.** Provides replicated `ReadWriteOnce` PVCs across nodes using dedicated storage drives. Managed by Flux HelmRelease; values in `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml`.
+
+| Pod | Type | Role |
+|-----|------|------|
+| `longhorn-manager` | DaemonSet | Core Longhorn agent on every node — manages volumes, replicas, and node health |
+| `longhorn-driver-deployer` | Deployment | Deploys and manages the CSI driver components |
+| `longhorn-ui` | Deployment | Web UI for volume and backup management |
+| CSI components (`attacher`, `provisioner`, `resizer`, `snapshotter`) | Deployments | Standard CSI sidecar controllers that bind the Longhorn driver to the Kubernetes CSI framework |
+
+> **Replica count**: currently 2 (cp-02 storage drive not yet installed). Bump to 3 once `talos-cp-02`'s Crucial P310 1TB is installed and the by-id path is patched into `talconfig.yaml`.
+
+---
+
+### OpenEBS · `v4.3.2` · `openebs`
+
+**Local hostpath storage.** Provides the `openebs-hostpath` StorageClass for single-node `ReadWriteOnce` PVCs backed by local NVMe (non-replicated). Managed by Flux HelmRelease.
+
+| Pod | Type | Role |
+|-----|------|------|
+| `openebs-localpv-provisioner` | Deployment | Dynamically provisions hostpath PVs on the local node |
+
+---
+
+### tuppr · `v0.1.28` · `system-upgrade`
+
+**GitOps upgrade controller.** Watches `TalosUpgrade` and `KubernetesUpgrade` CRDs and performs rolling upgrades node-by-node. Triggered by Renovate PRs that bump version fields in `talenv.yaml` and `kubernetesupgrade.yaml`. Managed by Flux HelmRelease.
+
+| CRD | Current | Role |
+|-----|---------|------|
+| `TalosUpgrade/cluster` | v1.13.2 | Tracks target Talos version; drives `talosctl upgrade` per node |
+| `KubernetesUpgrade/kubernetes` | v1.36.1 | Tracks target Kubernetes version; drives `talosctl upgrade-k8s` |
 
 ---
 
