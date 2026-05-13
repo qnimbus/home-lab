@@ -1,7 +1,7 @@
 # Cluster Troubleshooting — Kubernetes Upgrade Notes
 
 **Last updated:** 2026-05-13
-**Status:** ✅ Resolved — cluster running v1.35.4; next target: v1.36.0
+**Status:** ✅ Resolved — cluster running v1.36.0; next target: v1.37.x
 **Talos version:** `v1.13.0` (stable throughout)
 
 ---
@@ -47,19 +47,19 @@ Available MCP tools for this runbook:
 | Component | Version | State |
 |-----------|---------|-------|
 | Talos | v1.13.0 | ✅ Running on all 3 nodes |
-| kube-apiserver | v1.35.4 | ✅ Stable on all 3 nodes |
-| kube-controller-manager | v1.35.4 | ✅ Running |
-| kube-scheduler | v1.35.4 | ✅ Running |
-| kubelet | v1.35.4 | ✅ Running |
+| kube-apiserver | v1.36.0 | ✅ Stable on all 3 nodes |
+| kube-controller-manager | v1.36.0 | ✅ Running |
+| kube-scheduler | v1.36.0 | ✅ Running |
+| kubelet | v1.36.0 | ✅ Running |
 | etcd | v3.6.9 (Talos-managed) | ✅ 3-member cluster, healthy |
-| `KubernetesUpgrade` CRD | target `v1.35.4` | ✅ Completed |
+| `KubernetesUpgrade` CRD | target `v1.36.0` | ✅ Completed |
 | `TalosUpgrade` CRD | target `v1.13.0` | ✅ Completed |
 
-**Git state:** `talenv.yaml` and `kubernetesupgrade.yaml` both declare `v1.35.4`. In sync.
+**Git state:** `talenv.yaml` and `kubernetesupgrade.yaml` both declare `v1.36.0`. In sync.
 
 ---
 
-## Next Session: v1.36.0 Upgrade Plan
+## Next Session: v1.37.0 Upgrade Plan
 
 Work through these phases in order. Do not skip ahead — each phase is a prerequisite for the next.
 
@@ -73,22 +73,22 @@ Before touching anything, confirm the cluster matches the Current Cluster State 
 ```
 resources_list  apiVersion=v1  kind=Node
 ```
-Expected: 3 nodes (`talos-cp-01/02/03`), all `Ready`, `VERSION = v1.35.4`.
+Expected: 3 nodes (`talos-cp-01/02/03`), all `Ready`, `VERSION = v1.36.0`.
 
-**Via Bash — all 3 apiservers CONTAINER_RUNNING on v1.35.4:**
+**Via Bash — all 3 apiservers CONTAINER_RUNNING on v1.36.0:**
 ```bash
 talosctl -e 10.60.0.201,10.60.0.202,10.60.0.203 \
   -n 10.60.0.201,10.60.0.202,10.60.0.203 \
   --talosconfig talos/clusterconfig/talosconfig \
   containers --kubernetes | grep kube-apiserver | grep -v pause
 ```
-Expected: 3 lines, all `CONTAINER_RUNNING`, image tag `v1.35.4`.
+Expected: 3 lines, all `CONTAINER_RUNNING`, image tag `v1.36.0`.
 
 **Via Bash:**
 ```bash
 kubectl get kubernetesupgrade,talosupgrade -n system-upgrade -o wide
 ```
-Expected: both `Completed`, targets `v1.35.4` / `v1.13.0`.
+Expected: both `Completed`, targets `v1.36.0` / `v1.13.0`.
 
 If any of these differ from expectations, **invoke `@kubernetes-debugger`** before continuing.
 
@@ -102,7 +102,7 @@ token=$(curl -s "https://ghcr.io/token?scope=repository:siderolabs/kubelet:pull&
   | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))")
 curl -o /dev/null -sw "%{http_code}\n" \
   -H "Authorization: Bearer ${token}" \
-  "https://ghcr.io/v2/siderolabs/kubelet/manifests/v1.36.0"
+  "https://ghcr.io/v2/siderolabs/kubelet/manifests/v1.37.0"
 ```
 Expected: `200`. If `404`, the image has not been built yet — do not proceed.
 
@@ -110,7 +110,7 @@ Expected: `200`. If `404`, the image has not been built yet — do not proceed.
 ```bash
 talosctl -e 10.60.0.201 -n 10.60.0.201 \
   --talosconfig talos/clusterconfig/talosconfig \
-  upgrade-k8s --to v1.36.0 --dry-run
+  upgrade-k8s --to v1.37.0 --dry-run
 ```
 Expected: no errors about removed feature gates or API versions. If issues are reported, resolve them in `talos/patches/controller/cluster.yaml` before proceeding.
 
@@ -128,16 +128,16 @@ Use `talosctl patch mc` per node with a **strategic merge patch** (not JSON RFC 
 talosctl -e 10.60.0.201 -n 10.60.0.201 \
   --talosconfig talos/clusterconfig/talosconfig \
   patch mc \
-  --patch '{"cluster":{"apiServer":{"image":"registry.k8s.io/kube-apiserver:v1.36.0"}}}'
+  --patch '{"cluster":{"apiServer":{"image":"registry.k8s.io/kube-apiserver:v1.37.0"}}}'
 ```
 
-Wait for v1.36.0 to appear as `CONTAINER_RUNNING` with a **stable PID for at least 2 minutes**:
+Wait for v1.37.0 to appear as `CONTAINER_RUNNING` with a **stable PID for at least 2 minutes**:
 ```bash
 talosctl -e 10.60.0.201 -n 10.60.0.201 \
   --talosconfig talos/clusterconfig/talosconfig \
   containers --kubernetes | grep kube-apiserver | grep -v pause
 ```
-Expected: `registry.k8s.io/kube-apiserver:v1.36.0   <pid>   CONTAINER_RUNNING` — same PID across multiple checks.
+Expected: `registry.k8s.io/kube-apiserver:v1.37.0   <pid>   CONTAINER_RUNNING` — same PID across multiple checks.
 
 Also verify HTTP health and all 3 nodes still Ready:
 ```bash
@@ -156,20 +156,20 @@ Repeat the same patch + 2-minute stability verification for **cp-02 (10.60.0.202
 
 ### Phase 3 — Upgrade remaining components
 
-Once all 3 apiservers are stable on v1.36.0, upgrade controller-manager, scheduler, and kubelets.
-`upgrade-k8s` detects the apiserver is already at v1.36.0 and skips it:
+Once all 3 apiservers are stable on v1.37.0, upgrade controller-manager, scheduler, and kubelets.
+`upgrade-k8s` detects the apiserver is already at v1.37.0 and skips it:
 
 ```bash
 talosctl -e 10.60.0.201 -n 10.60.0.201 \
   --talosconfig talos/clusterconfig/talosconfig \
-  upgrade-k8s --to v1.36.0
+  upgrade-k8s --to v1.37.0
 ```
 
 Verify all nodes Ready after completion:
 ```bash
 kubectl get nodes -o wide
 ```
-Expected: all 3 nodes `Ready`, `VERSION = v1.36.0`.
+Expected: all 3 nodes `Ready`, `VERSION = v1.37.0`.
 
 ---
 
@@ -179,8 +179,8 @@ Update these two files, then regenerate and apply:
 
 | File | Field | New value |
 |------|-------|-----------|
-| `talos/talenv.yaml` | `kubernetesVersion` | `v1.36.0` |
-| `kubernetes/apps/system-upgrade/tuppr/upgrade/kubernetesupgrade.yaml` | `spec.kubernetes.version` | `v1.36.0` |
+| `talos/talenv.yaml` | `kubernetesVersion` | `v1.37.0` |
+| `kubernetes/apps/system-upgrade/tuppr/upgrade/kubernetesupgrade.yaml` | `spec.kubernetes.version` | `v1.37.0` |
 
 ```bash
 task talos:genconfig
@@ -210,7 +210,7 @@ Final verification:
 ```bash
 kubectl get kubernetesupgrade,talosupgrade -n system-upgrade -o wide
 ```
-Expected: both `Completed`, targets `v1.36.0` / `v1.13.0`.
+Expected: both `Completed`, targets `v1.37.0` / `v1.13.0`.
 
 ---
 
