@@ -1,6 +1,6 @@
 # Home Lab — Cluster Configuration
 
-> **Session log**: see [SESSIONS.md](SESSIONS.md) for full details. Recent sessions (newest first):
+> **Session log**: see [SESSIONS.md](docs/SESSIONS.md) for full details. Recent sessions (newest first):
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
@@ -10,34 +10,19 @@
 > | 2026-05-13 | `longhorn-psa-fix` | Diagnosed Longhorn fully broken (0/3 CSI pods) due to missing `pod-security.kubernetes.io/enforce: privileged` on `longhorn-system` namespace; added PSA labels to namespace.yaml; added Storage QA entry |
 > | 2026-05-12 | `talos-upgrade-v1.10-to-v1.13` | Upgraded Talos v1.10.6→v1.11.6→v1.12.7→v1.13.0; fixed upgrade-node Taskfile duplicate-`--image` bug; converted JSON 6902 admission patch to strategic merge (v1.12 multi-doc requirement); v1.13.1 is unreleased tag — targeted v1.13.0 |
 > | 2026-05-12 | `purge-failed-pods-script` | Created `scripts/purge-failed-pods.sh` + `task purge-failed-pods`; owner-health-checked dry-run/live cleanup for Failed pods after unclean shutdown; extended QA.md |
-| 2026-05-12 | `tuppr-upgrade-controller-deployment` | Deployed tuppr as GitOps upgrade controller; fixed cosign + CRD chicken-and-egg rollout errors; updated Renovate for separateMinorPatch; added 5 QA entries |
+> | 2026-05-12 | `tuppr-upgrade-controller-deployment` | Deployed tuppr as GitOps upgrade controller; fixed cosign + CRD chicken-and-egg rollout errors; updated Renovate for separateMinorPatch; added 5 QA entries |
 > | 2026-05-12 | `crash-recovery-ghost-pods` | Diagnosed 91 ContainerStatusUnknown ghost pods after simultaneous 3-node power-off; deleted stale Failed pods; added unclean-shutdown diagnosis + cleanup section to QA.md |
-> | 2026-05-12 | `qa-log-and-eth0-rename` | Created QA.md operational Q&A log; explained eth0 rename kernel messages (normal Cilium CNI behaviour) |
-> | 2026-05-12 | `storage-storageclasses-and-conventions` | Added longhorn-retain + longhorn-single StorageClasses; added doc-comment convention to CLAUDE.md |
-> | 2026-05-12 | `persistent-storage-deploy-and-fix` | Deployed OpenEBS + Longhorn; fixed missing Namespace resources and ConfigMap namespace; both HelmReleases live; 3-replica upgrade deferred to cp-02 drive arrival |
-> | 2026-05-07 | `persistent-storage-k8s-app-layer` | Full Flux app layer for OpenEBS LocalPV + Longhorn committed; 2-replica provisional config until cp-02 drive arrives; Flux Kustomization CRs in flux-system namespace |
-> | 2026-05-07 | `persistent-storage-talos-prereqs` | iscsi-tools + util-linux-tools in schematic; per-node by-id disk patches for cp-01/cp-03; rolling upgrade all 3 nodes; fixed bootstrap:cluster doubled-path bug |
-> | 2026-05-07 | `etcd-learner-recovery-and-toolchain` | Fixed cp-03 stuck etcd LEARNER (dual peer URLs from DHCP during LACP-off ISO boot); manual `etcdctl member promote`; added `etcd` to mise; excluded `talosctl`+`etcd` from Renovate |
-> | 2026-05-07 | `cp03-nvme-swap-and-disk-migration` | Migrated cp-03 Talos to 128GB AirDisk via ISO boot; all nodes switched to `installDiskSelector` by model; 2TB Crucial now free for storage; `talos:apply` refactored with `INSECURE=true` flag |
-> | 2026-05-07 | `persistent-storage-roadmap` | Added Persistent Storage entry to ROADMAP.md; researched Talos system-disk partitioning (not viable); discovered cp-01 also has free nvme1n1; corrected CLUSTER.md disk inventory; staged Longhorn rollout plan |
-> | 2026-05-06 | `renovate-setup` | Added `renovate.json5`; installed Mend Renovate GitHub App; configured Helm/Flux/mise tracking; excluded Talos+k8s (managed separately); fixed 1password lookup failure |
-> | 2026-05-06 | `node-hw-correction-and-runbook-updates` | Corrected node hardware assignments in talconfig.yaml (cp-01/cp-02 = M920Q, cp-03 = MS-A2); added `talos:wait-bootstrap` task; added Day-2 Config Changes section to CLUSTER.md |
-| 2026-05-06 | `cp02-disk-cleanup` | Wiped Proxmox LVM (nvme1n1) from talos-cp-02 via `talosctl reset --wipe-mode=user-disks`; documented cluster disk inventory in CLUSTER.md |
-> | 2026-05-06 | `cluster-bootstrap-runbook` | Full bootstrap validated end-to-end; added `talos:wait-maintenance` task; Bootstrap Runbook in CLUSTER.md; fixed flux-secret.sh cleanup trap bug; auto-reconcile after flux-secret |
-> | 2026-05-06 | `devcontainer-secret-management` | Created `scripts/flux-secret.sh` (fetch Flux SSH deploy key from 1Password); `bootstrap:flux-secret` task |
-> | 2026-05-06 | `mcp-server-rbac-scripts` | Created `scripts/mcp.sh` (setup/cleanup/renew-token); connected kubernetes-mcp-server MCP tool |
-> | 2026-05-06 | `flux-ssh-secret-setup` | Fixed FluxInstance values (SSH URL, pullSecret, refs/heads/main); Flux now fully reconciling |
-> | 2026-05-06 | `add-sops-plaintext-hook` | Added PreToolUse hook blocking git add/commit on plaintext `*.sops.yaml` files |
-> | 2026-05-06 | `setup-sops-age-key-devcontainer` | Created CLAUDE.md; set `SOPS_AGE_KEY_FILE` via `devcontainer.json` `remoteEnv` |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
-> For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](QA.md).
+> For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
 
-> For a high-level overview of the cluster and FluxCD structure, see [CLUSTER.md](CLUSTER.md).
-> Keep `CLUSTER.md` up to date as the cluster evolves: when adding new components, changing core infrastructure (CNI, DNS, storage, secrets strategy), or completing major bootstrap phases, update the relevant section. Keep entries concise and high-level — implementation details belong in code or `CLAUDE.md`.
+> For YAML comment style rules and community research guidance, see [CONVENTIONS.md](docs/CONVENTIONS.md).
+
+> For a high-level overview of the cluster and FluxCD structure, see [CLUSTER.md](docs/CLUSTER.md).
+> Keep `docs/CLUSTER.md` up to date as the cluster evolves: when adding new components, changing core infrastructure (CNI, DNS, storage, secrets strategy), or completing major bootstrap phases, update the relevant section. Keep entries concise and high-level — implementation details belong in code or `CLAUDE.md`.
 >
-> For pending and in-progress work items, see [ROADMAP.md](ROADMAP.md). Update it when tasks are started, completed, or reprioritized.
+> For pending and in-progress work items, see [ROADMAP.md](docs/ROADMAP.md). Update it when tasks are started, completed, or reprioritized.
 
 ---
 
@@ -46,11 +31,14 @@ This repository provisions and manages a bare-metal Talos Linux Kubernetes clust
 ```
 📁 /
 ├── 📁 .archive/          # Previous cluster config — reference only, do not replicate wholesale
+├── 📁 .claude/
+│   └── agents/           # Specialized Claude Code agents (kubernetes-debugger, talos-node-manager)
 ├── 📁 .devcontainer/     # VS Code dev container (Python base, mise toolchain)
 ├── Taskfile.yaml         # Root go-task entry-point — run `task` to list all tasks
 ├── 📁 .taskfiles/
 │   ├── talos/            # Talos node tasks (iso, genconfig, apply, bootstrap, upgrade, reset…)
 │   └── bootstrap/        # Cluster bootstrap sequence (cluster, apps)
+├── 📁 docs/              # Cluster documentation (CLUSTER.md, QA.md, ROADMAP.md, CONVENTIONS.md, SESSIONS.md)
 ├── 📁 scripts/
 │   └── mcp.sh            # MCP server ServiceAccount lifecycle (setup/cleanup/renew-token)
 ├── 📁 talos/             # Talos machine configs managed by talhelper
@@ -62,18 +50,11 @@ This repository provisions and manages a bare-metal Talos Linux Kubernetes clust
 │   │   ├── global/       # Applied to every node
 │   │   └── controller/   # Applied to control-plane nodes only
 │   └── clusterconfig/    # Generated by talhelper — gitignored except talosconfig
-├── 📁 kubernetes/        # (PLANNED) FluxCD-managed workloads — not yet created
+├── 📁 kubernetes/        # FluxCD-managed workloads (Helmfile bootstrap + Flux GitOps)
 │   ├── bootstrap/        # Helmfile: bootstraps Cilium → CoreDNS → Spegel → cert-manager → Flux
 │   ├── flux/             # Flux system config, GitRepository, Kustomizations
 │   │   └── meta/repos/   # HelmRepository, OCIRepository, GitRepository sources
-│   └── apps/             # Application deployments, one sub-directory per namespace
-│       └── <namespace>/
-│           └── <app>/
-│               ├── ks.yaml          # Flux Kustomization
-│               └── app/
-│                   ├── kustomization.yaml
-│                   ├── helmrelease.yaml
-│                   └── helm/values.yaml
+│   └── apps/             # Application deployments — see GitOps Conventions for layout
 └── 📁 assets/            # Downloaded ISOs (gitignored)
 ```
 
@@ -111,8 +92,6 @@ Three bare-metal control-plane nodes; no dedicated workers (`allowSchedulingOnCo
 - **VIP**: `10.60.0.2` (kube-vip via ARP, all three CPs compete)
 - **Pod CIDR**: `10.42.0.0/16` | **Service CIDR**: `10.43.0.0/16`
 - **Storage network**: `10.200.0.0/24` (SFP+, LACP) — jumbo frames (9000 MTU) TODO
-- **CNI**: Cilium (kube-proxy replacement, no built-in CNI)
-- **DNS**: CoreDNS deployed via Helm (built-in disabled in Talos)
 
 ---
 
@@ -161,33 +140,7 @@ Tasks that depend on `OP_SERVICE_ACCOUNT_TOKEN`: `bootstrap:flux-secret`, `boots
 
 ## Bootstrap Workflow
 
-All bootstrap operations go through `task`. Run `task` with no args to list available tasks.
-
-```
-1.  Edit talos/talconfig.yaml — verify MACs, IPs, installDisk per node
-2.  task talos:iso          → register schematic, download ISO, auto-update talenv.yaml
-3.  Flash ISO: dd if=assets/talos-*.iso of=/dev/sdX bs=4M status=progress
-4.  Boot nodes → enter maintenance mode (DHCP)
-5.  task talos:genconfig    → generate machine configs + cluster secrets
-6.  sops --encrypt --in-place talos/talsecret.sops.yaml
-7.  task talos:apply-all    → push configs to all nodes (--insecure, maintenance mode only)
-    # Day-2 on running nodes: task talos:apply IP=<node-ip>  (authenticated, no INSECURE flag)
-    # Disk migration: boot from Talos ISO → task talos:apply IP=<node-ip> INSECURE=true
-    #   (talosctl upgrade always reinstalls to the CURRENT system disk — use ISO to change disks)
-    # talosctl version mismatch (ENHANCE_YOUR_CALM): mise exec talosctl@<server-ver> -- talosctl ...
-8.  Nodes reboot with static IPs + Talos fully installed
-9.  task talos:bootstrap    → initialise etcd on first control plane
-10. task talos:kubeconfig   → fetch kubeconfig
-11. kubectl get nodes -o wide → verify all nodes Ready
-12. task bootstrap:apps     → install CNI, DNS, Flux via helmfile (use helmfile sync, not apply —
-    apply pre-diffs all releases in parallel and fails on flux-instance because FluxInstance CRD
-    doesn't exist until flux-operator installs it)
-12a. kubectl create secret generic flux-system -n flux-system --from-file=identity=flux-deploy-key --from-file=identity.pub=flux-deploy-key.pub --from-file=known_hosts=known_hosts
-    → SSH deploy key secret (must exist before Flux can pull the repo; only imperative step post-bootstrap)
-13. git push → Flux takes over and reconciles kubernetes/apps/
-```
-
-Steps 1–13 are complete. Flux is fully operational and reconciling from the private GitHub repo.
+Complete — all phases done, Flux fully reconciling. See **[CLUSTER.md → Bootstrap Runbook](docs/CLUSTER.md#bootstrap-runbook)** for the step-by-step guide (Phase 0–4), Day-2 config changes, and troubleshooting table (disk migration, version skew, etcd recovery).
 
 ---
 
@@ -227,19 +180,7 @@ Use `strategy: Recreate` for any workload with `ReadWriteOnce` PVCs. Use `Rollin
 
 ### Documentation comments in YAML resources
 
-All cluster YAML files (Talos patches, HelmRelease values, StorageClasses, Kustomizations, node configs) should carry comments that explain the *why*, not the *what*. The resource name and field names already say what — comments are for context that would otherwise be lost.
-
-**Always comment:**
-- Non-default values, especially when deviating from upstream chart defaults — explain the reason
-- Provisional settings that need to change later (e.g. replica counts awaiting hardware) — include the trigger condition: `# 2 replicas until talos-cp-02 storage disk installed; bump to 3 when ready`
-- Workarounds for known bugs or cluster-specific constraints — include a reference if one exists
-- StorageClass and PersistentVolume resources — explain the intended use case and any operational implications (e.g. manual PV cleanup required for Retain policy)
-- Values that look wrong but are intentional (e.g. `allowScheduling: false` on a node, `isDefaultClass: false` on a provisioner)
-
-**Do not comment:**
-- Fields whose purpose is self-evident from the field name and value
-- Boilerplate that every Kubernetes resource has (`apiVersion`, `kind`, `metadata.name`)
-- Comments that restate the YAML in prose ("sets the replica count to 2")
+See **[CONVENTIONS.md](docs/CONVENTIONS.md#documentation-comments-in-yaml-resources)** — what to comment, what not to, with examples.
 
 ### Multi-document ks.yaml for operator + CRD instances
 
@@ -272,30 +213,13 @@ upgrade:
 
 ### Community research before new deployments
 
-Before planning any new application deployment or writing a new Kustomization, search **[kubesearch.dev](https://kubesearch.dev/)** for the chart or app name. This indexes public home-lab GitOps repos and surfaces real-world `HelmRelease`, `values.yaml`, and `ExternalSecret` patterns used by other home labbers running the same stack (Talos + Flux + Cilium).
-
-Use what you find as **research input only** — not a template to copy. For every pattern encountered:
-- Understand *why* a value is set the way it is before adopting it
-- Cross-check against the chart's official docs and upstream defaults
-- Evaluate whether it applies to this cluster's specific hardware, network layout, and secrets strategy
-- Prefer the simplest configuration that satisfies the actual requirements over one that mirrors what others have done
-
-Community configs reflect their authors' constraints, mistakes, and historical baggage. Treat them as data points, not ground truth. The goal is to arrive at a well-reasoned configuration for *this* cluster — not to reproduce someone else's.
+Search **[kubesearch.dev](https://kubesearch.dev/)** before writing a new Kustomization. See **[CONVENTIONS.md](docs/CONVENTIONS.md#community-research-before-new-deployments)** for guidance on evaluating results.
 
 ---
 
 ## Key Architectural Decisions
 
-- **No kube-proxy**: Cilium replaces it entirely (`proxy.disabled: true` in cluster patch)
-- **No built-in CoreDNS**: Talos `coreDNS.disabled: true`; CoreDNS is a HelmRelease in `kube-system`
-- **etcd on management subnet only**: `advertisedSubnets: ["10.60.0.0/24"]` keeps etcd off storage VLAN
-- **NFS defaults**: `nfsvers=4.2`, `nconnect=16`, `hard=True`, `noatime=True` (set in machine files patch)
-- **Container runtime**: unprivileged ports + ICMP enabled; image layers not discarded (cache efficiency)
-- **Upgrade path**: tuppr (home-operations/tuppr) — `TalosUpgrade` + `KubernetesUpgrade` CRDs in `system-upgrade` namespace; Renovate opens PRs per minor version; tuppr performs rolling node-by-node upgrades via `talosctl upgrade-k8s` (sequential, safe for v1.35+)
-  - **Preferred method**: merge the Renovate PR; tuppr handles the full upgrade automatically — no manual steps required and avoids the `KubernetesUpgrade` CRD mismatch problem (see QA.md)
-  - **Pre-upgrade check**: always run `talosctl upgrade-k8s --to <version> --dry-run` before merging; flags removed feature gates and deprecated API versions before any change is made
-  - **If upgrading manually** (apiserver only, via `talosctl patch mc`): use strategic merge form (`{"cluster":{"apiServer":{"image":"..."}}}`) — JSON RFC 6902 patches are rejected for multi-doc machine configs (talhelper v1.12+); wait for 2-minute stable PID per node before patching the next
-  - **After any manual `upgrade-k8s`** that advances the cluster ahead of Git: delete the `KubernetesUpgrade` resource before Flux reconcile (`kubectl delete kubernetesupgrade kubernetes -n system-upgrade`) — otherwise tuppr sees CURRENT > TARGET and starts failing downgrade jobs
+See **[CLUSTER.md → Key Architectural Decisions](docs/CLUSTER.md#key-architectural-decisions)** for design decisions: Cilium (no kube-proxy), CoreDNS via HelmRelease, etcd on management subnet only, NFS defaults, and upgrade path.
 
 ---
 
@@ -303,22 +227,26 @@ Community configs reflect their authors' constraints, mistakes, and historical b
 
 | Area                          | Status     | Notes                                           |
 |-------------------------------|------------|-------------------------------------------------|
-| Talos machine configs         | ✅ Done    | 3 CP nodes, patches, schematic registered       |
-| Bootstrap script              | ✅ Done    | go-task Taskfile replaces scripts/bootstrap.sh  |
-| SOPS age key + rules          | ✅ Done    | `age.key` generated, `.sops.yaml` configured    |
-| Cluster bootstrapped          | ✅ Done    | All 14 bootstrap steps complete                 |
-| kubernetes/ directory         | ✅ Done    | Helmfile + Flux structure in place              |
-| Cilium                        | ✅ Done    | Running via Helmfile bootstrap                  |
-| CoreDNS                       | ✅ Done    | Running via Helmfile bootstrap                  |
-| cert-manager                  | ✅ Done    | Running via Helmfile bootstrap                  |
-| Flux (operator + instance)    | ✅ Done    | Reconciling from private repo via SSH           |
-| External Secrets + 1Password  | 🔲 TODO    | First GitOps apps                               |
+| Core infrastructure           | ✅ Done    | Talos configs, bootstrap, SOPS, Cilium, CoreDNS, cert-manager, Flux — all operational |
 | OpenEBS LocalPV               | ✅ Done    | `openebs-hostpath` StorageClass live (non-default)           |
 | Longhorn (2-replica interim)  | 🔄 Running | Live in 2-replica mode; bump to 3-replica when cp-02 drive installed |
 | External Secrets + 1Password  | 🔲 TODO    | First GitOps apps                               |
 | Split DNS (ExternalDNS)       | 🔲 TODO    | Internal (home.arpa) + external (Cloudflare)    |
-| Renovate                      | ✅ Done    | `renovate.json5` in place; GitHub App installed; Talos (`installer`) + k8s (`kubelet`) tracked via `separateMinorPatch` rules; `talosctl` + `etcd` still excluded (must match running server version) |
+| Renovate                      | ✅ Done    | `renovate.json5` + GitHub App; tracks Talos + K8s via `separateMinorPatch`; `talosctl` + `etcd` excluded (must match server version) |
 | Talos + Kubernetes upgrades   | ✅ Done    | tuppr deployed in `system-upgrade`; `TalosUpgrade` + `KubernetesUpgrade` CRDs at current running versions; upgrades triggered by Renovate PRs |
+
+---
+
+## Claude Code Agents
+
+Two specialized agents live in `.claude/agents/` and are invoked automatically by the harness when the task matches their description:
+
+| Agent | When to use |
+|-------|-------------|
+| `kubernetes-debugger` | Diagnosing Kubernetes workload, networking, CNI, DNS, storage, scheduling, or GitOps/Flux issues. Talos-aware: escalates to node-layer diagnostics when K8s symptoms suggest a substrate problem. Prefers MCP tools over raw kubectl. |
+| `talos-node-manager` | Inspecting or managing Talos Linux nodes directly: health checks, service logs, dmesg, etcd state, upgrade monitoring, disk/network diagnosis at the OS layer. Uses `talosctl` exclusively. |
+
+Both agents maintain a `<!-- BEGIN/END: CLUSTER-STATE-AUTO -->` block in their own file that they self-update when live cluster state drifts from the recorded context.
 
 ---
 
