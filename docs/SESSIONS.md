@@ -4,6 +4,13 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-14 — `cert-promotion-cloudflared`
+
+### Goal
+Promote the wildcard TLS certificate from letsencrypt-staging to letsencrypt-production and deploy Cloudflare Tunnel (cloudflared) to establish external ingress through Cloudflare's edge.
+
+---
+
 ## 2026-05-14 — `cilium-gateway-api`
 
 ### Goal

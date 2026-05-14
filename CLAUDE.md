@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-14 | `cert-promotion-cloudflared` | _in progress_ |
 > | 2026-05-14 | `cilium-gateway-api` | Deployed Envoy Gateway + Cilium L2 IP pool; ext/int Gateways with pinned IPs, wildcard staging TLS, HTTP→HTTPS redirects |
 > | 2026-05-14 | `mcp-rbac-expansion` | Added 8 missing CRD API groups to MCP viewer ClusterRole; switched to wildcard resources per group; fixed wrong tuppr API group |
 > | 2026-05-14 | `global-helmrelease-defaults` | Added nested HelmRelease defaults + Kustomization timing patches to cluster-apps; removed redundant timeout/retryInterval from 12 child ks.yaml files |
