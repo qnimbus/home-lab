@@ -67,6 +67,15 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 | `cilium-operator` | Deployment | 1 | Cluster-wide control-plane for Cilium — manages IP allocation (IPAM), CiliumNode objects, and Helm lifecycle |
 | `cilium-secrets` namespace | — | — | Holds TLS material for Cilium's mutual-auth features; created and owned by the Cilium Helm chart |
 
+**L2 LoadBalancer (ARP)** — two CRDs in `kube-system` make `LoadBalancer`-type Services reachable on the management LAN without an external load balancer:
+
+| Resource | Kind | Detail |
+|----------|------|--------|
+| `pool` | `CiliumLoadBalancerIPPool` | IP range `10.60.0.230–10.60.0.249` — allocated to `LoadBalancer` Services by Cilium IPAM |
+| `l2-policy` | `CiliumL2AnnouncementPolicy` | Announces LoadBalancer IPs via ARP on all interfaces of every Linux node; storage bonds are on an isolated L2 so spurious ARP on them is harmless |
+
+Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` annotation.
+
 ---
 
 ### CoreDNS · `v1.43.0` (chart) · `kube-system`
@@ -99,6 +108,8 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 | `cert-manager-cainjector` | Injects CA bundles into `MutatingWebhookConfiguration` and `ValidatingWebhookConfiguration` objects so Kubernetes trusts cert-manager's own webhooks |
 | `cert-manager-webhook` | Admission webhook that validates and mutates cert-manager CRD objects at creation time |
 
+> **Live wildcard certificate.** A `Certificate` named `wildcard-production` in the `network` namespace covers `${CLUSTER_DOMAIN}` and `*.${CLUSTER_DOMAIN}`. It is currently issued by `letsencrypt-staging` (browser-untrusted) — switch the `issuerRef.name` to `letsencrypt-production` once the staging certificate validates correctly end-to-end. The DNS-01 flow through Cloudflare has been verified and the certificate is valid and auto-renewing. Secret: `network/wildcard-production-tls`.
+
 > **Staging vs production issuers.** Always use `letsencrypt-staging` when first wiring up a new app or testing DNS-01 challenge configuration. Staging issues certificates from Let's Encrypt's untrusted fake root — browsers reject them, but the entire issuance flow (Cloudflare DNS record creation, ACME challenge, certificate delivery, renewal) is identical to production. This avoids burning against production's rate limits (5 duplicate certificates/week per domain). Once staging issues successfully, switch `clusterIssuerName` to `letsencrypt-production`.
 >
 > Example `Certificate` resource using the staging issuer:
@@ -116,6 +127,26 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 >   dnsNames:
 >     - my-app.${cluster_domain}  # substituted from cluster-settings ConfigMap
 > ```
+
+---
+
+### Envoy Gateway · `v1.7.3` · `network`
+
+**Gateway API ingress controller.** Implements the Kubernetes Gateway API (`gateway.networking.k8s.io/v1`) — the upstream successor to `Ingress` — to route external and internal HTTPS traffic into the cluster. Managed by Flux HelmRelease from an OCIRepository (`docker.io/envoyproxy/gateway-helm`); Renovate tracks the image tag.
+
+The Gateway API splits concerns into three levels: `GatewayClass` (which controller handles traffic) → `Gateway` (what IP/port/TLS to listen on) → `HTTPRoute` (how to route a specific hostname/path to a Service). This lets multiple Gateways (external, internal) share one controller binary, and lets app teams own their `HTTPRoute` without touching shared infrastructure. The `GatewayNamespace` deploy mode means Envoy proxy pods are created in the same namespace as their `Gateway` object (`network`), isolating the data-plane from `kube-system`.
+
+| Resource | Kind | Detail |
+|----------|------|--------|
+| `envoy` | `GatewayClass` | Cluster-wide class backed by the `EnvoyProxy` config in the `network` namespace |
+| `envoy` | `EnvoyProxy` | 2-replica Envoy deployment per Gateway; `externalTrafficPolicy: Local`; Prometheus metrics enabled; 60 s drain on shutdown |
+| `envoy-external` | `Gateway` | Pinned to `10.60.0.230`; HTTP port 80 (redirect only) + HTTPS port 443 for `*.${CLUSTER_DOMAIN}`; routes from any namespace |
+| `envoy-internal` | `Gateway` | Pinned to `10.60.0.231`; same listener config as external; separate IP for internal-only services |
+| `envoy` | `ClientTrafficPolicy` | TLS 1.2 min; h2+http/1.1 ALPN; X-Forwarded-For trusted from pod CIDR (`10.42.0.0/16`) for Cloudflare Tunnel real-IP propagation |
+
+Both Gateways share the `network/wildcard-production-tls` secret for TLS termination. HTTP requests on port 80 receive a 301 redirect to HTTPS on both Gateways via dedicated `HTTPRoute` resources.
+
+> **Adding a new app**: create an `HTTPRoute` in the app's namespace with a `parentRef` pointing at `envoy-external` or `envoy-internal` in the `network` namespace. The `https` listener's `allowedRoutes.namespaces.from: All` means no additional `ReferenceGrant` is required for the TLS listener.
 
 ---
 
