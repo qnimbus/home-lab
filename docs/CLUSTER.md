@@ -91,13 +91,47 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 
 ### cert-manager · `v1.17.2` · `cert-manager`
 
-**Certificate lifecycle manager.** Issues and renews X.509 certificates inside the cluster via `Certificate` and `Issuer`/`ClusterIssuer` CRDs. Not yet wired to any issuers (Let's Encrypt, internal CA) — present at bootstrap because it is a dependency for several planned add-ons (ingress controllers, external-secrets, etc.).
+**Certificate lifecycle manager.** Issues and renews X.509 certificates inside the cluster via `Certificate` and `Issuer`/`ClusterIssuer` CRDs. Two `ClusterIssuer` resources are live: `letsencrypt-staging` and `letsencrypt-production`, both using ACME DNS-01 challenge via Cloudflare. The Cloudflare API token is sourced from 1Password via an `ExternalSecret`.
 
 | Pod | Role |
 |-----|------|
 | `cert-manager` | Core controller — watches `Certificate` objects, triggers issuance/renewal via the configured issuer |
 | `cert-manager-cainjector` | Injects CA bundles into `MutatingWebhookConfiguration` and `ValidatingWebhookConfiguration` objects so Kubernetes trusts cert-manager's own webhooks |
 | `cert-manager-webhook` | Admission webhook that validates and mutates cert-manager CRD objects at creation time |
+
+> **Staging vs production issuers.** Always use `letsencrypt-staging` when first wiring up a new app or testing DNS-01 challenge configuration. Staging issues certificates from Let's Encrypt's untrusted fake root — browsers reject them, but the entire issuance flow (Cloudflare DNS record creation, ACME challenge, certificate delivery, renewal) is identical to production. This avoids burning against production's rate limits (5 duplicate certificates/week per domain). Once staging issues successfully, switch `clusterIssuerName` to `letsencrypt-production`.
+>
+> Example `Certificate` resource using the staging issuer:
+> ```yaml
+> apiVersion: cert-manager.io/v1
+> kind: Certificate
+> metadata:
+>   name: my-app-tls
+>   namespace: my-app
+> spec:
+>   secretName: my-app-tls
+>   issuerRef:
+>     name: letsencrypt-staging   # switch to letsencrypt-production once verified
+>     kind: ClusterIssuer
+>   dnsNames:
+>     - my-app.${cluster_domain}  # substituted from cluster-settings ConfigMap
+> ```
+
+---
+
+### External Secrets Operator · `v0.18.2` · `external-secrets`
+
+**Application secret management.** Pulls secret values from 1Password and creates native Kubernetes `Secret` objects inside the cluster. Three components work together:
+
+| Component | Role |
+|-----------|------|
+| `external-secrets` (ESO) | Operator that watches `ExternalSecret` objects and reconciles their values from the configured store |
+| `onepassword-connect` | Local 1Password Connect server running in-cluster; proxies secret requests to the 1Password cloud API |
+| `onepassword-store` (`ClusterSecretStore`) | ESO store resource named `onepassword` — the reference apps use in `ExternalSecret.spec.secretStoreRef` |
+
+Apps define an `ExternalSecret` object pointing at the `onepassword` store and a specific item/field path. ESO resolves the value at reconcile time and writes it into a Kubernetes `Secret` in the app's namespace. Secret values never touch Git.
+
+> The 1Password Connect credentials (`1password-credentials.json`) are stored as a SOPS-encrypted `Secret` in the `external-secrets` namespace and mounted into the Connect server pod.
 
 ---
 
@@ -221,15 +255,18 @@ The `flux-system` secret must be created imperatively during bootstrap (it canno
 ```
 kubernetes/flux/cluster/        ← FluxInstance sync root
 ├── cluster-meta                → kubernetes/flux/meta/      (HelmRepository, OCIRepository sources)
-└── cluster-apps                → kubernetes/apps/           (all workloads)
+├── cluster-vars                → kubernetes/flux/vars/      (cluster-settings ConfigMap + cluster-secrets Secret)
+└── cluster-apps                → kubernetes/apps/           (all workloads; depends on cluster-meta + cluster-vars)
 ```
+
+`cluster-vars` runs with `wait: true` and SOPS decryption, creating the `cluster-settings` ConfigMap and `cluster-secrets` Secret in `flux-system` before `cluster-apps` starts. This guarantees `postBuild.substituteFrom` has real values on the first reconcile — not just on eventual re-reconciles.
 
 - **Drift correction**: every 1 hour (Kustomization interval)
 - **Change detection**: within 5 minutes of a `git push` (GitRepository poll)
 
 ### `cluster-apps` patches
 
-`cluster-apps` uses Flux's `spec.patches` to inject behaviour into every child Kustomization it manages — without touching each app's own YAML. Two patches are applied:
+`cluster-apps` uses Flux's `spec.patches` to inject behaviour into every child Kustomization it manages — without touching each app's own YAML. Three patches are applied:
 
 **1 — SOPS decryption + variable substitution** (targets all child Kustomizations, except those labelled `substitution.flux.home.arpa/disabled: "true"`)
 
@@ -265,7 +302,7 @@ This works because `cluster-apps` only directly renders the child `Kustomization
 ```
 Helmfile: cilium → coredns → spegel → cert-manager → flux-operator → flux-instance
           (then create flux-system SSH secret)
-GitOps:   cluster-meta → cluster-apps → <individual app Kustomizations>
+GitOps:   cluster-meta → cluster-vars → cluster-apps → <individual app Kustomizations>
 ```
 
 ---
@@ -379,7 +416,7 @@ kubectl get gitrepository,kustomization -A
 All sources and Kustomizations should show `Ready = True`. The full sync path is:
 
 ```
-flux-system GitRepository → cluster-meta Kustomization → cluster-apps Kustomization → <per-app Kustomizations>
+flux-system GitRepository → cluster-meta Kustomization → cluster-vars Kustomization → cluster-apps Kustomization → <per-app Kustomizations>
 ```
 
 ### Day-2 Config Changes
