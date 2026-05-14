@@ -9,6 +9,39 @@ A running record of work done, files modified, and decisions made across Claude 
 ### Goal
 Promote the wildcard TLS certificate from letsencrypt-staging to letsencrypt-production and deploy Cloudflare Tunnel (cloudflared) to establish external ingress through Cloudflare's edge.
 
+### What we did
+- Changed `issuerRef.name` in `certificate.yaml` from `letsencrypt-staging` to `letsencrypt-production`; committed and reconciled; deleted the staging secret to force immediate re-issuance rather than waiting for the renewal window
+- Diagnosed a transient Certificate object visibility anomaly: issuance completed (R13 cert issued at 15:08) but the Certificate CR disappeared from the API server until `flux reconcile kustomization envoy-gateway-config --with-source` re-applied it — likely a transient API server cache issue
+- Confirmed production cert: issuer `C=US, O=Let's Encrypt, CN=R13`, valid May–August 2026, secret `network/wildcard-production-tls` present
+- Added `app-template` OCIRepository (`oci://ghcr.io/bjw-s-labs/helm/app-template` v4.2.0) — not present in this repo yet; sourced from archive reference
+- Checked live cluster services: Envoy Gateway creates a Service named identically to the Gateway resource (`envoy-external`) in the same namespace — stable internal DNS target at `envoy-external.network.svc.cluster.local`
+- Scaffolded full cloudflared deployment under `kubernetes/apps/network/cloudflared/`: `ks.yaml`, `app/kustomization.yaml`, `app/externalsecret.yaml`, `app/helmrelease.yaml`, `app/resources/config.yaml`
+- ExternalSecret pulls `TUNNEL_TOKEN` from 1Password item `cloudflared` field `TOKEN`; cloudflared runs as 2 replicas, RollingUpdate, `readOnlyRootFilesystem`, non-root (uid 65534)
+- Tunnel config routes `*.${CLUSTER_DOMAIN}` and `${CLUSTER_DOMAIN}` → `https://envoy-external.network.svc.cluster.local`; `noTLSVerify: true` with `originServerName: gateway.${CLUSTER_DOMAIN}` to satisfy Envoy's SNI filter chain selection without importing the Let's Encrypt root into cloudflared
+- Reconciled and confirmed tunnel connected
+- Updated `docs/CLUSTER.md`: corrected wildcard cert note (staging → production); added cloudflared component section
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `kubernetes/apps/network/envoy-gateway/config/certificate.yaml` | `issuerRef.name` changed from `letsencrypt-staging` to `letsencrypt-production` |
+| `kubernetes/flux/meta/repos/oci/app-template.yaml` | Created — OCIRepository for bjw-s/app-template v4.2.0 |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added `./app-template.yaml` |
+| `kubernetes/apps/network/cloudflared/ks.yaml` | Created — Flux Kustomization; depends on `envoy-gateway-config` + `onepassword-store` |
+| `kubernetes/apps/network/cloudflared/app/kustomization.yaml` | Created — app entry-point with configMapGenerator for tunnel config |
+| `kubernetes/apps/network/cloudflared/app/externalsecret.yaml` | Created — pulls `TUNNEL_TOKEN` from 1Password `cloudflared` item |
+| `kubernetes/apps/network/cloudflared/app/helmrelease.yaml` | Created — 2-replica cloudflared Deployment via app-template |
+| `kubernetes/apps/network/cloudflared/app/resources/config.yaml` | Created — tunnel ingress rules with `noTLSVerify` + `originServerName` |
+| `kubernetes/apps/network/kustomization.yaml` | Added `./cloudflared/ks.yaml` |
+| `docs/CLUSTER.md` | Updated cert issuer note; added cloudflared section |
+
+### Key decisions
+
+- **HTTPS to envoy-external, not HTTP**: the HTTP listener on `envoy-external` unconditionally redirects to HTTPS — cloudflared connecting on port 80 would get 301s back to the client, causing a redirect loop. HTTPS (port 443) is required.
+- **`noTLSVerify: true` + `originServerName`**: to connect via HTTPS, Envoy needs a matching SNI to select the `*.${CLUSTER_DOMAIN}` filter chain. Without `originServerName`, cloudflared sends the service hostname (`envoy-external.network.svc.cluster.local`) as SNI, which doesn't match. Setting `originServerName: gateway.${CLUSTER_DOMAIN}` (any `*.vwn.io` value works) satisfies Envoy's filter chain selection; `noTLSVerify: true` skips cert validation for this internal hop — safe because the connection is within the cluster network.
+- **Single `TUNNEL_TOKEN` field vs. 3-field decomposition**: the archive reconstructs the token from `ACCOUNT_TAG` + `TUNNEL_ID` + `TUNNEL_SECRET`. Using a single token from the Cloudflare dashboard (which already encodes all three) is simpler and requires only one 1Password field.
+
 ---
 
 ## 2026-05-14 — `cilium-gateway-api`

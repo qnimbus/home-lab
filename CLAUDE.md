@@ -4,7 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
-> | 2026-05-14 | `cert-promotion-cloudflared` | _in progress_ |
+> | 2026-05-14 | `cert-promotion-cloudflared` | Promoted cert staging→production (R13); deployed cloudflared 2-replica tunnel routing *.vwn.io to envoy-external |
 > | 2026-05-14 | `cilium-gateway-api` | Deployed Envoy Gateway + Cilium L2 IP pool; ext/int Gateways with pinned IPs, wildcard staging TLS, HTTP→HTTPS redirects |
 > | 2026-05-14 | `mcp-rbac-expansion` | Added 8 missing CRD API groups to MCP viewer ClusterRole; switched to wildcard resources per group; fixed wrong tuppr API group |
 > | 2026-05-14 | `global-helmrelease-defaults` | Added nested HelmRelease defaults + Kustomization timing patches to cluster-apps; removed redundant timeout/retryInterval from 12 child ks.yaml files |
@@ -12,7 +12,6 @@
 > | 2026-05-14 | `cluster-issuers-debug` | Diagnosed ClusterIssuers stuck on TODO placeholders; implemented cluster-var substitution (cluster-vars Kustomization + SOPS Secret); fixed ACME email+domain |
 > | 2026-05-14 | `permission-hooks-setup` | Merged settings.local.json→settings.json; added deny(git push); created PreToolUse shell-injection guard hook |
 > | 2026-05-14 | `cluster-variables-research` | Researched cluster-var substitution + 3 other patterns from bykaj/home-ops; documented as 4 ROADMAP items with impl steps |
-> | 2026-05-13 | `eso-onepassword-connect-fix` | Fixed ClusterSecretStore/onepassword: credentials double-encoding bug (base64(base64(json)) required) + wrong vault name Kubernetes→homelab; fixed bootstrap task |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

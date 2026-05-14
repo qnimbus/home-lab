@@ -108,7 +108,7 @@ Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` anno
 | `cert-manager-cainjector` | Injects CA bundles into `MutatingWebhookConfiguration` and `ValidatingWebhookConfiguration` objects so Kubernetes trusts cert-manager's own webhooks |
 | `cert-manager-webhook` | Admission webhook that validates and mutates cert-manager CRD objects at creation time |
 
-> **Live wildcard certificate.** A `Certificate` named `wildcard-production` in the `network` namespace covers `${CLUSTER_DOMAIN}` and `*.${CLUSTER_DOMAIN}`. It is currently issued by `letsencrypt-staging` (browser-untrusted) — switch the `issuerRef.name` to `letsencrypt-production` once the staging certificate validates correctly end-to-end. The DNS-01 flow through Cloudflare has been verified and the certificate is valid and auto-renewing. Secret: `network/wildcard-production-tls`.
+> **Live wildcard certificate.** A `Certificate` named `wildcard-production` in the `network` namespace covers `${CLUSTER_DOMAIN}` and `*.${CLUSTER_DOMAIN}`. Issued by `letsencrypt-production` (Let's Encrypt R13); valid May–August 2026, auto-renewing via DNS-01. Secret: `network/wildcard-production-tls`.
 
 > **Staging vs production issuers.** Always use `letsencrypt-staging` when first wiring up a new app or testing DNS-01 challenge configuration. Staging issues certificates from Let's Encrypt's untrusted fake root — browsers reject them, but the entire issuance flow (Cloudflare DNS record creation, ACME challenge, certificate delivery, renewal) is identical to production. This avoids burning against production's rate limits (5 duplicate certificates/week per domain). Once staging issues successfully, switch `clusterIssuerName` to `letsencrypt-production`.
 >
@@ -147,6 +147,20 @@ The Gateway API splits concerns into three levels: `GatewayClass` (which control
 Both Gateways share the `network/wildcard-production-tls` secret for TLS termination. HTTP requests on port 80 receive a 301 redirect to HTTPS on both Gateways via dedicated `HTTPRoute` resources.
 
 > **Adding a new app**: create an `HTTPRoute` in the app's namespace with a `parentRef` pointing at `envoy-external` or `envoy-internal` in the `network` namespace. The `https` listener's `allowedRoutes.namespaces.from: All` means no additional `ReferenceGrant` is required for the TLS listener.
+
+---
+
+### Cloudflare Tunnel (cloudflared) · `2025.9.0` · `network`
+
+**Outbound tunnel to Cloudflare's edge.** Two cloudflared replicas maintain persistent encrypted connections to Cloudflare's network, making `*.${CLUSTER_DOMAIN}` reachable externally without port forwarding, a static external IP, or firewall rules. All inbound external traffic is forwarded to the `envoy-external` Gateway (`10.60.0.230`). Managed by Flux HelmRelease via the `bjw-s/app-template` OCIRepository.
+
+| Pod | Type | Replicas | Role |
+|-----|------|----------|------|
+| `cloudflared` | Deployment | 2 | Maintains persistent HTTP/2 connections to Cloudflare edge; forwards inbound requests to `envoy-external` |
+
+The tunnel ingress config (mounted from a ConfigMap) routes `*.${CLUSTER_DOMAIN}` and `${CLUSTER_DOMAIN}` to `https://envoy-external.network.svc.cluster.local`. Tunnel credentials (`TUNNEL_TOKEN`) are sourced from 1Password via `ExternalSecret` (`cloudflared` item, `TOKEN` field).
+
+> **DNS**: `*.${CLUSTER_DOMAIN}` and `${CLUSTER_DOMAIN}` are Cloudflare-proxied CNAMEs pointing at the tunnel endpoint (`<tunnel-id>.cfargotunnel.com`). These will be managed automatically by ExternalDNS once it is deployed.
 
 ---
 
