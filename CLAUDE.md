@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-14 | `external-dns-split` | Deployed ExternalDNS split-DNS: cloudflare instance (envoy-external, proxied, crd) + unifi webhook instance (all gateways, split-horizon LAN DNS); shared OCIRepository v1.21.1 |
 > | 2026-05-14 | `flux-webhook-receiver` | Deployed Flux GitHub webhook receiver; separate Kustomization for substitution; ExternalSecret token; fixed Cloudflare DNS proxy; reconcile latency ~5 min → seconds |
 > | 2026-05-14 | `cert-promotion-cloudflared` | Promoted cert staging→production (R13); deployed cloudflared 2-replica tunnel routing *.vwn.io to envoy-external |
 > | 2026-05-14 | `cilium-gateway-api` | Deployed Envoy Gateway + Cilium L2 IP pool; ext/int Gateways with pinned IPs, wildcard staging TLS, HTTP→HTTPS redirects |
@@ -11,7 +12,6 @@
 > | 2026-05-14 | `global-helmrelease-defaults` | Added nested HelmRelease defaults + Kustomization timing patches to cluster-apps; removed redundant timeout/retryInterval from 12 child ks.yaml files |
 > | 2026-05-14 | `roadmap-cleanup` | Audited ROADMAP live vs cluster; moved ESO+1Password Connect and cluster-vars substitution to Completed; updated dependency chain |
 > | 2026-05-14 | `cluster-issuers-debug` | Diagnosed ClusterIssuers stuck on TODO placeholders; implemented cluster-var substitution (cluster-vars Kustomization + SOPS Secret); fixed ACME email+domain |
-> | 2026-05-14 | `permission-hooks-setup` | Merged settings.local.json→settings.json; added deny(git push); created PreToolUse shell-injection guard hook |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
@@ -240,8 +240,8 @@ See **[CLUSTER.md → Key Architectural Decisions](docs/CLUSTER.md#key-architect
 | Core infrastructure           | ✅ Done    | Talos configs, bootstrap, SOPS, Cilium, CoreDNS, cert-manager, Flux — all operational |
 | OpenEBS LocalPV               | ✅ Done    | `openebs-hostpath` StorageClass live (non-default)           |
 | Longhorn (2-replica interim)  | 🔄 Running | Live in 2-replica mode; bump to 3-replica when cp-02 drive installed |
-| External Secrets + 1Password  | 🔲 TODO    | First GitOps apps                               |
-| Split DNS (ExternalDNS)       | 🔲 TODO    | Internal (home.arpa) + external (Cloudflare)    |
+| External Secrets + 1Password  | ✅ Done    | ESO + 1Password Connect deployed; `ClusterSecretStore` live |
+| Split DNS (ExternalDNS)       | ✅ Done    | `external-dns-cloudflare` (envoy-external, proxied) + `external-dns-unifi` (all gateways + services, webhook sidecar); chart v1.21.1 |
 | Renovate                      | ✅ Done    | `renovate.json5` + GitHub App; tracks Talos + K8s via `separateMinorPatch`; `talosctl` + `etcd` excluded (must match server version) |
 | Talos + Kubernetes upgrades   | ✅ Done    | tuppr deployed in `system-upgrade`; `TalosUpgrade` + `KubernetesUpgrade` CRDs at current running versions; upgrades triggered by Renovate PRs |
 

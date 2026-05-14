@@ -4,6 +4,46 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-14 — `external-dns-split`
+
+### Goal
+Deploy ExternalDNS in split-DNS mode: Cloudflare instance for public records and UniFi UDM Pro Max webhook instance for internal LAN resolution.
+
+### What we did
+- Explored bykaj/home-ops reference implementation and current cluster network structure in parallel via Explore agents; found bykaj uses per-instance OCIRepositories inside app dirs — deviated to a single shared OCIRepository in `flux/meta/repos/oci/` following the cluster's own established pattern
+- Discovered cert-manager ClusterIssuer uses `API_TOKEN` field in the `cloudflare` 1Password item (not `CF_API_TOKEN`); used ESO `data[].secretKey/remoteRef.property` to bridge `API_TOKEN → CF_API_TOKEN` in the Kubernetes Secret — no 1Password changes needed for Cloudflare instance
+- Created 9 new files: shared OCIRepository, multi-doc `ks.yaml` (both Kustomizations), and `cloudflare/` + `unifi/` subdirs each with `kustomization.yaml`, `externalsecret.yaml`, `helmrelease.yaml`
+- Cloudflare instance: `--gateway-name=envoy-external` filter (only public routes), `--cloudflare-proxied`, `sources: [gateway-httproute, crd]`, `txtOwnerId: k8s`
+- UniFi instance: no gateway-name filter (watches all gateways for split-horizon LAN DNS), `sources: [gateway-httproute, service]`, `txtOwnerId: k8s-internal`, `UNIFI_SKIP_TLS_VERIFY: "true"`, `provider.name: webhook` structured format (chart v1.21.1)
+- Wired `external-dns/ks.yaml` into `kubernetes/apps/network/kustomization.yaml` and `external-dns.yaml` into `flux/meta/repos/oci/kustomization.yaml`
+- Moved ExternalDNS from ROADMAP In Progress → Completed; updated CLAUDE.md status table; changes unstaged (session interrupted before `/git-stage` completed)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/external-dns.yaml` | Created — shared OCIRepository for external-dns chart v1.21.1 |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added `./external-dns.yaml` entry |
+| `kubernetes/apps/network/external-dns/ks.yaml` | Created — multi-doc Flux Kustomizations for cloudflare + unifi instances |
+| `kubernetes/apps/network/external-dns/cloudflare/kustomization.yaml` | Created |
+| `kubernetes/apps/network/external-dns/cloudflare/externalsecret.yaml` | Created — maps 1P `API_TOKEN` → `CF_API_TOKEN` |
+| `kubernetes/apps/network/external-dns/cloudflare/helmrelease.yaml` | Created |
+| `kubernetes/apps/network/external-dns/unifi/kustomization.yaml` | Created |
+| `kubernetes/apps/network/external-dns/unifi/externalsecret.yaml` | Created — `UNIFI_HOST` + `UNIFI_API_KEY` from 1P `unifi` item |
+| `kubernetes/apps/network/external-dns/unifi/helmrelease.yaml` | Created |
+| `kubernetes/apps/network/kustomization.yaml` | Added `./external-dns/ks.yaml` |
+| `docs/ROADMAP.md` | Removed ExternalDNS In Progress section; added Completed row |
+| `CLAUDE.md` | Updated Split DNS + ESO+1Password status to Done; added session log row |
+
+### Key decisions
+- Single shared OCIRepository in `flux/meta/repos/oci/` rather than per-instance OCIRepositories (bykaj pattern) — follows cluster convention of one chart source per chart; both HelmReleases reference `chartRef.name: external-dns`
+- ESO `data[].secretKey/remoteRef.property` bridges `API_TOKEN` (existing 1Password field, used by cert-manager) → `CF_API_TOKEN` (ExternalDNS env var) without requiring any 1Password item changes
+- `--gateway-name=envoy-external` on Cloudflare instance only; UniFi has no filter so it creates LAN A records for all routes on both gateways (true split-horizon: internal clients resolve to 10.60.0.230/.231 directly)
+- `txtOwnerId: k8s` (Cloudflare) vs `k8s-internal` (UniFi) — prevents TXT ownership record collisions when both instances manage the same hostname
+- Used `provider.name: webhook` + `provider.webhook:` structured chart values format (v1.21.1) rather than legacy `sidecars:` approach documented in the ROADMAP (superseded by newer chart API)
+- UniFi instance will remain `ExternalSecret NotReady` until 1Password `unifi` item is created (`UNIFI_HOST` + `UNIFI_API_KEY`); harmless — does not affect Cloudflare instance
+
+---
+
 ## 2026-05-14 — `flux-webhook-receiver`
 
 ### Goal
