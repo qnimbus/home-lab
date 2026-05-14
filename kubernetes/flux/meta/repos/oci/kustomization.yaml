@@ -6,6 +6,7 @@ namespace: flux-system
 resources:
   - ./cert-manager.yaml
   - ./coredns.yaml
+  - ./envoy-gateway.yaml
   - ./flux-instance.yaml
   - ./flux-operator.yaml
   - ./openebs.yaml
