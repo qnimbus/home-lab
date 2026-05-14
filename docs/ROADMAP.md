@@ -84,30 +84,16 @@ supports it directly. Not required if Longhorn meets all workload needs.
 **Stage 4 — If/when a NAS is added**
 Deploy **NFS CSI** (`csi-driver-nfs`) and/or **SMB CSI** (`csi-driver-smb`) for ReadWriteMany
 workloads (photo libraries, shared media). Wire SMB/NFS credentials via ExternalSecret from
-1Password once ESO is deployed (dependency on the External Secrets item below).
+1Password (ESO + 1Password Connect are already deployed — no blocker).
 
 #### Dependency chain
 
 ```
-cert-manager → external-secrets → onepassword-connect   ← needed for NFS/SMB credentials (Stage 4)
+cert-manager ✅ → external-secrets ✅ → onepassword-connect ✅   ← ✅ all deployed; unblocks NFS/SMB credentials (Stage 4)
 OpenEBS LocalPV                                ← ✅ Stage 1 — deployed, running
 cp-02 disk installed → allowScheduling: true + replicaCount: 3 → Longhorn 3x ← Stage 2, Longhorn live (2-replica), cp-02 drive pending
 Longhorn stable → evaluate Rook-Ceph                    ← Stage 3, optional
 ```
-
----
-
-### External Secrets + 1Password Connect
-
-Deploy [External Secrets Operator](https://external-secrets.io/) and a [1Password Connect](https://developer.1password.com/docs/connect/) server so that application secrets can be pulled from 1Password at runtime without ever touching Git.
-
-Rough steps:
-- Deploy 1Password Connect server (HelmRelease in `kubernetes/apps/`)
-- Deploy External Secrets Operator (HelmRelease, likely `external-secrets` namespace)
-- Create a `ClusterSecretStore` pointing to the Connect server
-- Validate with a test `ExternalSecret` before wiring up real app secrets
-
-Dependency chain: `cert-manager` → `external-secrets` → `onepassword-connect` → apps
 
 ---
 
@@ -134,7 +120,7 @@ Deploy [kube-prometheus-stack](https://github.com/prometheus-community/helm-char
 
 **Dependencies:**
 - `cert-manager` — ✅ already running (needed for webhook TLS)
-- `external-secrets` + `onepassword-connect` — needed for alertmanager receiver credentials (can deploy stack first with a placeholder receiver and wire credentials later)
+- `external-secrets` + `onepassword-connect` — ✅ already running; alertmanager receiver credentials can be wired immediately via ExternalSecret
 - Longhorn — ✅ already running (enables `ServiceMonitor` integration immediately)
 
 **Resource note:** kube-prometheus-stack is the most resource-intensive item on this roadmap. Prometheus default retention is 10 days in-memory + on-disk. Use a Longhorn PVC for Prometheus storage (`longhorn-retain` StorageClass) and size the retention window conservatively for a 3-node cluster.
@@ -245,35 +231,6 @@ Patterns observed in the [`bykaj/home-ops`](https://github.com/bykaj/home-ops) r
 
 ---
 
-### Cluster-Level Variable Substitution (`postBuild.substituteFrom`)
-
-A `cluster-settings` ConfigMap (non-sensitive values: timezone, CIDRs) and a `cluster-secrets`
-SOPS-encrypted Secret (domain names, host addresses) deployed in `flux-system`. A patch on the
-root `cluster-apps` Kustomization injects `postBuild.substituteFrom` referencing both into every
-child Kustomization automatically. Apps then use `${VAR_NAME}` tokens in HelmRelease values,
-Ingress hostnames, env vars, etc. without any per-app wiring.
-
-**Status of wiring in this repo:**
-`kubernetes/flux/cluster/ks.yaml` already has the `substituteFrom` patch; the ConfigMap and
-Secret do not exist yet.
-
-**Steps to implement:**
-- Create `kubernetes/flux/vars/` with `cluster-settings.yaml` (ConfigMap) and
-  `cluster-secrets.sops.yaml` (Secret, SOPS-encrypted)
-- Add a `cluster-vars` Flux Kustomization pointing to that path, with `targetNamespace: flux-system`
-  and SOPS decryption enabled, deployed before `cluster-apps` (`dependsOn`)
-- Add `optional: true` to both `substituteFrom` sources in the existing patch (safety valve
-  during initial bootstrap before `sops-age` secret exists)
-- Add `task bootstrap:sops-age` — creates the `sops-age` Secret in `flux-system` from the
-  local `age.key` file (one-off bootstrap step; same pattern as `bootstrap:onepassword-connect-secret`)
-- Uncomment the SOPS decryption block on `cluster-apps` itself
-
-**Chicken-and-egg note:** Using ESO/1Password to source `cluster-secrets` would be circular —
-ESO must be deployed before the Secret can exist, but Flux needs the Secret to deploy apps
-(including ESO). SOPS avoids this entirely: `cluster-vars` decrypts before any apps reconcile.
-
----
-
 ### Global HelmRelease Defaults Patch
 
 An additional patch in `cluster-apps` that targets **all** `HelmRelease` resources cluster-wide
@@ -361,3 +318,5 @@ reviewable in PRs and can be enabled/disabled without touching the root config.
 | Renovate                      | `renovate.json5` in place; GitHub App installed; Talos/k8s tracked via `separateMinorPatch` rules (PRs target tuppr CRDs) |
 | Talos + Kubernetes upgrades   | tuppr deployed; Talos v1.13.2; Kubernetes v1.36.1; upgrades now fully automated via Renovate PRs + tuppr |
 | OpenEBS OCIRepository fix     | Transient timing race (HelmRelease checked source 30s before artifact was stored); forced reconcile cleared it; added `crds: CreateReplace` to HelmRelease |
+| External Secrets + 1Password Connect | ESO + 1Password Connect deployed; `ClusterSecretStore` live; `external-secrets`, `onepassword-connect`, `onepassword-store` Kustomizations all Ready |
+| Cluster-Level Variable Substitution | `cluster-vars` Kustomization live; `cluster-settings` ConfigMap + `cluster-secrets` SOPS Secret in `flux-system`; `substituteFrom` patch on `cluster-apps` covers all child Kustomizations |

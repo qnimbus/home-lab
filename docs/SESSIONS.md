@@ -4,6 +4,36 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-14 — `roadmap-cleanup`
+
+### Goal
+Audit ROADMAP.md and remove items that have already been implemented.
+
+### What we did
+- Queried live cluster via MCP Kubernetes tools: listed all Kustomizations and namespaces
+- Confirmed `external-secrets`, `onepassword-connect`, `onepassword-store` Kustomizations all `Ready: True` — ESO + 1Password Connect fully operational
+- Confirmed `cluster-vars` Kustomization `Ready: True` (51s old at check time) — cluster-level variable substitution fully implemented by the previous session
+- Verified three remaining bykaj patterns are still open: Global HelmRelease Defaults Patch (not present in `ks.yaml`), Kustomize Components (`kubernetes/components/` absent), Split Renovate Config (`.renovate/` absent)
+- Removed "External Secrets + 1Password Connect" section from "In Progress"
+- Removed "Cluster-Level Variable Substitution" section from "Researched Patterns"
+- Added both items to the Completed table with descriptive notes
+- Updated Persistent Storage Stage 4 note: ESO no longer a blocker
+- Updated dependency chain diagram: added ✅ to `cert-manager`, `external-secrets`, `onepassword-connect`
+- Updated Monitoring dependencies: ESO noted as ✅ already running, placeholder receiver note removed
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/ROADMAP.md` | Removed two completed sections; added two Completed table rows; updated dependency chain and cross-references throughout |
+| `docs/SESSIONS.md` | Opened roadmap-cleanup stub |
+| `CLAUDE.md` | Added roadmap-cleanup row to session log table |
+
+### Key decisions
+- Verified cluster state live (MCP tools) before editing the ROADMAP rather than trusting docs alone — `cluster-vars` was already Ready at 51s, confirming the previous session's work landed correctly
+- Kept the three remaining bykaj patterns (Global HelmRelease Defaults, Kustomize Components, Split Renovate) in the open roadmap — none are implemented, all still represent valid future work
+
+---
+
 ## 2026-05-14 — `cluster-issuers-debug`
 
 ### Goal
