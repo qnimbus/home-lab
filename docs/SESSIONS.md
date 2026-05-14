@@ -4,6 +4,31 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-14 — `mcp-rbac-expansion`
+
+### Goal
+Expand MCP viewer RBAC to cover all CRD API groups deployed in the cluster, so diagnostic tools can query Longhorn, cert-manager, ESO, Cilium, and other CRDs without kubectl fallbacks.
+
+### What we did
+- Audited MCP viewer ClusterRole (`scripts/mcp.sh`) against all CRD API groups present in the cluster (`kubectl api-resources` across every group)
+- Found 8 missing API groups: `longhorn.io`, `cert-manager.io`, `acme.cert-manager.io`, `external-secrets.io`, `onepassword.com`, `cilium.io`, `fluxcd.controlplane.io`, `notification.toolkit.fluxcd.io`
+- Found a silent bug: the ClusterRole listed `upgrade.talos.dev` for tuppr CRDs — the actual API group on this cluster is `tuppr.home-operations.com`, so `TalosUpgrade`/`KubernetesUpgrade` were inaccessible despite being listed
+- Switched all CRD group rules from explicit resource lists to `resources: ["*"]` — wildcard within a known group means new CRD resources in that group are covered automatically; only a new operator with a new API group requires a future script update
+- Retained the core `""` group as an explicit allowlist to keep `secrets` out of MCP's reach
+- Re-ran `bash scripts/mcp.sh renew-token 8h` to apply the updated ClusterRole and mint a fresh token
+- Verified via MCP tool that `longhorn.io/v1beta2 Node talos-cp-01` is now readable: `Ready=True`, `Schedulable=True`, ~913 GiB available
+
+### Files changed
+| File | Change |
+|------|--------|
+| `scripts/mcp.sh` | Added 8 missing CRD API groups with `resources: ["*"]`; switched existing groups to wildcard; fixed `upgrade.talos.dev` → `tuppr.home-operations.com` |
+
+### Key decisions
+- Used `resources: ["*"]` per API group rather than enumerating resource names — reduces ongoing maintenance; a new CRD resource in an existing group is zero-maintenance, only a new operator triggers a script edit
+- Deliberate exclusion of `secrets` from the core group — MCP is a diagnostic/read path and must not surface raw secret values
+
+---
+
 ## 2026-05-14 — `global-helmrelease-defaults`
 
 ### Goal

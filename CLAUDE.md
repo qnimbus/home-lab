@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-14 | `mcp-rbac-expansion` | Added 8 missing CRD API groups to MCP viewer ClusterRole; switched to wildcard resources per group; fixed wrong tuppr API group |
 > | 2026-05-14 | `global-helmrelease-defaults` | Added nested HelmRelease defaults + Kustomization timing patches to cluster-apps; removed redundant timeout/retryInterval from 12 child ks.yaml files |
 > | 2026-05-14 | `roadmap-cleanup` | Audited ROADMAP live vs cluster; moved ESO+1Password Connect and cluster-vars substitution to Completed; updated dependency chain |
 > | 2026-05-14 | `cluster-issuers-debug` | Diagnosed ClusterIssuers stuck on TODO placeholders; implemented cluster-var substitution (cluster-vars Kustomization + SOPS Secret); fixed ACME email+domain |
@@ -11,7 +12,6 @@
 > | 2026-05-14 | `cluster-variables-research` | Researched cluster-var substitution + 3 other patterns from bykaj/home-ops; documented as 4 ROADMAP items with impl steps |
 > | 2026-05-13 | `eso-onepassword-connect-fix` | Fixed ClusterSecretStore/onepassword: credentials double-encoding bug (base64(base64(json)) required) + wrong vault name Kubernetes→homelab; fixed bootstrap task |
 > | 2026-05-13 | `bootstrap-components-gitops` | Port Cilium/CoreDNS/Spegel/cert-manager/flux-operator/flux-instance to Flux HelmReleases; add OCIRepository sources to meta layer; remove Renovate comments from Helmfile |
-> | 2026-05-13 | `cert-manager-cluster-issuer` | Deployed ESO + 1Password Connect + ClusterSecretStore; letsencrypt-staging/production ClusterIssuers via Cloudflare DNS-01; Cloudflare token sourced from 1Password ExternalSecret |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

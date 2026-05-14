@@ -62,13 +62,19 @@ metadata:
 ---
 # Custom ClusterRole for the MCP viewer ServiceAccount.
 # The built-in 'view' ClusterRole omits cluster-scoped resources (nodes,
-# persistentvolumes) and custom CRDs such as the tuppr upgrade types.
-# This role grants read-only access to everything the MCP server needs.
+# persistentvolumes) and custom CRDs. This role grants read-only access to
+# everything the MCP server needs.
+#
+# Design: core group ("") uses an explicit allowlist to keep secrets out of
+# MCP's reach. All CRD API groups use resources: ["*"] so new resources
+# added within an existing group are automatically covered without a script
+# change. Only a brand-new operator with a new API group requires an update.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: ${MCP_CR}
 rules:
+  # Core resources — explicit list intentionally excludes 'secrets'
   - apiGroups: [""]
     resources:
       - configmaps
@@ -86,31 +92,60 @@ rules:
       - serviceaccounts
       - services
     verbs: [get, list, watch]
+  # Standard Kubernetes API groups — wildcard resources within each group
   - apiGroups: [apps]
-    resources: [daemonsets, deployments, replicasets, statefulsets]
+    resources: ["*"]
     verbs: [get, list, watch]
   - apiGroups: [batch]
-    resources: [cronjobs, jobs]
+    resources: ["*"]
     verbs: [get, list, watch]
   - apiGroups: [storage.k8s.io]
-    resources: [csidrivers, csinodes, storageclasses, volumeattachments]
+    resources: ["*"]
     verbs: [get, list, watch]
   - apiGroups: [networking.k8s.io]
-    resources: [ingressclasses, ingresses, networkpolicies]
+    resources: ["*"]
     verbs: [get, list, watch]
-  # Flux CRDs — needed to inspect HelmRelease and Kustomization health
+  # Flux CRDs
   - apiGroups: [helm.toolkit.fluxcd.io]
-    resources: [helmreleases]
+    resources: ["*"]
     verbs: [get, list, watch]
   - apiGroups: [kustomize.toolkit.fluxcd.io]
-    resources: [kustomizations]
+    resources: ["*"]
     verbs: [get, list, watch]
   - apiGroups: [source.toolkit.fluxcd.io]
-    resources: [buckets, gitrepositories, helmcharts, helmrepositories, ocirepositories]
+    resources: ["*"]
     verbs: [get, list, watch]
-  # tuppr upgrade CRDs are cluster-scoped and absent from the built-in view role
-  - apiGroups: [upgrade.talos.dev]
-    resources: [kubernetesupgrades, talosupgrades]
+  - apiGroups: [notification.toolkit.fluxcd.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  - apiGroups: [fluxcd.controlplane.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  # Storage — Longhorn block storage CRDs (nodes, volumes, replicas, engines, …)
+  - apiGroups: [longhorn.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  # TLS / PKI — cert-manager and ACME challenge/order resources
+  - apiGroups: [cert-manager.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  - apiGroups: [acme.cert-manager.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  # Secrets management — ESO stores and external secret mappings (no raw values)
+  - apiGroups: [external-secrets.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  - apiGroups: [onepassword.com]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  # CNI — Cilium network policy and endpoint state
+  - apiGroups: [cilium.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  # Upgrades — tuppr TalosUpgrade/KubernetesUpgrade CRDs
+  - apiGroups: [tuppr.home-operations.com]
+    resources: ["*"]
     verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
