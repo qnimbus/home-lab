@@ -202,6 +202,99 @@ to Cloudflare's edge with no port forwarding or static external IP required. All
 
 ---
 
+### ExternalDNS (Split-DNS: Cloudflare + Internal)
+
+**Dependency**: Cilium Gateway API item above (provides `gateway-httproute` source CRDs)
+
+ExternalDNS watches Kubernetes Gateway HTTPRoutes, Services, and `DNSEndpoint` CRDs and automatically creates/deletes DNS records in the configured provider. Split-DNS runs two instances: **Cloudflare** for public records and an **internal provider** for LAN / `home.arpa` resolution.
+
+**Why this matters:**
+- Today, Cloudflare DNS records are managed manually — every new service requires a manual CNAME/A entry
+- Once Cloudflare Tunnel is deployed, ExternalDNS auto-creates `*.${DOMAIN} → <tunnel-id>.cfargotunnel.com` CNAMEs from HTTPRoute annotations
+- Internal instance allows LAN clients to resolve cluster services without hairpinning through Cloudflare
+
+**Architecture: two HelmReleases in `network` namespace**
+
+| Instance | Provider | Sources | Manages |
+|----------|----------|---------|---------|
+| `external-dns-cloudflare` | Cloudflare API | `gateway-httproute`, `crd` (DNSEndpoint) | Public domain records |
+| `external-dns-unifi` | UniFi UDM Pro Max (webhook) | `gateway-httproute`, `service` | LAN / internal records |
+
+**Internal DNS provider: UniFi UDM Pro Max**
+
+Uses `ghcr.io/kashalls/external-dns-unifi-webhook` as a sidecar container in the same Pod. ExternalDNS talks to it over `localhost:8080` via the generic webhook provider protocol; the sidecar translates to the UDM API. Both bykaj/home-ops and home-ops.old use this pattern.
+
+**Implementation steps — Cloudflare instance (do first):**
+
+1. Add `external-dns` HelmRepository to `kubernetes/flux/meta/repos/helm/`:
+   ```yaml
+   url: https://kubernetes-sigs.github.io/external-dns
+   ```
+2. Create directory layout under `kubernetes/apps/network/external-dns/`:
+   ```
+   external-dns/
+   ├── ks.yaml                     # two Kustomizations: cloudflare + internal (multi-doc)
+   ├── cloudflare/
+   │   ├── kustomization.yaml
+   │   ├── helmrelease.yaml        # chart: external-dns, namespace: network
+   │   ├── externalsecret.yaml     # pulls CF_API_TOKEN from 1Password → external-dns-cloudflare-secret
+   │   └── helm/values.yaml
+   └── internal/
+       └── ...                     # add when provider is decided
+   ```
+3. `externalsecret.yaml`: pull `cloudflare` item from 1Password vault, output key `CF_API_TOKEN` into secret `external-dns-cloudflare-secret`
+4. `helm/values.yaml` for Cloudflare:
+   - `provider: cloudflare`; `cloudflare.proxied: true`; `cloudflare.dnsRecordsPerPage: 1000`
+   - `sources: [gateway-httproute, crd]`
+   - `domainFilters: ["${DOMAIN}"]`
+   - `policy: sync`; `registry: txt`; `txtOwnerId: k8s`; `txtPrefix: k8s.`
+   - `gatewayNamespace: kube-system` (adjust to wherever the Cilium Gateway lands)
+   - `serviceMonitor.enabled: true` (enable once kube-prometheus-stack is deployed)
+5. In `ks.yaml`, `external-dns-cloudflare` Kustomization `dependsOn: [cilium, onepassword-connect]`
+6. Add `network` namespace to `kubernetes/apps/kustomization.yaml` if not already present
+
+**Implementation steps — UniFi instance:**
+
+1. Create directory `kubernetes/apps/network/external-dns/unifi/` with same structure as `cloudflare/`
+2. `externalsecret.yaml`: pull `unifi` item from 1Password → secret `external-dns-unifi-secret` with keys `UNIFI_HOST` and `UNIFI_API_KEY`
+3. `helm/values.yaml` for UniFi:
+   - `provider: webhook`
+   - `extraArgs: [--webhook-provider-url=http://localhost:8080]`
+   - `sources: [gateway-httproute, service]`
+   - `domainFilters: ["${DOMAIN}", "home.arpa"]`
+   - `policy: sync`; `registry: txt`; `txtOwnerId: k8s-internal`; `txtPrefix: k8s.`
+     (distinct `txtOwnerId` avoids TXT record collisions with the Cloudflare instance)
+   - `sidecars:` block for the webhook container:
+     ```yaml
+     - name: unifi-webhook
+       image: ghcr.io/kashalls/external-dns-unifi-webhook:v0.8.2  # pin by digest in prod
+       env:
+         - name: UNIFI_HOST
+           valueFrom: {secretKeyRef: {name: external-dns-unifi-secret, key: UNIFI_HOST}}
+         - name: UNIFI_API_KEY
+           valueFrom: {secretKeyRef: {name: external-dns-unifi-secret, key: UNIFI_API_KEY}}
+         - name: UNIFI_SKIP_TLS_VERIFY
+           value: "true"   # UDM Pro Max self-signed cert
+       ports: [{name: webhook, containerPort: 8080}]
+       livenessProbe: {httpGet: {path: /healthz, port: webhook}, initialDelaySeconds: 10}
+       readinessProbe: {httpGet: {path: /readyz, port: webhook}, initialDelaySeconds: 10}
+     ```
+4. Store in 1Password: `unifi` item with `UNIFI_HOST` = `https://<udm-ip>` and `UNIFI_API_KEY` = UDM local API key
+
+**Prerequisites to verify at implement-time:**
+- `gateway-httproute` source requires CRD `httproutes.gateway.networking.k8s.io` — installed by Cilium when `gatewayAPI.enabled: true`
+- Cloudflare API token needs **Zone:DNS:Edit** + **Zone:Zone:Read** permissions scoped to the domain zone
+- Store token in 1Password as `cloudflare` item with field `CF_API_TOKEN`
+
+**Dependencies:**
+```
+cert-manager ✅ → external-secrets ✅ → onepassword-connect ✅   ← credentials ready now
+Cilium Gateway API (roadmap item above)                          ← gateway-httproute source
+UniFi UDM Pro Max (LAN)                                          ← internal instance; always present
+```
+
+---
+
 ### Flux GitHub Webhook Receiver
 
 **Dependency**: Cloudflare Tunnel item above (needs externally reachable HTTPS endpoint)
