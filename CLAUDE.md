@@ -12,7 +12,7 @@
 > | 2026-05-13 | `pr-19-review` | Reviewed PR #19 (Longhorn 1.9.0→1.11.2); 🚨 do not merge — missing `crds: CreateReplace` + v1beta1 storedVersions migration required |
 > | 2026-05-13 | `openebs-4.4.0-upgrade` | Merged PR #18; force-reconciled Flux chain; confirmed HelmRelease upgraded to openebs@4.4.0 (UpgradeSucceeded) |
 > | 2026-05-13 | `openebs-oci-source-fix` | Diagnosed timing race (HelmRelease checked source 30s early); forced reconcile; added `crds: CreateReplace` to HelmRelease |
- | 2026-05-13 | `claude-md-session-lifecycle` | Added mandatory session open/close workflow to CLAUDE.md |
+> | 2026-05-13 | `claude-md-session-lifecycle` | Added mandatory session open/close workflow to CLAUDE.md |
 > | 2026-05-13 | `kubernetes-upgrade-v1.35-v1.36` | Upgraded K8s v1.34.7→v1.35.4 (staggered apiserver patch mc + upgrade-k8s); v1.35.4→v1.36.0 via tuppr/Renovate native path (validated safe); documented gRPC flood / KubernetesUpgrade mismatch patterns; added Q&A entries; removed TROUBLESHOOTING.md; updated scripts/mcp.sh for reliable MCP |
 > | 2026-05-13 | `kubernetes-upgrade-v1.34-crash-recovery` | Recovered v1.34.7 crash loop (gRPC→etcd flood, rbac/bootstrap-roles fatal timeout); staggered apiserver revert to v1.33.11 then re-upgrade to v1.34.7 with feature gates removed; documented root cause |
 > | 2026-05-13 | `mcp-rbac-fix` | Replaced built-in `view` ClusterRoleBinding in `scripts/mcp.sh` with a custom `mcp-viewer` ClusterRole covering nodes, PVs, StorageClasses, Flux CRDs, and tuppr upgrade CRDs; made RBAC idempotent via `kubectl apply`; `renew-token` now re-applies RBAC before minting; added roleRef migration guard for immutable field |
@@ -41,7 +41,8 @@ This repository provisions and manages a bare-metal Talos Linux Kubernetes clust
 📁 /
 ├── 📁 .archive/          # Previous cluster config — reference only, do not replicate wholesale
 ├── 📁 .claude/
-│   └── agents/           # Specialized Claude Code agents (cluster-doctor, talos-node-manager)
+│   ├── agents/           # Specialized Claude Code agents (cluster-doctor, talos-node-manager)
+│   └── commands/         # Project-local skills (/git-stage, /git-commit, /session-open, /session-close)
 ├── 📁 .devcontainer/     # VS Code dev container (Python base, mise toolchain)
 ├── Taskfile.yaml         # Root go-task entry-point — run `task` to list all tasks
 ├── 📁 .taskfiles/
@@ -261,41 +262,20 @@ Both agents maintain a `<!-- BEGIN/END: CLUSTER-STATE-AUTO -->` block in their o
 
 ## Session Lifecycle
 
-These steps are **mandatory** — not optional hygiene. Do them at the boundaries of every session.
+Sessions are opened and closed via user-initiated skills — Claude cannot invoke these autonomously.
 
-### Opening a session (first action, before any other work)
+- **Opening**: The user should run `/session-open <slug>` before starting work. At the start of each conversation, check whether an open stub exists in `docs/SESSIONS.md`; if not, remind the user to run `/session-open` before proceeding.
+- **Closing**: The user should run `/session-close` when done. When wrapping up, remind the user if no `### What we did` section exists yet in the current session stub.
 
-1. Choose a kebab-case slug that names the work (e.g. `external-secrets-deploy`, `longhorn-3-replica-bump`).
-2. Prepend a stub entry to `docs/SESSIONS.md` immediately after the opening `---` separator:
-
-   ```markdown
-   ## YYYY-MM-DD — `session-slug`
-
-   ### Goal
-   One or two sentences describing the planned work.
-
-   ---
-   ```
-
-3. Prepend a matching row to the CLAUDE.md session log table at the top of this file (use a short placeholder summary — fill it in properly when closing).
-
-### Closing a session (last action, before stopping)
-
-1. Complete the open stub in `docs/SESSIONS.md`:
-   - Replace `### Goal` content (or keep it) and add `### What we did` (bullet list of actual work done)
-   - Add `### Files changed` table
-   - Add `### Key decisions` if any non-obvious choices were made
-2. Replace the placeholder summary in the CLAUDE.md session log table with a real one-liner.
-
-> If a session is interrupted mid-work, the stub is still useful — it records intent. Complete it in the next session under the same slug.
+> If a session is interrupted mid-work, the open stub is still useful — complete it in the next session using `/session-close`.
 
 ---
 
 ## Working in This Repo
 
-- **Do not** add `Co-Authored-By:` trailers to git commit messages.
+- **Do not** stage or commit outside of `/git-stage` and `/git-commit` — use those skills only, and only when the user explicitly asks.
 - **Do not** `git push` automatically — always ask for explicit confirmation before every push, no exceptions.
-- **Do not** `git fetch` or `git pull` automatically — before any `git commit`, check whether remote changes exist (`git fetch --dry-run` or `git log HEAD..origin/<branch>`) and ask for explicit confirmation before fetching or pulling.
+- **Do not** `git fetch` or `git pull` automatically — ask for explicit confirmation before fetching or pulling.
 - **Do not** run `kubectl apply` directly — all changes go through Git → Flux
 - **Do not** edit generated files in `talos/clusterconfig/` — edit `talconfig.yaml` and re-run `genconfig`
 - **Do** consult `.archive/` for patterns and prior art but adapt rather than copy wholesale
