@@ -4,6 +4,13 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-14 — `cilium-gateway-api`
+
+### Goal
+Implement Cilium Gateway API with L2 LoadBalancer as ingress infrastructure: enable Gateway API on Cilium, allocate an IP pool, create a Gateway resource, and wire a cert-manager ClusterIssuer for Let's Encrypt DNS-01 via Cloudflare.
+
+---
+
 ## 2026-05-14 — `mcp-rbac-expansion`
 
 ### Goal

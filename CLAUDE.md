@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-14 | `cilium-gateway-api` | _in progress_ |
 > | 2026-05-14 | `mcp-rbac-expansion` | Added 8 missing CRD API groups to MCP viewer ClusterRole; switched to wildcard resources per group; fixed wrong tuppr API group |
 > | 2026-05-14 | `global-helmrelease-defaults` | Added nested HelmRelease defaults + Kustomization timing patches to cluster-apps; removed redundant timeout/retryInterval from 12 child ks.yaml files |
 > | 2026-05-14 | `roadmap-cleanup` | Audited ROADMAP live vs cluster; moved ESO+1Password Connect and cluster-vars substitution to Completed; updated dependency chain |

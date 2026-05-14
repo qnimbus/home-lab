@@ -8,5 +8,6 @@ resources:
   - ./flux-system
   - ./kube-system
   - ./longhorn-system
+  - ./network
   - ./openebs
   - ./system-upgrade

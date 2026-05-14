@@ -1,0 +1,15 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/cert-manager.io/certificate_v1.json
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-production
+spec:
+  secretName: wildcard-production-tls
+  issuerRef:
+    name: letsencrypt-staging
+    kind: ClusterIssuer
+  commonName: "${CLUSTER_DOMAIN}"
+  dnsNames:
+    - "${CLUSTER_DOMAIN}"
+    - "*.${CLUSTER_DOMAIN}"
