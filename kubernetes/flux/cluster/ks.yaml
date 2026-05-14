@@ -21,18 +21,42 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: cluster-vars
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: cluster-meta
+      namespace: flux-system
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
+  interval: 1h
+  path: ./kubernetes/flux/vars
+  prune: true
+  retryInterval: 2m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: flux-system
+  wait: true
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: cluster-apps
   namespace: flux-system
 spec:
-  # Uncomment once the sops-age secret exists in flux-system namespace:
-  # kubectl create secret generic sops-age \
-  #   --namespace=flux-system --from-file=age.agekey=age.key
-  # decryption:
-  #   provider: sops
-  #   secretRef:
-  #     name: sops-age
+  decryption:
+    provider: sops
+    secretRef:
+      name: sops-age
   dependsOn:
     - name: cluster-meta
+      namespace: flux-system
+    - name: cluster-vars
       namespace: flux-system
   interval: 1h
   path: ./kubernetes/apps
@@ -59,8 +83,10 @@ spec:
             substituteFrom:
               - name: cluster-settings
                 kind: ConfigMap
+                optional: true
               - name: cluster-secrets
                 kind: Secret
+                optional: true
       target:
         group: kustomize.toolkit.fluxcd.io
         kind: Kustomization

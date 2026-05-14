@@ -5,8 +5,6 @@ kind: Kustomization
 metadata:
   name: &app cluster-issuers
   namespace: flux-system
-  labels:
-    substitution.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: cert-manager
   commonMetadata:

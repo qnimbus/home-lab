@@ -73,6 +73,19 @@ tasks:
       - {msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer", sh: "test -n \"$OP_SERVICE_ACCOUNT_TOKEN\""}
       - {msg: "kubectl not found",                                                                                  sh: "which kubectl"}
 
+  sops-age:
+    desc: Create sops-age Secret in flux-system from local age.key — required for SOPS decryption in Flux (idempotent)
+    cmds:
+      - |
+        kubectl create secret generic sops-age \
+          --namespace=flux-system \
+          --from-file=age.agekey=$SOPS_AGE_KEY_FILE \
+          --dry-run=client -o yaml | kubectl apply -f -
+    preconditions:
+      - {msg: "kubeconfig not found", sh: "test -f $KUBECONFIG"}
+      - {msg: "age key not found — expected at $SOPS_AGE_KEY_FILE", sh: "test -f $SOPS_AGE_KEY_FILE"}
+      - {msg: "kubectl not found", sh: "which kubectl"}
+
   apps:
     desc: Bootstrap apps into the cluster via helmfile (Cilium → CoreDNS → Spegel → cert-manager → Flux) — FIRST BOOT ONLY; day-2 upgrades are handled by Flux via Renovate PRs
     cmd: helmfile sync -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.yaml

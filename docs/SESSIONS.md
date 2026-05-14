@@ -4,6 +4,45 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-14 — `cluster-issuers-debug`
+
+### Goal
+Diagnose why the 'cluster-issuers' Flux Kustomization is not reported as Ready.
+
+### What we did
+- Fetched `cluster-issuers` Kustomization via MCP Kubernetes tool — `observedGeneration: -1`, stuck in `Reconciling` running health checks on both ClusterIssuers
+- Used `kubectl get clusterissuer` to find root cause: both `READY: False` with `Failed to register ACME account: 400 ... invalidContact` — literal placeholder values `TODO_YOUR_EMAIL` and `TODO_YOUR_DOMAIN` rejected by Let's Encrypt
+- Confirmed `cert-manager-cloudflare` ExternalSecret was healthy (`SecretSynced: True`) — Cloudflare API token was not the issue
+- Read both ClusterIssuer YAML files to confirm the placeholder values
+- User chose to fix via cluster-level variable substitution (ROADMAP item) rather than hardcoding — combined fix implements the pattern and resolves the issuer in one go
+- Read ROADMAP.md: confirmed `kubernetes/flux/cluster/ks.yaml` already had the `substituteFrom` patch wired; `cluster-settings` ConfigMap and `cluster-secrets` Secret were the missing pieces
+- Created `kubernetes/flux/vars/` with `cluster-settings.yaml` (ConfigMap: `CLUSTER_NAME`, `CLUSTER_TIMEZONE`) and `cluster-secrets.sops.yaml` (Secret: `CLUSTER_DOMAIN=vwn.io`, `CLUSTER_ACME_EMAIL=letsencrypt@bvw.email`); encrypted with SOPS; verified decrypt round-trip
+- Added `cluster-vars` Kustomization to `cluster/ks.yaml` (depends on `cluster-meta`, SOPS decryption enabled, `targetNamespace: flux-system`); updated `cluster-apps` to depend on `cluster-vars`, uncommented its SOPS decryption block, added `optional: true` to both `substituteFrom` entries
+- Removed `substitution.flux.home.arpa/disabled: "true"` label from `cluster-issuers/ks.yaml` so the `postBuild` patch now applies to it
+- Replaced `TODO_YOUR_EMAIL` → `${CLUSTER_ACME_EMAIL}` and `TODO_YOUR_DOMAIN` → `${CLUSTER_DOMAIN}` in both ClusterIssuer files
+- Added `task bootstrap:sops-age` to `.taskfiles/bootstrap/Taskfile.yaml`
+- Ran `task bootstrap:sops-age` to create `sops-age` Secret in `flux-system` (prerequisite for SOPS decryption in Flux) — confirmed created; stale ACME private key Secrets left in place for cert-manager to reuse
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/vars/kustomization.yaml` | Created — Kustomize entry-point for vars layer |
+| `kubernetes/flux/vars/cluster-settings.yaml` | Created — ConfigMap with `CLUSTER_NAME` and `CLUSTER_TIMEZONE` |
+| `kubernetes/flux/vars/cluster-secrets.sops.yaml` | Created — SOPS-encrypted Secret with `CLUSTER_DOMAIN` and `CLUSTER_ACME_EMAIL` |
+| `kubernetes/flux/cluster/ks.yaml` | Added `cluster-vars` Kustomization; `cluster-apps` now depends on it with SOPS decryption enabled and `optional: true` on substituteFrom |
+| `kubernetes/apps/cert-manager/cluster-issuers/ks.yaml` | Removed `substitution.flux.home.arpa/disabled: "true"` label |
+| `kubernetes/apps/cert-manager/cluster-issuers/app/clusterissuer-staging.yaml` | Replaced TODO placeholders with `${CLUSTER_ACME_EMAIL}` and `${CLUSTER_DOMAIN}` |
+| `kubernetes/apps/cert-manager/cluster-issuers/app/clusterissuer-production.yaml` | Replaced TODO placeholders with `${CLUSTER_ACME_EMAIL}` and `${CLUSTER_DOMAIN}` |
+| `.taskfiles/bootstrap/Taskfile.yaml` | Added `sops-age` task |
+
+### Key decisions
+- Combined ClusterIssuer fix with the cluster-variable-substitution ROADMAP item — values stay out of Git and the substitution mechanism is reusable for all future apps
+- Domain and ACME email placed in SOPS-encrypted Secret (not ConfigMap) following the ROADMAP convention: "domain names, host addresses" go in the secret tier
+- `optional: true` on both `substituteFrom` entries so child Kustomizations degrade gracefully rather than hard-failing if `cluster-vars` hasn't reconciled yet (safety valve during bootstrap or if SOPS secret is temporarily missing)
+- Stale ACME private key Secrets (`letsencrypt-staging`, `letsencrypt-production`) left in place — cert-manager reuses existing keys on retry; Let's Encrypt registers a fresh account for the same key pair with the correct email
+
+---
+
 ## 2026-05-14 — `permission-hooks-setup`
 
 ### Goal
