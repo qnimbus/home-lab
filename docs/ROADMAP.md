@@ -163,23 +163,6 @@ Deliverable: a PR updating `schematic.yaml` and the relevant patch files with re
 
 ---
 
-### Cloudflare Tunnel (cloudflared)
-
-**Dependency**: Envoy Gateway + Cilium L2 LoadBalancer ✅ deployed (2026-05-14)
-
-The cluster is behind home NAT; Cloudflare Tunnel provides an outbound-only encrypted connection
-to Cloudflare's edge with no port forwarding or static external IP required. All external traffic
-(`*.yourdomain.com`) routes through the tunnel to the cluster Gateway.
-
-**Steps:**
-- Create a tunnel: `cloudflared tunnel create home-lab` (or via Cloudflare dashboard) — outputs a credentials JSON
-- Encrypt the credentials JSON as `secret.sops.yaml` and commit to `kubernetes/apps/network/cloudflared/`
-- Deploy `cloudflared` as a Deployment (2 replicas for HA) in a new `network` namespace
-- Configure tunnel ingress rules: `*.yourdomain.com` → `http://10.60.0.200` (Gateway cluster IP)
-- DNS: add a CNAME `*.yourdomain.com` → `<tunnel-id>.cfargotunnel.com` in Cloudflare (or manage via ExternalDNS later)
-
----
-
 ### ExternalDNS (Split-DNS: Cloudflare + Internal)
 
 **Dependency**: Cilium Gateway API item above (provides `gateway-httproute` source CRDs)
@@ -273,29 +256,6 @@ UniFi UDM Pro Max (LAN)                                          ← internal in
 
 ---
 
-### Flux GitHub Webhook Receiver
-
-**Dependency**: Cloudflare Tunnel item above (needs externally reachable HTTPS endpoint)
-
-Without a webhook, Flux discovers new commits only on its 5-minute poll interval. A GitHub webhook
-cuts reconcile latency from ~5 minutes to seconds.
-
-**Implementation** (design fully researched — see `.claude/plans/` for details):
-- New app folder `kubernetes/apps/flux-system/flux-receiver/` with:
-  - `ks.yaml` — Flux Kustomization (targets `flux-system` namespace, depends on `cluster-meta`)
-  - `app/receiver.yaml` — `Receiver` resource, type `github`, events `[ping, push]`, targets `GitRepository/flux-system` and `Kustomization/flux-system`
-  - `app/secret.sops.yaml` — SOPS-encrypted Secret, key `token` (random hex; used as GitHub webhook secret for HMAC verification)
-  - `app/httproute.yaml` — HTTPRoute routing `flux-webhook.yourdomain.com/hook/*` → `webhook-receiver:80` in `flux-system`
-- Add `./flux-system` to `kubernetes/apps/kustomization.yaml`
-- Configure GitHub repo webhook: URL = `https://flux-webhook.yourdomain.com/hook/<generated-path>`, content-type `application/json`, secret = token value
-- After deploy: retrieve generated path via `kubectl get receiver -n flux-system github-webhook -o jsonpath='{.status.webhookPath}'`
-
-**Prerequisites to verify at implement-time:**
-- `sops-age` secret exists in `flux-system` namespace (create from `age.key` if not)
-- `cluster-settings` ConfigMap exists (needed for postBuild variable substitution in child Kustomizations)
-
----
-
 ## Researched Patterns (bykaj/home-ops)
 
 Patterns observed in the [`bykaj/home-ops`](https://github.com/bykaj/home-ops) repository that are worth adopting in this cluster. Each is independently implementable — ordered roughly by value vs. effort.
@@ -359,3 +319,5 @@ reviewable in PRs and can be enabled/disabled without touching the root config.
 | Cluster-Level Variable Substitution | `cluster-vars` Kustomization live; `cluster-settings` ConfigMap + `cluster-secrets` SOPS Secret in `flux-system`; `substituteFrom` patch on `cluster-apps` covers all child Kustomizations |
 | Global HelmRelease Defaults Patch   | Nested patch on `cluster-apps` injects `crds: CreateReplace`, `timeout: 10m`, and upgrade remediation into all HelmReleases; `CLAUDE.md` convention note updated |
 | Envoy Gateway + Cilium L2 LoadBalancer | Envoy Gateway v1.7.3; `envoy-external` (10.60.0.230) + `envoy-internal` (10.60.0.231); wildcard production cert via DNS-01; HTTP→HTTPS redirect on both Gateways |
+| Cloudflare Tunnel (cloudflared)        | 2-replica HA deployment in `network` namespace; `*.vwn.io` + `vwn.io` → `envoy-external`; token via ExternalSecret from 1Password |
+| Flux GitHub Webhook Receiver           | `flux-receiver` Kustomization in `flux-system`; ExternalSecret token from 1Password; HTTPRoute on `envoy-external`; GitHub webhook configured — reconcile latency ~5 min → seconds |

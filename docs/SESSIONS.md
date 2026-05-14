@@ -4,6 +4,40 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-14 — `flux-webhook-receiver`
+
+### Goal
+Deploy Flux GitHub webhook receiver to cut reconcile latency from ~5 minutes to seconds, providing near-instant GitOps updates on every push.
+
+### What we did
+- Surveyed archive, home-ops-bykaj, and home-ops.old — all three co-locate receiver files in `flux-instance/app/`; decided against this because `flux-instance/ks.yaml` carries `substitution.flux.home.arpa/disabled: "true"`, which would prevent `${CLUSTER_DOMAIN}` substitution in the HTTPRoute
+- Created a separate `flux-receiver` Kustomization in `kubernetes/apps/flux-system/flux-receiver/` so the cluster-apps patch injects `substituteFrom` automatically
+- ExternalSecret pulls `FLUX_GITHUB_WEBHOOK_TOKEN` from 1Password item `flux`; Receiver CR targets `GitRepository/flux-system` + `Kustomization/flux-system` (standard pattern from all reference repos)
+- HTTPRoute attached to `envoy-external` (sectionName: `https`) routing `flux-webhook.vwn.io/hook/*` → `webhook-receiver:80` in `flux-system`
+- Fixed cloudflared ExternalSecret property name `TOKEN` → `TUNNEL_TOKEN` (bundled in same commit)
+- Diagnosed "failed to connect to host" on first GitHub ping delivery: Cloudflare DNS Tunnel record for `flux-webhook` was DNS-only (gray cloud); toggling to Proxied (orange cloud) resolved it immediately
+- Confirmed end-to-end via GitHub Redeliver + `flux logs --kind=Receiver`: GitHub ping → Cloudflare → cloudflared → Envoy Gateway → webhook-receiver → 200 OK
+- Updated ROADMAP: removed cloudflared and flux-webhook-receiver from In Progress; added both to Completed table
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/flux-system/flux-receiver/ks.yaml` | Created — Flux Kustomization, dependsOn flux-operator + onepassword-connect |
+| `kubernetes/apps/flux-system/flux-receiver/app/kustomization.yaml` | Created — lists externalsecret, receiver, httproute |
+| `kubernetes/apps/flux-system/flux-receiver/app/externalsecret.yaml` | Created — pulls FLUX_GITHUB_WEBHOOK_TOKEN from 1Password |
+| `kubernetes/apps/flux-system/flux-receiver/app/receiver.yaml` | Created — github Receiver targeting GitRepository + Kustomization/flux-system |
+| `kubernetes/apps/flux-system/flux-receiver/app/httproute.yaml` | Created — flux-webhook.vwn.io/hook/* → webhook-receiver:80 |
+| `kubernetes/apps/flux-system/kustomization.yaml` | Added `./flux-receiver/ks.yaml` |
+| `kubernetes/apps/network/cloudflared/app/externalsecret.yaml` | Fixed 1Password property name TOKEN → TUNNEL_TOKEN |
+| `docs/ROADMAP.md` | Moved cloudflared and flux-webhook-receiver to Completed |
+
+### Key decisions
+- **Separate Kustomization over co-location**: all reference repos put receiver files in `flux-instance/app/`, but our `flux-instance` has substitution disabled; a dedicated `flux-receiver` Kustomization without that label gets `${CLUSTER_DOMAIN}` injected automatically via the cluster-apps patch
+- **ExternalSecret over SOPS**: consistent with this repo's app-secrets strategy; the token is not a bootstrap credential
+- **Receiver targets `Kustomization/flux-system`** (not `cluster-apps`): the flux-system Kustomization owns the full cluster tree and re-evaluating it cascades through all dependencies — matches the pattern used by all three reference repos
+
+---
+
 ## 2026-05-14 — `cert-promotion-cloudflared`
 
 ### Goal

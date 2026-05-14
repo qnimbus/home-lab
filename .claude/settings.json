@@ -54,6 +54,7 @@
       "Bash(python3 -m json.tool)",
       "Bash(xargs ls -la)",
       "Bash(xargs cat)",
+      "Bash(awk *)",
       "Bash(echo \"Exit: $?\")",
       "Bash(/usr/local/share/nvm/current/bin/node /usr/local/share/nvm/current/lib/node_modules/npm/bin/npx-cli.js -y @upstash/context7-mcp)",
       "Bash(git *)"
