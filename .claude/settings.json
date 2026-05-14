@@ -46,6 +46,7 @@
       "Bash(curl *)",
       "Bash(gh api *)",
       "Bash(gh release *)",
+      "Bash(yq e *)",
       "Bash(claude mcp *)",
       "Bash(talhelper genconfig *)",
       "Bash(talhelper --version)",
