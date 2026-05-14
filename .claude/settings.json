@@ -80,6 +80,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /workspaces/home-lab/.claude/hooks/check-secret-output.sh",
+            "statusMessage": "Scanning output for secrets..."
+          }
+        ]
+      }
     ]
   },
   "outputStyle": "Explanatory"
