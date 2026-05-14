@@ -143,12 +143,12 @@ Configure cert-manager with a Let's Encrypt ClusterIssuer (DNS-01 via Cloudflare
 | `kubernetes/apps/external-secrets/external-secrets/app/kustomization.yaml` | New — configMapGenerator + resources |
 | `kubernetes/apps/external-secrets/external-secrets/stores/onepassword/clustersecretstore.yaml` | New — ClusterSecretStore `onepassword` |
 | `kubernetes/apps/external-secrets/external-secrets/stores/onepassword/kustomization.yaml` | New |
-| `kubernetes/apps/external-secrets/onepassword-connect/ks.yaml` | New — Kustomization with explicit SOPS decryption |
-| `kubernetes/apps/external-secrets/onepassword-connect/app/secret.sops.yaml` | New — SOPS placeholder (not yet encrypted; user must fill + encrypt before committing) |
+| `kubernetes/apps/external-secrets/onepassword-connect/ks.yaml` | New — Kustomization; no `decryption` block (Option B: credentials never in git) |
+| `kubernetes/apps/external-secrets/onepassword-connect/app/secret.sops.yaml.tpl` | New — op:// reference template; documents 1Password item names; safe to commit |
 | `kubernetes/apps/external-secrets/onepassword-connect/app/helmrelease.yaml` | New — 1Password Connect HelmRelease |
 | `kubernetes/apps/external-secrets/onepassword-connect/app/helm/values.yaml` | New — ClusterIP + resource limits |
 | `kubernetes/apps/external-secrets/onepassword-connect/app/helm/kustomize-config.yaml` | New — nameReference for configMapGenerator |
-| `kubernetes/apps/external-secrets/onepassword-connect/app/kustomization.yaml` | New — configMapGenerator + resources |
+| `kubernetes/apps/external-secrets/onepassword-connect/app/kustomization.yaml` | New — configMapGenerator + resources (no secret.sops.yaml) |
 | `kubernetes/apps/cert-manager/kustomization.yaml` | New — namespace-level kustomize entry |
 | `kubernetes/apps/cert-manager/cluster-issuers/ks.yaml` | New — cluster-issuers Kustomization, dependsOn onepassword-store |
 | `kubernetes/apps/cert-manager/cluster-issuers/app/kustomization.yaml` | New |
@@ -156,13 +156,16 @@ Configure cert-manager with a Let's Encrypt ClusterIssuer (DNS-01 via Cloudflare
 | `kubernetes/apps/cert-manager/cluster-issuers/app/clusterissuer-staging.yaml` | New — letsencrypt-staging ClusterIssuer (TODO placeholders) |
 | `kubernetes/apps/cert-manager/cluster-issuers/app/clusterissuer-production.yaml` | New — letsencrypt-production ClusterIssuer (TODO placeholders) |
 | `kubernetes/apps/kustomization.yaml` | Added `./cert-manager` and `./external-secrets` |
+| `.taskfiles/sops/Taskfile.yaml` | New — `sops:encrypt` task; `op inject \| sops --filename-override --encrypt` |
+| `.taskfiles/bootstrap/Taskfile.yaml` | Added `bootstrap:onepassword-connect-secret` task |
+| `Taskfile.yaml` | Added `sops` include |
 | `CLAUDE.md` | Updated session log table |
 
 ### Key decisions
-- **1Password over SOPS for app secrets**: user preference; correct long-term pattern; only the Connect bootstrap credentials (`secret.sops.yaml`) require SOPS — everything above that layer goes through ESO
-- **`secret.sops.yaml` left as unencrypted placeholder**: cannot encrypt without the user's actual credentials; file must be filled in and `sops --encrypt --in-place`'d before the commit that enables the stack is pushed
+- **1Password over SOPS for app secrets**: user preference; correct long-term pattern; the Connect bootstrap credentials are the only chicken-and-egg secret (needed before ESO runs)
+- **Option B — imperative bootstrap secret**: `task bootstrap:onepassword-connect-secret` creates `onepassword-connect-secrets` via `op read` directly into the cluster; nothing is stored in git or Flux inventory; `prune: true` cannot delete what Flux never applied
+- **`secret.sops.yaml.tpl` committed as docs**: the `op://` template is safe to commit (no secrets); it documents which 1Password items to create and serves as the `op inject` source for anyone who wants to use Option A (SOPS-in-git) instead
 - **`operator.create: false` in Connect values**: 1Password Operator is distinct from Connect and not needed; ESO handles secret sync natively
-- **Separate `onepassword-connect/ks.yaml` with explicit decryption**: the global `cluster-apps` substitution patch is opt-out; Connect needs explicit `decryption:` since it must decrypt its credentials before ESO exists
 - **`install.remediation.retries: -1` on ESO**: ESO webhook cert bootstrap often fails the first reconcile attempt; infinite retries avoids a permanently-failed HelmRelease during first-time install
 
 ---
