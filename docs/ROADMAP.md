@@ -163,44 +163,9 @@ Deliverable: a PR updating `schematic.yaml` and the relevant patch files with re
 
 ---
 
-### Ingress Infrastructure: Envoy Gateway + Cilium L2 LoadBalancer
-
-**Dependency**: cert-manager ✅ already running
-
-**Decision**: Envoy Gateway (standalone) rather than Cilium's built-in Gateway API implementation.
-Cilium handles L2 IP allocation (pool + ARP announcement); Envoy Gateway provides the HTTP/HTTPS
-ingress controller with the full Gateway API feature set plus Envoy-specific extension APIs
-(`ClientTrafficPolicy`, `BackendTrafficPolicy`, `SecurityPolicy` for OIDC/JWT) that Cilium's
-built-in does not expose.
-
-**Architecture:**
-- `CiliumLoadBalancerIPPool`: `10.60.0.230–10.60.0.249` (clear of nodes `.201–.203` and future node expansion `.204–.229`)
-- `CiliumL2AnnouncementPolicy`: announces pool on all interfaces (storage bonds are L2-isolated)
-- Envoy Gateway controller in `network` namespace, `GatewayNamespace` deployment mode
-- `GatewayClass: envoy` + `EnvoyProxy` CRD for deployment config
-- `ClientTrafficPolicy`: XFF trust for pod CIDR, TLS 1.2 min, HTTP/2
-- `Gateway/envoy-external` at `10.60.0.230` — for Cloudflare Tunnel ingress
-- `Gateway/envoy-internal` at `10.60.0.231` — for direct LAN access
-- Wildcard cert `wildcard-production-tls` in `network` namespace (cert-manager, DNS-01, letsencrypt-production)
-- HTTP→HTTPS redirect HTTPRoutes on each gateway
-
-**Status**: ✅ Deployed (2026-05-14) — all resources committed, Flux reconciliation pending.
-
-> **Next step — certificate promotion**: `certificate.yaml` currently uses `letsencrypt-staging` (fake CA, not browser-trusted).
-> Once cert issuance is confirmed (`kubectl -n network get certificate wildcard-production` → Ready=True),
-> switch `issuerRef.name` to `letsencrypt-production` and delete the staging secret so cert-manager re-issues:
-> `kubectl -n network delete secret wildcard-production-tls`
-
-Resources:
-- `kubernetes/apps/kube-system/cilium/config/` — CiliumLoadBalancerIPPool + L2 policy
-- `kubernetes/apps/network/envoy-gateway/` — Envoy Gateway app + config
-- `kubernetes/flux/meta/repos/helm/envoy-gateway.yaml` — HelmRepository source
-
----
-
 ### Cloudflare Tunnel (cloudflared)
 
-**Dependency**: Cilium Gateway API item above
+**Dependency**: Envoy Gateway + Cilium L2 LoadBalancer ✅ deployed (2026-05-14)
 
 The cluster is behind home NAT; Cloudflare Tunnel provides an outbound-only encrypted connection
 to Cloudflare's edge with no port forwarding or static external IP required. All external traffic
@@ -393,3 +358,4 @@ reviewable in PRs and can be enabled/disabled without touching the root config.
 | External Secrets + 1Password Connect | ESO + 1Password Connect deployed; `ClusterSecretStore` live; `external-secrets`, `onepassword-connect`, `onepassword-store` Kustomizations all Ready |
 | Cluster-Level Variable Substitution | `cluster-vars` Kustomization live; `cluster-settings` ConfigMap + `cluster-secrets` SOPS Secret in `flux-system`; `substituteFrom` patch on `cluster-apps` covers all child Kustomizations |
 | Global HelmRelease Defaults Patch   | Nested patch on `cluster-apps` injects `crds: CreateReplace`, `timeout: 10m`, and upgrade remediation into all HelmReleases; `CLAUDE.md` convention note updated |
+| Envoy Gateway + Cilium L2 LoadBalancer | Envoy Gateway v1.7.3; `envoy-external` (10.60.0.230) + `envoy-internal` (10.60.0.231); wildcard production cert via DNS-01; HTTP→HTTPS redirect on both Gateways |
