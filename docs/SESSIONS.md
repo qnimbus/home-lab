@@ -16,12 +16,14 @@ Fix the `ClusterSecretStore/onepassword` which was stuck in `ValidationFailed / 
 - Discovered a second error after credentials fix: `Found 0 vaults with title "Kubernetes"` — the ClusterSecretStore spec had `vaults: Kubernetes: 1` but the actual 1Password vault name is `homelab`
 - Fixed `clustersecretstore.yaml`: `Kubernetes` → `homelab`
 - Fixed `task bootstrap:onepassword-connect-secret`: added `| base64 -w 0` to the credentials `op read` so re-running the task produces a correctly double-encoded secret; also fixed the `[VAULT=Kubernetes]` description tag to `[VAULT=homelab]`
+- After token renewal in 1Password and re-running the task, discovered `onepassword-store` Kustomization had been stuck for hours — cluster-doctor confirmed Connect was returning `[]` for vault list because the Connect integration had no vault access granted; fix was adding `homelab` vault access in 1Password admin UI
+- Switched namespace creation in the task from client-side `kubectl apply` to `--server-side` to eliminate a cosmetic annotation warning (namespace was created by Flux, lacked `last-applied-configuration`)
 
 ### Files changed
 | File | Change |
 |------|--------|
 | `kubernetes/apps/external-secrets/external-secrets/stores/onepassword/clustersecretstore.yaml` | `vaults: Kubernetes: 1` → `vaults: homelab: 1` |
-| `.taskfiles/bootstrap/Taskfile.yaml` | `onepassword-connect-secret`: added `\| base64 -w 0` to credentials encoding; fixed VAULT default and description tag |
+| `.taskfiles/bootstrap/Taskfile.yaml` | `onepassword-connect-secret`: added `\| base64 -w 0` to credentials encoding; fixed VAULT default and description tag; switched namespace apply to `--server-side` |
 
 ### Key decisions
 - **Imperative patch acceptable for the secret**: the secret is deliberately not in Git (Option B decision from prior session); patching it imperatively is the correct fix path
