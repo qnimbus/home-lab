@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-14 | `global-helmrelease-defaults` | Added nested HelmRelease defaults + Kustomization timing patches to cluster-apps; removed redundant timeout/retryInterval from 12 child ks.yaml files |
 > | 2026-05-14 | `roadmap-cleanup` | Audited ROADMAP live vs cluster; moved ESO+1Password Connect and cluster-vars substitution to Completed; updated dependency chain |
 > | 2026-05-14 | `cluster-issuers-debug` | Diagnosed ClusterIssuers stuck on TODO placeholders; implemented cluster-var substitution (cluster-vars Kustomization + SOPS Secret); fixed ACME email+domain |
 > | 2026-05-14 | `permission-hooks-setup` | Merged settings.local.json→settings.json; added deny(git push); created PreToolUse shell-injection guard hook |
@@ -11,7 +12,6 @@
 > | 2026-05-13 | `eso-onepassword-connect-fix` | Fixed ClusterSecretStore/onepassword: credentials double-encoding bug (base64(base64(json)) required) + wrong vault name Kubernetes→homelab; fixed bootstrap task |
 > | 2026-05-13 | `bootstrap-components-gitops` | Port Cilium/CoreDNS/Spegel/cert-manager/flux-operator/flux-instance to Flux HelmReleases; add OCIRepository sources to meta layer; remove Renovate comments from Helmfile |
 > | 2026-05-13 | `cert-manager-cluster-issuer` | Deployed ESO + 1Password Connect + ClusterSecretStore; letsencrypt-staging/production ClusterIssuers via Cloudflare DNS-01; Cloudflare token sourced from 1Password ExternalSecret |
-> | 2026-05-13 | `cp01-disk-role-swap` | Swapped cp-01 disk roles: GoodRam→system, Kingston→Longhorn storage; updated talconfig.yaml + docs; worked around talhelper 3.1.9 not supporting Talos v1.13.2; ISO-boot migration completed successfully |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
@@ -197,19 +197,29 @@ instance Kustomization's dry-run runs.
 
 Single file keeps the dependency relationship visible in one place (archive convention).
 
-### `crds: CreateReplace` on operator HelmReleases
+### HelmRelease cluster-wide defaults (via `cluster-apps` patch)
 
-Add `crds: CreateReplace` to both `install` and `upgrade` blocks on any HelmRelease for a chart
-that owns CRDs (operators, admission controllers, storage drivers). Helm's default is to never
-update CRDs on upgrade — without this, a chart upgrade that ships a new CRD schema leaves the old
-schema in the cluster, silently breaking resources that use new fields.
+`cluster-apps` injects the following defaults into every HelmRelease via a nested patch on all
+child Kustomizations. You do **not** need to declare these per-chart:
 
 ```yaml
 install:
   crds: CreateReplace
+  remediation:
+    retries: 3
+    remediateLastFailure: true
+timeout: 10m
 upgrade:
+  cleanupOnFail: true
   crds: CreateReplace
+  remediation:
+    remediateLastFailure: true
+    retries: 2
 ```
+
+`crds: CreateReplace` ensures CRD schemas are updated on chart upgrades (Helm's default is to
+never update CRDs). Any per-chart declaration of these fields is harmless — they merge
+idempotently — but redundant.
 
 ### Community research before new deployments
 

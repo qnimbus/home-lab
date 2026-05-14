@@ -15,8 +15,6 @@ spec:
   wait: false
   prune: true
   interval: 1h
-  timeout: 5m
-  retryInterval: 2m
   path: ./kubernetes/apps/flux-system/flux-operator/app
   sourceRef:
     kind: GitRepository

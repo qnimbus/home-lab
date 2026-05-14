@@ -231,40 +231,6 @@ Patterns observed in the [`bykaj/home-ops`](https://github.com/bykaj/home-ops) r
 
 ---
 
-### Global HelmRelease Defaults Patch
-
-An additional patch in `cluster-apps` that targets **all** `HelmRelease` resources cluster-wide
-and injects `crds: CreateReplace`, a default `timeout`, and upgrade remediation settings
-(`cleanupOnFail: true`, `retries: 2`, `remediateLastFailure: true`). Apps no longer declare these
-individually.
-
-**Steps to implement:**
-- Add to the `patches:` list in `cluster-apps` in `kubernetes/flux/cluster/ks.yaml`:
-  ```yaml
-  - patch: |-
-      apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      metadata:
-        name: not-used
-      spec:
-        install:
-          crds: CreateReplace
-        timeout: 10m
-        upgrade:
-          cleanupOnFail: true
-          crds: CreateReplace
-          remediation:
-            remediateLastFailure: true
-            retries: 2
-    target:
-      group: helm.toolkit.fluxcd.io
-      kind: HelmRelease
-  ```
-- Per-release `crds: CreateReplace` blocks become redundant (harmless to leave — they merge
-  idempotently)
-- Update the `crds: CreateReplace` convention note in `CLAUDE.md` to clarify it is now a
-  cluster-wide default, not a per-chart requirement
-
 ---
 
 ### Kustomize Components (`kubernetes/components/`)
@@ -320,3 +286,4 @@ reviewable in PRs and can be enabled/disabled without touching the root config.
 | OpenEBS OCIRepository fix     | Transient timing race (HelmRelease checked source 30s before artifact was stored); forced reconcile cleared it; added `crds: CreateReplace` to HelmRelease |
 | External Secrets + 1Password Connect | ESO + 1Password Connect deployed; `ClusterSecretStore` live; `external-secrets`, `onepassword-connect`, `onepassword-store` Kustomizations all Ready |
 | Cluster-Level Variable Substitution | `cluster-vars` Kustomization live; `cluster-settings` ConfigMap + `cluster-secrets` SOPS Secret in `flux-system`; `substituteFrom` patch on `cluster-apps` covers all child Kustomizations |
+| Global HelmRelease Defaults Patch   | Nested patch on `cluster-apps` injects `crds: CreateReplace`, `timeout: 10m`, and upgrade remediation into all HelmReleases; `CLAUDE.md` convention note updated |

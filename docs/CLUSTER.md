@@ -227,6 +227,39 @@ kubernetes/flux/cluster/        ← FluxInstance sync root
 - **Drift correction**: every 1 hour (Kustomization interval)
 - **Change detection**: within 5 minutes of a `git push` (GitRepository poll)
 
+### `cluster-apps` patches
+
+`cluster-apps` uses Flux's `spec.patches` to inject behaviour into every child Kustomization it manages — without touching each app's own YAML. Two patches are applied:
+
+**1 — SOPS decryption + variable substitution** (targets all child Kustomizations, except those labelled `substitution.flux.home.arpa/disabled: "true"`)
+
+Injects `spec.decryption` (so every child can decrypt `*.sops.yaml` files) and `spec.postBuild.substituteFrom`, pointing at the `cluster-settings` ConfigMap and `cluster-secrets` Secret in `flux-system`. Any `${VAR}` placeholder in a child's rendered manifests is replaced at reconcile time with the matching value from those two sources.
+
+**2 — Default timings** (targets all child Kustomizations)
+
+Injects `retryInterval: 2m` and `timeout: 5m` into every child Kustomization. Apps that declare these fields explicitly are unaffected (their values take precedence via strategic merge); apps that omit them receive these defaults automatically. This means new apps need not declare timings individually.
+
+**3 — HelmRelease defaults** (targets all child Kustomizations, which in turn patch their own HelmReleases)
+
+This is a **nested patch**: the outer patch mutates each child `Kustomization` object by injecting a `spec.patches` block into it. When that child Kustomization later reconciles its own path, the injected inner patch runs against the HelmRelease resources it manages. The net effect is that every HelmRelease in the cluster receives:
+
+```yaml
+install:
+  crds: CreateReplace      # update CRD schemas on chart upgrades (Helm default: never)
+  remediation:
+    retries: 3             # uninstall and retry up to 3 times on install failure
+    remediateLastFailure: true
+timeout: 10m
+upgrade:
+  cleanupOnFail: true
+  crds: CreateReplace
+  remediation:
+    remediateLastFailure: true
+    retries: 2             # rollback and retry up to 2 times on upgrade failure
+```
+
+This works because `cluster-apps` only directly renders the child `Kustomization` objects from `kubernetes/apps/` — not the HelmRelease resources those children manage. A direct patch on `HelmRelease` at the `cluster-apps` level would match nothing. The nested approach sidesteps this: `cluster-apps` patches what it can see (Kustomizations), and those Kustomizations then patch what they can see (HelmReleases).
+
 ### Bootstrap Order
 
 ```

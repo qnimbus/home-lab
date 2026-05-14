@@ -15,7 +15,6 @@ spec:
   prune: true
   interval: 1h
   timeout: 10m
-  retryInterval: 2m
   path: ./kubernetes/apps/longhorn-system/longhorn/app
   sourceRef:
     kind: GitRepository

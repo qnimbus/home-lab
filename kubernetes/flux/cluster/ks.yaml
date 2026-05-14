@@ -91,3 +91,45 @@ spec:
         group: kustomize.toolkit.fluxcd.io
         kind: Kustomization
         labelSelector: substitution.flux.home.arpa/disabled notin (true)
+    - patch: |-
+        apiVersion: kustomize.toolkit.fluxcd.io/v1
+        kind: Kustomization
+        metadata:
+          name: not-used
+        spec:
+          retryInterval: 2m
+          timeout: 5m
+      target:
+        group: kustomize.toolkit.fluxcd.io
+        kind: Kustomization
+    - patch: |-
+        apiVersion: kustomize.toolkit.fluxcd.io/v1
+        kind: Kustomization
+        metadata:
+          name: not-used
+        spec:
+          patches:
+            - patch: |-
+                apiVersion: helm.toolkit.fluxcd.io/v2
+                kind: HelmRelease
+                metadata:
+                  name: not-used
+                spec:
+                  install:
+                    crds: CreateReplace
+                    remediation:
+                      retries: 3
+                      remediateLastFailure: true
+                  timeout: 10m
+                  upgrade:
+                    cleanupOnFail: true
+                    crds: CreateReplace
+                    remediation:
+                      remediateLastFailure: true
+                      retries: 2
+              target:
+                group: helm.toolkit.fluxcd.io
+                kind: HelmRelease
+      target:
+        group: kustomize.toolkit.fluxcd.io
+        kind: Kustomization

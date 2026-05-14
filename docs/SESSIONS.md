@@ -4,6 +4,49 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-14 — `global-helmrelease-defaults`
+
+### Goal
+Apply the Global HelmRelease Defaults Patch to inject cluster-wide CRD management and upgrade remediation settings into all HelmRelease resources via the `cluster-apps` Kustomization.
+
+### What we did
+- Compared ROADMAP spec with bykaj reference implementation; found the ROADMAP's described patch (direct `HelmRelease` targeting in `cluster-apps`) cannot work — `cluster-apps` only renders child `Kustomization` objects, so a direct HelmRelease patch silently matches nothing
+- Implemented the bykaj nested patch pattern: outer patch injects `spec.patches` into each child Kustomization; inner patch targets HelmReleases within those children at their own reconcile time
+- Added full HelmRelease defaults: `install.crds: CreateReplace`, `install.remediation` (retries: 3, remediateLastFailure: true), `timeout: 10m`, `upgrade.cleanupOnFail: true`, `upgrade.crds: CreateReplace`, `upgrade.remediation` (retries: 2, remediateLastFailure: true)
+- Added a second `cluster-apps` patch injecting `retryInterval: 2m` and `timeout: 5m` as global Kustomization timing defaults (bykaj pattern)
+- Cleaned up all 12 child `ks.yaml` files: removed now-redundant `retryInterval: 2m` and `timeout: 5m`; retained three intentional `timeout: 10m` overrides (cilium, longhorn, tuppr operator)
+- Moved "Global HelmRelease Defaults Patch" from Researched Patterns to Completed in `ROADMAP.md`
+- Updated `CLAUDE.md` convention section: replaced per-chart `crds: CreateReplace` note with full cluster-wide defaults reference including install remediation
+- Added `### cluster-apps patches` subsection to `CLUSTER.md` documenting all three patches and explaining the nested patch mechanism in plain terms
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/cluster/ks.yaml` | Added Kustomization timings patch and nested HelmRelease defaults patch to `cluster-apps` |
+| `docs/CLUSTER.md` | Added `cluster-apps patches` section documenting all three patches and nested patch mechanism |
+| `docs/ROADMAP.md` | Moved Global HelmRelease Defaults Patch to Completed table |
+| `CLAUDE.md` | Updated HelmRelease convention section with full cluster-wide defaults; session log row updated |
+| `kubernetes/apps/openebs/openebs/ks.yaml` | Removed redundant `timeout`/`retryInterval` |
+| `kubernetes/apps/flux-system/flux-instance/ks.yaml` | Removed redundant `timeout`/`retryInterval` |
+| `kubernetes/apps/flux-system/flux-operator/ks.yaml` | Removed redundant `timeout`/`retryInterval` |
+| `kubernetes/apps/external-secrets/external-secrets/ks.yaml` | Removed redundant `timeout`/`retryInterval` from both docs |
+| `kubernetes/apps/external-secrets/onepassword-connect/ks.yaml` | Removed redundant `timeout`/`retryInterval` |
+| `kubernetes/apps/cert-manager/cert-manager/ks.yaml` | Removed redundant `timeout`/`retryInterval` |
+| `kubernetes/apps/cert-manager/cluster-issuers/ks.yaml` | Removed redundant `timeout`/`retryInterval` |
+| `kubernetes/apps/kube-system/cilium/ks.yaml` | Removed redundant `retryInterval` (`timeout: 10m` retained) |
+| `kubernetes/apps/kube-system/coredns/ks.yaml` | Removed redundant `timeout`/`retryInterval` |
+| `kubernetes/apps/kube-system/spegel/ks.yaml` | Removed redundant `timeout`/`retryInterval` |
+| `kubernetes/apps/longhorn-system/longhorn/ks.yaml` | Removed redundant `retryInterval` (`timeout: 10m` retained) |
+| `kubernetes/apps/system-upgrade/tuppr/ks.yaml` | Removed redundant `retryInterval` from tuppr doc (`timeout: 10m` retained); removed `timeout`/`retryInterval` from tuppr-upgrade doc |
+
+### Key decisions
+- Used nested patch pattern (Kustomization→HelmRelease) rather than ROADMAP's direct HelmRelease patch — the direct approach silently no-ops because HelmRelease objects are not in scope of `cluster-apps`'s kustomize build
+- Added `install.remediation` beyond the ROADMAP spec — failed installs without cleanup leave partial resources that cause "already exists" errors on retry; remediation (uninstall) ensures each retry starts clean
+- Used `retries: 3` for install vs `retries: 2` for upgrade — installs face more variance (cold image pulls, CRD propagation, webhook timing) than incremental upgrades
+- Kept Kustomization `timeout: 5m` (not bykaj's 10m) — sufficient since `wait: false` on `cluster-apps` means the timeout only covers the kustomize build + apply phase, not app readiness
+
+---
+
 ## 2026-05-14 — `roadmap-cleanup`
 
 ### Goal

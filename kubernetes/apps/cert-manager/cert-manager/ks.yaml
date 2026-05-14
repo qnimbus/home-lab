@@ -15,8 +15,6 @@ spec:
   wait: true
   prune: true
   interval: 1h
-  timeout: 5m
-  retryInterval: 2m
   path: ./kubernetes/apps/cert-manager/cert-manager/app
   sourceRef:
     kind: GitRepository

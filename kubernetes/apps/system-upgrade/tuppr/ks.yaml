@@ -15,7 +15,6 @@ spec:
   prune: true
   interval: 1h
   timeout: 10m
-  retryInterval: 2m
   path: ./kubernetes/apps/system-upgrade/tuppr/app
   sourceRef:
     kind: GitRepository
@@ -48,8 +47,6 @@ spec:
   wait: true
   prune: true
   interval: 1h
-  timeout: 5m
-  retryInterval: 2m
   path: ./kubernetes/apps/system-upgrade/tuppr/upgrade
   sourceRef:
     kind: GitRepository

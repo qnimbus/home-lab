@@ -15,8 +15,6 @@ spec:
   wait: false
   prune: true
   interval: 1h
-  timeout: 5m
-  retryInterval: 2m
   path: ./kubernetes/apps/kube-system/spegel/app
   sourceRef:
     kind: GitRepository

@@ -13,8 +13,6 @@ spec:
     labels:
       app.kubernetes.io/name: *app
   interval: 1h
-  timeout: 5m
-  retryInterval: 2m
   wait: true
   prune: true
   path: ./kubernetes/apps/external-secrets/external-secrets/app
@@ -42,8 +40,6 @@ spec:
     labels:
       app.kubernetes.io/name: *app
   interval: 1h
-  timeout: 5m
-  retryInterval: 2m
   wait: true
   prune: true
   path: ./kubernetes/apps/external-secrets/external-secrets/stores/onepassword
