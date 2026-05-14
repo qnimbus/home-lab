@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-14 | `cluster-variables-research` | Researched cluster-var substitution + 3 other patterns from bykaj/home-ops; documented as 4 ROADMAP items with impl steps |
 > | 2026-05-13 | `eso-onepassword-connect-fix` | Fixed ClusterSecretStore/onepassword: credentials double-encoding bug (base64(base64(json)) required) + wrong vault name Kubernetes→homelab; fixed bootstrap task |
 > | 2026-05-13 | `bootstrap-components-gitops` | Port Cilium/CoreDNS/Spegel/cert-manager/flux-operator/flux-instance to Flux HelmReleases; add OCIRepository sources to meta layer; remove Renovate comments from Helmfile |
 > | 2026-05-13 | `cert-manager-cluster-issuer` | Deployed ESO + 1Password Connect + ClusterSecretStore; letsencrypt-staging/production ClusterIssuers via Cloudflare DNS-01; Cloudflare token sourced from 1Password ExternalSecret |
@@ -11,16 +12,6 @@
 > | 2026-05-13 | `longhorn-1.11.2-upgrade` | Upgraded Longhorn 1.9.0→1.11.2 via staged hops (1.10.2 intermediate); added crds:CreateReplace; direct 1.9→1.11 rejected by manager binary |
 > | 2026-05-13 | `pr-19-review` | Reviewed PR #19 (Longhorn 1.9.0→1.11.2); 🚨 do not merge — missing `crds: CreateReplace` + v1beta1 storedVersions migration required |
 > | 2026-05-13 | `openebs-4.4.0-upgrade` | Merged PR #18; force-reconciled Flux chain; confirmed HelmRelease upgraded to openebs@4.4.0 (UpgradeSucceeded) |
-> | 2026-05-13 | `openebs-oci-source-fix` | Diagnosed timing race (HelmRelease checked source 30s early); forced reconcile; added `crds: CreateReplace` to HelmRelease |
-> | 2026-05-13 | `claude-md-session-lifecycle` | Added mandatory session open/close workflow to CLAUDE.md |
-> | 2026-05-13 | `kubernetes-upgrade-v1.35-v1.36` | Upgraded K8s v1.34.7→v1.35.4 (staggered apiserver patch mc + upgrade-k8s); v1.35.4→v1.36.0 via tuppr/Renovate native path (validated safe); documented gRPC flood / KubernetesUpgrade mismatch patterns; added Q&A entries; removed TROUBLESHOOTING.md; updated scripts/mcp.sh for reliable MCP |
-> | 2026-05-13 | `kubernetes-upgrade-v1.34-crash-recovery` | Recovered v1.34.7 crash loop (gRPC→etcd flood, rbac/bootstrap-roles fatal timeout); staggered apiserver revert to v1.33.11 then re-upgrade to v1.34.7 with feature gates removed; documented root cause |
-> | 2026-05-13 | `mcp-rbac-fix` | Replaced built-in `view` ClusterRoleBinding in `scripts/mcp.sh` with a custom `mcp-viewer` ClusterRole covering nodes, PVs, StorageClasses, Flux CRDs, and tuppr upgrade CRDs; made RBAC idempotent via `kubectl apply`; `renew-token` now re-applies RBAC before minting; added roleRef migration guard for immutable field |
-> | 2026-05-13 | `longhorn-psa-fix` | Diagnosed Longhorn fully broken (0/3 CSI pods) due to missing `pod-security.kubernetes.io/enforce: privileged` on `longhorn-system` namespace; added PSA labels to namespace.yaml; added Storage QA entry |
-> | 2026-05-12 | `talos-upgrade-v1.10-to-v1.13` | Upgraded Talos v1.10.6→v1.11.6→v1.12.7→v1.13.0; fixed upgrade-node Taskfile duplicate-`--image` bug; converted JSON 6902 admission patch to strategic merge (v1.12 multi-doc requirement); v1.13.1 is unreleased tag — targeted v1.13.0 |
-> | 2026-05-12 | `purge-failed-pods-script` | Created `scripts/purge-failed-pods.sh` + `task purge-failed-pods`; owner-health-checked dry-run/live cleanup for Failed pods after unclean shutdown; extended QA.md |
-> | 2026-05-12 | `tuppr-upgrade-controller-deployment` | Deployed tuppr as GitOps upgrade controller; fixed cosign + CRD chicken-and-egg rollout errors; updated Renovate for separateMinorPatch; added 5 QA entries |
-> | 2026-05-12 | `crash-recovery-ghost-pods` | Diagnosed 91 ContainerStatusUnknown ghost pods after simultaneous 3-node power-off; deleted stale Failed pods; added unclean-shutdown diagnosis + cleanup section to QA.md |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 

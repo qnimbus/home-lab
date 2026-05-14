@@ -6,6 +6,7 @@
 
 # Ignore build artifacts and assets (e.g. iso images, VM images, etc.)
 assets/
+tmp/
 
 # Ignore sensitive files and environment variables
 kubeconfig

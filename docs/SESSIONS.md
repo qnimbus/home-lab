@@ -4,6 +4,35 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-14 — `cluster-variables-research`
+
+### Goal
+Research how other homelab repositories implement cluster-level variables (domains, settings) to avoid duplication, and evaluate patterns for adoption in this cluster.
+
+### What we did
+- Cloned two reference repos into `tmp/`: `qnimbus/home-ops.old` and `bykaj/home-ops` for hands-on analysis
+- Mapped the core substitution mechanism in both repos: a patch on the root `cluster-apps` Kustomization injects `postBuild.substituteFrom` (referencing `cluster-settings` ConfigMap + `cluster-secrets` Secret) into every child Kustomization automatically; apps use `${VAR_NAME}` tokens without per-app wiring
+- Confirmed that `kubernetes/flux/cluster/ks.yaml` already has this patch wired — the ConfigMap and Secret simply don't exist yet
+- Identified four additional patterns in bykaj worth adopting: (1) cluster-vars substitution, (2) global HelmRelease defaults patch (crds, remediation, timeouts), (3) Kustomize Components for reusable boilerplate, (4) split Renovate config into `.renovate/` directory
+- Analysed the chicken-and-egg problem with sourcing `cluster-secrets` from ESO/1Password: circular dependency (ESO must be deployed before the Secret exists, but Flux needs the Secret to deploy apps including ESO); confirmed SOPS is the correct approach
+- Inspected bykaj's `components/namespace/secret.sops.yaml` — confirmed no private key embedded; only the encrypted session key + age public recipient appear in the file
+- Documented all four patterns in `docs/ROADMAP.md` as independently addressable items with concrete implementation steps
+- Drew up a full implementation plan for cluster-vars in `.claude/plans/` (not yet executed)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/ROADMAP.md` | Added `## Researched Patterns (bykaj/home-ops)` section with 4 pattern subsections |
+| `docs/SESSIONS.md` | Session stub prepended |
+| `CLAUDE.md` | Session log row added |
+
+### Key decisions
+- SOPS over ESO/1Password for `cluster-secrets`: avoids bootstrap chicken-and-egg; SOPS decrypts before any apps reconcile, ESO approach requires `optional: true` + fragile ordering
+- Split ConfigMap (plaintext) + SOPS Secret rather than bykaj's single all-encrypted Secret: non-sensitive vars (CIDRs, timezone) stay readable in PRs; only domain names and host addresses warrant encryption
+- Session was research-and-document only; implementation deferred to a future session
+
+---
+
 ## 2026-05-13 — `eso-onepassword-connect-fix`
 
 ### Goal

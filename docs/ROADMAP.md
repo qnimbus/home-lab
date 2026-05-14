@@ -239,6 +239,112 @@ cuts reconcile latency from ~5 minutes to seconds.
 
 ---
 
+## Researched Patterns (bykaj/home-ops)
+
+Patterns observed in the [`bykaj/home-ops`](https://github.com/bykaj/home-ops) repository that are worth adopting in this cluster. Each is independently implementable — ordered roughly by value vs. effort.
+
+---
+
+### Cluster-Level Variable Substitution (`postBuild.substituteFrom`)
+
+A `cluster-settings` ConfigMap (non-sensitive values: timezone, CIDRs) and a `cluster-secrets`
+SOPS-encrypted Secret (domain names, host addresses) deployed in `flux-system`. A patch on the
+root `cluster-apps` Kustomization injects `postBuild.substituteFrom` referencing both into every
+child Kustomization automatically. Apps then use `${VAR_NAME}` tokens in HelmRelease values,
+Ingress hostnames, env vars, etc. without any per-app wiring.
+
+**Status of wiring in this repo:**
+`kubernetes/flux/cluster/ks.yaml` already has the `substituteFrom` patch; the ConfigMap and
+Secret do not exist yet.
+
+**Steps to implement:**
+- Create `kubernetes/flux/vars/` with `cluster-settings.yaml` (ConfigMap) and
+  `cluster-secrets.sops.yaml` (Secret, SOPS-encrypted)
+- Add a `cluster-vars` Flux Kustomization pointing to that path, with `targetNamespace: flux-system`
+  and SOPS decryption enabled, deployed before `cluster-apps` (`dependsOn`)
+- Add `optional: true` to both `substituteFrom` sources in the existing patch (safety valve
+  during initial bootstrap before `sops-age` secret exists)
+- Add `task bootstrap:sops-age` — creates the `sops-age` Secret in `flux-system` from the
+  local `age.key` file (one-off bootstrap step; same pattern as `bootstrap:onepassword-connect-secret`)
+- Uncomment the SOPS decryption block on `cluster-apps` itself
+
+**Chicken-and-egg note:** Using ESO/1Password to source `cluster-secrets` would be circular —
+ESO must be deployed before the Secret can exist, but Flux needs the Secret to deploy apps
+(including ESO). SOPS avoids this entirely: `cluster-vars` decrypts before any apps reconcile.
+
+---
+
+### Global HelmRelease Defaults Patch
+
+An additional patch in `cluster-apps` that targets **all** `HelmRelease` resources cluster-wide
+and injects `crds: CreateReplace`, a default `timeout`, and upgrade remediation settings
+(`cleanupOnFail: true`, `retries: 2`, `remediateLastFailure: true`). Apps no longer declare these
+individually.
+
+**Steps to implement:**
+- Add to the `patches:` list in `cluster-apps` in `kubernetes/flux/cluster/ks.yaml`:
+  ```yaml
+  - patch: |-
+      apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      metadata:
+        name: not-used
+      spec:
+        install:
+          crds: CreateReplace
+        timeout: 10m
+        upgrade:
+          cleanupOnFail: true
+          crds: CreateReplace
+          remediation:
+            remediateLastFailure: true
+            retries: 2
+    target:
+      group: helm.toolkit.fluxcd.io
+      kind: HelmRelease
+  ```
+- Per-release `crds: CreateReplace` blocks become redundant (harmless to leave — they merge
+  idempotently)
+- Update the `crds: CreateReplace` convention note in `CLAUDE.md` to clarify it is now a
+  cluster-wide default, not a per-chart requirement
+
+---
+
+### Kustomize Components (`kubernetes/components/`)
+
+Reusable Kustomize Components (`apiVersion: kustomize.config.k8s.io/v1alpha1 / kind: Component`)
+that apps include in their `app/kustomization.yaml` via `components:` references. bykaj ships:
+- `components/namespace/` — bundles namespace creation + `cluster-secrets` Secret per-app
+  namespace + Flux alerts
+- `components/volsync/` — VolSync backup PVC + ReplicationSource/Destination templates
+- `components/keda/*-scaler/` — KEDA ScaledObject templates for Postgres, Redis, NFS, SMB
+- `components/gpu/` — ResourceClaimTemplate for GPU workloads
+
+**Steps to implement:**
+- Create `kubernetes/components/` as app count grows
+- The `namespace` Component is highest priority: bundles namespace creation + cluster-secrets
+  per-app, so apps never need separate namespace manifests or per-namespace secret wiring
+- Add a Component only when the same boilerplate appears in 3+ apps — don't create early
+- Natural order: `components/namespace/` first (after cluster-vars lands), then
+  `components/volsync/` when backup is added, then KEDA scalers if KEDA is deployed
+
+---
+
+### Split Renovate Configuration (`.renovate/` directory)
+
+Instead of a single `renovate.json5`, bykaj splits Renovate config into files by concern:
+`allowedVersions.json5`, `autoMerge.json5`, `groups.json5`, `changelogs.json5`,
+`customManagers.json5`, `labels.json5`, `semanticCommits.json5`, etc. Each file is independently
+reviewable in PRs and can be enabled/disabled without touching the root config.
+
+**Steps to implement:**
+- Rename `renovate.json5` → `.renovate/renovate.json5` (or split by concern)
+- Renovate supports this natively — the `.renovate/` directory is auto-discovered
+- Defer until `renovate.json5` grows unwieldy; current file is modest
+- No cluster-level impact; purely a repository ergonomics improvement
+
+---
+
 ## Completed
 
 | Area                          | Notes                                           |
