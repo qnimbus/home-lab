@@ -9,6 +9,50 @@ A running record of work done, files modified, and decisions made across Claude 
 ### Goal
 Implement Cilium Gateway API with L2 LoadBalancer as ingress infrastructure: enable Gateway API on Cilium, allocate an IP pool, create a Gateway resource, and wire a cert-manager ClusterIssuer for Let's Encrypt DNS-01 via Cloudflare.
 
+### What we did
+- Evaluated Cilium built-in Gateway API vs Envoy Gateway; chose Envoy Gateway for richer extension APIs (`SecurityPolicy`, `ClientTrafficPolicy`, OIDC support) and full conformance — updated ROADMAP accordingly
+- Added `CiliumLoadBalancerIPPool` (10.60.0.230–249) and `CiliumL2AnnouncementPolicy` in a new `cilium-config` Kustomization (separate from the HelmRelease Kustomization to avoid Flux dry-run ordering failure)
+- Created OCIRepository for Envoy Gateway at `oci://docker.io/envoyproxy/gateway-helm` v1.7.3 — discovered Envoy has no traditional Helm repository, only OCI
+- Deployed Envoy Gateway HelmRelease with `GatewayNamespace` mode (proxy pods created per-Gateway namespace for isolation)
+- Created `EnvoyProxy` (2 replicas, 512Mi limit), `GatewayClass`, and `ClientTrafficPolicy` (XFF trust from pod CIDR, TLS 1.2 min, h2+http/1.1)
+- Created two Gateways with pinned IPs via `lbipam.cilium.io/ips` annotation: `envoy-external` (10.60.0.230), `envoy-internal` (10.60.0.231), each with HTTP + HTTPS listeners
+- Created wildcard `Certificate` for `*.${CLUSTER_DOMAIN}` using `letsencrypt-staging` issuer; DNS-01 challenge via Cloudflare — staging to avoid burning production rate limits
+- Added HTTP→HTTPS redirect `HTTPRoute` on both gateways
+- Fixed three bugs during reconciliation: HelmRepository→OCIRepository source type; missing `network` Namespace manifest; `api-token`→`API_TOKEN` key in ClusterIssuers (ESO `dataFrom.extract` preserves 1Password field names verbatim)
+- DNS-01 propagation in progress at session close; staging cert expected to issue without further action
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/envoy-gateway.yaml` | Created OCIRepository for Envoy Gateway v1.7.3 |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added `envoy-gateway.yaml` |
+| `kubernetes/flux/meta/repos/helm/kustomization.yaml` | Removed wrong `envoy-gateway.yaml` entry |
+| `kubernetes/flux/meta/repos/helm/envoy-gateway.yaml` | Deleted (wrong source type — no charts.envoyproxy.io exists) |
+| `kubernetes/apps/kustomization.yaml` | Added `./network` |
+| `kubernetes/apps/network/kustomization.yaml` | Created; lists `envoy-gateway/ks.yaml` |
+| `kubernetes/apps/network/envoy-gateway/ks.yaml` | Created multi-doc: `envoy-gateway` + `envoy-gateway-config` Kustomizations |
+| `kubernetes/apps/network/envoy-gateway/app/namespace.yaml` | Created `Namespace/network` |
+| `kubernetes/apps/network/envoy-gateway/app/kustomization.yaml` | Created; lists namespace + helmrelease |
+| `kubernetes/apps/network/envoy-gateway/app/helmrelease.yaml` | Created HelmRelease using `chartRef` (OCIRepository) |
+| `kubernetes/apps/network/envoy-gateway/config/envoy.yaml` | Created `EnvoyProxy` + `GatewayClass` + `ClientTrafficPolicy` |
+| `kubernetes/apps/network/envoy-gateway/config/certificate.yaml` | Created wildcard Certificate (staging issuer) |
+| `kubernetes/apps/network/envoy-gateway/config/gateway.yaml` | Created `envoy-external` + `envoy-internal` Gateways |
+| `kubernetes/apps/network/envoy-gateway/config/httproute.yaml` | Created HTTP→HTTPS redirect HTTPRoutes |
+| `kubernetes/apps/network/envoy-gateway/config/kustomization.yaml` | Created; lists all config resources |
+| `kubernetes/apps/kube-system/cilium/config/networks.yaml` | Created `CiliumLoadBalancerIPPool` + `CiliumL2AnnouncementPolicy` |
+| `kubernetes/apps/kube-system/cilium/config/kustomization.yaml` | Created; lists `networks.yaml` |
+| `kubernetes/apps/kube-system/cilium/ks.yaml` | Added `cilium-config` Kustomization (split from main HelmRelease ks) |
+| `kubernetes/apps/cert-manager/cluster-issuers/app/clusterissuer-production.yaml` | Fixed `api-token` → `API_TOKEN` |
+| `kubernetes/apps/cert-manager/cluster-issuers/app/clusterissuer-staging.yaml` | Fixed `api-token` → `API_TOKEN` |
+| `docs/ROADMAP.md` | Updated ingress section: Cilium GW API → Envoy Gateway with full architecture description |
+
+### Key decisions
+- Chose Envoy Gateway over Cilium's built-in Gateway API: richer extension APIs (`SecurityPolicy` for OIDC, `ClientTrafficPolicy` for XFF/TLS config), full conformance suite, better long-term flexibility
+- IP pool 10.60.0.230–249: leaves .204–.229 as node-expansion buffer, keeps pool clearly separated from management IPs (.201–.203)
+- `GatewayNamespace` deployment mode: Envoy proxy pods created per-Gateway namespace (vs `Shared` = one proxy for all), giving better network isolation at the cost of one extra Deployment per gateway
+- Staging cert first: conserves Let's Encrypt production rate limits (50 certs/domain/week); promote to production once DNS-01 validates by swapping `issuerRef` and deleting the old TLS secret
+- Separate `cilium-config` Kustomization from `cilium` HelmRelease: required because Flux dry-runs CRD instances before the operator is installed — `dependsOn` + `healthChecks` enforces correct ordering
+
 ---
 
 ## 2026-05-14 — `mcp-rbac-expansion`
