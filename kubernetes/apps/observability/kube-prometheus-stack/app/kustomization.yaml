@@ -7,6 +7,8 @@ configMapGenerator:
     namespace: observability
     files:
       - values.yaml=./helm/values.yaml
+    options:
+      disableNameSuffixHash: true
 resources:
   - ./namespace.yaml
   - ./helmrelease.yaml
