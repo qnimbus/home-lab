@@ -264,6 +264,16 @@ Two specialized agents live in `.claude/agents/` and are invoked automatically b
 
 Both agents maintain a `<!-- BEGIN/END: CLUSTER-STATE-AUTO -->` block in their own file that they self-update when live cluster state drifts from the recorded context.
 
+### MCP server credentials
+
+The MCP server uses a time-limited ServiceAccount token (default 8h). When the token expires, MCP tool calls fail with `"has asked for the client to provide credentials"`. **Renew immediately with:**
+
+```sh
+bash scripts/mcp.sh renew-token 8h
+```
+
+This re-applies RBAC (idempotent) and mints a fresh token into `~/.kube/mcp-viewer.kubeconfig`. No restart of the MCP server is needed — the kubeconfig is re-read on the next request.
+
 ---
 
 ## Session Lifecycle

@@ -3,6 +3,7 @@
 
 alertmanager:
   alertmanagerSpec:
+    # All nodes are control-plane only — no workers. Every pod needs this toleration or it won't schedule.
     tolerations:
       - key: node-role.kubernetes.io/control-plane
         operator: Exists
@@ -10,25 +11,31 @@ alertmanager:
     storage:
       volumeClaimTemplate:
         spec:
+          # Longhorn provides replicated storage (survives a node loss); openebs-hostpath would not.
           storageClassName: longhorn
           accessModes: [ReadWriteOnce]
           resources:
             requests:
+              # Alertmanager stores only silences + notification state — 1 Gi is ample.
               storage: 1Gi
 
 grafana:
+  # Deferred to a follow-up session; Prometheus + Alertmanager are sufficient for initial observability.
   enabled: false
+  # Prevents the chart from pushing dashboard ConfigMaps into every namespace even when Grafana is disabled.
   forceDeployDashboards: false
 
-# Talos runs without kube-proxy (Cilium replaces it)
+# Talos runs without kube-proxy (Cilium replaces it with eBPF)
 kubeProxy:
   enabled: false
 
-# Talos etcd listens on the management subnet; requires additional configuration to scrape
+# Talos etcd binds to the management subnet (10.60.0.0/24) only and requires
+# client certificates — additional auth configuration needed before this can be scraped.
 kubeEtcd:
   enabled: false
 
 kube-state-metrics:
+  # All nodes are control-plane only — no workers.
   tolerations:
     - key: node-role.kubernetes.io/control-plane
       operator: Exists
@@ -36,15 +43,19 @@ kube-state-metrics:
 
 prometheus:
   prometheusSpec:
-    # Watch ServiceMonitors, PodMonitors, PrometheusRules, etc. across all namespaces.
-    # Without these, Prometheus only discovers resources matching its own Helm release labels.
+    # When nil (unset), Prometheus falls back to filtering by Helm release labels — meaning it
+    # would only scrape ServiceMonitors/PodMonitors/etc. deployed by this same Helm release.
+    # Setting these to false makes the selector match everything (cluster-wide scraping).
     podMonitorSelectorNilUsesHelmValues: false
     probeSelectorNilUsesHelmValues: false
     ruleSelectorNilUsesHelmValues: false
     scrapeConfigSelectorNilUsesHelmValues: false
     serviceMonitorSelectorNilUsesHelmValues: false
     retention: 14d
+    # Hard cap below the 20 Gi PVC size so Prometheus deletes old blocks before the disk fills,
+    # rather than running out of space and crashing.
     retentionSize: 18GB
+    # All nodes are control-plane only — no workers.
     tolerations:
       - key: node-role.kubernetes.io/control-plane
         operator: Exists
@@ -54,10 +65,12 @@ prometheus:
         cpu: 100m
         memory: 512Mi
       limits:
+        # No CPU limit intentionally — avoids throttling during scrape fan-out bursts.
         memory: 2Gi
     storageSpec:
       volumeClaimTemplate:
         spec:
+          # Longhorn provides replicated storage (survives a node loss); openebs-hostpath would not.
           storageClassName: longhorn
           accessModes: [ReadWriteOnce]
           resources:
@@ -65,6 +78,7 @@ prometheus:
               storage: 20Gi
 
 prometheusOperator:
+  # All nodes are control-plane only — no workers.
   tolerations:
     - key: node-role.kubernetes.io/control-plane
       operator: Exists

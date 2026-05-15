@@ -97,33 +97,56 @@ Longhorn stable → evaluate Rook-Ceph                    ← Stage 3, optional
 
 ---
 
-### Monitoring — kube-prometheus-stack
+### metrics-server
 
-Deploy [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) to provide cluster-wide observability: Prometheus (metrics), Alertmanager (routing), Grafana (dashboards), and kube-state-metrics (Kubernetes object metrics).
+Deploy [metrics-server](https://github.com/kubernetes-sigs/metrics-server) to serve the `metrics.k8s.io` API. This is a separate, lightweight component from kube-prometheus-stack — Prometheus stores metrics internally but does not register as a `metrics.k8s.io` provider.
 
-**Why this matters for this cluster:**
-- Stale `Failed` pods accumulate silently — the `PodGCController` only triggers at 12,500 terminated pods, so manual sweeps (`task purge-failed-pods`) are currently the only detection mechanism
-- Longhorn, Flux, and tuppr all expose Prometheus metrics; without a scraper they go unobserved
-- Alertmanager can route to Discord/Slack/email so cluster health issues surface without requiring active dashboard monitoring
+**Why this matters:**
+- `kubectl top nodes` / `kubectl top pods` require it — currently both return `error: Metrics API not available`
+- FreeLens node CPU and Memory columns show `N/A` without it (disk metrics come from Prometheus directly)
+- Horizontal Pod Autoscaler (HPA) resource-based scaling (`cpu`/`memory` metrics) requires it
+- Vertical Pod Autoscaler (VPA) also depends on it
+
+**Deployment notes:**
+- OCIRepository source: `ghcr.io/kubernetes-sigs/charts/metrics-server`
+- HelmRelease in `kubernetes/apps/kube-system/metrics-server/`; target namespace `kube-system` (standard placement)
+- Talos does not serve a fully trusted kubelet TLS cert by default — add `--kubelet-insecure-tls` arg or configure proper cert verification via Talos machine config
+
+**Dependencies:** none beyond a running cluster.
+
+---
+
+### Grafana
+
+Deploy Grafana as a follow-up to kube-prometheus-stack. Grafana is currently disabled in the kube-prometheus-stack HelmRelease (`grafana.enabled: false`) to keep the initial deployment scope small.
+
+**Deployment notes:**
+- Enable via `grafana.enabled: true` in `kubernetes/apps/observability/kube-prometheus-stack/app/helm/values.yaml`, or deploy as a standalone chart with Prometheus as a data source
+- Add a Longhorn PVC for dashboard persistence
+- Wire the admin password via ExternalSecret from 1Password
+- HTTPRoute on `envoy-internal` (LAN-only)
+- Pre-built dashboards exist for Longhorn, Flux, and node-exporter in the kube-prometheus-stack chart (`forceDeployDashboards: true` once Grafana is enabled)
+
+**Dependencies:** kube-prometheus-stack ✅
+
+---
+
+### Alertmanager Receiver
+
+Wire an Alertmanager notification receiver so cluster alerts reach a human. Alertmanager is deployed and running; it currently has no routes configured so all alerts are silently dropped.
 
 **Alerting rules to add at minimum:**
-- `kube_pod_status_phase{phase=~"Failed|Unknown"} > 0` — stale pod detection (the gap identified during the PSA incident)
+- `kube_pod_status_phase{phase=~"Failed|Unknown"} > 0` — stale pod accumulation
 - `kube_helmrelease_ready == 0` — Flux HelmRelease degraded
-- `node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.15` — disk pressure on storage nodes
-- `longhorn_volume_robustness == 2` — degraded volume (Longhorn metric, requires `serviceMonitor`)
+- `node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.15` — disk pressure
+- `longhorn_volume_robustness == 2` — degraded Longhorn volume
 
-**Rough deployment steps:**
-- Add `prometheus-community` HelmRepository to `kubernetes/flux/meta/repos/helm/`
-- HelmRelease in `kubernetes/apps/monitoring/kube-prometheus-stack/`
-- Longhorn `ServiceMonitor` already supported — enable via `monitoring.enabled: true` in Longhorn values
-- Alertmanager receiver config (Discord webhook or SMTP) via ExternalSecret from 1Password
+**Deployment notes:**
+- Receiver options: Discord webhook, SMTP, or Pushover (archive precedent)
+- Receiver credentials via ExternalSecret from 1Password (ESO already running)
+- Add `alertmanager.config` to `helm/values.yaml` with routes + receiver; keep the secret itself in 1Password
 
-**Dependencies:**
-- `cert-manager` — ✅ already running (needed for webhook TLS)
-- `external-secrets` + `onepassword-connect` — ✅ already running; alertmanager receiver credentials can be wired immediately via ExternalSecret
-- Longhorn — ✅ already running (enables `ServiceMonitor` integration immediately)
-
-**Resource note:** kube-prometheus-stack is the most resource-intensive item on this roadmap. Prometheus default retention is 10 days in-memory + on-disk. Use a Longhorn PVC for Prometheus storage (`longhorn-retain` StorageClass) and size the retention window conservatively for a 3-node cluster.
+**Dependencies:** kube-prometheus-stack ✅, onepassword-connect ✅
 
 ---
 
@@ -229,3 +252,4 @@ reviewable in PRs and can be enabled/disabled without touching the root config.
 | Cloudflare Tunnel (cloudflared)        | 2-replica HA deployment in `network` namespace; `*.vwn.io` + `vwn.io` → `envoy-external`; token via ExternalSecret from 1Password |
 | Flux GitHub Webhook Receiver           | `flux-receiver` Kustomization in `flux-system`; ExternalSecret token from 1Password; HTTPRoute on `envoy-external`; GitHub webhook configured — reconcile latency ~5 min → seconds |
 | ExternalDNS (Split-DNS)                | `external-dns-cloudflare` (watches `envoy-external`, `--cloudflare-proxied`, `txtOwnerId: k8s`) + `external-dns-unifi` (webhook sidecar, watches all gateways + services, `txtOwnerId: k8s-internal`); shared OCIRepository `ghcr.io/home-operations/charts-mirror/external-dns` v1.21.1; CF token mapped from `API_TOKEN` → `CF_API_TOKEN` via ESO `data[]` |
+| kube-prometheus-stack                  | Prometheus + Alertmanager in `observability` namespace; 20 Gi + 1 Gi Longhorn PVCs; node-exporter on all 3 nodes; full-cluster scraping (`*SelectorNilUsesHelmValues: false`); HTTPRoutes on `envoy-internal`; Grafana + receiver deferred |
