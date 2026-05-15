@@ -15,4 +15,3 @@ resources:
   - ./spegel.yaml
   - ./tuppr.yaml
   - ./kube-prometheus-stack.yaml
-  - ./metrics-server.yaml
