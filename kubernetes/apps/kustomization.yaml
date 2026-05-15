@@ -10,4 +10,5 @@ resources:
   - ./longhorn-system
   - ./network
   - ./openebs
+  - ./observability
   - ./system-upgrade

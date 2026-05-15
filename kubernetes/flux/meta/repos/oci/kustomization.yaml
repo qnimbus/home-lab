@@ -14,3 +14,4 @@ resources:
   - ./openebs.yaml
   - ./spegel.yaml
   - ./tuppr.yaml
+  - ./kube-prometheus-stack.yaml

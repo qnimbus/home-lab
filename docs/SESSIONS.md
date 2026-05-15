@@ -4,6 +4,49 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-15 — `kube-prometheus-stack`
+
+### Goal
+Deploy kube-prometheus-stack to provide cluster-wide observability: Prometheus metrics, Alertmanager routing, and Grafana dashboards, with alerting rules for pod failures, HelmRelease health, disk pressure, and Longhorn replica robustness.
+
+### What we did
+- Reviewed ROADMAP; identified kube-prometheus-stack as highest-value unblocked item (all deps live: cert-manager, ESO+1Password, Longhorn)
+- Entered plan mode; launched two parallel Explore agents — one to read both reference implementations (`home-ops.old` v75.10.0 and `bykaj` v85.0.2) in full, one to map current cluster patterns (OCI repos, app structure, ExternalSecret format, cluster variables)
+- Confirmed user decisions: skip Grafana (follow-up session), skip Alertmanager receiver (follow-up session), namespace `observability` (user override from ROADMAP's `monitoring`)
+- Read `envoy-gateway/config/gateway.yaml` to confirm `envoy-internal` listener section name is `https` and `allowedRoutes.namespaces.from: All`
+- Verified `dependsOn` target names (`longhorn`, `onepassword-store`) live in cluster before writing ks.yaml
+- Created OCIRepository in `flux/meta/repos/oci/` (cluster convention) rather than per-app dir as both references do
+- Created explicit HTTPRoute resources (not chart-built-in Gateway API support) to avoid version-specific values schema dependency; backends target `kube-prometheus-stack-prometheus:9090` and `kube-prometheus-stack-alertmanager:9093`
+- Set five `*SelectorNilUsesHelmValues: false` flags so Prometheus discovers ServiceMonitors/PodMonitors across all namespaces (not just own release)
+- Added `monitoring.enabled: true` to Longhorn values so Longhorn metrics are scraped as soon as Prometheus comes up
+- Added `node-role.kubernetes.io/control-plane: NoSchedule` tolerations to all non-DaemonSet components (prometheus, alertmanager, prometheusOperator, kube-state-metrics)
+- Disabled `kubeProxy` (Cilium replacement) and `kubeEtcd` (Talos etcd requires additional scrape config)
+- Changes unstaged — session closed before `/git-stage`
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/kube-prometheus-stack.yaml` | Created — OCIRepository `ghcr.io/prometheus-community/charts/kube-prometheus-stack` pinned to v75.10.0 |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added `./kube-prometheus-stack.yaml` |
+| `kubernetes/apps/kustomization.yaml` | Added `./observability` |
+| `kubernetes/apps/observability/kustomization.yaml` | Created — namespace entry pointing to ks.yaml |
+| `kubernetes/apps/observability/kube-prometheus-stack/ks.yaml` | Created — Flux Kustomization; dependsOn longhorn + onepassword-store; healthCheck on HelmRelease |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/namespace.yaml` | Created — `observability` Namespace |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/kustomization.yaml` | Created — configMapGenerator for values; resources: namespace, helmrelease, httproute |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/helmrelease.yaml` | Created — HelmRelease via `chartRef` to OCIRepository; valuesFrom ConfigMap |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/helm/values.yaml` | Created — grafana/kubeProxy/kubeEtcd disabled; all-namespace selectors; Longhorn PVCs (20Gi Prometheus, 1Gi AM); CP tolerations |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/httproute.yaml` | Created — HTTPRoutes for `prometheus.${CLUSTER_DOMAIN}` and `alertmanager.${CLUSTER_DOMAIN}` on envoy-internal |
+| `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml` | Added `monitoring.enabled: true` to enable Longhorn ServiceMonitor scraping |
+
+### Key decisions
+- **`observability` namespace** — user override; ROADMAP said `monitoring` but both reference implementations use `observability`
+- **No Alertmanager receiver** — stack deploys functional but silent; receiver (Discord or SMTP) wired in a follow-up session once the stack proves stable
+- **Grafana disabled** — both references disable it in the stack and deploy it separately; avoids adding a third PVC and admin-secret complexity to this rollout
+- **Explicit HTTPRoutes instead of chart-built-in Gateway API** — the chart's `route:` values schema varies by version; explicit resources are transparent and version-independent
+- **OCIRepository in `flux/meta/repos/oci/`** — both references put it per-app; cluster convention is shared source registry regardless of single vs. multi-consumer
+
+---
+
 ## 2026-05-14 — `external-dns-split`
 
 ### Goal

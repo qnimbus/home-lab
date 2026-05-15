@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-15 | `kube-prometheus-stack` | kube-prometheus-stack: Prometheus+AM in observability, Longhorn PVCs, envoy-internal routes, full-cluster scraping |
 > | 2026-05-14 | `external-dns-split` | Deployed ExternalDNS split-DNS: cloudflare instance (envoy-external, proxied, crd) + unifi webhook instance (all gateways, split-horizon LAN DNS); shared OCIRepository v1.21.1 |
 > | 2026-05-14 | `flux-webhook-receiver` | Deployed Flux GitHub webhook receiver; separate Kustomization for substitution; ExternalSecret token; fixed Cloudflare DNS proxy; reconcile latency ~5 min → seconds |
 > | 2026-05-14 | `cert-promotion-cloudflared` | Promoted cert staging→production (R13); deployed cloudflared 2-replica tunnel routing *.vwn.io to envoy-external |
@@ -11,7 +12,6 @@
 > | 2026-05-14 | `mcp-rbac-expansion` | Added 8 missing CRD API groups to MCP viewer ClusterRole; switched to wildcard resources per group; fixed wrong tuppr API group |
 > | 2026-05-14 | `global-helmrelease-defaults` | Added nested HelmRelease defaults + Kustomization timing patches to cluster-apps; removed redundant timeout/retryInterval from 12 child ks.yaml files |
 > | 2026-05-14 | `roadmap-cleanup` | Audited ROADMAP live vs cluster; moved ESO+1Password Connect and cluster-vars substitution to Completed; updated dependency chain |
-> | 2026-05-14 | `cluster-issuers-debug` | Diagnosed ClusterIssuers stuck on TODO placeholders; implemented cluster-var substitution (cluster-vars Kustomization + SOPS Secret); fixed ACME email+domain |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

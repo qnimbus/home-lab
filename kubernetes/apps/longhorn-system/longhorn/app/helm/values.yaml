@@ -91,5 +91,8 @@ longhornInstanceManager:
 longhornUI:
   replicas: 1
 
+monitoring:
+  enabled: true
+
 preUpgradeChecker:
   jobEnabled: false
