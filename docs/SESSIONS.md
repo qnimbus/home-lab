@@ -4,6 +4,39 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-15 — `metrics-server`
+
+### Goal
+Deploy metrics-server to provide pod and node resource metrics (CPU/memory) required for HPA and `kubectl top`.
+
+### What we did
+- Researched the archive reference (`/.archive/kubernetes/apps/kube-system/metrics-server/`) to understand the existing pattern — HelmRepository source, chart v3.12.2, four Talos-specific kubelet args, `serviceMonitor.enabled: true`
+- Verified the reference's observability directory contains no metrics-server entry (it lives in `kube-system`, not `observability`)
+- Confirmed chart v3.13.0 is latest via the Helm index at `https://kubernetes-sigs.github.io/metrics-server/index.yaml`
+- Chose OCIRepository over HelmRepository to match cluster convention established by kube-prometheus-stack
+- Created all deployment files following the `configMapGenerator` + `valuesFrom` + `kustomizeconfig.yaml` pattern matching spegel/coredns
+- Added `substitution.flux.home.arpa/disabled: "true"` to ks.yaml (system chart, no cluster variable substitution needed)
+- Enabled `serviceMonitor.enabled: true` so Prometheus scrapes metrics-server's own `/metrics` (CRDs already live from kube-prometheus-stack)
+- No `dependsOn` needed — ROADMAP confirmed no hard dependencies beyond a running cluster
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/metrics-server.yaml` | Created — OCIRepository `ghcr.io/kubernetes-sigs/charts/metrics-server` pinned to v3.13.0 |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added `./metrics-server.yaml` |
+| `kubernetes/apps/kube-system/metrics-server/ks.yaml` | Created — Flux Kustomization; substitution disabled; healthCheck on HelmRelease |
+| `kubernetes/apps/kube-system/metrics-server/app/helmrelease.yaml` | Created — HelmRelease via `chartRef`; `valuesFrom` ConfigMap |
+| `kubernetes/apps/kube-system/metrics-server/app/kustomization.yaml` | Created — `configMapGenerator` + `kustomizeconfig.yaml` wiring |
+| `kubernetes/apps/kube-system/metrics-server/app/helm/kustomizeconfig.yaml` | Created — disables hash suffix, propagates name to `spec.valuesFrom` |
+| `kubernetes/apps/kube-system/metrics-server/app/helm/values.yaml` | Created — 4 Talos kubelet args; serviceMonitor; resource requests |
+| `kubernetes/apps/kube-system/kustomization.yaml` | Added `./metrics-server/ks.yaml` |
+
+### Key decisions
+- **OCIRepository over HelmRepository** — archive used `https://kubernetes-sigs.github.io/metrics-server` (HelmRepository); chose OCI (`ghcr.io/kubernetes-sigs/charts/metrics-server`) for consistency with every other post-bootstrap chart in this cluster
+- **No `dependsOn`** — serviceMonitor CRD already exists from kube-prometheus-stack; ROADMAP explicitly lists no hard deps; adding one would be a bootstrap-order constraint with no operational benefit
+
+---
+
 ## 2026-05-15 — `kube-prometheus-stack`
 
 ### Goal
