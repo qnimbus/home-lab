@@ -150,6 +150,69 @@ Wire an Alertmanager notification receiver so cluster alerts reach a human. Aler
 
 ---
 
+### Pod Topology: Scheduling Concentration on cp-03
+
+The cluster has a structural imbalance: **41 pods run on cp-03 vs. 18/16 on cp-01/cp-02**. This
+affects both stateless controllers and stateful workloads with Longhorn PVCs.
+
+#### Root cause
+
+cp-03 (AMD 32c/92 GB) wins almost every scheduling contest against the two M920Qs (i5-8500T/64 GB).
+Because no `topologySpreadConstraints` were set at deploy time, all major controllers — Flux,
+ESO, cert-manager, kube-prometheus-stack — landed there. Longhorn's `WaitForFirstConsumer`
+binding then pins each PVC to the node where its pod was first scheduled, making stateful
+workloads permanently sticky.
+
+**Current concentration risk:**
+- Prometheus (20 GiB PVC) and Alertmanager (1 GiB PVC) are both attached to cp-03, and both
+  pods run there. A cp-03 outage takes out observability entirely — Longhorn can only attach a
+  volume to one node at a time, so there is no automatic failover.
+- Flux controllers, ESO, and cert-manager all run on cp-03. A cp-03 outage degrades GitOps
+  reconciliation, secret syncing, and certificate renewal simultaneously.
+
+#### Stateless workloads (fixable without disruption)
+
+For pods with no PVCs, `topologySpreadConstraints` can be added at any time — the scheduler will
+spread replacements on the next rollout. Target: Flux controllers (`helm-controller`,
+`kube-controller`, `source-controller`, `notification-controller`), ESO controllers, and
+cert-manager.
+
+Example constraint to add to each Deployment (spreads by hostname, allows up to 1 skew):
+
+```yaml
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: <app-name>
+```
+
+For Flux and ESO, these are set via `values.yaml` in the HelmRelease — check the chart's
+`controller.topologySpreadConstraints` key.
+
+#### Stateful workloads (Prometheus/Alertmanager — accept current state)
+
+Migrating existing Longhorn volumes between nodes requires VolSync or a manual backup/restore
+cycle — not worth the disruption for a homelab. The practical path:
+
+1. **Accept current placement** for existing Prometheus + Alertmanager volumes (both on cp-03).
+2. **When Grafana is deployed**, configure its PVC + pod to land on cp-01 or cp-02 using
+   `nodeAffinity` or a `topologySpreadConstraint` scoped to the `observability` namespace.
+3. **For all future stateful deployments**, set `topologySpreadConstraints` *before* the PVCs
+   are created — once `WaitForFirstConsumer` binds the volume to a node, the pod is sticky.
+
+#### Priority
+
+- Low urgency for a 3-node homelab — cp-03 has capacity headroom.
+- Medium urgency once more stateful workloads are added (databases, media apps): if they all
+  land on cp-03, a single-node failure cascades badly.
+- Fix stateless controllers first (low risk, immediate improvement); defer stateful volume
+  migration until VolSync is deployed.
+
+---
+
 ### Talos Config, Image Extensions & Patch Audit
 
 Review the current Talos configuration end-to-end to identify missing extensions, suboptimal patches, and any node-specific tuning gaps. The schematic currently ships `intel-ucode` and `amd-ucode` with several extensions commented out; patches exist for kubelet, network, sysctls, NFS defaults, and machine features — but these were written incrementally and have not been audited holistically.
