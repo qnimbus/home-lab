@@ -7,9 +7,6 @@ metadata:
   namespace: observability
 spec:
   interval: 1h
-  # Overrides the cluster-apps global default of 10m: chart installs ~40 CRDs, two StatefulSets
-  # with Longhorn PVC provisioning, and a node-exporter DaemonSet — Helm --wait needs extra time.
-  timeout: 15m
   chartRef:
     kind: OCIRepository
     name: kube-prometheus-stack

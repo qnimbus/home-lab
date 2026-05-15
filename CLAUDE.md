@@ -208,7 +208,7 @@ install:
   remediation:
     retries: 3
     remediateLastFailure: true
-timeout: 10m
+timeout: 15m
 upgrade:
   cleanupOnFail: true
   crds: CreateReplace
@@ -218,8 +218,14 @@ upgrade:
 ```
 
 `crds: CreateReplace` ensures CRD schemas are updated on chart upgrades (Helm's default is to
-never update CRDs). Any per-chart declaration of these fields is harmless — they merge
-idempotently — but redundant.
+never update CRDs).
+
+**Important — the global patch is the last writer.** Because the patch is injected as a nested
+`spec.patches` entry appended to every child Kustomization, it always runs after any local
+patches. This means **setting `timeout:` (or any other patched field) directly in a HelmRelease
+has no effect** — the global patch overwrites it. To change the timeout cluster-wide, edit
+`kubernetes/flux/cluster/ks.yaml`. For per-chart overrides, see the `timeout` entry in
+[QA.md](docs/QA.md).
 
 ### Community research before new deployments
 

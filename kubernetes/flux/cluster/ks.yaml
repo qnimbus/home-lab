@@ -120,7 +120,7 @@ spec:
                     remediation:
                       retries: 3
                       remediateLastFailure: true
-                  timeout: 10m
+                  timeout: 15m
                   upgrade:
                     cleanupOnFail: true
                     crds: CreateReplace

@@ -20,6 +20,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 - [Why add `crds: CreateReplace` to operator HelmReleases?](#why-add-crds-createreplace-to-operator-helmreleases)
 - [Why does `charts/tuppr` not support cosign, when `charts-mirror/openebs` does?](#why-does-ghcriohome-operationschartstuppr-not-support-cosign-verification-when-ghcriohome-operationscharts-mirroropenebs-does)
 - [Why does `valuesFrom` require both a `configMapGenerator` and a `kustomizeconfig.yaml`?](#why-does-every-app-that-uses-valuesfrom-need-both-a-configmapgenerator-and-a-kustomizeconfigyaml)
+- [Can a HelmRelease override `timeout` (or other fields set by the global `cluster-apps` patch)?](#can-a-helmrelease-override-timeout-or-other-fields-set-by-the-global-cluster-apps-patch)
 
 **Kubernetes Workloads**
 - [A healthy Deployment shows both `Available` and `Progressing` — is something wrong?](#a-healthy-deployment-shows-both-available-and-progressing--is-something-wrong)
@@ -271,6 +272,77 @@ nameReference:
 ```
 
 **Why bother with the hash at all?** It makes values changes self-propagating in GitOps — Kustomize produces a new ConfigMap name, Flux detects the HelmRelease spec changed, and triggers a Helm upgrade automatically. Without the hash, editing `values.yaml` and pushing would *not* trigger a reconcile because the HelmRelease manifest itself wouldn't change.
+
+---
+
+### Can a HelmRelease override `timeout` (or other fields set by the global `cluster-apps` patch)?
+
+**Short answer:** No — not from within the HelmRelease itself. The global patch always wins because it is injected as the last patch in the rendering chain. To change the timeout for all charts, edit `kubernetes/flux/cluster/ks.yaml`. For a single chart, see the options below.
+
+**Why the HelmRelease's own `timeout:` loses:**
+
+The `cluster-apps` Kustomization injects a nested `spec.patches` entry into every child Kustomization:
+
+```
+cluster-apps patches: →  child Kustomization spec.patches: [
+                              <any patches from ks.yaml>,   ← applied first
+                              <global HelmRelease patch>     ← appended last, always wins
+                          ]
+```
+
+Kustomize strategic merge patches replace scalar fields, so the last entry to touch `timeout` wins. The global patch is always last. Setting `timeout: 15m` in `helmrelease.yaml` or in `app/kustomization.yaml` is silently overwritten.
+
+**Options for a per-chart timeout:**
+
+**Option A — Change the global default** (`kubernetes/flux/cluster/ks.yaml`)
+Simplest. Touch one file. Appropriate when the existing global value is too conservative for a specific workload and raising it is safe for all charts (e.g., bumping `10m → 15m` to accommodate kube-prometheus-stack's CRD + PVC provisioning time).
+
+**Option B — Add a per-Kustomization override in `cluster-apps/ks.yaml`**
+Add a second `patches:` block that targets only the specific Kustomization and injects its own HelmRelease patch *after* the global one:
+
+```yaml
+# kubernetes/flux/cluster/ks.yaml — appended after the global HelmRelease defaults patch
+- patch: |-
+    apiVersion: kustomize.toolkit.fluxcd.io/v1
+    kind: Kustomization
+    metadata:
+      name: kube-prometheus-stack
+    spec:
+      patches:
+        - patch: |-
+            apiVersion: helm.toolkit.fluxcd.io/v2
+            kind: HelmRelease
+            metadata:
+              name: kube-prometheus-stack
+            spec:
+              timeout: 20m
+          target:
+            kind: HelmRelease
+            name: kube-prometheus-stack
+  target:
+    kind: Kustomization
+    name: kube-prometheus-stack
+```
+
+Because this entry appears after the global one in `cluster-apps`' `patches:` list, it is appended after in the child's effective patch list and runs last — so `20m` wins. Works correctly, but centralises per-chart knowledge in the cluster-level file.
+
+**Option C — Restructure the global patch to use substitution variables** *(recommended for future refactor)*
+Change the global patch to use a Flux postBuild variable with a default:
+
+```yaml
+# In the global HelmRelease patch (kubernetes/flux/cluster/ks.yaml):
+timeout: "${HELM_TIMEOUT:-15m}"
+```
+
+Then any child Kustomization that needs a different value sets it via its `postBuild.substituteFrom` source (the `cluster-secrets` Secret or a per-app ConfigMap):
+
+```yaml
+# kubernetes/flux/vars/cluster-settings.yaml (or a per-app override)
+data:
+  HELM_TIMEOUT: "20m"
+```
+
+This keeps per-chart overrides local to the chart's own directory and avoids touching the cluster-level file. It requires: (1) changing the global patch to use the substitution syntax, and (2) each chart that needs a non-default value adding `HELM_TIMEOUT` to its substitution source. The global `cluster-apps` variable substitution patch already runs before the HelmRelease defaults patch, so the variable is resolved correctly.
 
 ---
 
