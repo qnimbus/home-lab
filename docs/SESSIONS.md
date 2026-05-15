@@ -4,6 +4,71 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-15 — `cluster-health-audit`
+
+### Goal
+Perform a thorough cluster health audit via the cluster-doctor agent, explore FreeLens/Kubernetes concepts, and document any actionable findings.
+
+### What we did
+- Explained FreeLens Managed Fields panel: Server-Side Apply field ownership model, how `helm-controller` and `kube-controller-manager` split ownership, and why this is the mechanism behind GitOps drift detection
+- Ran cluster-doctor for a full cluster inspection (59 tool calls across all namespaces): confirmed 26/26 Kustomizations, 17/17 HelmReleases, 3/3 nodes all healthy; no PVCs unbound, no pods in error
+- Reviewed all 20 findings: key flags — Flux v2.6.4 outdated (v2.8.7 available), Prometheus + Alertmanager both scheduled on cp-03 (concentration risk), pod scheduling skew (41 pods on cp-03 vs 18/16 on others), cp-02 still has no storage disk
+- Confirmed `longhorn-single` StorageClass `Retain` policy is intentional — the StorageClass comment documents the design rationale explicitly; cluster-doctor finding was a false alarm
+- Confirmed K8s v1.36.1 is an intentional upgrade (not a Renovate pre-release mistake)
+- Discussed whether demoting cp-03 to a worker node would improve scheduling balance — concluded no: collapses 3-node etcd to 2-node (zero fault tolerance), and concentration is resource-driven not role-driven so the skew would persist
+- Added Pod Topology section to ROADMAP.md: root cause (WaitForFirstConsumer + resource asymmetry), stateless fix path (topologySpreadConstraints on Flux/ESO/cert-manager controllers), accept-current-state guidance for existing Prometheus/Alertmanager volumes
+- cluster-doctor auto-updated its CLUSTER-STATE-AUTO block: Talos v1.13.2, K8s v1.36.1, expanded namespace table, corrected storage class table, kube-vip static-pod clarification
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/ROADMAP.md` | Added Pod Topology: Scheduling Concentration on cp-03 section |
+| `.claude/agents/cluster-doctor.md` | Auto-updated CLUSTER-STATE-AUTO: versions, namespace table, storage class table, kube-vip static-pod note |
+
+### Key decisions
+- `longhorn-single` Retain policy is not a bug — the file comment documents it as intentional for apps (e.g. CloudNativePG) that manage irreplaceable data with application-level replication
+- Rejected demoting cp-03 to worker: 2-node etcd has zero fault tolerance (Raft requires majority quorum), and pod concentration would remain since it is driven by resource availability not node role
+- Prometheus/Alertmanager volume stickiness accepted: WaitForFirstConsumer + Longhorn single-attachment makes migration require VolSync; fix forward with topologySpreadConstraints on all future stateful deployments
+
+---
+
+## 2026-05-15 — `cluster-recovery-2026-05-15`
+
+### Goal
+Diagnose and recover from full cluster collapse triggered by the metrics-server OCIRepository misconfiguration, which cascaded into simultaneous loss of Cilium, CoreDNS, Flux, and multiple dependent workloads. Document all findings and lessons learned.
+
+### What we did
+- Diagnosed root cause: OCIRepository pointing at `ghcr.io/kubernetes-sigs/charts/metrics-server` (path does not exist) returned `DENIED`, blocked `cluster-meta` health check, and — after a Kustomization finalizer was bypassed to unblock — triggered a cascade deletion of all `cluster-apps` children including Cilium and CoreDNS
+- Manually reinstalled Cilium via `helm install` (uses `hostNetwork:true`, no CNI needed); verified all three DaemonSet pods Running before proceeding
+- Manually reinstalled CoreDNS via `helm upgrade --install` from OCI; DNS resolution restored for source-controller
+- Cleared stale flux-instance Helm release secrets (`sh.helm.release.v1.flux-instance.v1/v2`) that were holding the release in `uninstalling` state; reinstalled flux-instance via `helm install`; flux-operator deployed all four Flux controllers
+- Recreated `onepassword-connect-secrets` in `external-secrets` namespace (imperative bootstrap secret, NOT managed by ExternalSecrets) via `task bootstrap:onepassword-connect-secret`; this unblocked the entire ExternalSecrets downstream chain
+- Recovered `onepassword-connect` HelmRelease from `Stalled: MissingRollbackTarget` condition: seeded revision 1 via `helm install --no-hooks`, then `flux reconcile helmrelease` to adopt
+- Unblocked Longhorn namespace (`Terminating` for ~3 days): deleted `ValidatingWebhookConfiguration/longhorn-webhook-validator` and `MutatingWebhookConfiguration/longhorn-webhook-mutator` (cluster-scoped, survived namespace deletion), then patched finalizers on all 9 Longhorn CRD object types
+- Ran cluster-doctor agent twice to confirm full recovery: 26/26 Kustomizations True, 17/17 HelmReleases True, 0 pods in error state, 3/3 nodes Ready
+- Fixed the root cause: deleted bad OCIRepository, created `HelmRepository` at `https://kubernetes-sigs.github.io/metrics-server`, updated HelmRelease to use `chart.spec.sourceRef` instead of `chartRef`
+- Documented root cause, recovery procedures, and prevention rules in QA.md (6 new entries) and CLUSTER.md (7 new troubleshooting rows, updated Secrets table)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/metrics-server.yaml` | Deleted — OCIRepository pointed at non-existent path |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Removed `./metrics-server.yaml` reference |
+| `kubernetes/flux/meta/repos/helm/metrics-server.yaml` | Created — HelmRepository at `https://kubernetes-sigs.github.io/metrics-server` |
+| `kubernetes/flux/meta/repos/helm/kustomization.yaml` | Added `./metrics-server.yaml` |
+| `kubernetes/apps/kube-system/metrics-server/app/helmrelease.yaml` | Changed from `chartRef` (OCIRepository) to `chart.spec.sourceRef` (HelmRepository) |
+| `docs/QA.md` | Added 6 new entries: Flux workflow overview + 4 Cluster Recovery entries + 2 GitOps source-type entries |
+| `docs/CLUSTER.md` | Added 7 Troubleshooting table rows; added `onepassword-connect-secrets` to Secrets table |
+
+### Key decisions
+- **Manual helm install order is mandatory:** Cilium → CoreDNS → flux-instance; skipping or reordering fails because each step depends on the previous one being healthy
+- **Longhorn webhooks must be deleted before patching finalizers:** `ValidatingWebhookConfiguration` and `MutatingWebhookConfiguration` are cluster-scoped and survive namespace deletion; they block every CRD patch with `failurePolicy: Fail`
+- **`MissingRollbackTarget` recovery requires seeding revision 1:** The `Stalled` condition does not auto-retry; only seeding a valid revision via direct `helm install` + `flux reconcile helmrelease` breaks the deadlock
+- **`onepassword-connect-secrets` is a bootstrap secret, not GitOps-managed:** It is the credential for the secret manager itself; it cannot be managed by ExternalSecrets; always recreate via `task bootstrap:onepassword-connect-secret` after cluster recovery
+- **Never bypass a Kustomization finalizer to unblock reconciliation:** The correct fix is to resolve the source error (DENIED registry → wrong source type); bypassing the finalizer orphans all managed resources and can cascade to delete Cilium/CoreDNS
+
+---
+
 ## 2026-05-15 — `metrics-server`
 
 ### Goal

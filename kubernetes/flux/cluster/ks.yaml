@@ -118,7 +118,7 @@ spec:
                   install:
                     crds: CreateReplace
                     remediation:
-                      retries: 3
+                      retries: -1
                       remediateLastFailure: true
                   timeout: 15m
                   upgrade:
@@ -126,7 +126,7 @@ spec:
                     crds: CreateReplace
                     remediation:
                       remediateLastFailure: true
-                      retries: 2
+                      retries: 3
               target:
                 group: helm.toolkit.fluxcd.io
                 kind: HelmRelease

@@ -14,13 +14,20 @@ Concise answers to questions that came up during cluster operation. Each entry c
 
 **Cluster Recovery / Unclean Shutdown**
 - [After a simultaneous power-off, the dashboard shows ~90 failed pods — but the cluster looks healthy. What happened?](#after-a-simultaneous-power-off-of-all-nodes-the-dashboard-shows-90-failed-pods-and-a-failed-deployment--but-the-cluster-looks-healthy-what-happened)
+- [How do I recover when Cilium and CoreDNS are both gone simultaneously?](#how-do-i-recover-when-cilium-and-coredns-are-both-gone-simultaneously)
+- [A HelmRelease is Stalled with `MissingRollbackTarget` — how do I recover?](#a-helmrelease-is-stalled-with-missingrollbacktarget--how-do-i-recover)
+- [Longhorn finalizer patches fail with "failed calling webhook" — why?](#longhorn-finalizer-patches-fail-with-failed-calling-webhook--why)
+- [flux-instance is stuck uninstalling and Flux CRDs have disappeared — how do I recover?](#flux-instance-is-stuck-uninstalling-and-flux-crds-have-disappeared--how-do-i-recover)
 
 **GitOps / Flux**
+- [How does the full Flux GitOps workflow fit together — what are the moving parts and how do they relate?](#how-does-the-full-flux-gitops-workflow-fit-together--what-are-the-moving-parts-and-how-do-they-relate)
 - [When deploying a chart that installs CRDs, why must the CRD instances live in a separate Kustomization?](#when-deploying-a-chart-that-installs-crds-why-must-the-crd-instances-live-in-a-separate-kustomization)
 - [Why add `crds: CreateReplace` to operator HelmReleases?](#why-add-crds-createreplace-to-operator-helmreleases)
 - [Why does `charts/tuppr` not support cosign, when `charts-mirror/openebs` does?](#why-does-ghcriohome-operationschartstuppr-not-support-cosign-verification-when-ghcriohome-operationscharts-mirroropenebs-does)
 - [Why does `valuesFrom` require both a `configMapGenerator` and a `kustomizeconfig.yaml`?](#why-does-every-app-that-uses-valuesfrom-need-both-a-configmapgenerator-and-a-kustomizeconfigyaml)
 - [Can a HelmRelease override `timeout` (or other fields set by the global `cluster-apps` patch)?](#can-a-helmrelease-override-timeout-or-other-fields-set-by-the-global-cluster-apps-patch)
+- [What are the risks of bypassing a Kustomization finalizer, and how should I delete a Flux resource safely?](#what-are-the-risks-of-bypassing-a-kustomization-finalizer-and-how-should-i-delete-a-flux-resource-safely)
+- [How do I choose between HelmRepository and OCIRepository — and what happens if I use the wrong one?](#how-do-i-choose-between-helmrepository-and-ocirepository--and-what-happens-if-i-use-the-wrong-one)
 
 **Kubernetes Workloads**
 - [A healthy Deployment shows both `Available` and `Progressing` — is something wrong?](#a-healthy-deployment-shows-both-available-and-progressing--is-something-wrong)
@@ -166,7 +173,251 @@ Use this instead of the broad `kubectl delete pods -A` sweep when you want an au
 
 ---
 
+### How do I recover when Cilium and CoreDNS are both gone simultaneously?
+
+**Short answer:** Manual `helm install` in this exact order — Cilium first (uses `hostNetwork:true`, needs no CNI), CoreDNS second (needs Cilium), flux-instance third (needs DNS). Flux controllers cannot self-heal because they are regular pods that require a working CNI and DNS.
+
+**Why this can happen:** Bypassing a Kustomization finalizer (patching `finalizers: null`) skips the prune cycle. The Kustomization is immediately deleted from etcd but all managed resources remain as orphans. When Flux later reconciles a fresh Kustomization over the same path it may prune those orphans — including Cilium and CoreDNS — before they can be re-created.
+
+**Recovery sequence:**
+
+**Step 1 — Reinstall Cilium:**
+```bash
+helm install cilium cilium/cilium --version <version> \
+  --namespace kube-system \
+  -f kubernetes/apps/kube-system/cilium/app/helm/values.yaml
+```
+Wait until all Cilium agent pods are `Running` before proceeding — pending pods cannot get network sandboxes until CNI is up.
+
+**Step 2 — Reinstall CoreDNS:**
+```bash
+# CoreDNS is OCI-distributed in this cluster
+helm upgrade --install coredns oci://ghcr.io/coredns/charts/coredns \
+  --version <version> --namespace kube-system \
+  -f kubernetes/apps/kube-system/coredns/app/helm/values.yaml
+```
+Do not use `--wait` here — CoreDNS pods may stay `ContainerCreating` during the Cilium startup window. Verify manually with `kubectl get pods -n kube-system -l app.kubernetes.io/name=coredns`.
+
+**Step 3 — Reinstall flux-instance (if Flux controllers are gone):**
+
+First, clear any stale Helm release secrets holding the release in `uninstalling` state:
+```bash
+kubectl get secrets -n flux-system | grep sh.helm.release.v1.flux-instance
+kubectl delete secret -n flux-system <each-stale-secret>
+```
+Then reinstall:
+```bash
+helm install flux-instance oci://ghcr.io/controlplaneio-fluxcd/charts/flux-instance \
+  --version <version> --namespace flux-system \
+  -f kubernetes/apps/flux-system/flux-instance/app/helm/values.yaml
+```
+flux-operator picks up the fresh Helm release and deploys all four Flux controllers.
+
+**Step 4 — Recreate the onepassword-connect bootstrap secret (if ESO is failing):**
+```bash
+task bootstrap:onepassword-connect-secret
+```
+`onepassword-connect-secrets` in the `external-secrets` namespace is an **imperatively-created bootstrap credential** — it is NOT managed by ExternalSecrets (it is the credential for the secret manager itself). It gets orphaned and deleted during cascade failures and must be recreated manually. Without it, all ExternalSecrets downstream of the `onepassword` ClusterSecretStore fail.
+
+**Step 5 — Let Flux reconcile:**
+```bash
+flux reconcile source git flux-system
+flux reconcile kustomization cluster-apps
+```
+
+**Key constraints:**
+- If `helm install` fails with "cannot reuse a name that is still in use", the release is stuck in a failed or `uninstalling` state — use `helm upgrade --install` or delete the stale Helm release secrets first
+- Current chart versions are pinned in each `app/helmrelease.yaml` file — use the exact same versions to avoid surprise upgrade mechanics
+- Cilium must be running before CoreDNS; CoreDNS must be running before source-controller can clone from GitHub
+
+---
+
+### A HelmRelease is Stalled with `MissingRollbackTarget` — how do I recover?
+
+**Short answer:** `MissingRollbackTarget` means helm-controller wants to roll back but there is no prior Helm revision to roll back to — typically because `cleanupOnFail: true` removed resources from a failed first install. Seed revision 1 via direct `helm install --no-hooks`, then force Flux to adopt it.
+
+**Why it happens:** The global `cluster-apps` HelmRelease defaults include `upgrade.remediation.strategy: rollback` and `cleanupOnFail: true`. When a chart's very first install fails, `cleanupOnFail: true` deletes the resources created during the attempt. helm-controller then tries to remediate via rollback — but there is no prior revision. It sets `Stalled: MissingRollbackTarget` and stops retrying entirely. Unlike the `Failed` condition, `Stalled` does NOT enter the normal retry loop.
+
+**Recovery:**
+```bash
+# 1. Get chart details from the HelmRelease
+kubectl get helmrelease <name> -n <namespace> -o yaml | grep -A8 chart
+
+# 2. For HelmRepository-backed charts: add the repo
+helm repo add <repo-name> <repo-url>
+helm repo update
+
+# 3. Seed revision 1 (--no-hooks avoids admission webhook failures during recovery)
+helm install <release-name> <chart-ref> \
+  --version <version> \
+  --namespace <namespace> \
+  --no-hooks \
+  -f kubernetes/apps/<path>/app/helm/values.yaml
+
+# 4. Force Flux to adopt the existing release
+flux reconcile helmrelease <name> -n <namespace>
+```
+
+After step 4, helm-controller performs an `upgrade` (not install) against revision 1. If the upgrade succeeds, `Stalled` clears and normal reconciliation resumes.
+
+**Note:** `--no-hooks` is safe for recovery when the deployment does not require pre-install hooks. For charts that depend on webhooks from other Helm charts (e.g. cert-manager), omit it and be prepared to resolve webhook errors first.
+
+---
+
+### Longhorn finalizer patches fail with `"Internal error: failed calling webhook"` — why?
+
+**Short answer:** `ValidatingWebhookConfiguration/longhorn-webhook-validator` and `MutatingWebhookConfiguration/longhorn-webhook-mutator` are **cluster-scoped** resources — they survive namespace deletion. They intercept all mutations to Longhorn CRD objects and route them to the Longhorn webhook service, which is gone. Delete both webhook configurations before patching finalizers.
+
+**Why cluster-scoped webhook configs survive:** When Kubernetes terminates a namespace it deletes namespace-scoped resources (pods, services, deployments). Cluster-scoped resources like `ValidatingWebhookConfiguration` and `MutatingWebhookConfiguration` are not owned by any namespace — they remain intact. The Longhorn Helm uninstall may not delete them either if the release was incomplete. With `failurePolicy: Fail`, every CRD mutation triggers a call to the dead service and fails immediately.
+
+**Full cleanup procedure:**
+```bash
+# Step 1: Remove the cluster-scoped webhook interceptors
+kubectl delete validatingwebhookconfiguration longhorn-webhook-validator
+kubectl delete mutatingwebhookconfiguration longhorn-webhook-mutator
+
+# Step 2: Clear finalizers on all Longhorn CRD object types (9 types)
+for res in volumes engines replicas instancemanagers backuptargets engineimages nodes volumeattachments; do
+  kubectl get ${res}.longhorn.io -n longhorn-system -o name 2>/dev/null | \
+    xargs -r -I{} kubectl patch {} -n longhorn-system \
+    -p '{"metadata":{"finalizers":[]}}' --type=merge
+done
+
+# Step 3: Clear finalizers on PVCs in any namespace that had Longhorn volumes
+for pvc in $(kubectl get pvc -n <namespace> -o name); do
+  kubectl patch $pvc -n <namespace> -p '{"metadata":{"finalizers":[]}}' --type=merge
+done
+```
+
+To discover all Longhorn CRD types before starting:
+```bash
+kubectl api-resources --verbs=list --namespaced -o name | grep longhorn
+```
+
+After the webhooks are removed and finalizers are cleared, the `longhorn-system` namespace terminates within a few minutes.
+
+---
+
+### flux-instance is stuck in `uninstalling` state and Flux CRDs have disappeared — how do I recover?
+
+**Short answer:** The `FluxInstance` CR is itself a Flux CRD — when flux-instance uninstalls itself, the CRD disappears, taking the FluxInstance object with it and stopping all controllers. Delete the stale Helm release secrets that are holding the release in `uninstalling` state, then reinstall via `helm install`.
+
+**Why Helm secrets block recovery:** When a Helm uninstall is interrupted mid-way, Helm writes a release secret with `status: uninstalling`. Any subsequent `helm install <same-name>` fails with "cannot reuse a name that is still in use" because Helm sees the stale secret. The old FluxInstance CR is gone (CRD was deleted), and there is no controller left to finish the uninstall and clean up the secret.
+
+**Recovery:**
+```bash
+# 1. List stale Helm release secrets
+kubectl get secrets -n flux-system | grep sh.helm.release.v1.flux-instance
+
+# 2. Delete each one
+kubectl delete secret -n flux-system \
+  sh.helm.release.v1.flux-instance.v1 \
+  sh.helm.release.v1.flux-instance.v2   # repeat for any additional versions
+
+# 3. Reinstall
+helm install flux-instance oci://ghcr.io/controlplaneio-fluxcd/charts/flux-instance \
+  --version <version> --namespace flux-system \
+  -f kubernetes/apps/flux-system/flux-instance/app/helm/values.yaml
+```
+
+flux-operator detects the fresh Helm release, verifies its FluxInstance CR, and deploys all four Flux controllers. Once source-controller is running it can clone the repo and the reconcile tree resumes.
+
+---
+
 ## GitOps / Flux
+
+### How does the full Flux GitOps workflow fit together — what are the moving parts and how do they relate?
+
+**Short answer:** Five object types across four controllers form a pipeline: `GitRepository` feeds `Kustomization`, which creates `HelmRepository`/`OCIRepository` sources and more `Kustomization` children, which create `HelmRelease` objects, which helm-controller turns into running Helm releases.
+
+**The four controllers and what each owns:**
+
+| Controller | Watches | Does |
+|---|---|---|
+| `source-controller` | `GitRepository`, `HelmRepository`, `OCIRepository`, `HelmChart` | Clones repos, fetches chart indexes/OCI manifests, stores versioned artifacts locally |
+| `kustomize-controller` | `Kustomization` | Renders Kustomize overlays against a source artifact and applies/prunes resources |
+| `helm-controller` | `HelmRelease` | Runs `helm install`/`upgrade`/`rollback` using a `HelmChart` artifact |
+| `notification-controller` | `Alert`, `Receiver` | Dispatches events to external systems (Slack, GitHub webhooks) |
+
+**The object graph — root to leaf:**
+
+```
+GitRepository/flux-system  (ssh://github.com/qnimbus/home-lab)
+│
+└── Kustomization/flux-system  (path: ./kubernetes/flux/cluster/)
+    │   [managed by flux-operator; applies every commit]
+    │
+    ├── Kustomization/cluster-meta  (path: ./kubernetes/flux/meta/)
+    │       Creates: HelmRepository objects (cilium, longhorn, …)
+    │                OCIRepository objects (coredns, cert-manager, …)
+    │       source-controller fetches each index/manifest → artifact
+    │
+    ├── Kustomization/cluster-vars  (path: ./kubernetes/flux/vars/)
+    │       Creates: ConfigMaps/Secrets with cluster-wide substitution vars
+    │       (cluster name, domain, node IPs, etc.)
+    │
+    └── Kustomization/cluster-apps  (path: ./kubernetes/apps/, dependsOn: cluster-meta)
+            Injects global HelmRelease defaults via spec.patches (timeout, crds, retries)
+            │
+            ├── Kustomization/cilium → Kustomization/cilium-config
+            ├── Kustomization/coredns
+            ├── Kustomization/external-secrets → onepassword-connect → onepassword-store
+            ├── Kustomization/cert-manager → cluster-issuers
+            ├── Kustomization/envoy-gateway → envoy-gateway-config
+            ├── Kustomization/longhorn → kube-prometheus-stack
+            ├── Kustomization/metrics-server
+            ├── Kustomization/flux-operator → flux-instance, flux-receiver
+            ├── Kustomization/tuppr → tuppr-upgrade
+            └── … (one per app)
+                    Each creates:
+                      - HelmRelease (the chart deployment spec)
+                      - ConfigMap (generated from helm/values.yaml via configMapGenerator)
+                      - Namespace, RBAC, ExternalSecret, etc. as needed
+```
+
+**What source-controller does behind the scenes:**
+
+When helm-controller sees a `HelmRelease` referencing a `HelmRepository`, source-controller silently creates a `HelmChart` object (not visible in the normal `kubectl get` flow). `HelmChart` causes source-controller to download the actual `.tgz` chart tarball from the repo index and store a versioned artifact. helm-controller then reads that artifact to run its Helm operations. `OCIRepository`-backed HelmReleases use `chartRef:` instead of `chart.spec.sourceRef:`, which skips the intermediate `HelmChart` step — source-controller pulls the OCI layer directly.
+
+**The reconciliation loop (one full cycle):**
+
+```
+1. You push a commit to GitHub
+2. source-controller polls GitRepository at its interval (default: 1h; webhook: seconds)
+   → detects new SHA → clones → stores artifact tagged with SHA
+3. kustomize-controller sees GitRepository artifact updated
+   → re-renders ./kubernetes/flux/cluster/
+   → applies cluster-meta, cluster-apps, cluster-vars (creates/patches/prunes)
+4. cluster-meta reconciles → HelmRepository/OCIRepository objects exist
+   → source-controller fetches updated chart indexes and OCI manifests
+5. cluster-apps reconciles → all per-app Kustomizations exist with dependsOn ordering
+6. Each per-app Kustomization reconciles (in dependency order):
+   → applies HelmRelease + ConfigMap + supporting resources
+7. helm-controller sees HelmRelease created/changed
+   → source-controller has already fetched the chart (HelmChart artifact ready)
+   → runs helm upgrade (or install if first time)
+   → updates HelmRelease .status.conditions with result
+8. Kustomization health checks poll the HelmRelease ready condition
+   → once True, Kustomization becomes True
+   → unblocks any dependsOn children
+```
+
+**The `valuesFrom` / `configMapGenerator` pattern:**
+
+Each app's values live in `app/helm/values.yaml`. Rather than inline them into the HelmRelease, kustomize-controller generates a ConfigMap from that file using `configMapGenerator`. The ConfigMap name gets a content-hash suffix (e.g. `cilium-values-6bk9f2t`), which changes whenever `values.yaml` changes — causing Flux to automatically trigger a Helm upgrade on the next reconcile. The `helm/kustomizeconfig.yaml` file tells Kustomize to rewrite the HelmRelease's `spec.valuesFrom[].name` to match the hashed name, so helm-controller finds the right ConfigMap.
+
+**The global HelmRelease defaults patch:**
+
+`cluster-apps` injects a `spec.patches` block into every child Kustomization. This patch targets all `HelmRelease` objects and sets `timeout`, `crds: CreateReplace`, and remediation retries cluster-wide. Because this patch is appended last in the rendering chain, it always wins over any `timeout:` set directly in an individual HelmRelease.
+
+**Key invariants to remember:**
+
+- `source-controller` must have a ready artifact before anything downstream can proceed. DNS failure → no artifact → everything blocks.
+- Cilium (the CNI) and CoreDNS are bootstrapped before Flux takes over, because Flux's own controllers are regular pods that need a working network. If both are lost simultaneously, Flux cannot self-heal without a manual reinstall of those two charts.
+- Deleting a Kustomization with `prune: true` (or bypassing its finalizer) triggers cascading deletion of everything it manages. The safe deletion path always goes through Git — remove the resource from the path and let Flux reconcile it away cleanly.
+- `dependsOn` only gates the *start* of reconciliation — it does not prevent a child from being deleted if the parent is deleted first.
+
+---
 
 ### When deploying a chart that installs CRDs, why must the CRD instances live in a separate Kustomization?
 
@@ -343,6 +594,110 @@ data:
 ```
 
 This keeps per-chart overrides local to the chart's own directory and avoids touching the cluster-level file. It requires: (1) changing the global patch to use the substitution syntax, and (2) each chart that needs a non-default value adding `HELM_TIMEOUT` to its substitution source. The global `cluster-apps` variable substitution patch already runs before the HelmRelease defaults patch, so the variable is resolved correctly.
+
+---
+
+### What are the risks of bypassing a Kustomization finalizer, and how should I delete a Flux resource safely?
+
+**Short answer:** Bypassing a Kustomization finalizer skips the prune cycle — all managed resources (HelmReleases, namespaces, Deployments) are orphaned in the cluster rather than cleaned up. If orphaned resources include Cilium or CoreDNS, the cluster can lose its network substrate before Flux can react. Always delete Flux resources through Git, not by patching finalizers.
+
+**What the finalizer does:** When a Kustomization with `prune: true` is deleted, kustomize-controller runs a cleanup pass removing every resource the Kustomization applied that no longer appears in the rendered manifests. Only after this pruning cycle completes does the controller clear the finalizer and let Kubernetes finish the deletion. This guarantees nothing is left behind.
+
+**What bypassing does:**
+```bash
+# This bypasses the prune cycle entirely:
+kubectl patch kustomization <name> -n flux-system \
+  -p '{"metadata":{"finalizers":[]}}' --type=merge
+```
+Kubernetes immediately considers the Kustomization deleted. kustomize-controller never runs pruning. All previously-managed resources remain as orphans with no Flux tracking.
+
+**Why this escalates:** If `cluster-apps` (or another Kustomization with `prune: true`) later reconciles and detects that the orphaned resources are no longer declared in the Git path, it prunes them — potentially deleting Cilium, CoreDNS, or other critical infrastructure.
+
+**The 2026-05-15 outage root cause chain:**
+```
+OCIRepository DENIED (metrics-server, bad URL)
+  → cluster-meta health check stuck
+    → cluster-apps blocked (dependsOn: cluster-meta)
+      → Kustomization finalizer bypassed to try to unblock
+        → all cluster-apps children orphaned
+          → cluster-apps re-reconciled → prune cycle ran
+            → Cilium DaemonSet deleted → CNI gone
+              → CoreDNS Deployment deleted → DNS gone
+                → Flux controllers stuck ContainerCreating
+                  → cluster unable to self-heal
+```
+Full recovery required manual `helm install` of Cilium, CoreDNS, and flux-instance in sequence, plus recreating the onepassword-connect bootstrap secret.
+
+**The safe deletion path — always through Git:**
+1. Remove the resource's entry from the Git path (delete the directory, or remove it from the parent `kustomization.yaml`)
+2. Push the change
+3. Flux reconciles and prunes cleanly
+
+**Legitimate use of finalizer bypass:** When the Kustomization itself is stuck (e.g. a health check that will never pass) and you need to unblock it. Only safe when the managed resources have already been deleted separately, or you are intentionally abandoning them and will clean up manually. After bypassing, always verify no critical workloads were orphaned.
+
+**The correct unblocking approach for a stuck source:** Instead of bypassing the Kustomization finalizer, fix the source error. A `DENIED` from a registry is not a cluster health issue — it is a misconfigured `OCIRepository` or `HelmRepository`. Delete and recreate the source resource with the correct URL/type. The Kustomization health check will pass once the source resolves.
+
+---
+
+### How do I choose between HelmRepository and OCIRepository — and what happens if I use the wrong one?
+
+**Short answer:** Use `HelmRepository` for charts distributed via a Helm index (`https://` URL, `helm repo add` pattern). Use `OCIRepository` for charts distributed as OCI artifacts (`oci://` URL). Using the wrong type produces `DENIED: requested access to the resource is denied` — the registry path does not exist, and the registry treats that as an access denial.
+
+**How to tell which type a chart uses:**
+
+| Signal | Source type |
+|--------|-------------|
+| Official docs say `helm repo add <name> https://...` | `HelmRepository` |
+| Official docs say `helm install ... oci://ghcr.io/...` | `OCIRepository` |
+| [kubesearch.dev](https://kubesearch.dev) shows an `https://` URL | `HelmRepository` |
+| [kubesearch.dev](https://kubesearch.dev) shows an `oci://` URL | `OCIRepository` |
+
+**Verify before writing YAML:**
+```bash
+# HelmRepository — confirm the index file exists:
+curl -s https://<repo-url>/index.yaml | head -5
+
+# OCIRepository — confirm the OCI path is reachable:
+helm show chart oci://<registry>/<path>:<version>
+```
+
+**The metrics-server incident (2026-05-15):** metrics-server publishes a traditional Helm index only — there are no OCI artifacts at `ghcr.io/kubernetes-sigs/charts/metrics-server`. An `OCIRepository` pointing at that path returned `DENIED`. source-controller could not fetch the artifact, which blocked `cluster-meta`'s health check, which blocked `cluster-apps` via `dependsOn`, freezing the entire reconcile tree.
+
+**Correct `HelmRepository` definition for metrics-server:**
+```yaml
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: metrics-server
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://kubernetes-sigs.github.io/metrics-server
+```
+
+**Correct HelmRelease reference** — `chart.spec.sourceRef` for `HelmRepository`; `chartRef` for `OCIRepository`. These are not interchangeable:
+```yaml
+# HelmRepository-backed (chart.spec.sourceRef):
+spec:
+  chart:
+    spec:
+      chart: metrics-server
+      # renovate: registryUrl=https://kubernetes-sigs.github.io/metrics-server
+      version: 3.13.0
+      sourceRef:
+        kind: HelmRepository
+        name: metrics-server
+        namespace: flux-system
+
+# OCIRepository-backed (chartRef):
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: <oci-repo-name>
+    namespace: flux-system
+```
+
+**Prevention rule:** Before writing any new Helm source, run the verification command above and check [kubesearch.dev](https://kubesearch.dev) to confirm the chart is actually published at that URL.
 
 ---
 

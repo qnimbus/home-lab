@@ -15,14 +15,6 @@ spec:
         kind: HelmRepository
         name: onepassword-connect
         namespace: flux-system
-  install:
-    remediation:
-      retries: -1
-  upgrade:
-    cleanupOnFail: true
-    remediation:
-      strategy: rollback
-      retries: 3
   valuesFrom:
     - kind: ConfigMap
       name: onepassword-connect-helm-values

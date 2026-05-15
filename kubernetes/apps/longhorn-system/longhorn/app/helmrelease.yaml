@@ -18,15 +18,6 @@ spec:
         namespace: flux-system
   install:
     createNamespace: true
-    crds: CreateReplace
-    remediation:
-      retries: -1
-  upgrade:
-    cleanupOnFail: true
-    crds: CreateReplace
-    remediation:
-      strategy: rollback
-      retries: 3
   driftDetection:
     mode: enabled
     ignore:

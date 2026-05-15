@@ -13,14 +13,6 @@ spec:
     namespace: flux-system
   install:
     createNamespace: true
-    crds: CreateReplace
-    remediation:
-      retries: -1
-  upgrade:
-    cleanupOnFail: true
-    crds: CreateReplace
-    remediation:
-      retries: 3
   values:
     localpv-provisioner:
       localpv:
