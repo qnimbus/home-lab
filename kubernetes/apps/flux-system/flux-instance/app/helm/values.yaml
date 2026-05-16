@@ -94,3 +94,38 @@ instance:
         target:
           kind: Deployment
           name: helm-controller
+      # Inject shared pod label so all four controllers form one group for topology spread.
+      # commonMetadata.labels does NOT propagate to pod templates (verified) — patch required.
+      - patch: |
+          - op: add
+            path: /spec/template/metadata/labels/app.kubernetes.io~1part-of
+            value: flux
+        target:
+          kind: Deployment
+      # Scale to 2 replicas: pre-places one pod per two nodes so a single node failure
+      # triggers leader-election failover (~35 s lease duration) instead of pod rescheduling
+      # (~5-6 min). flux-operator excluded — it manages the FluxInstance CR, not reconciliation.
+      - patch: |
+          - op: replace
+            path: /spec/replicas
+            value: 2
+        target:
+          kind: Deployment
+          name: (helm-controller|kustomize-controller|source-controller|notification-controller)
+      # Spread all 8 Flux controller pods (4 controllers x 2 replicas) across 3 nodes.
+      # ScheduleAnyway (soft) used because 8 pods on 3 nodes cannot achieve perfect 1-per-node
+      # (target is 3/3/2); hard DoNotSchedule would block placement during rolling upgrades
+      # when transient pod count temporarily increases.
+      - patch: |
+          - op: add
+            path: /spec/template/spec/topologySpreadConstraints
+            value:
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/part-of: flux
+        target:
+          kind: Deployment
+          name: (helm-controller|kustomize-controller|source-controller|notification-controller)

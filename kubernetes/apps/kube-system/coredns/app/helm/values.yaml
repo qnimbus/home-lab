@@ -8,7 +8,16 @@ serviceAccount:
 service:
   name: kube-dns
   clusterIP: "10.43.0.10"
-replicaCount: 2
+replicaCount: 3
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    matchLabelKeys:
+      - pod-template-hash
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: coredns
 servers:
   - zones:
       - zone: .

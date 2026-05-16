@@ -4,6 +4,13 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-16 — `topology-spread`
+
+### Goal
+Implement topologySpreadConstraints for multi-replica deployments (coredns, envoy-external, envoy-internal) and stateless controllers (Flux, ESO, cert-manager) to reduce scheduling concentration on cp-03.
+
+---
+
 ## 2026-05-15 — `cluster-health-audit`
 
 ### Goal

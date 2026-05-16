@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-16 | `topology-spread` | _in progress_ |
 > | 2026-05-15 | `cluster-health-audit` | cluster-doctor full audit: cluster all-green; pod topology concentration risk + fix path documented in ROADMAP; cluster-doctor state updated |
 > | 2026-05-15 | `cluster-recovery-2026-05-15` | Full cluster recovery: bad OCIRepository → Cilium+CoreDNS+Flux cascade loss; manual helm reinstall; Longhorn webhook+finalizer cleanup; 6 QA entries + 7 CLUSTER.md rows |
 > | 2026-05-15 | `metrics-server` | Deployed metrics-server v3.13.0 via OCIRepository; 4 Talos kubelet args; serviceMonitor enabled; kubectl top now available |

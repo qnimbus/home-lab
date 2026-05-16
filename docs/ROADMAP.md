@@ -150,10 +150,10 @@ Wire an Alertmanager notification receiver so cluster alerts reach a human. Aler
 
 ---
 
-### Pod Topology: Scheduling Concentration on cp-03
+### Pod Topology: Scheduling Concentration on cp-03 ✅
 
-The cluster has a structural imbalance: **41 pods run on cp-03 vs. 18/16 on cp-01/cp-02**. This
-affects both stateless controllers and stateful workloads with Longhorn PVCs.
+The cluster had a structural imbalance: **41 pods on cp-03 vs. 18/16 on cp-01/cp-02**. This
+section documents the root cause, what was implemented, and what remains accepted as-is.
 
 #### Root cause
 
@@ -163,34 +163,44 @@ ESO, cert-manager, kube-prometheus-stack — landed there. Longhorn's `WaitForFi
 binding then pins each PVC to the node where its pod was first scheduled, making stateful
 workloads permanently sticky.
 
-**Current concentration risk:**
-- Prometheus (20 GiB PVC) and Alertmanager (1 GiB PVC) are both attached to cp-03, and both
-  pods run there. A cp-03 outage takes out observability entirely — Longhorn can only attach a
-  volume to one node at a time, so there is no automatic failover.
-- Flux controllers, ESO, and cert-manager all run on cp-03. A cp-03 outage degrades GitOps
-  reconciliation, secret syncing, and certificate renewal simultaneously.
+#### What was implemented
 
-#### Stateless workloads (fixable without disruption)
+Two strategies were applied depending on the workload type:
 
-For pods with no PVCs, `topologySpreadConstraints` can be added at any time — the scheduler will
-spread replacements on the next rollout. Target: Flux controllers (`helm-controller`,
-`kube-controller`, `source-controller`, `notification-controller`), ESO controllers, and
-cert-manager.
+**Multi-replica services — scaled to 3 replicas, 1-per-node (`DoNotSchedule`)**
 
-Example constraint to add to each Deployment (spreads by hostname, allows up to 1 skew):
+| Deployment | Before | After | Constraint |
+|---|---|---|---|
+| `coredns` | 2 replicas, cp-02+cp-03 | 3 replicas, 1 per node | `DoNotSchedule` |
+| `envoy-external` | 2 replicas, cp-01+cp-03 | 3 replicas, 1 per node | `DoNotSchedule` + `matchLabelKeys` |
+| `envoy-internal` | 2 replicas, cp-01+cp-03 | 3 replicas, 1 per node | `DoNotSchedule` + `matchLabelKeys` |
 
-```yaml
-topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
-    labelSelector:
-      matchLabels:
-        app.kubernetes.io/name: <app-name>
-```
+A 3rd replica on a 3-node cluster means any single node loss leaves two healthy pods across
+the other two nodes. `matchLabelKeys: [pod-template-hash]` on the Envoy proxies scopes the
+spread calculation to the current ReplicaSet, preventing rolling upgrades from blocking.
 
-For Flux and ESO, these are set via `values.yaml` in the HelmRelease — check the chart's
-`controller.topologySpreadConstraints` key.
+**Stateless controllers — scaled to 2 replicas, spread across nodes**
+
+The key insight: topology spread alone does nothing for single-replica deployments (no other
+pods to spread against). The fix is `replicas: 2` — pre-placing one pod on each of two
+different nodes. When a node fails, the standby pod is already running; no scheduling delay.
+
+| Stack | Failover mechanism | Failover time | Constraint |
+|---|---|---|---|
+| Flux controllers (4×) | Leader election (`leaseDuration: 35s`) | ~35 s | `ScheduleAnyway` |
+| cert-manager controller + cainjector | Leader election (`leaseDuration: 60s`) | ~60 s | `DoNotSchedule` |
+| cert-manager webhook | HTTP server (all replicas active) | ~0 s | `DoNotSchedule` |
+| ESO controller | Concurrent mode (no leader election) | ~0 s | `DoNotSchedule` |
+| ESO webhook + certController | HTTP server (all replicas active) | ~0 s | `DoNotSchedule` |
+
+Flux uses `ScheduleAnyway` (soft) because 8 pods (4 controllers × 2 replicas) on 3 nodes
+target a 3/3/2 split — hard enforcement would block the 8th pod. cert-manager and ESO use
+`DoNotSchedule` (hard) because 6 pods (3 components × 2 replicas) on 3 nodes achieves a
+perfect 2/2/2 split.
+
+Flux required an additional kustomize patch to inject a shared pod label
+(`app.kubernetes.io/part-of: flux`) because `commonMetadata.labels` in the flux-instance
+values does not propagate to pod templates — verified live.
 
 #### Stateful workloads (Prometheus/Alertmanager — accept current state)
 
@@ -203,13 +213,12 @@ cycle — not worth the disruption for a homelab. The practical path:
 3. **For all future stateful deployments**, set `topologySpreadConstraints` *before* the PVCs
    are created — once `WaitForFirstConsumer` binds the volume to a node, the pod is sticky.
 
-#### Priority
+#### What was not changed
 
-- Low urgency for a 3-node homelab — cp-03 has capacity headroom.
-- Medium urgency once more stateful workloads are added (databases, media apps): if they all
-  land on cp-03, a single-node failure cascades badly.
-- Fix stateless controllers first (low risk, immediate improvement); defer stateful volume
-  migration until VolSync is deployed.
+- `cloudflared` (stays at 2): Cloudflare tunnel redundancy is handled at the edge; 3rd replica adds no benefit.
+- `onepassword-connect` (stays at 1): server with local cache state; HA requires 1Password-specific config.
+- `flux-operator` (stays at 1): manages the FluxInstance CR only; HA adds no operational benefit.
+- Prometheus + Alertmanager: PVC-bound to cp-03 via Longhorn `WaitForFirstConsumer`; migration deferred until VolSync is deployed.
 
 ---
 
