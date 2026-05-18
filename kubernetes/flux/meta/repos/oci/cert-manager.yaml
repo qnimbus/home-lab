@@ -13,4 +13,4 @@ spec:
   url: oci://quay.io/jetstack/charts/cert-manager
   ref:
     # renovate: datasource=docker depName=quay.io/jetstack/charts/cert-manager
-    tag: "v1.17.2"
+    tag: "v1.20.2"
