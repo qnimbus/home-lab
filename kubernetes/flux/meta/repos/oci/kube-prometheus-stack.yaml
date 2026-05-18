@@ -13,4 +13,4 @@ spec:
   url: oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack
   ref:
     # renovate: datasource=docker depName=ghcr.io/prometheus-community/charts/kube-prometheus-stack
-    tag: "75.10.0"
+    tag: "75.18.1"
