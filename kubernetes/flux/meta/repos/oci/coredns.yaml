@@ -13,4 +13,4 @@ spec:
   url: oci://ghcr.io/coredns/charts/coredns
   ref:
     # renovate: datasource=docker depName=ghcr.io/coredns/charts/coredns
-    tag: "1.43.0"
+    tag: "1.45.2"
