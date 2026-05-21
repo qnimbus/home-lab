@@ -4,6 +4,30 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-21 — `storage-bond-validation`
+
+### Goal
+Verify the bond-selector-hardening fix end-to-end: confirm Longhorn volumes recovered on cp-03, diagnose a UniFi switch UI display artefact, and validate all three storage bond pairs achieve ~18-19 Gbps aggregate throughput via iperf3.
+
+### What we did
+- Uncordoned cp-03 post-reboot (found it already uncordoned); confirmed all 4 Longhorn replicas (2 per volume, cp-01 + cp-03) back in `running` state and both volumes `healthy`
+- Investigated UniFi switch showing ports 14 and 16 (cp-01/cp-02 second SFP+ ports) as "Auto"/grey — read `/proc/net/bonding/bond0` on both nodes; confirmed `Number of ports: 2` and LACP port state `63` (fully active+distributing) on both slaves of both bonds; switch UI artefact explained: secondary bond slave has no independent ARP-learned IP so switch shows stale/unknown MAC and no speed
+- Ran iperf3 bandwidth tests across all three storage bond pairs using `hostNetwork: true` pods bound to `10.200.0.x` IPs, 8 parallel streams to distribute across both bond members via layer3+4 hashing:
+  - cp-03 → cp-01 (X710 bond1 ↔ X520 bond0): **18.2 Gbps**
+  - cp-02 → cp-01 (X520 bond0 ↔ X520 bond0): **18.7 Gbps**
+  - cp-03 → cp-02 (X710 bond1 ↔ X520 bond0): **18.7 Gbps**
+- All three pairs sustain ~18-19 Gbps against a 20 Gbps theoretical max; bond-selector fix confirmed working end-to-end across all nodes
+
+### Files changed
+
+No files changed — session was purely operational/diagnostic.
+
+### Key decisions
+- Used 8 parallel iperf3 streams (`-P 8`) rather than a single stream: layer3+4 hashing only varies by src/dst port, so a single stream always goes out one bond member (~10 Gbps max); 8 streams statistically distribute across both members to measure aggregate throughput
+- Ran pods with `hostNetwork: true` bound explicitly to storage VLAN IPs (`--bind 10.200.0.x`) to ensure traffic traverses the bond interfaces rather than the management LAN
+
+---
+
 ## 2026-05-21 — `bond-selector-hardening`
 
 ### Goal
