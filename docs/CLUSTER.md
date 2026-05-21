@@ -84,7 +84,9 @@ Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` anno
 
 | Pod | Type | Replicas | Role |
 |-----|------|----------|------|
-| `coredns` | Deployment | 2 | DNS server; handles in-cluster service discovery and forwards external queries upstream |
+| `coredns` | Deployment | 3 (1/node) | DNS server; handles in-cluster service discovery and forwards external queries upstream |
+
+> **Topology spread**: 1 CoreDNS pod per node (`DoNotSchedule`). A single-node failure does not degrade cluster DNS.
 
 ---
 
@@ -102,11 +104,13 @@ Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` anno
 
 **Certificate lifecycle manager.** Issues and renews X.509 certificates inside the cluster via `Certificate` and `Issuer`/`ClusterIssuer` CRDs. Two `ClusterIssuer` resources are live: `letsencrypt-staging` and `letsencrypt-production`, both using ACME DNS-01 challenge via Cloudflare. The Cloudflare API token is sourced from 1Password via an `ExternalSecret`.
 
-| Pod | Role |
-|-----|------|
-| `cert-manager` | Core controller — watches `Certificate` objects, triggers issuance/renewal via the configured issuer |
-| `cert-manager-cainjector` | Injects CA bundles into `MutatingWebhookConfiguration` and `ValidatingWebhookConfiguration` objects so Kubernetes trusts cert-manager's own webhooks |
-| `cert-manager-webhook` | Admission webhook that validates and mutates cert-manager CRD objects at creation time |
+| Pod | Replicas | Role |
+|-----|----------|------|
+| `cert-manager` | 2 | Core controller — watches `Certificate` objects, triggers issuance/renewal via the configured issuer |
+| `cert-manager-cainjector` | 2 | Injects CA bundles into `MutatingWebhookConfiguration` and `ValidatingWebhookConfiguration` objects so Kubernetes trusts cert-manager's own webhooks |
+| `cert-manager-webhook` | 2 | Admission webhook that validates and mutates cert-manager CRD objects at creation time |
+
+> **Topology spread**: all three components share the `app.kubernetes.io/instance: cert-manager` label. 6 pods / 3 nodes = 2/2/2 split enforced via `DoNotSchedule`. A node failure causes leader-election failover (~60 s for controller/cainjector); the webhook has zero downtime (both replicas always serve).
 
 > **Live wildcard certificate.** A `Certificate` named `wildcard-production` in the `network` namespace covers `${CLUSTER_DOMAIN}` and `*.${CLUSTER_DOMAIN}`. Issued by `letsencrypt-production` (Let's Encrypt R13); valid May–August 2026, auto-renewing via DNS-01. Secret: `network/wildcard-production-tls`.
 
@@ -139,7 +143,7 @@ The Gateway API splits concerns into three levels: `GatewayClass` (which control
 | Resource | Kind | Detail |
 |----------|------|--------|
 | `envoy` | `GatewayClass` | Cluster-wide class backed by the `EnvoyProxy` config in the `network` namespace |
-| `envoy` | `EnvoyProxy` | 2-replica Envoy deployment per Gateway; `externalTrafficPolicy: Local`; Prometheus metrics enabled; 60 s drain on shutdown |
+| `envoy` | `EnvoyProxy` | 3-replica Envoy deployment per Gateway (1/node); `externalTrafficPolicy: Local`; Prometheus metrics enabled; 60 s drain on shutdown |
 | `envoy-external` | `Gateway` | Pinned to `10.60.0.230`; HTTP port 80 (redirect only) + HTTPS port 443 for `*.${CLUSTER_DOMAIN}`; routes from any namespace |
 | `envoy-internal` | `Gateway` | Pinned to `10.60.0.231`; same listener config as external; separate IP for internal-only services |
 | `envoy` | `ClientTrafficPolicy` | TLS 1.2 min; h2+http/1.1 ALPN; X-Forwarded-For trusted from pod CIDR (`10.42.0.0/16`) for Cloudflare Tunnel real-IP propagation |
@@ -168,11 +172,15 @@ The tunnel ingress config (mounted from a ConfigMap) routes `*.${CLUSTER_DOMAIN}
 
 **Application secret management.** Pulls secret values from 1Password and creates native Kubernetes `Secret` objects inside the cluster. Three components work together:
 
-| Component | Role |
-|-----------|------|
-| `external-secrets` (ESO) | Operator that watches `ExternalSecret` objects and reconciles their values from the configured store |
-| `onepassword-connect` | Local 1Password Connect server running in-cluster; proxies secret requests to the 1Password cloud API |
-| `onepassword-store` (`ClusterSecretStore`) | ESO store resource named `onepassword` — the reference apps use in `ExternalSecret.spec.secretStoreRef` |
+| Component | Replicas | Role |
+|-----------|----------|------|
+| `external-secrets` (ESO) | 2 | Operator that watches `ExternalSecret` objects and reconciles their values from the configured store |
+| `external-secrets-webhook` | 2 | Admission webhook that validates ESO CRD objects at creation time |
+| `external-secrets-cert-controller` | 2 | Manages TLS certificates for the ESO webhook |
+| `onepassword-connect` | 1 | Local 1Password Connect server running in-cluster; proxies secret requests to the 1Password cloud API |
+| `onepassword-store` (`ClusterSecretStore`) | — | ESO store resource named `onepassword` — the reference apps use in `ExternalSecret.spec.secretStoreRef` |
+
+> **Topology spread**: all three ESO pods share `app.kubernetes.io/instance: external-secrets`. 6 pods / 3 nodes = 2/2/2 split enforced via `DoNotSchedule`. ESO runs in **concurrent mode** (no leader election) — both controller replicas are always active simultaneously; a node failure causes zero-delay failover.
 
 Apps define an `ExternalSecret` object pointing at the `onepassword` store and a specific item/field path. ESO resolves the value at reconcile time and writes it into a Kubernetes `Secret` in the app's namespace. Secret values never touch Git.
 
@@ -184,13 +192,15 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 
 **GitOps engine.** Continuously reconciles the cluster state against this Git repository. Installed in two layers: `flux-operator` (Helm chart, manages the Flux controllers) and `flux-instance` (a `FluxInstance` CR that wires Flux to the repo). After bootstrap, Flux owns its own Helm values files — the operator re-reconciles itself from Git.
 
-| Pod | Role |
-|-----|------|
-| `flux-operator` | Lifecycle manager for Flux — installs, upgrades, and health-checks the four core Flux controllers |
-| `source-controller` | Fetches sources (GitRepository, HelmRepository, OCIRepository) and makes their content available to other controllers |
-| `kustomize-controller` | Applies Kustomization objects — renders and `kubectl apply`s manifests from Git paths |
-| `helm-controller` | Reconciles `HelmRelease` objects — installs/upgrades Helm charts from sources |
-| `notification-controller` | Handles `Alert` and `Receiver` objects for event-driven reconciliation triggers and outbound notifications |
+| Pod | Replicas | Role |
+|-----|----------|------|
+| `flux-operator` | 1 | Lifecycle manager for Flux — installs, upgrades, and health-checks the four core Flux controllers |
+| `source-controller` | 1 | Fetches sources (GitRepository, HelmRepository, OCIRepository) and makes their content available to other controllers |
+| `kustomize-controller` | 2 | Applies Kustomization objects — renders and `kubectl apply`s manifests from Git paths |
+| `helm-controller` | 2 | Reconciles `HelmRelease` objects — installs/upgrades Helm charts from sources |
+| `notification-controller` | 2 | Handles `Alert` and `Receiver` objects for event-driven reconciliation triggers and outbound notifications |
+
+> **Topology spread**: helm-controller, kustomize-controller, and notification-controller share the pod label `app.kubernetes.io/part-of: flux` (injected via kustomize patch). 6 pods / 3 nodes = 2/2/2 split enforced via `DoNotSchedule`. A node failure causes leader-election failover within ~35 s (Flux lease duration). source-controller and flux-operator are intentionally excluded: source-controller's artifact HTTP server only starts on the leader so non-leader replicas are permanently NotReady; flux-operator manages the FluxInstance CR only and has no HA value.
 
 ---
 

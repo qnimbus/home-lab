@@ -4,7 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
-> | 2026-05-16 | `topology-spread` | _in progress_ |
+> | 2026-05-16 | `topology-spread` | Topology HA: coredns/envoy → 3, Flux/cert-manager/ESO → 2 replicas, DoNotSchedule spread; source-controller excluded |
 > | 2026-05-15 | `cluster-health-audit` | cluster-doctor full audit: cluster all-green; pod topology concentration risk + fix path documented in ROADMAP; cluster-doctor state updated |
 > | 2026-05-15 | `cluster-recovery-2026-05-15` | Full cluster recovery: bad OCIRepository → Cilium+CoreDNS+Flux cascade loss; manual helm reinstall; Longhorn webhook+finalizer cleanup; 6 QA entries + 7 CLUSTER.md rows |
 > | 2026-05-15 | `metrics-server` | Deployed metrics-server v3.13.0 via OCIRepository; 4 Talos kubelet args; serviceMonitor enabled; kubectl top now available |
@@ -12,7 +12,6 @@
 > | 2026-05-14 | `external-dns-split` | Deployed ExternalDNS split-DNS: cloudflare instance (envoy-external, proxied, crd) + unifi webhook instance (all gateways, split-horizon LAN DNS); shared OCIRepository v1.21.1 |
 > | 2026-05-14 | `flux-webhook-receiver` | Deployed Flux GitHub webhook receiver; separate Kustomization for substitution; ExternalSecret token; fixed Cloudflare DNS proxy; reconcile latency ~5 min → seconds |
 > | 2026-05-14 | `cert-promotion-cloudflared` | Promoted cert staging→production (R13); deployed cloudflared 2-replica tunnel routing *.vwn.io to envoy-external |
-> | 2026-05-14 | `cilium-gateway-api` | Deployed Envoy Gateway + Cilium L2 IP pool; ext/int Gateways with pinned IPs, wildcard staging TLS, HTTP→HTTPS redirects |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

@@ -9,6 +9,38 @@ A running record of work done, files modified, and decisions made across Claude 
 ### Goal
 Implement topologySpreadConstraints for multi-replica deployments (coredns, envoy-external, envoy-internal) and stateless controllers (Flux, ESO, cert-manager) to reduce scheduling concentration on cp-03.
 
+### What we did
+- Explained topologySpreadConstraints, maxSkew, DoNotSchedule vs ScheduleAnyway, matchLabelKeys, and leader-election failover mechanics to build mental model before implementing
+- Scaled coredns from 2 → 3 replicas with DoNotSchedule topology spread (1 pod per node)
+- Scaled envoy-external and envoy-internal to 3 replicas via EnvoyProxy CR with topology spread; `matchLabelKeys: [pod-template-hash]` ensures each gateway's 3 pods spread independently (separate hash → separate counts)
+- Scaled Flux helm-controller, kustomize-controller, notification-controller to 2 replicas; injected shared pod label `app.kubernetes.io/part-of: flux` via kustomize JSON patch; added DoNotSchedule topology spread scoped to that label group
+- Scaled cert-manager controller, webhook, and cainjector to 2 replicas each with DoNotSchedule topology spread; 6-pod/3-node = 2/2/2, `matchLabelKeys` added for rolling upgrade safety
+- Scaled ESO controller, webhook, and certController to 2 replicas each; noted ESO runs concurrent mode (no leader election — both replicas always active, zero failover delay)
+- After first commit (`401d601`), cluster-doctor diagnosed source-controller permanently NotReady at replicas:2: the artifact HTTP server (port 9090) only starts on the leader; non-leader replica always fails its readiness probe
+- Fixed by removing source-controller (and flux-operator) from the replicas and topology patches; also scoped the shared-label injection to the 3 scalable controllers only so the 6-pod group yields a perfect 2/2/2 split
+- Switched Flux topology from ScheduleAnyway to DoNotSchedule in the fix commit (`d5d2946`): ScheduleAnyway was originally chosen because asymmetric label contamination (source-controller and flux-operator in the group) blocked DoNotSchedule; fixing the label scope made DoNotSchedule safe
+- Updated ROADMAP.md: marked Pod Topology section ✅, replaced planning content with "What was implemented" tables documenting before/after replica counts and failover times
+- Verified full cluster reconciliation: all 27/27 Kustomizations True at commit `d5d2946`
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/kube-system/coredns/app/helm/values.yaml` | 2 → 3 replicas; 1-per-node DoNotSchedule topology spread |
+| `kubernetes/apps/network/envoy-gateway/config/envoy.yaml` | 2 → 3 replicas in EnvoyProxy CR; topology spread with matchLabelKeys |
+| `kubernetes/apps/flux-system/flux-instance/app/helm/values.yaml` | Added 3 kustomize patches: shared label, replicas:2, DoNotSchedule spread (3 scalable controllers only) |
+| `kubernetes/apps/cert-manager/cert-manager/app/helm/values.yaml` | replicaCount:2 + DoNotSchedule topology spread for controller/webhook/cainjector |
+| `kubernetes/apps/external-secrets/external-secrets/app/helm/values.yaml` | replicaCount:2 + DoNotSchedule topology spread for controller/webhook/certController |
+| `docs/ROADMAP.md` | Pod Topology section marked ✅; replaced planning text with implemented-state tables |
+| `docs/SESSIONS.md` | Added topology-spread session stub |
+| `CLAUDE.md` | Added topology-spread session log row |
+
+### Key decisions
+- source-controller excluded from HA scaling: readiness probe hits the artifact HTTP server (port 9090) which only the leader starts — non-leader replicas are always NotReady by design, making the Deployment permanently stuck at 1/2 Ready
+- flux-operator excluded from HA scaling: manages the FluxInstance CR only, no operational HA benefit; including it in the label group would inflate per-node counts and break DoNotSchedule placement math
+- Shared pod label scoped to exactly 3 scalable controllers (6 pods / 3 nodes = 2/2/2) — this perfect split is what makes DoNotSchedule safe; any asymmetric unconstrained pod in the group would inflate counts and cause Pending
+- `matchLabelKeys` omitted from Flux topology spread: not needed because DoNotSchedule already prevents co-location; adding it would overconstrain during rolling upgrades without adding safety
+- Switched from ScheduleAnyway → DoNotSchedule for Flux once the label scope was corrected — ScheduleAnyway (soft) allowed both helm-controller replicas to land on cp-03 simultaneously when scheduled at the same time
+
 ---
 
 ## 2026-05-15 — `cluster-health-audit`
