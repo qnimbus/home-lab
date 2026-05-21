@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-21 | `bond-selector-hardening` | Bond selector hardening + cp-03 storage bond fix: bond1 had never formed since cluster build; 10.200.0.203/24 now live |
 > | 2026-05-21 | `talos-config-audit` | Talos config audit: 10 GbE sysctl tuning, kubelet eviction limits, PodSecurity observe, zone labels, bond timing |
 > | 2026-05-16 | `topology-spread` | Topology HA: coredns/envoy → 3, Flux/cert-manager/ESO → 2 replicas, DoNotSchedule spread; source-controller excluded |
 > | 2026-05-15 | `cluster-health-audit` | cluster-doctor full audit: cluster all-green; pod topology concentration risk + fix path documented in ROADMAP; cluster-doctor state updated |
@@ -11,7 +12,6 @@
 > | 2026-05-15 | `metrics-server` | Deployed metrics-server v3.13.0 via OCIRepository; 4 Talos kubelet args; serviceMonitor enabled; kubectl top now available |
 > | 2026-05-15 | `kube-prometheus-stack` | kube-prometheus-stack: Prometheus+AM in observability, Longhorn PVCs, envoy-internal routes, full-cluster scraping |
 > | 2026-05-14 | `external-dns-split` | Deployed ExternalDNS split-DNS: cloudflare instance (envoy-external, proxied, crd) + unifi webhook instance (all gateways, split-horizon LAN DNS); shared OCIRepository v1.21.1 |
-> | 2026-05-14 | `flux-webhook-receiver` | Deployed Flux GitHub webhook receiver; separate Kustomization for substitution; ExternalSecret token; fixed Cloudflare DNS proxy; reconcile latency ~5 min → seconds |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

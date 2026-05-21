@@ -53,6 +53,10 @@ nodes:
         vip:
           ip: "${clusterEndpoint}"
       # Storage — LACP bond of 2x SFP+ ports (Intel X520-DA2, enp1s0f0 + enp1s0f1)
+      # hardwareAddr selectors are used rather than name: because talhelper only generates
+      # LinkAliasConfig documents (required for bond member enslavement) for hardwareAddr/driver
+      # selectors. The alias controller emits a transient "matched multiple links" warning after
+      # LACP propagates the bond MAC to both slaves — this is cosmetic only; bonds form correctly.
       - interface: bond0
         bond:
           mode: 802.3ad
@@ -96,6 +100,7 @@ nodes:
         vip:
           ip: "${clusterEndpoint}"
       # Storage — LACP bond of 2x SFP+ ports (Intel X520-DA2, enp1s0f0 + enp1s0f1)
+      # See cp-01 comment above re: hardwareAddr selector rationale.
       - interface: bond0
         bond:
           mode: 802.3ad
@@ -132,6 +137,7 @@ nodes:
                 - mountpoint: /var/mnt/longhorn-storage
     networkInterfaces:
       # Management — LACP bond of 2x RJ45 NICs (enp3s0: RTL8125/r8169, enp4s0: Intel I225/igc)
+      # See cp-01 comment above re: hardwareAddr selector rationale.
       - interface: bond0
         bond:
           mode: 802.3ad
@@ -154,7 +160,8 @@ nodes:
           ip: "${clusterEndpoint}"                   # shared VIP — all 3 CPs compete via ARP
       # Storage — LACP bond of 2x SFP+ ports (Intel X710/i40e, enp5s0f0np0 + enp5s0f1np1)
       # NOTE: driver: i40e matched both ports simultaneously; Talos skipped the alias and bond1
-      # never formed. Switching to hardwareAddr selectors fixes the bond.
+      # never formed. hardwareAddr selectors give unique per-port matches. See cp-01 comment
+      # for why name: selectors cannot be used here.
       - interface: bond1
         bond:
           mode: 802.3ad

@@ -4,6 +4,34 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-21 — `bond-selector-hardening`
+
+### Goal
+Harden Talos bond deviceSelectors from driver-glob to hardwareAddr on all nodes, discovering and fixing a silent bug where cp-03's 10 GbE storage bond had never formed since cluster build.
+
+### What we did
+- Reviewed cluster status after a few days' gap (ROADMAP, CLUSTER.md, git log); identified Grafana, Alertmanager, Talos config audit, and cp-02 drive as next priorities; elected Talos config audit as top priority before adding further deployments
+- Ran cluster-doctor live audit: all 3 nodes Ready (Talos v1.13.2 / K8s v1.36.1), all 26 Kustomizations True, all 17 HelmReleases Ready; Longhorn volumes healthy; elevated restart counts on several pods are historical artefacts from the May 15 recovery incident, not ongoing instability
+- Ran full Talos config/schematic audit via cluster-doctor: schematic clean; identified driver-glob bond selectors (Finding 2.1) as top PR priority and NTP source count (Finding 2.6) as second
+- Fetched live MACs from `talosctl get links` for cp-01/cp-02; fetched permanent MACs via `talosctl read /proc/net/bonding/bond0` for cp-03 — LACP MAC propagation masked enp4s0's permanent address (`38:05:25:33:c9:74`) behind the bond MAC in `get links`
+- Replaced all driver-based bond `deviceSelectors` with per-port `hardwareAddr` selectors in `talconfig.yaml`; removed the shared `&ixgbe-storage-bond` YAML anchor that had prevented per-node MAC selectors on cp-01/cp-02
+- Discovered cp-03 bond1 (Intel X710/i40e, `10.200.0.203/24`) had never formed since cluster build: single `driver: i40e` entry matched both X710 ports simultaneously; Talos's `LinkAliasConfigController` logs "link selector matched multiple links, skipping" and skips the alias assignment — with no member interfaces enslaved, bond1 stayed permanently down; Longhorn replication to cp-03 was falling back to the 1 GbE management LAN
+- Applied configs one node at a time (cp-01 → cp-02 → cp-03); cp-03 apply brought bond1 up and `10.200.0.203/24` online for the first time; Longhorn volumes remained Healthy throughout
+- Investigated `name:` interface selectors to eliminate post-enslavement alias warnings; found talhelper only generates `LinkAliasConfig` documents (required for bond member enslavement) for `hardwareAddr`/`driver` selectors — `name:` leaves `BondConfig` with dangling `bond0-m0`/`bond0-m1` references and bonds silently fail to enslave any interfaces; reverted to `hardwareAddr`
+- Documented the talhelper limitation in config comments; confirmed remaining "matched multiple links" warnings are cosmetic — they occur on the alias controller's post-enslavement retry when LACP has propagated the bond MAC to both slaves, but bonds form correctly on initial enslavement
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | Replaced all bond deviceSelectors with hardwareAddr (all 3 nodes, all bonds); documented talhelper name: selector limitation |
+
+### Key decisions
+- `hardwareAddr` over `name:` selectors: talhelper only emits `LinkAliasConfig` for hardwareAddr/driver selector types; `name:` produces `BondConfig` with dangling member alias references and no physical interface mapping — bonds do not form
+- Permanent MACs sourced from `/proc/net/bonding` rather than `talosctl get links`: in 802.3ad mode `get links` shows the bond MAC on all enslaved interfaces; `/proc/net/bonding` reports the `Permanent HW addr` field which survives bonding
+- Two separate commits (fix + docs): the talhelper generator constraint is a non-obvious operational fact worth recording in commit history independently from the functional fix
+
+---
+
 ## 2026-05-21 — `talos-config-audit`
 
 ### Goal
