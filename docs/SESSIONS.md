@@ -4,6 +4,44 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-21 — `talos-config-audit`
+
+### Goal
+Audit and harden Talos node config (sysctls, kubelet limits, PodSecurity, bond timing, topology labels) following a cluster-doctor live verification pass after a 5-day gap.
+
+### What we did
+- Reviewed ROADMAP, CLUSTER.md, and recent git log for cluster status after a 5-day absence; identified Grafana, Alertmanager receiver, Talos config audit, and cp-02 drive as next priorities
+- Ran cluster-doctor live audit: all 3 nodes Ready (v1.36.1/v1.13.2), all 27 Kustomizations True, all HelmReleases Ready; Longhorn PVCs auto-salvaged after a brief disruption and recovered healthy; ESO 1Password Connect events were transient post-restart noise
+- Ran full Talos config/schematic audit: schematic confirmed clean (iscsi-tools, util-linux-tools, intel/amd ucode all live on all nodes); identified sysctls undersized for 10 GbE, missing kubelet eviction/reservation config, PodSecurity disabled, missing bond timing params, and missing topology labels
+- Tuned TCP socket buffers in `machine-sysctls.yaml`: raised `rmem_max`/`wmem_max` from 7.5 MiB → 128 MiB; added `tcp_rmem`/`tcp_wmem`/`netdev_max_backlog`; added `tcp_slow_start_after_idle=0` and `tcp_no_metrics_save=1` for Longhorn gRPC replication behaviour (cwnd preservation across bursts, fresh start on replica reconnect)
+- Added kubelet eviction and reservation config in `machine-kubelet.yaml`: `evictionHard` (memory.available 500Mi, nodefs.available 10%), `kubeReserved`/`systemReserved` to protect etcd and apiserver under memory pressure; raised `maxPods` to 250
+- Enabled PodSecurity admission in observe mode in `admission-controller-patch.yaml`: `enforce: privileged` (nothing blocked), `audit/warn: baseline` (violations logged and surfaced via kubectl); switched from `admissionControl: []` (all plugins disabled)
+- Added topology `region`/`zone` node labels to all three CP nodes in `talconfig.yaml` (`topology.kubernetes.io/region: homelab`, unique zone per node `homelab-cp-0X`); resolves Spegel `TopologyAwareHintsDisabled` warning and enables zone-aware scheduling hints
+- Set `upDelay`/`downDelay` to 200ms (2× miimon) on all LACP bonds in `talconfig.yaml`; silences talhelper warnings about unset hysteresis on all three nodes' bonds
+- Migrated 6 read-only entries from gitignored `settings.local.json` into shared `.claude/settings.json`; added `/session-log` retroactive session recording skill
+- Added ROADMAP items for two new cluster-doctor findings: kustomize-controller both replicas on cp-02 (spread constraint not enforcing), envoy-gateway single replica on cp-03 (SPOF for xDS updates)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/patches/global/machine-sysctls.yaml` | Raised socket buffer ceiling to 128 MiB; added tcp_rmem/wmem, netdev_max_backlog, tcp replication knobs |
+| `talos/patches/global/machine-kubelet.yaml` | Added evictionHard thresholds, kubeReserved/systemReserved, maxPods: 250 |
+| `talos/patches/controller/admission-controller-patch.yaml` | PodSecurity observe mode (enforce: privileged, audit/warn: baseline) |
+| `talos/talconfig.yaml` | Added topology region/zone labels + bond upDelay/downDelay 200ms on all nodes |
+| `docs/ROADMAP.md` | Added kustomize-controller co-location and envoy-gateway single-replica ROADMAP items |
+| `.claude/settings.json` | Migrated local settings entries to shared allowlist; added new read-only tool entries |
+| `.claude/commands/session-log.md` | Added /session-log retroactive session recording skill |
+| `.claude/agent-memory/pr-upgrade-reviewer/MEMORY.md` | Added flux-operator upgrade quirks memory pointer |
+| `.claude/agent-memory/pr-upgrade-reviewer/project_flux_operator_upgrade_quirks.md` | New memory: flux-operator upgrade quirks (stale Helm secrets, CRD deletion cascade) |
+
+### Key decisions
+- PodSecurity set to observe mode (`enforce: privileged`) rather than enforcement — homelab workloads include many privileged containers; audit/warn surfaces violations without disrupting running pods; enforcement can be tightened per-namespace later
+- Zone labels scoped one-per-node (`homelab-cp-01/02/03`) rather than shared zone — equivalent to hostname-keyed spread but enables zone-aware hint features; Spegel warning resolved without any functional trade-off
+- `tcp_slow_start_after_idle=0` + `tcp_no_metrics_save=1` added specifically for Longhorn gRPC replication: idle replicas re-enter slow start after gaps between replication bursts (0 prevents this); stale RTT metrics from a faulted replica would throttle reconnect (1 discards them on close)
+- Bond delay 200ms = 2× miimon interval (100ms) — standard LACP hysteresis ratio per 802.3ad spec; prevents link-flap false positives on brief interruptions
+
+---
+
 ## 2026-05-16 — `topology-spread`
 
 ### Goal

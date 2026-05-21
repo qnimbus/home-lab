@@ -58,6 +58,8 @@ nodes:
           mode: 802.3ad
           lacpRate: fast
           miimon: 100
+          updelay: 200
+          downdelay: 200
           xmitHashPolicy: layer3+4
           deviceSelectors:
             - driver: ixgbe
@@ -125,6 +127,8 @@ nodes:
           mode: 802.3ad
           lacpRate: fast
           miimon: 100
+          updelay: 200
+          downdelay: 200
           xmitHashPolicy: layer3+4
           deviceSelectors:
             - driver: r8169   # enp3s0 — Realtek RTL8125
@@ -144,6 +148,8 @@ nodes:
           mode: 802.3ad
           lacpRate: fast
           miimon: 100
+          updelay: 200
+          downdelay: 200
           xmitHashPolicy: layer3+4
           deviceSelectors:
             - driver: i40e
