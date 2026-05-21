@@ -29,6 +29,9 @@ nodes:
       secureboot: false
     talosImageURL: "${talosImageURL}"
     controlPlane: true
+    nodeLabels:
+      topology.kubernetes.io/region: &region homelab
+      topology.kubernetes.io/zone: homelab-cp-01
     patches:
       - |-
         machine:
@@ -74,6 +77,9 @@ nodes:
       secureboot: false
     talosImageURL: "${talosImageURL}"
     controlPlane: true
+    nodeLabels:
+      topology.kubernetes.io/region: *region
+      topology.kubernetes.io/zone: homelab-cp-02
     networkInterfaces:
       - deviceSelector:
           driver: e1000e
@@ -101,6 +107,9 @@ nodes:
       secureboot: false
     talosImageURL: "${talosImageURL}"
     controlPlane: true
+    nodeLabels:
+      topology.kubernetes.io/region: *region
+      topology.kubernetes.io/zone: homelab-cp-03
     patches:
       - |-
         machine:
