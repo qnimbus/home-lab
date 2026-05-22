@@ -294,6 +294,116 @@ Deliverable: a PR updating `schematic.yaml` and the relevant patch files with re
 
 ---
 
+## GitHub Actions Self-Hosted Runners (ARC + Claude PR Review)
+
+Deploy **Actions Runner Controller (ARC)** to run GitHub Actions jobs in-cluster, then wire up `claude-code-action` to automatically review Renovate PRs using the `pr-upgrade-reviewer` agent.
+
+### Why
+
+Renovate opens PRs constantly. The `pr-upgrade-reviewer` agent already knows how to assess upgrade risk, breaking changes, and merge safety — but today it must be invoked manually. Self-hosted runners mean:
+- Reviews run on our own hardware (no GitHub-hosted runner minutes consumed)
+- The runner has direct cluster access (kubectl, talosctl) for richer context
+- `ANTHROPIC_API_KEY` stays inside the cluster, never leaving our network
+- Future CI jobs (linting, schema validation, dry-run applies) can also use the runners
+
+### Architecture
+
+Two ARC components, matching the multi-document `ks.yaml` operator-plus-instance pattern:
+
+```
+actions-runner-system/
+├── ks.yaml                          # two-doc: controller + runners (dependsOn controller)
+└── actions-runner-controller/
+    ├── app/
+    │   ├── kustomization.yaml
+    │   ├── ocirepository.yaml       # gha-runner-scale-set-controller
+    │   └── helmrelease.yaml         # controller only — no values needed
+    └── runners/
+        ├── kustomization.yaml
+        └── home-lab/
+            ├── kustomization.yaml
+            ├── ocirepository.yaml   # gha-runner-scale-set
+            ├── helmrelease.yaml     # runner pool config (minRunners, maxRunners, image)
+            ├── externalsecret.yaml  # GitHub App credentials from 1Password
+            └── rbac.yaml            # ServiceAccount + ClusterRoleBinding + Talos SA
+```
+
+**OCI sources** (both at `oci://ghcr.io/actions/actions-runner-controller-charts/`):
+- `gha-runner-scale-set-controller` — the cluster-wide controller
+- `gha-runner-scale-set` — one scale set per repo (or org)
+
+Reference: bykaj/home-ops uses both at chart version `0.14.1`.
+
+### Key configuration decisions
+
+**Runner mode — `kubernetes` not `docker`**
+Set `containerMode.type: kubernetes` in the scale set values. Each job runs as a **pod** (not a Docker container), which avoids Docker-in-Docker and integrates naturally with cluster RBAC. A work volume (25 Gi `openebs-hostpath` PVC) is provisioned per job and cleaned up automatically.
+
+**Authentication — GitHub App (not PAT)**
+Create a GitHub App scoped to this repo with `Actions: Read/Write` and `Administration: Read` permissions. Store three values in 1Password under item `actions-runner`:
+```
+ACTIONS_RUNNER_APP_ID          → github_app_id
+ACTIONS_RUNNER_INSTALLATION_ID → github_app_installation_id
+ACTIONS_RUNNER_PRIVATE_KEY     → github_app_private_key
+```
+The `ExternalSecret` maps these to a `home-lab-runner-secret` Secret that the scale set HelmRelease references via `githubConfigSecret`.
+
+**Cluster access — RBAC + Talos ServiceAccount**
+The runner ServiceAccount gets `cluster-admin` (homelab; acceptable risk). Additionally, a Talos `ServiceAccount` CRD (`talos.dev/v1alpha1`) with `os:admin` role is created and its secret mounted at `/var/run/secrets/talos.dev` — this gives runner jobs direct `talosctl` access, useful for cluster validation steps.
+
+**Runner image**
+bykaj uses `ghcr.io/home-operations/actions-runner` (community image with common tools pre-installed). Evaluate whether the standard `ghcr.io/actions/runner` base image suffices or whether the home-operations variant is preferable. Set `ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER=false` so jobs can run directly in the runner container without a nested job container.
+
+### Renovate PR auto-review workflow
+
+Once runners are live, add a workflow at `.github/workflows/renovate-pr-review.yml`:
+
+```yaml
+name: Auto-review Renovate PRs
+on:
+  pull_request:
+    types: [opened, reopened]
+    branches: [main]
+
+jobs:
+  review:
+    if: github.actor == 'renovate[bot]'
+    runs-on: home-lab               # matches the runner scale set's runnerGroup/label
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropic-ai/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review PR #${{ github.event.pull_request.number }} using the
+            pr-upgrade-reviewer agent. Assess upgrade risk, breaking changes,
+            and whether it is safe to merge. Post findings as a PR comment.
+```
+
+`ANTHROPIC_API_KEY` is stored in 1Password and injected into the runner pod via an `ExternalSecret` → Kubernetes Secret → runner env.
+
+### Steps to implement
+
+1. **Create GitHub App**: `github.com/settings/apps` → scoped to this repo → note App ID + Installation ID → generate private key
+2. **Add 1Password item** `actions-runner` with the three credential fields above; also add `ANTHROPIC_API_KEY` field
+3. **Add OCI sources** to `kubernetes/flux/meta/repos/oci/` (or inline in `app/ocirepository.yaml` per bykaj pattern)
+4. **Create `kubernetes/apps/actions-runner-system/`** directory with the layout above
+5. **Add namespace** `actions-runner-system` to `kubernetes/flux/cluster/` (or via a `namespace.yaml` in the app kustomization)
+6. **Wire into cluster-apps** by adding to the parent `kustomization.yaml` under `kubernetes/apps/`
+7. **Add workflow file** at `.github/workflows/renovate-pr-review.yml`
+8. **Verify**: open a test PR, confirm runner pod spawns, confirm Claude posts a comment
+
+### Dependencies
+
+- `openebs-hostpath` StorageClass ✅ (work volume PVC per job)
+- `external-secrets` + `onepassword-connect` ✅ (GitHub App credentials + ANTHROPIC_API_KEY)
+- GitHub App created (manual step, pre-deploy)
+
+---
+
 ## Researched Patterns (bykaj/home-ops)
 
 Patterns observed in the [`bykaj/home-ops`](https://github.com/bykaj/home-ops) repository that are worth adopting in this cluster. Each is independently implementable — ordered roughly by value vs. effort.
