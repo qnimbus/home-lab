@@ -275,6 +275,14 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 | `TalosUpgrade/cluster` | v1.13.2 | Tracks target Talos version; drives `talosctl upgrade` per node |
 | `KubernetesUpgrade/kubernetes` | v1.36.1 | Tracks target Kubernetes version; drives `talosctl upgrade-k8s` |
 
+### app-template · `v5.x` · (shared chart library)
+
+**Generic Helm library chart from bjw-s-labs** used as the base for most application HelmReleases in this cluster. It is not a running workload — it provides a schema that generates Deployments, Services, ConfigMaps, etc. from a single values file.
+
+Sourced via OCIRepository: `ghcr.io/bjw-s-labs/helm/app-template` (defined in `kubernetes/flux/meta/repos/oci/app-template.yaml`). Version is pinned there and tracked by Renovate.
+
+> **v5 schema rules** (breaking change from v4) — see [CONVENTIONS.md → app-template v5](CONVENTIONS.md#app-template-v5-bjw-s-app-template) before authoring any new HelmRelease that uses this chart.
+
 ---
 
 ## Node Disk Inventory

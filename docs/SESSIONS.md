@@ -4,6 +4,30 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-22 — `app-template-v5-review`
+
+### Goal
+Review and merge PR #33 (app-template 4.6.2 → 5.0.1 major bump) and document the v5 breaking-change schema rules across the cluster documentation.
+
+### What we did
+- Used `pr-upgrade-reviewer` agent to assess PR #33 (Renovate-generated, app-template 4.6.2 → 5.0.1)
+- Agent identified 5 breaking changes in v5.0.0: `rawResources` must wrap manifests under `manifest:` key; default ServiceAccount auto-created per controller; `automountServiceAccountToken` defaults to `false`; `NetworkPolicy` `controller`/`podSelector` are mutually exclusive; `ServiceMonitor`/`PodMonitor` `jobLabel` default changed to `app.kubernetes.io/name`
+- Confirmed cloudflared (the only current app-template consumer) uses none of the affected features — no values changes required pre-merge; verdict: safe to merge
+- Documented v5 schema rules: full authoring reference added to `docs/CONVENTIONS.md`; brief pointer added under GitOps Conventions in `CLAUDE.md`; version inventory entry added to `docs/CLUSTER.md`
+- Decided CONVENTIONS.md was the correct home for detailed schema rules, consistent with the existing pattern where CLAUDE.md holds summary pointers and CONVENTIONS.md holds detailed authoring reference material
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/CONVENTIONS.md` | Added app-template v5 section with 5 breaking rules, code examples, and upstream docs link |
+| `CLAUDE.md` | Added brief app-template v5 pointer under GitOps Conventions |
+| `docs/CLUSTER.md` | Added app-template shared chart library inventory entry under Running Components |
+
+### Key decisions
+- Schema details placed in `CONVENTIONS.md` rather than `CLAUDE.md` — CONVENTIONS.md is explicitly the "Extended Reference" supplement; keeping CLAUDE.md as a pointer index avoids bloating it with per-chart schema reference material
+
+---
+
 ## 2026-05-22 — `connect-upgrade-fix`
 
 ### Goal

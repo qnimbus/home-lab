@@ -22,6 +22,47 @@ All cluster YAML files (Talos patches, HelmRelease values, StorageClasses, Kusto
 
 ---
 
+## app-template v5 (bjw-s/app-template)
+
+Most application HelmReleases in this repo use the `bjw-s/app-template` OCIRepository
+(`ghcr.io/bjw-s-labs/helm/app-template`, currently `5.x`). This is a generic **library chart** —
+it provides a schema for deploying any containerised app, not an application itself.
+
+**Current version: 5.x** — write all new app values against this schema. Do not copy values
+from v4 examples found in the community; the schemas are incompatible in several areas.
+
+### Key v5 rules
+
+- **`rawResources`** — each raw manifest must be nested under a `manifest:` key:
+  ```yaml
+  rawResources:
+    my-resource:
+      manifest:
+        apiVersion: ...
+        kind: ...
+        metadata: ...
+  ```
+  Omitting `manifest:` silently produces an invalid resource (v4 behaviour).
+
+- **Default ServiceAccount** — a ServiceAccount is automatically created for each controller.
+  Disable with `global.createDefaultServiceAccount: false` if not needed.
+
+- **`automountServiceAccountToken`** — defaults to `false` (security improvement).
+  Apps that need K8s API access must explicitly opt in:
+  ```yaml
+  defaultPodOptions:
+    automountServiceAccountToken: true
+  ```
+
+- **`NetworkPolicy`** — `controller` and `podSelector` are mutually exclusive; set only one.
+
+- **`ServiceMonitor` / `PodMonitor`** — `jobLabel` defaults to `app.kubernetes.io/name`
+  (was metadata name in v4). Adjust Grafana dashboards or PrometheusRule selectors accordingly.
+
+Full schema reference: [bjw-s app-template docs](https://bjw-s-labs.github.io/helm-charts/docs/app-template/)
+
+---
+
 ## Community research before new deployments
 
 Before planning any new application deployment or writing a new Kustomization, search **[kubesearch.dev](https://kubesearch.dev/)** for the chart or app name. This indexes public home-lab GitOps repos and surfaces real-world `HelmRelease`, `values.yaml`, and `ExternalSecret` patterns used by other home labbers running the same stack (Talos + Flux + Cilium).
