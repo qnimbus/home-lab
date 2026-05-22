@@ -37,6 +37,9 @@ mise install
 # Activate mise for the current session
 eval "$(~/.local/bin/mise activate bash)"
 
+# Point git at the committed hooks directory
+git config core.hooksPath .githooks
+
 # Install helm plugins (helm-diff is required by helmfile)
 helm plugin list | awk '{print $1}' | grep -qx diff \
   || helm plugin install https://github.com/databus23/helm-diff --verify=false
