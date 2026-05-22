@@ -9,6 +9,9 @@ spec:
   issuerRef:
     name: letsencrypt-production
     kind: ClusterIssuer
+    group: cert-manager.io
+  privateKey:
+    rotationPolicy: Always
   commonName: "${CLUSTER_DOMAIN}"
   dnsNames:
     - "${CLUSTER_DOMAIN}"
