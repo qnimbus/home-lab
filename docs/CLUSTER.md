@@ -100,6 +100,16 @@ Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` anno
 
 ---
 
+### metrics-server · `v3.13.0` (chart) · `kube-system`
+
+**Resource metrics provider.** Exposes CPU and memory usage for nodes and pods via the Kubernetes Metrics API (`metrics.k8s.io/v1beta1`), enabling `kubectl top nodes/pods` and `HorizontalPodAutoscaler`. Managed by Flux HelmRelease via OCIRepository.
+
+| Pod | Type | Replicas | Role |
+|-----|------|----------|------|
+| `metrics-server` | Deployment | 1 | Scrapes the kubelet Summary API on each node and serves aggregated resource metrics |
+
+---
+
 ### cert-manager · `v1.17.2` · `cert-manager`
 
 **Certificate lifecycle manager.** Issues and renews X.509 certificates inside the cluster via `Certificate` and `Issuer`/`ClusterIssuer` CRDs. Two `ClusterIssuer` resources are live: `letsencrypt-staging` and `letsencrypt-production`, both using ACME DNS-01 challenge via Cloudflare. The Cloudflare API token is sourced from 1Password via an `ExternalSecret`.
@@ -164,7 +174,20 @@ Both Gateways share the `network/wildcard-production-tls` secret for TLS termina
 
 The tunnel ingress config (mounted from a ConfigMap) routes `*.${CLUSTER_DOMAIN}` and `${CLUSTER_DOMAIN}` to `https://envoy-external.network.svc.cluster.local`. Tunnel credentials (`TUNNEL_TOKEN`) are sourced from 1Password via `ExternalSecret` (`cloudflared` item, `TOKEN` field).
 
-> **DNS**: `*.${CLUSTER_DOMAIN}` and `${CLUSTER_DOMAIN}` are Cloudflare-proxied CNAMEs pointing at the tunnel endpoint (`<tunnel-id>.cfargotunnel.com`). These will be managed automatically by ExternalDNS once it is deployed.
+> **DNS**: `*.${CLUSTER_DOMAIN}` and `${CLUSTER_DOMAIN}` are Cloudflare-proxied CNAMEs pointing at the tunnel endpoint (`<tunnel-id>.cfargotunnel.com`). These are managed by ExternalDNS (see below).
+
+---
+
+### ExternalDNS · `v1.21.1` (chart) · `network`
+
+**Automated DNS record management.** Two independent instances keep DNS in sync with cluster state — no manual record creation is needed when adding `HTTPRoute` or `LoadBalancer` services.
+
+| Instance | Provider | Sources | Scope |
+|----------|----------|---------|-------|
+| `external-dns-cloudflare` | Cloudflare API (proxied) | `gateway-httproute`, `DNSEndpoint` CRD | `${CLUSTER_DOMAIN}` — creates proxied CNAME records for external-facing routes via `envoy-external` |
+| `external-dns-unifi` | UniFi webhook sidecar (`kashalls/external-dns-unifi-webhook`) | `gateway-httproute`, `Service` | `${CLUSTER_DOMAIN}` + `home.arpa` — creates A records for all gateways and LoadBalancer services on the local LAN |
+
+Both instances use `policy: sync` (records deleted when the resource is removed) and a `k8s.` TXT prefix to avoid collision. Cloudflare API token and UniFi credentials are sourced from 1Password via `ExternalSecret`.
 
 ---
 
@@ -226,6 +249,20 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 | Pod | Type | Role |
 |-----|------|------|
 | `openebs-localpv-provisioner` | Deployment | Dynamically provisions hostpath PVs on the local node |
+
+---
+
+### kube-prometheus-stack · `v75.10.0` (chart) · `observability`
+
+**Cluster monitoring stack.** Deploys Prometheus, Alertmanager, kube-state-metrics, and node-exporter as a unified stack. Full-cluster scraping is configured via `ServiceMonitor` and `PodMonitor` CRDs. Longhorn volumes provide persistence for Prometheus (20 GiB) and Alertmanager (1 GiB), both scheduled on cp-01. Grafana is **disabled** in the chart values — it will be deployed separately.
+
+| Component | Type | Replicas | Role |
+|-----------|------|----------|------|
+| `kube-prometheus-stack-operator` | Deployment | 1 | Watches `ServiceMonitor`, `PodMonitor`, `PrometheusRule` CRDs and manages Prometheus config |
+| `prometheus-kube-prometheus-stack-prometheus` | StatefulSet | 1 | Time-series metrics store; scrapes all targets defined by monitors |
+| `alertmanager-kube-prometheus-stack-alertmanager` | StatefulSet | 1 | Deduplicates, groups, and routes alerts from Prometheus rules |
+| `kube-prometheus-stack-kube-state-metrics` | Deployment | 1 | Exposes Kubernetes object state as Prometheus metrics |
+| `kube-prometheus-stack-prometheus-node-exporter` | DaemonSet | 3 (one/node) | Exposes per-node hardware and OS metrics |
 
 ---
 
