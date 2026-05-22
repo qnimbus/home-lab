@@ -47,7 +47,8 @@
     "SOPS_AGE_KEY_FILE": "${containerWorkspaceFolder}/age.key",
     "KUBECONFIG": "${containerWorkspaceFolder}/kubeconfig",
     "TALOSCONFIG": "${containerWorkspaceFolder}/talos/clusterconfig/talosconfig",
-    "OP_SERVICE_ACCOUNT_TOKEN": "${localEnv:OP_SERVICE_ACCOUNT_TOKEN}"
+    "OP_SERVICE_ACCOUNT_TOKEN": "${localEnv:OP_SERVICE_ACCOUNT_TOKEN}",
+    "GH_TOKEN": "${localEnv:GH_TOKEN}"
   },
   "forwardPorts": [],
   "mounts": [
