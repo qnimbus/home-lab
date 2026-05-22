@@ -1,6 +1,13 @@
 ---
 # see: https://github.com/prometheus-community/helm-charts/blob/main/charts/kube-prometheus-stack/values.yaml
 
+crds:
+  enabled: true
+  upgradeJob:
+    # Runs kubectl apply --server-side on all CRDs before the operator pod rolls out.
+    # Required for multi-version jumps where CRD schemas change between each prometheus-operator minor release.
+    enabled: true
+
 alertmanager:
   alertmanagerSpec:
     # All nodes are control-plane only — no workers. Every pod needs this toleration or it won't schedule.
