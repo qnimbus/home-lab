@@ -4,6 +4,26 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-22 — `cluster-doc-sync`
+
+### Goal
+Run a cluster-doctor health diagnostic and sync CLUSTER.md component versions and ROADMAP.md completion status against live cluster state.
+
+### What we did
+- Spawned cluster-doctor agent for a full health audit; cluster all-green: 3 nodes Ready (Talos v1.13.2, K8s v1.36.1), all 27 Kustomizations and 17 HelmReleases Ready, all PVCs Bound, wildcard cert valid
+- Agent identified 8 component versions in CLUSTER.md drifted ahead of documentation via Renovate auto-merges since last doc sync
+- Updated CLUSTER.md section headings: Cilium (v1.17.6 → v1.19.4), CoreDNS (v1.43.0 → v1.45.2), Spegel (v0.4.0 → v0.7.1), cert-manager (v1.17.2 → v1.20.2), ESO (v0.18.2 → v2.5.0), FluxCD operator (v0.23.0 → v0.50.0), kube-prometheus-stack (v75.10.0 → v85.2.1), tuppr (v0.1.28 → v0.1.35)
+- Agent confirmed metrics-server is fully deployed (HelmRelease v3.13.0, pod 1/1 Running 29h); removed from ROADMAP "In Progress" and added to Completed table
+- Answered cert-manager-startupapicheck: Completed Job (7d old, no running pods); auto-cleaned on next cert-manager Helm upgrade via hook cleanup; no manual action needed; v1.17.2-labelled Job from initial install coexists with live v1.20.2 chart harmlessly
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/CLUSTER.md` | 8 component version headings bumped to match live cluster |
+| `docs/ROADMAP.md` | metrics-server section removed from In Progress; row added to Completed table |
+
+---
+
 ## 2026-05-22 — `renovate-oci-tag-fix`
 
 ### Goal

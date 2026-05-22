@@ -56,7 +56,7 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 
 ---
 
-### Cilium · `v1.17.6` · `kube-system`
+### Cilium · `v1.19.4` · `kube-system`
 
 **CNI (Container Network Interface)** — the cluster's network data-plane. Installed via Helmfile; values in `kubernetes/apps/kube-system/cilium/app/helm/values.yaml`.
 
@@ -78,7 +78,7 @@ Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` anno
 
 ---
 
-### CoreDNS · `v1.43.0` (chart) · `kube-system`
+### CoreDNS · `v1.45.2` (chart) · `kube-system`
 
 **Cluster DNS.** Resolves `<service>.<namespace>.svc.cluster.local` names for all pods. Installed via Helmfile with image pulled from `mirror.gcr.io/coredns/coredns` (avoids Docker Hub rate limits). Talos's built-in CoreDNS is disabled — this Helm-managed instance is the sole DNS server.
 
@@ -90,7 +90,7 @@ Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` anno
 
 ---
 
-### Spegel · `v0.4.0` · `kube-system`
+### Spegel · `v0.7.1` · `kube-system`
 
 **P2P container image mirror.** Each node runs a Spegel agent that advertises locally-cached image layers to the other nodes via a peer-to-peer registry protocol. When a node pulls an image already present on a sibling node, it fetches layers locally over the cluster network instead of from the public registry — reducing pull latency and external bandwidth, and making the cluster resilient to registry outages.
 
@@ -110,7 +110,7 @@ Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` anno
 
 ---
 
-### cert-manager · `v1.17.2` · `cert-manager`
+### cert-manager · `v1.20.2` · `cert-manager`
 
 **Certificate lifecycle manager.** Issues and renews X.509 certificates inside the cluster via `Certificate` and `Issuer`/`ClusterIssuer` CRDs. Two `ClusterIssuer` resources are live: `letsencrypt-staging` and `letsencrypt-production`, both using ACME DNS-01 challenge via Cloudflare. The Cloudflare API token is sourced from 1Password via an `ExternalSecret`.
 
@@ -191,7 +191,7 @@ Both instances use `policy: sync` (records deleted when the resource is removed)
 
 ---
 
-### External Secrets Operator · `v0.18.2` · `external-secrets`
+### External Secrets Operator · `v2.5.0` · `external-secrets`
 
 **Application secret management.** Pulls secret values from 1Password and creates native Kubernetes `Secret` objects inside the cluster. Three components work together:
 
@@ -211,7 +211,7 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 
 ---
 
-### FluxCD · operator `v0.23.0` · `flux-system`
+### FluxCD · operator `v0.50.0` · `flux-system`
 
 **GitOps engine.** Continuously reconciles the cluster state against this Git repository. Installed in two layers: `flux-operator` (Helm chart, manages the Flux controllers) and `flux-instance` (a `FluxInstance` CR that wires Flux to the repo). After bootstrap, Flux owns its own Helm values files — the operator re-reconciles itself from Git.
 
@@ -252,7 +252,7 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 
 ---
 
-### kube-prometheus-stack · `v75.10.0` (chart) · `observability`
+### kube-prometheus-stack · `v85.2.1` (chart) · `observability`
 
 **Cluster monitoring stack.** Deploys Prometheus, Alertmanager, kube-state-metrics, and node-exporter as a unified stack. Full-cluster scraping is configured via `ServiceMonitor` and `PodMonitor` CRDs. Longhorn volumes provide persistence for Prometheus (20 GiB) and Alertmanager (1 GiB), both scheduled on cp-01. Grafana is **disabled** in the chart values — it will be deployed separately.
 
@@ -266,7 +266,7 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 
 ---
 
-### tuppr · `v0.1.28` · `system-upgrade`
+### tuppr · `v0.1.35` · `system-upgrade`
 
 **GitOps upgrade controller.** Watches `TalosUpgrade` and `KubernetesUpgrade` CRDs and performs rolling upgrades node-by-node. Triggered by Renovate PRs that bump version fields in `talenv.yaml` and `kubernetesupgrade.yaml`. Managed by Flux HelmRelease.
 

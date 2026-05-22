@@ -97,25 +97,6 @@ Longhorn stable → evaluate Rook-Ceph                    ← Stage 3, optional
 
 ---
 
-### metrics-server
-
-Deploy [metrics-server](https://github.com/kubernetes-sigs/metrics-server) to serve the `metrics.k8s.io` API. This is a separate, lightweight component from kube-prometheus-stack — Prometheus stores metrics internally but does not register as a `metrics.k8s.io` provider.
-
-**Why this matters:**
-- `kubectl top nodes` / `kubectl top pods` require it — currently both return `error: Metrics API not available`
-- FreeLens node CPU and Memory columns show `N/A` without it (disk metrics come from Prometheus directly)
-- Horizontal Pod Autoscaler (HPA) resource-based scaling (`cpu`/`memory` metrics) requires it
-- Vertical Pod Autoscaler (VPA) also depends on it
-
-**Deployment notes:**
-- OCIRepository source: `ghcr.io/kubernetes-sigs/charts/metrics-server`
-- HelmRelease in `kubernetes/apps/kube-system/metrics-server/`; target namespace `kube-system` (standard placement)
-- Talos does not serve a fully trusted kubelet TLS cert by default — add `--kubelet-insecure-tls` arg or configure proper cert verification via Talos machine config
-
-**Dependencies:** none beyond a running cluster.
-
----
-
 ### Grafana
 
 Deploy Grafana as a follow-up to kube-prometheus-stack. Grafana is currently disabled in the kube-prometheus-stack HelmRelease (`grafana.enabled: false`) to keep the initial deployment scope small.
@@ -417,3 +398,4 @@ triggering a Renovate dry-run after the split (check the Dependency Dashboard is
 | Flux GitHub Webhook Receiver           | `flux-receiver` Kustomization in `flux-system`; ExternalSecret token from 1Password; HTTPRoute on `envoy-external`; GitHub webhook configured — reconcile latency ~5 min → seconds |
 | ExternalDNS (Split-DNS)                | `external-dns-cloudflare` (watches `envoy-external`, `--cloudflare-proxied`, `txtOwnerId: k8s`) + `external-dns-unifi` (webhook sidecar, watches all gateways + services, `txtOwnerId: k8s-internal`); shared OCIRepository `ghcr.io/home-operations/charts-mirror/external-dns` v1.21.1; CF token mapped from `API_TOKEN` → `CF_API_TOKEN` via ESO `data[]` |
 | kube-prometheus-stack                  | Prometheus + Alertmanager in `observability` namespace; 20 Gi + 1 Gi Longhorn PVCs; node-exporter on all 3 nodes; full-cluster scraping (`*SelectorNilUsesHelmValues: false`); HTTPRoutes on `envoy-internal`; Grafana + receiver deferred |
+| metrics-server                         | `kube-system`; HelmRelease `v3.13.0` (OCIRepository `ghcr.io/kubernetes-sigs/charts/metrics-server`); `kubectl top` and HPA resource metrics enabled; `--kubelet-insecure-tls` flag set |

@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-22 | `cluster-doc-sync` | cluster-doctor audit all-green; synced 8 component versions in CLUSTER.md; metrics-server moved to Completed in ROADMAP |
 > | 2026-05-22 | `renovate-oci-tag-fix` | PRs #32 (cloudflared) and #38 (Envoy Gateway) reviewed; Renovate OCI tag drift fixed for envoy-gateway + cert-manager |
 > | 2026-05-22 | `app-template-v5-review` | PR #33 reviewed (app-template 4.6.2 → 5.0.1); v5 schema documented in CONVENTIONS.md, CLAUDE.md, and CLUSTER.md |
 > | 2026-05-22 | `connect-upgrade-fix` | PR #29/#30 reviewed; Connect secret double-encoding fixed pre-merge; post-merge token key recovery; bootstrap task corrected |
@@ -11,7 +12,6 @@
 > | 2026-05-22 | `kps-upgrade-85` | kube-prometheus-stack 75.10.0 → 85.2.1: crds.upgradeJob enabled pre-merge; upgrade completed cleanly, all pods healthy |
 > | 2026-05-22 | `renovate-improvements` | Auto-merge for Helm patches + image digests; kustomize regex fix; 5 new stack groups; 5-day soak on Talos/K8s; ROADMAP split entry expanded |
 > | 2026-05-22 | `talos-audit-ntp` | cluster-doctor audit: cluster all-green, schematic clean; NTP expanded to 4 EU/NL sources (ntp.time.nl + nl.pool.ntp.org) applied to all nodes |
-> | 2026-05-21 | `storage-bond-validation` | Post-fix validation: Longhorn recovered, switch UI artefact explained, iperf3 confirmed ~18.7 Gbps on all 3 storage bond pairs |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
