@@ -285,6 +285,8 @@ Sessions are opened and closed via user-initiated skills — Claude cannot invok
 
 > If a session is interrupted mid-work, the open stub is still useful — complete it in the next session using `/session-close`.
 
+> **Never read `docs/SESSIONS.md` in full.** It is a large, ever-growing document that will fill the context window. Instead, grep or search for only what is needed — e.g. `grep -A 50 "slug-name" docs/SESSIONS.md` to extract a specific session block, or `grep -n "keyword" docs/SESSIONS.md` to locate relevant lines before reading a narrow range. The summary table in this file (`CLAUDE.md`) is the right starting point for recent session context.
+
 ---
 
 ## Working in This Repo
