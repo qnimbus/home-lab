@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-22 | `connect-upgrade-fix` | PR #29/#30 reviewed; Connect secret double-encoding fixed pre-merge; post-merge token key recovery; bootstrap task corrected |
 > | 2026-05-22 | `renovate-pr-triage` | 9 Renovate minor/patch PRs reviewed via parallel agents: 4 SAFE, 3 CAUTION, 2 HOLD; added 3-day container soak gate |
 > | 2026-05-22 | `kps-upgrade-85` | kube-prometheus-stack 75.10.0 → 85.2.1: crds.upgradeJob enabled pre-merge; upgrade completed cleanly, all pods healthy |
 > | 2026-05-22 | `renovate-improvements` | Auto-merge for Helm patches + image digests; kustomize regex fix; 5 new stack groups; 5-day soak on Talos/K8s; ROADMAP split entry expanded |
@@ -11,7 +12,6 @@
 > | 2026-05-21 | `storage-bond-validation` | Post-fix validation: Longhorn recovered, switch UI artefact explained, iperf3 confirmed ~18.7 Gbps on all 3 storage bond pairs |
 > | 2026-05-21 | `bond-selector-hardening` | Bond selector hardening + cp-03 storage bond fix: bond1 had never formed since cluster build; 10.200.0.203/24 now live |
 > | 2026-05-21 | `talos-config-audit` | Talos config audit: 10 GbE sysctl tuning, kubelet eviction limits, PodSecurity observe, zone labels, bond timing |
-> | 2026-05-16 | `topology-spread` | Topology HA: coredns/envoy → 3, Flux/cert-manager/ESO → 2 replicas, DoNotSchedule spread; source-controller excluded |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

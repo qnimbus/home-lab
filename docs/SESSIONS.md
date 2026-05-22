@@ -4,6 +4,36 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-22 — `connect-upgrade-fix`
+
+### Goal
+Review PRs #29 and #30, fix a pre-existing double-encoding bug in the 1Password Connect credentials secret, merge the Connect upgrade, and recover from a post-merge ClusterSecretStore outage.
+
+### What we did
+- Reviewed PR #29 (cert-manager v1.17.2→v1.20.2) and PR #30 (1Password Connect 2.0.1→2.4.1) using parallel `pr-upgrade-reviewer` agents
+- PR #29 flagged CAUTION: `RotationPolicy` default flipped `Never→Always` in v1.18, and `issuerRef` API defaults re-introduced in v1.20 — provided two `kubectl` audit commands to run before merging
+- PR #30 flagged CAUTION: chart v2.3.0 removed the double-base64 workaround for the credentials file — verified secret encoding to confirm impact
+- Confirmed the live `onepassword-connect-secrets` secret was double-encoded (`base64(base64(json))`) — the bootstrap task explicitly piped `| base64 -w 0`, then Kubernetes added a second layer; old chart stripped one layer internally
+- Explained the issue in depth: old chart read credentials via env var (expected base64 string, decoded it); new chart mounts as a plain file (no decode — single encoding required)
+- Fixed the secret before merging: extracted inner JSON via double-decode, deleted and re-created the secret with single encoding, restarted Connect, confirmed `ClusterSecretStore` was `Ready=True` on chart v2.0.1
+- Merged PR #30; Helm upgrade to connect@2.4.1 succeeded cleanly (`v3` release)
+- Post-merge: `ClusterSecretStore` went `NotReady` with `cannot find secret data for key: "token"` — the Connect API token used by ESO had been dropped when the secret was re-created
+- Diagnosed: original secret held two keys (`1password-credentials.json` + `token`); re-creation only restored the credentials file
+- Recovery: read token from `op://homelab/HomeLab Access Token/credential`, patched the live secret, force-annotated `ClusterSecretStore` to trigger immediate ESO reconciliation — `Ready=True` within 10 seconds
+- Updated the bootstrap task to remove `| base64 -w 0` so future re-bootstrap creates a correctly single-encoded secret
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.taskfiles/bootstrap/Taskfile.yaml` | Removed `\| base64 -w 0` from credentials read in `onepassword-connect-secret` task |
+
+### Key decisions
+- Fixed and validated the secret encoding on the *old* chart first, before merging — proved Connect still worked with single-encoding under v2.0.1, reducing risk of a combined encoding + upgrade failure
+- After the missing `token` was found post-upgrade, patched the existing secret rather than deleting-and-recreating to avoid dropping the credentials file a second time
+- Used a `force-sync` annotation on the `ClusterSecretStore` to trigger immediate ESO reconciliation rather than waiting up to the natural polling interval
+
+---
+
 ## 2026-05-22 — `renovate-pr-triage`
 
 ### Goal

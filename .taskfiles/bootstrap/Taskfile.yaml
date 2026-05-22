@@ -64,7 +64,7 @@ tasks:
       - |
         kubectl create secret generic onepassword-connect-secrets \
           --namespace external-secrets \
-          --from-literal="1password-credentials.json=$(op read 'op://{{.VAULT}}/HomeLab Credentials File/1password-credentials.json' | base64 -w 0)" \
+          --from-literal="1password-credentials.json=$(op read 'op://{{.VAULT}}/HomeLab Credentials File/1password-credentials.json')" \
           --from-literal="token=$(op read 'op://{{.VAULT}}/HomeLab Access Token/credential')" \
           --dry-run=client -o yaml | kubectl apply -f -
     preconditions:
