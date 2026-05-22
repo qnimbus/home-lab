@@ -4,6 +4,34 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-22 — `renovate-improvements`
+
+### Goal
+Review the Renovate configuration and implement five targeted improvements: auto-merge rules for Helm patches and image digests, a kustomize manager regex fix, package grouping for major stacks, and release soak periods for Talos and Kubernetes.
+
+### What we did
+- Reviewed `renovate.json5` against `docs/ROADMAP.md` to identify 6 improvement opportunities
+- Fixed a silent bug in the kustomize manager: regex `^kustomization` only matched the root-level file; changed to `(^|/)kustomization` so all `kustomization.yaml` files under `kubernetes/apps/` are now scanned by Renovate
+- Added auto-merge for Helm chart patch updates after a 3-day community soak — eliminates the majority of patch PRs silently via `automergeType: "branch"`
+- Added auto-merge for container image digest updates after a 1-day soak (digest = same tag, new SHA; no version change); excluded `siderolabs/installer` and `siderolabs/kubelet` which go through tuppr
+- Added `minimumReleaseAge: "5 days"` to Talos and Kubernetes rules so PRs don't open until the community has had time to surface regressions in OS/runtime releases
+- Added grouping rules for 5 previously ungrouped stacks: Longhorn, kube-prometheus-stack, Envoy Gateway, ExternalDNS, External Secrets
+- Evaluated `.renovate/` config split (improvement 6) — determined it requires proper Renovate local preset format (not a raw file drop), adds real complexity at the current file size (~282 lines); deferred with a threshold of ~400 lines
+- Expanded the existing ROADMAP stub for the Renovate config split with correct preset mechanics, exact `extends` syntax, concrete per-file split plan, and trigger threshold
+
+### Files changed
+| File | Change |
+|------|--------|
+| `renovate.json5` | Auto-merge rules (Helm patch + digest), kustomize regex fix, 5 new group rules, 5-day soak on Talos/K8s |
+| `docs/ROADMAP.md` | Expanded Renovate config split entry with local preset mechanics and step-by-step implementation guide |
+
+### Key decisions
+- Excluded `siderolabs/installer` and `siderolabs/kubelet` from digest auto-merge — even a same-SHA digest refresh on those images warrants awareness given they go through tuppr's upgrade machinery
+- Chose 5-day soak for Talos/K8s (vs 3-day for charts) — OS and runtime regressions are harder to recover from and community reports tend to appear later than chart issues
+- Deferred `.renovate/` split: the key non-obvious blocker is that split files must be valid Renovate presets referenced via `extends`, not raw fragments auto-scanned from the directory — the refactor has real cost and the file is still manageable
+
+---
+
 ## 2026-05-22 — `talos-audit-ntp`
 
 ### Goal

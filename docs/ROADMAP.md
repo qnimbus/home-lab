@@ -343,16 +343,53 @@ that apps include in their `app/kustomization.yaml` via `components:` references
 
 ### Split Renovate Configuration (`.renovate/` directory)
 
-Instead of a single `renovate.json5`, bykaj splits Renovate config into files by concern:
-`allowedVersions.json5`, `autoMerge.json5`, `groups.json5`, `changelogs.json5`,
-`customManagers.json5`, `labels.json5`, `semanticCommits.json5`, etc. Each file is independently
-reviewable in PRs and can be enabled/disabled without touching the root config.
+Instead of a single `renovate.json5`, split config into files by concern so each section
+is independently reviewable in PRs. Reference pattern: `bykaj/home-ops` uses
+`allowedVersions.json5`, `autoMerge.json5`, `groups.json5`, `customManagers.json5`,
+`labels.json5`, `semanticCommits.json5`, etc.
+
+**When to do this:** defer until `renovate.json5` feels unwieldy — roughly 400+ lines, or
+when adding KEDA scalers, VolSync rules, or complex `allowedVersions` blocks. As of 2026-05-22
+the file is ~282 lines and well-structured; the split adds overhead without much benefit yet.
+
+**How it actually works — important:**
+This is NOT a simple file-cut. Each split file must be a valid **Renovate local preset**,
+not a raw JSON5 fragment. Renovate loads them via `extends`, not by auto-scanning the directory.
 
 **Steps to implement:**
-- Rename `renovate.json5` → `.renovate/renovate.json5` (or split by concern)
-- Renovate supports this natively — the `.renovate/` directory is auto-discovered
-- Defer until `renovate.json5` grows unwieldy; current file is modest
-- No cluster-level impact; purely a repository ergonomics improvement
+1. Create `.renovate/` directory with one file per concern, each structured as a preset:
+   ```json5
+   // .renovate/groups.json5
+   {
+     description: "Package grouping rules",
+     packageRules: [ /* grouping rules only */ ],
+   }
+   ```
+   Suggested split for this repo:
+   - `.renovate/renovate.json5` — root config: `$schema`, `extends`, `schedule`, `ignorePaths`, `ignoreDeps`, manager file-pattern overrides
+   - `.renovate/groups.json5` — all `groupName` rules
+   - `.renovate/autoMerge.json5` — all `automerge: true` rules
+   - `.renovate/semanticCommits.json5` — commit message formatting + scope rules
+   - `.renovate/labels.json5` — label rules
+   - `.renovate/customManagers.json5` — regex custom manager
+
+2. Update the root config to reference each split file via `extends`:
+   ```json5
+   extends: [
+     "config:recommended",
+     // ... other presets ...
+     "local:.renovate/groups.json5",
+     "local:.renovate/autoMerge.json5",
+     "local:.renovate/semanticCommits.json5",
+     "local:.renovate/labels.json5",
+     "local:.renovate/customManagers.json5",
+   ],
+   ```
+
+3. Delete the original `renovate.json5` once the root config lives at `.renovate/renovate.json5`.
+
+**No cluster-level impact** — purely a repository ergonomics improvement. Validate by
+triggering a Renovate dry-run after the split (check the Dependency Dashboard issue for errors).
 
 ---
 

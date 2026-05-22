@@ -16,7 +16,8 @@
   schedule: ["every weekend"],
 
   // Never touch SOPS-encrypted files — contents are ciphertext, not real versions
-  ignorePaths: ["**/*.sops.*"],
+  // Devcontainer features use OCI artifact format; Renovate's docker datasource can't query them
+  ignorePaths: ["**/*.sops.*", ".devcontainer/**"],
 
   // Dependencies managed outside Renovate — do not open PRs for these.
   // 1password: distributed via AgileBits' servers, no compatible datasource.
@@ -51,7 +52,7 @@
     managerFilePatterns: ["/(^|/)kubernetes/.+\\.ya?ml$/"],
   },
   kustomize: {
-    managerFilePatterns: ["/^kustomization\\.ya?ml$/"],
+    managerFilePatterns: ["/(^|/)kustomization\\.ya?ml$/"],
   },
 
   // ── Package rules ────────────────────────────────────────────────────────────
@@ -72,6 +73,7 @@
       groupName: "Talos",
       separateMajorMinor: true,
       separateMinorPatch: true,
+      minimumReleaseAge: "5 days",
     },
     {
       // Same rationale as Talos above — Kubernetes also requires sequential minor upgrades.
@@ -82,6 +84,7 @@
       groupName: "Kubernetes",
       separateMajorMinor: true,
       separateMinorPatch: true,
+      minimumReleaseAge: "5 days",
     },
     {
       description: "Group Flux Operator + Instance into one PR",
@@ -107,6 +110,31 @@
       groupName: "Spegel",
       matchPackageNames: ["/spegel/"],
     },
+    {
+      description: "Group Longhorn chart + image bumps",
+      groupName: "Longhorn",
+      matchPackageNames: ["/longhorn/"],
+    },
+    {
+      description: "Group kube-prometheus-stack chart + image bumps",
+      groupName: "kube-prometheus-stack",
+      matchPackageNames: ["/kube-prometheus-stack/", "/prometheus/", "/alertmanager/"],
+    },
+    {
+      description: "Group Envoy Gateway chart + image bumps",
+      groupName: "Envoy Gateway",
+      matchPackageNames: ["/envoy-gateway/"],
+    },
+    {
+      description: "Group ExternalDNS chart + image bumps",
+      groupName: "ExternalDNS",
+      matchPackageNames: ["/external-dns/"],
+    },
+    {
+      description: "Group External Secrets Operator chart + image bumps",
+      groupName: "External Secrets",
+      matchPackageNames: ["/external-secrets/"],
+    },
 
     // ── Auto-merge ──────────────────────────────────────────────────────────────
     // automergeType: "branch" means Renovate pushes directly to the branch and
@@ -129,6 +157,26 @@
       matchUpdateTypes: ["minor", "patch", "digest"],
       minimumReleaseAge: "3 days",  // Gives the community time to catch regressions
       ignoreTests: true,
+    },
+    {
+      description: "Auto-merge Helm chart patch updates after 3-day soak",
+      matchDatasources: ["helm"],
+      matchUpdateTypes: ["patch"],
+      automerge: true,
+      automergeType: "branch",
+      minimumReleaseAge: "3 days",
+      ignoreTests: true,
+    },
+    {
+      // Digest updates are same-tag SHA refreshes — no version change, very safe
+      description: "Auto-merge container image digest updates after 1-day soak",
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["digest"],
+      automerge: true,
+      automergeType: "branch",
+      minimumReleaseAge: "1 day",
+      ignoreTests: true,
+      matchPackageNames: ["!/siderolabs/installer/", "!/siderolabs/kubelet/"],
     },
 
     // ── Semantic commit message formatting ──────────────────────────────────────
