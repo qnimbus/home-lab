@@ -4,6 +4,29 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-22 — `kps-upgrade-85`
+
+### Goal
+Review, plan, and execute the kube-prometheus-stack upgrade from 75.10.0 to 85.2.1 (Renovate PR #34), safely sequencing CRD updates across 6 prometheus-operator minor bumps.
+
+### What we did
+- Ran `pr-upgrade-reviewer` agent on PR #34; identified 10 chart-major / 6 prometheus-operator-minor jump (v0.84.1 → v0.90.1) requires chart-native `crds.upgradeJob` pre-upgrade hook rather than relying solely on the global `crds: CreateReplace` Flux patch
+- Verified `allowSchedulingOnControlPlanes: true` (in `talos/patches/controller/cluster.yaml`) removes the control-plane taint entirely — nodes have no taints; initial plan's `tolerations` block for `upgradeJob` was dropped
+- Added `crds.enabled: true` + `crds.upgradeJob.enabled: true` to `values.yaml`; committed `7136a02` and pushed to main ahead of the PR merge
+- Confirmed Flux reconciled the values change at 75.10.0 (HelmRelease advanced to release v2, "Helm upgrade succeeded"); ConfigMap verified to contain new `crds:` block
+- Merged PR #34; upgrade completed to 85.2.1 — all 7 pods healthy, Prometheus CR `Reconciled: True` (distroless `v3.11.3`), Alertmanager CR `Reconciled: True` (`v0.32.1`)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/observability/kube-prometheus-stack/app/helm/values.yaml` | Added `crds.upgradeJob.enabled: true` block at top of file |
+
+### Key decisions
+- Dropped `crds.upgradeJob.tolerations` from the plan after live verification: `allowSchedulingOnControlPlanes: true` removes the taint outright; existing tolerations throughout `values.yaml` are redundant artefacts from chart defaults
+- Committed values change to main before merging the OCIRepository tag PR so Flux could verify the Job wiring at the current version before the 10-version jump landed; treats the upgrade as forward-only (CRD downgrade not feasible after)
+
+---
+
 ## 2026-05-22 — `renovate-improvements`
 
 ### Goal
