@@ -4,6 +4,31 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-22 — `renovate-oci-tag-fix`
+
+### Goal
+Review PRs #32 and #38 (cloudflared and Envoy Gateway upgrades); identify and fix Renovate OCI tag series drift in envoy-gateway and cert-manager annotations.
+
+### What we did
+- Reviewed PR #32 (cloudflared 2025.9.0 → 2026.5.0) via `pr-upgrade-reviewer` agent; confirmed two v2026.x breaking changes (proxy-dns removal in v2026.2.0, edge-ip-version default changed to "auto" in v2026.4.0) do not apply to this cluster's config (tunnel run only, no proxy-dns, no IP version pinning); verdict: safe to merge
+- Reviewed PR #38 (Envoy Gateway v1.7.3 → 1.8.0) via `pr-upgrade-reviewer` agent; six v1.8.0 breaking changes documented (CRD sub-chart split, Gateway API v1.5.1, DirectResponse interpolation, SecurityPolicy timeout semantics, samplingFraction scale, OIDC filter restructure), none intersecting with this cluster's config
+- Spotted that Renovate proposed tag `1.8.0` (no `v` prefix) despite current OCIRepository tag being `v1.7.3` — verified via Docker Hub API that both `v1.8.0` and `1.8.0` exist as separate OCI artifacts with different digests; unprefixed tag is the wrong upgrade path
+- Added `extractVersion=^v(?<version>.*)$` to Renovate annotation in `oci/envoy-gateway.yaml` to lock Renovate to the `v`-prefixed tag series going forward
+- Audited all 11 OCI repository annotation files; found `oci/cert-manager.yaml` also tracks a `v`-prefixed tag (`v1.20.2`) with the same dual-tag pattern on quay.io; applied the same `extractVersion` fix
+- Recommended closing PR #38 and letting Renovate re-open with the corrected `v1.8.0` tag (or manually patching the tag in the PR before merging)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/envoy-gateway.yaml` | Added `extractVersion=^v(?<version>.*)$` to Renovate annotation |
+| `kubernetes/flux/meta/repos/oci/cert-manager.yaml` | Added `extractVersion=^v(?<version>.*)$` to Renovate annotation |
+
+### Key decisions
+- `extractVersion=^v(?<version>.*)$` chosen as the fix — it filters Renovate's tag candidates to only `v`-prefixed ones so non-prefixed tags are invisible, rather than just relying on the current tag's format to guide updates
+- Audit extended proactively to all OCI repo annotation files (not just envoy-gateway) to prevent the same tag-series drift from affecting cert-manager on its next Renovate PR
+
+---
+
 ## 2026-05-22 — `app-template-v5-review`
 
 ### Goal
