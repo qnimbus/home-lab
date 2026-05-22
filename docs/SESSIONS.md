@@ -4,6 +4,31 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-22 — `renovate-pr-triage`
+
+### Goal
+Triage all open Renovate minor/patch PRs using parallel pr-upgrade-reviewer agents and harden the Renovate soak policy to close a gap where container image minors had no minimumReleaseAge.
+
+### What we did
+- Queried GitHub for all open Renovate PRs labelled `type/minor` or `type/patch` — found 9 PRs (#21, #22, #23, #24, #25, #26, #28, #29, #30)
+- Launched 9 `pr-upgrade-reviewer` agents in parallel, one per PR, to assess upgrade risk
+- Consolidated results: **4 SAFE** (#21 flux, #25 app-template, #26 coredns, #28 spegel), **3 CAUTION** (#22 cilium, #29 cert-manager, #30 1Password Connect), **2 HOLD** (#23 cloudflared, #24 envoy gateway)
+- HOLD details: #23 stale — target `2025.11.1` is 6 months old, latest is `2026.5.0`; #24 — no release notes published, tag format anomaly (`1.8.0` vs `v1.7.3`), CRD sub-chart split, K8s v1.36 outside documented support matrix
+- CAUTION details: #22 cilium requires 3 pre-merge kubectl checks (BGPv1 removal, v2alpha1 apiVersion, `FromRequires`/`ToRequires` CNP fields); #29 cert-manager `rotationPolicy` default flipped `Never→Always` in v1.18; #30 1Password Connect v2.3.0 fixed double-base64 encoding — verify secret was single-encoded
+- Identified gap: container image minor/patch updates (non-Talos/K8s) had no `minimumReleaseAge` — only protected by the weekly schedule (0–7 day window), allowing PRs to open against incompletely-published releases
+- Added a 3-day soak gate to `renovate.json5` for all container minor/patch updates excluding `siderolabs/installer` and `siderolabs/kubelet`; committed `4df7f84`
+
+### Files changed
+| File | Change |
+|------|--------|
+| `renovate.json5` | Added `minimumReleaseAge: "3 days"` gate rule for container image minor/patch updates |
+
+### Key decisions
+- Used 9 parallel `pr-upgrade-reviewer` agents rather than a `/loop` — more efficient for a fixed known list; `/loop` is designed for time-based recurrence, not list iteration
+- New soak rule uses `matchPackageNames` negation exclusions to avoid interfering with the existing 5-day soak rules for Talos/K8s, which are higher-priority and more restrictive
+
+---
+
 ## 2026-05-22 — `kps-upgrade-85`
 
 ### Goal

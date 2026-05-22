@@ -178,6 +178,16 @@
       ignoreTests: true,
       matchPackageNames: ["!/siderolabs/installer/", "!/siderolabs/kubelet/"],
     },
+    {
+      // Gate only — no automerge. Prevents PRs being opened against tags that appear
+      // before a release is fully published (e.g. missing release notes, RC artifacts).
+      // Pairs with the weekly schedule to give a practical 3–10 day community-regression window.
+      description: "Hold container image minor/patch PRs for 3-day soak",
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["minor", "patch"],
+      minimumReleaseAge: "3 days",
+      matchPackageNames: ["!/siderolabs/installer/", "!/siderolabs/kubelet/"],
+    },
 
     // ── Semantic commit message formatting ──────────────────────────────────────
 
