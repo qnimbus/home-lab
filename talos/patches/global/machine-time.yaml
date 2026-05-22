@@ -3,4 +3,6 @@ machine:
     disabled: false
     servers:
       - time.cloudflare.com
-      - pool.ntp.org
+      - ntp.time.nl
+      - nl.pool.ntp.org
+      - time.google.com

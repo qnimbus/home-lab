@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-22 | `talos-audit-ntp` | cluster-doctor audit: cluster all-green, schematic clean; NTP expanded to 4 EU/NL sources (ntp.time.nl + nl.pool.ntp.org) applied to all nodes |
 > | 2026-05-21 | `storage-bond-validation` | Post-fix validation: Longhorn recovered, switch UI artefact explained, iperf3 confirmed ~18.7 Gbps on all 3 storage bond pairs |
 > | 2026-05-21 | `bond-selector-hardening` | Bond selector hardening + cp-03 storage bond fix: bond1 had never formed since cluster build; 10.200.0.203/24 now live |
 > | 2026-05-21 | `talos-config-audit` | Talos config audit: 10 GbE sysctl tuning, kubelet eviction limits, PodSecurity observe, zone labels, bond timing |
@@ -11,7 +12,6 @@
 > | 2026-05-15 | `cluster-health-audit` | cluster-doctor full audit: cluster all-green; pod topology concentration risk + fix path documented in ROADMAP; cluster-doctor state updated |
 > | 2026-05-15 | `cluster-recovery-2026-05-15` | Full cluster recovery: bad OCIRepository → Cilium+CoreDNS+Flux cascade loss; manual helm reinstall; Longhorn webhook+finalizer cleanup; 6 QA entries + 7 CLUSTER.md rows |
 > | 2026-05-15 | `metrics-server` | Deployed metrics-server v3.13.0 via OCIRepository; 4 Talos kubelet args; serviceMonitor enabled; kubectl top now available |
-> | 2026-05-15 | `kube-prometheus-stack` | kube-prometheus-stack: Prometheus+AM in observability, Longhorn PVCs, envoy-internal routes, full-cluster scraping |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

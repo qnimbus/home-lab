@@ -4,6 +4,36 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-22 — `talos-audit-ntp`
+
+### Goal
+Cluster health check and Talos config/schematic audit via cluster-doctor; implement the NTP server expansion (Finding 2.6) with 4 EU/NL-prioritised sources applied live across all nodes.
+
+### What we did
+- Reviewed cluster status and roadmap after a 2-day gap; confirmed Green health and identified Talos config/schematic audit as the top priority before proceeding with new deployments
+- Ran cluster-doctor agent for combined live cluster health audit + full Talos config/schematic review:
+  - All 3 nodes Ready (Talos v1.13.2, K8s v1.36.1); all 26 Kustomizations + 17 HelmReleases True; both Longhorn volumes Healthy on cp-01 + cp-03
+  - Elevated restart counts on several pods identified as historical artefacts from the 2026-05-15 recovery incident, not ongoing instability
+  - Schematic verified clean: `iscsi-tools`, `util-linux-tools`, `intel-ucode`, `amd-ucode` all present; no missing extensions for the hardware profile
+  - Sysctls (10 GbE socket buffers), NFS defaults, etcd subnet restrictions, cluster.yaml, machine-features all verified correct
+  - 6 findings produced: 2.1 (bond driver-glob selectors on cp-01/cp-02), 2.6 (only 2 NTP sources), 2.3/2.5 deferred, 3.x acceptable-as-is
+- Planned and implemented Finding 2.6 — expanded NTP from 2 to 4 sources with EU/NL preference:
+  - Added `ntp.time.nl` (SIDN/NLNOG Dutch stratum 1) and `nl.pool.ntp.org` (NL zone pool) to replace generic `pool.ntp.org`; kept `time.cloudflare.com`; added `time.google.com` for AS diversity
+  - Applied staggered (cp-01 → cp-02 → cp-03); all nodes applied without reboot and stayed Ready throughout
+  - Verified: `TimeServerStatus` shows all 4 servers on all 3 nodes; `TimeStatus SYNCED: true` on all nodes
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/patches/global/machine-time.yaml` | Expanded NTP servers from 2 to 4 (EU/NL preference) |
+
+### Key decisions
+- Chose `ntp.time.nl` (operated by SIDN + NLNOG) as the primary NL-specific source — the most authoritative Dutch stratum-1 server available publicly, not a generic pool alias
+- Replaced `pool.ntp.org` with `nl.pool.ntp.org` for geographic locality; kept `time.cloudflare.com` (AS13335) and added `time.google.com` (AS15169) so the two anycast sources come from independent autonomous systems
+- 4 distinct sources unlocks chrony's Marzullo algorithm for falseticker detection; with only 2 sources chrony can detect disagreement but cannot identify which server is wrong
+
+---
+
 ## 2026-05-21 — `storage-bond-validation`
 
 ### Goal
