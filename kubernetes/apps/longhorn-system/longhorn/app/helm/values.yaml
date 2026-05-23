@@ -25,6 +25,8 @@ defaultSettings:
   concurrentReplicaRebuildPerNodeLimit: 2
   orphanAutoDeletion: true
   nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
+  csiStorageCapacityTracking: true
+  replicaAutoBalance: best-effort
 
 service:
   ui:
@@ -83,8 +85,8 @@ longhornInstanceManager:
       cpu: 10m
       memory: 32Mi
     limits:
-      cpu: 50m
-      memory: 128Mi
+      cpu: 2000m
+      memory: 256Mi
 
 longhornUI:
   replicas: 1
