@@ -41,11 +41,3 @@ spec:
                   secretKeyRef:
                     name: anthropic-secret
                     key: ANTHROPIC_API_KEY
-            volumeMounts:
-              - name: talos-secret
-                mountPath: /var/run/secrets/talos.dev
-                readOnly: true
-        volumes:
-          - name: talos-secret
-            secret:
-              secretName: actions-runner-talos

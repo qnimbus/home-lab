@@ -19,14 +19,3 @@ subjects:
   - kind: ServiceAccount
     name: actions-runner
     namespace: actions-runner-system
----
-# Talos ServiceAccount — generates a client certificate mounted at
-# /var/run/secrets/talos.dev so runner jobs can invoke talosctl directly.
-apiVersion: talos.dev/v1alpha1
-kind: ServiceAccount
-metadata:
-  name: actions-runner-talos
-  namespace: actions-runner-system
-spec:
-  roles:
-    - os:admin
