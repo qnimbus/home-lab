@@ -10,7 +10,7 @@ spec:
       namespace: network
       sectionName: https
   hostnames:
-    - "prometheus.${CLUSTER_DOMAIN}"
+    - "prometheus.${DOMAIN_CLUSTER}"
   rules:
     - backendRefs:
         - name: kube-prometheus-stack-prometheus
@@ -27,7 +27,7 @@ spec:
       namespace: network
       sectionName: https
   hostnames:
-    - "alertmanager.${CLUSTER_DOMAIN}"
+    - "alertmanager.${DOMAIN_CLUSTER}"
   rules:
     - backendRefs:
         - name: kube-prometheus-stack-alertmanager

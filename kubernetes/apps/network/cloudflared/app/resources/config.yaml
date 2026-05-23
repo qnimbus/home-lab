@@ -1,10 +1,22 @@
 originRequest:
-  originServerName: "gateway.${CLUSTER_DOMAIN}"
+  originServerName: "gateway.${DOMAIN_CLUSTER}"
   noTLSVerify: true
 
 ingress:
-  - hostname: "*.${CLUSTER_DOMAIN}"
+  - hostname: "*.${DOMAIN_APP}"
     service: https://envoy-external.network.svc.cluster.local
-  - hostname: "${CLUSTER_DOMAIN}"
+  - hostname: "${DOMAIN_APP}"
+    service: https://envoy-external.network.svc.cluster.local
+  - hostname: "*.${DOMAIN_CASA}"
+    service: https://envoy-external.network.svc.cluster.local
+  - hostname: "${DOMAIN_CASA}"
+    service: https://envoy-external.network.svc.cluster.local
+  - hostname: "*.${DOMAIN_CLUSTER}"
+    service: https://envoy-external.network.svc.cluster.local
+  - hostname: "${DOMAIN_CLUSTER}"
+    service: https://envoy-external.network.svc.cluster.local
+  - hostname: "*.${DOMAIN_APPS}"
+    service: https://envoy-external.network.svc.cluster.local
+  - hostname: "${DOMAIN_APPS}"
     service: https://envoy-external.network.svc.cluster.local
   - service: http_status:404

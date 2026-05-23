@@ -12,7 +12,11 @@ spec:
   interval: 1h
   values:
     domainFilters:
-      - "${CLUSTER_DOMAIN}"
+      - "${DOMAIN_APP}"
+      - "${DOMAIN_CASA}"
+      - "${DOMAIN_IO}"
+      - "${DOMAIN_CLUSTER}"
+      - "${DOMAIN_APPS}"
     env:
       - name: CF_API_TOKEN
         valueFrom:

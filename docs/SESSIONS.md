@@ -4,6 +4,62 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-23 — `debug-flux-dns-tunnel`
+
+### Goal
+Add multi-domain TLS support, remove legacy `CLUSTER_DOMAIN`, harden Envoy Gateway, and fix a Cloudflare tunnel routing bug where `external.proxii.nl` (private DNS) was used as the external-dns target instead of the cloudflared tunnel endpoint.
+
+### What we did
+- Compared envoy-gateway deployment against bykaj reference repo; identified gaps: no BackendTrafficPolicy (compression/retry), no observability, no memory limits, no drainTimeout
+- Added `BackendTrafficPolicy` (zstd/brotli/gzip compression, retry on TCP reset, tcpKeepalive, `requestTimeout: 0s`), `ClientTrafficPolicy` (http3, tcpKeepalive), `drainTimeout: 180s`, memory 256Mi request / 1Gi limit (Burstable QoS)
+- Added `PodMonitor` + `ServiceMonitor` for Envoy proxy pods and control-plane metrics
+- Added four domain variables (`DOMAIN_APP`, `DOMAIN_CASA`, `DOMAIN_CLUSTER`, `DOMAIN_APPS`) to `cluster-secrets.sops.yaml`; removed legacy `CLUSTER_DOMAIN` (`vwn.io`) entirely
+- Created four per-domain wildcard Certificate CRs (`vwn.app`, `vwn.casa`, `cluster.vwn.io`, `apps.vwn.io`); removed `wildcard-production` Certificate; updated both gateway `certificateRefs`; removed `hostname:` restriction from HTTPS listeners (SNI-based cert selection)
+- Migrated `prometheus`, `alertmanager` HTTPRoutes to `DOMAIN_CLUSTER` / `envoy-internal`; migrated `flux-webhook` to `DOMAIN_CLUSTER` / `envoy-external`
+- Removed `CLUSTER_DOMAIN` from cert-manager ClusterIssuers, cloudflared ingress rules, and external-dns domainFilters
+- Added static `DNSEndpoint` for `kube-vip.cluster.vwn.io → 10.60.0.2` and `external-dns-endpoints` Kustomization (later replaced)
+- **Diagnosed tunnel routing bug:** `flux-webhook.cluster.vwn.io` resolved to `external.proxii.nl → 10.60.0.230` (private IP); Cloudflare's edge can't reach private IPs, so tunnel was never engaged. Root cause: `external.proxii.nl` is in private UniFi DNS, not a Cloudflare-managed zone
+- **Fixed:** Added `DNSEndpoint` CR in cloudflared app creating `external.cluster.vwn.io CNAME <tunnel-id>.cfargotunnel.com`; changed gateway target annotation from `external.${DOMAIN_PROXII}` → `external.${DOMAIN_CLUSTER}`; added `CLOUDFLARE_TUNNEL_ID` to cluster-secrets
+- Removed `crd` from `external-dns-unifi` sources to prevent CNAME/A conflict (both instances would have created conflicting record types for the same intermediate hostname)
+- Replaced `kube-vip` `DNSEndpoint` CR with a real `kube-api` `LoadBalancer` Service in `cilium/config/`; Cilium LB IPAM pins it to `10.60.0.2`; `external-dns-unifi` `service` source creates `kube-vip.cluster.vwn.io A 10.60.0.2` without needing the `crd` source
+- Removed `external-dns-endpoints` Kustomization and `endpoints/` directory
+- Installed `dnsutils` in devcontainer (added to `postCreateCommand.sh`); added prominent no-commit directive to `CLAUDE.md`
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/vars/cluster-secrets.sops.yaml` | Added `DOMAIN_APP/CASA/CLUSTER/APPS/PROXII`, `CLOUDFLARE_TUNNEL_ID`; removed `CLUSTER_DOMAIN` |
+| `kubernetes/apps/network/envoy-gateway/config/envoy.yaml` | BackendTrafficPolicy, ClientTrafficPolicy, memory limits, drainTimeout 180s |
+| `kubernetes/apps/network/envoy-gateway/config/certificate.yaml` | Replaced `wildcard-production` with 4 per-domain wildcard Certificates |
+| `kubernetes/apps/network/envoy-gateway/config/gateway.yaml` | Removed hostname restriction; multi-cert refs; tunnel target fixed |
+| `kubernetes/apps/network/envoy-gateway/app/observability.yaml` | New — PodMonitor + ServiceMonitor |
+| `kubernetes/apps/network/envoy-gateway/app/kustomization.yaml` | Added `observability.yaml` |
+| `kubernetes/apps/network/cloudflared/app/resources/config.yaml` | Removed `CLUSTER_DOMAIN` ingress entries; added all 4 new domains; fixed `originServerName` |
+| `kubernetes/apps/network/cloudflared/app/dnsendpoint.yaml` | New — `external.cluster.vwn.io CNAME <tunnel-id>.cfargotunnel.com` |
+| `kubernetes/apps/network/cloudflared/app/kustomization.yaml` | Added `dnsendpoint.yaml` |
+| `kubernetes/apps/network/external-dns/cloudflare/helmrelease.yaml` | Updated `domainFilters` |
+| `kubernetes/apps/network/external-dns/unifi/helmrelease.yaml` | Updated `domainFilters`; removed `crd` source |
+| `kubernetes/apps/network/external-dns/ks.yaml` | Removed `external-dns-endpoints` Kustomization |
+| `kubernetes/apps/network/external-dns/endpoints/` | Deleted — replaced by `kube-api` Service |
+| `kubernetes/apps/kube-system/cilium/config/service.yaml` | New — `kube-api` LoadBalancer Service for `kube-vip.cluster.vwn.io` |
+| `kubernetes/apps/kube-system/cilium/config/kustomization.yaml` | Added `service.yaml` |
+| `kubernetes/apps/cert-manager/cluster-issuers/app/clusterissuer-production.yaml` | Removed `CLUSTER_DOMAIN` from `dnsZones` |
+| `kubernetes/apps/cert-manager/cluster-issuers/app/clusterissuer-staging.yaml` | Removed `CLUSTER_DOMAIN` from `dnsZones` |
+| `kubernetes/apps/flux-system/flux-receiver/app/httproute.yaml` | Hostname → `flux-webhook.${DOMAIN_CLUSTER}` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/httproute.yaml` | Hostnames → `${DOMAIN_CLUSTER}` |
+| `docs/ROADMAP.md` | Added multi-domain cert pipeline pattern (deferred) |
+| `CLAUDE.md` | Prominent no-commit directive blockquote |
+| `.devcontainer/postCreateCommand.sh` | Added `dnsutils` |
+
+### Key decisions
+- Domain vars go in encrypted `cluster-secrets.sops.yaml`, not plaintext `cluster-settings.yaml` — these values are considered infrastructure secrets
+- `hostname:` restriction removed from gateway HTTPS listeners — SNI-based cert selection handles routing; HTTP virtual hosting is still controlled by HTTPRoute `hostnames:` field
+- `external.cluster.vwn.io` chosen as the cloudflared tunnel intermediary hostname (not `external.proxii.nl`) because it lives in a Cloudflare-managed zone; both external-dns instances resolve it differently via split DNS (Cloudflare: CNAME → tunnel; UniFi: A → 10.60.0.230)
+- `crd` source removed from UniFi external-dns (mirrors bykaj pattern); static LAN records handled via `service` source instead, avoiding CNAME/A conflicts
+- `kube-vip.cluster.vwn.io` hardcoded in `service.yaml` (not a variable) because `cilium-config` Kustomization has substitution disabled (`substitution.flux.home.arpa/disabled: "true"`) — changing this would be a broader risk than hardcoding a stable infrastructure hostname
+
+---
+
 ## 2026-05-23 — `uncordon-cp-02-node`
 
 ### Goal

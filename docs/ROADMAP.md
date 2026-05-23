@@ -287,6 +287,70 @@ that apps include in their `app/kustomization.yaml` via `components:` references
 
 ---
 
+#### Multi-Domain Certificate Pipeline (`certificates-export` / `certificates-import`)
+
+A two-phase push-pull pattern that makes TLS certificates resilient across cluster rebuilds and avoids Let's Encrypt rate limits when managing multiple domains. Sourced from `bykaj/home-ops` (`kubernetes/apps/network/certificates/`).
+
+**Why this matters for us:**
+Currently we have one domain (`${CLUSTER_DOMAIN}`) and one wildcard cert issued directly by cert-manager in `envoy-gateway/config/certificate.yaml`. That is fine for one domain. As soon as a second domain is added, each rebuild risks hitting the Let's Encrypt [duplicate certificate rate limit](https://letsencrypt.org/docs/rate-limits/) (5 identical certs per 7 days). With this pattern, certs are issued once and persisted in 1Password — rebuilds restore from 1Password in seconds.
+
+**How it works:**
+
+```
+cert-manager issues Certificate
+    ↓ creates TLS Secret in cluster
+PushSecret (ESO) → writes Secret into 1Password as base64-encoded item
+    (certificates-export Kustomization)
+
+    ↑ on cluster rebuild / new node
+ExternalSecret (ESO) ← reads item from 1Password, recreates TLS Secret
+    refreshPolicy: CreatedOnce   — ESO won't overwrite once created
+    creationPolicy: Orphan       — cert-manager retains ownership; rotations flow naturally
+    (certificates-import Kustomization)
+```
+
+`envoy-gateway-config` gains `dependsOn: certificates-import`, ensuring the Gateway listeners never apply before the TLS Secrets exist.
+
+**Directory layout:**
+
+```
+kubernetes/apps/network/certificates/
+├── ks.yaml                        # two-doc: certificates-import (wait: true) → certificates-export
+├── export/
+│   ├── kustomization.yaml
+│   ├── certificates.yaml          # cert-manager Certificate CRs (one per domain)
+│   └── pushsecrets.yaml           # ESO PushSecret CRs (one per domain)
+└── import/
+    ├── kustomization.yaml
+    └── externalsecrets.yaml       # ESO ExternalSecret CRs (one per domain)
+```
+
+**Flux ordering:**
+
+```
+certificates-import (wait: true)
+    ↓ produces TLS Secrets
+certificates-export (dependsOn: certificates-import)
+    ↓ keeps 1Password in sync
+envoy-gateway-config (dependsOn: certificates-import, cert-manager)
+```
+
+**Steps to implement (when adding a second domain):**
+
+1. Create `kubernetes/apps/network/certificates/` with the layout above
+2. For each domain, add one `Certificate` + one `PushSecret` (export) and one `ExternalSecret` (import)
+3. Add `certificates` to `kubernetes/apps/network/kustomization.yaml`
+4. Move `wildcard-production` `Certificate` from `envoy-gateway/config/` into `certificates/export/certificates.yaml`; remove `certificate.yaml` from `envoy-gateway/config/`
+5. Update `envoy-gateway/ks.yaml`: replace `dependsOn: cluster-issuers` with `dependsOn: certificates-import`
+6. Update `envoy-gateway/config/gateway.yaml` listeners to reference per-domain Secret names (e.g. `vwn-io-tls`) instead of `wildcard-production-tls`
+7. Seed 1Password: on first deploy, `certificates-export` runs first and writes the certs; subsequent rebuilds restore from 1Password before cert-manager even runs
+
+**Note on `creationPolicy: Orphan`:** The ExternalSecret creates the Secret but immediately releases ownership. cert-manager then annotates and manages it normally — renewal writes a new cert into the same Secret, which ESO's `refreshPolicy: CreatedOnce` leaves untouched. `PushSecret` picks up the renewed cert and writes it back into 1Password, keeping the vault copy current.
+
+**Dependencies:** `external-secrets` + `onepassword-connect` ✅ (already deployed), `cert-manager` ✅. Defer until a second domain is added — the single-domain wildcard approach is correct and simpler for now.
+
+---
+
 #### Split Renovate Configuration (`.renovate/` directory)
 
 Instead of a single `renovate.json5`, split config into files by concern so each section

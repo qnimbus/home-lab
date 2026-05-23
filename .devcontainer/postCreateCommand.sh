@@ -8,7 +8,7 @@ sudo apt-get update
 
 # Install required packages
 # sudo apt-get install -y gnupg ca-certificates iputils-ping dnsutils trash-cli tree libgtk2.0-0 libgtk-3-0 libgbm-dev libnotify-dev libnss3 libxss1 libasound2 libxtst6 xauth xvfb nmap
-sudo apt-get install -y netcat-openbsd nmap iputils-ping
+sudo apt-get install -y netcat-openbsd nmap iputils-ping dnsutils
 
 # Find the most recent .claude.json backup in ~/.claude/backups and restore it to ~/.claude.json
 BACKUP_FILE=$(ls -t ~/.claude/backups/.*.json.backup* 2>/dev/null | head -n 1)

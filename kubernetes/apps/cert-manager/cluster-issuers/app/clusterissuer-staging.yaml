@@ -18,4 +18,7 @@ spec:
               key: API_TOKEN
         selector:
           dnsZones:
-            - ${CLUSTER_DOMAIN}
+            - ${DOMAIN_APP}
+            - ${DOMAIN_CASA}
+            - ${DOMAIN_CLUSTER}
+            - ${DOMAIN_APPS}
