@@ -11,12 +11,12 @@ ingress:
     service: https://envoy-external.network.svc.cluster.local
   - hostname: "${DOMAIN_CASA}"
     service: https://envoy-external.network.svc.cluster.local
-  - hostname: "*.${DOMAIN_CLUSTER}"
-    service: https://envoy-external.network.svc.cluster.local
-  - hostname: "${DOMAIN_CLUSTER}"
-    service: https://envoy-external.network.svc.cluster.local
   - hostname: "*.${DOMAIN_APPS}"
     service: https://envoy-external.network.svc.cluster.local
   - hostname: "${DOMAIN_APPS}"
+    service: https://envoy-external.network.svc.cluster.local
+  - hostname: "*.${DOMAIN_IO}"
+    service: https://envoy-external.network.svc.cluster.local
+  - hostname: "${DOMAIN_IO}"
     service: https://envoy-external.network.svc.cluster.local
   - service: http_status:404
