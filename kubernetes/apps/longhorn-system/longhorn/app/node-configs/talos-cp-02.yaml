@@ -1,5 +1,4 @@
 ---
-# allowScheduling: false until Crucial P310 1TB 2230 drive is installed and disk patch applied
 apiVersion: v1
 kind: Node
 metadata:
@@ -8,4 +7,4 @@ metadata:
     node.longhorn.io/create-default-disk: 'config'
   annotations:
     node.longhorn.io/default-disks-config: |
-      [{"path":"/var/mnt/longhorn-storage","allowScheduling":false}]
+      [{"path":"/var/mnt/longhorn-storage","allowScheduling":true}]

@@ -4,6 +4,67 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-23 — `uncordon-cp-02-node`
+
+### Goal
+Diagnose and fix the cp-02 persistent boot loop (JetKVM EFI boot entry root cause), then repair Longhorn's stale disk UUID record to bring cp-02's storage disk fully online.
+
+### What we did
+- Continued from `nvme-disk-config-talos` — cp-02 was configured but kept booting to ISO/maintenance mode instead of Talos after every power cycle
+- Diagnosed masking issue: `talosctl reboot` uses Linux kexec by default (bypasses BIOS entirely), so the boot failure was invisible until `--mode powercycle` was used
+- Booted Alpine Linux via JetKVM virtual media to inspect UEFI state; `apk add efibootmgr` was unavailable (no network), BusyBox `strings -e l` unsupported; decoded UTF-16LE boot entry labels using `tr -d '\000' < /sys/firmware/efi/efivars/Boot####-<GUID>`
+- Identified root cause: **JetKVM Virtual Media (Boot0016)** had higher UEFI priority than Talos Linux (Boot0000); with Alpine ISO mounted in JetKVM, every boot went to maintenance mode
+- Deleted all UEFI boot entries except Boot0000 via direct efivars manipulation (`chattr -i` + `rm`); ejected Alpine ISO from JetKVM virtual media; power-cycled
+- cp-02 booted Crucial P310 successfully (Lenovo logo visible via JetKVM); all 3 nodes Ready (Talos v1.13.2, K8s v1.36.1); mounts confirmed: `nvme1n1=EPHEMERAL/system`, `nvme0n1p1=/var/mnt/longhorn-storage`
+- Ran cluster-doctor diagnostic: cp-02 already uncordoned; Longhorn disk `default-disk-1030500000000` had `DiskFilesystemChanged` UUID mismatch, `allowScheduling: false`
+- Fixed stale `node.longhorn.io/default-disks-config` annotation on Node object (`allowScheduling: false → true`, aligning with Git manifest)
+- Removed stale Longhorn disk entry via `kubectl patch`; controller re-discovered disk with fresh UUID `3becac06-4aac-499c-a8de-a49badaefaaa`; disk now `Ready: True, Schedulable: True`, ~913 GiB available
+- Confirmed existing volumes remain at 2 replicas (pre-cp-02); new volumes will use 3-replica default; manual UI bump or `Replicas Auto Balance` setting needed to expand existing volumes
+- Created `docs/BOOT-ISSUE-TROUBLESHOOTING.md` documenting M920Q A/E slot boot behavior, EFI entry manipulation workaround, and required BIOS settings
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/BOOT-ISSUE-TROUBLESHOOTING.md` | New — M920Q A/E slot UEFI boot troubleshooting guide (efivars manipulation, JetKVM gotcha, BIOS settings) |
+
+### Key decisions
+- Direct efivars `chattr -i` + `rm` used instead of `efibootmgr` — Alpine on JetKVM had no network; efivars manipulation is equivalent from any Linux live environment
+- Deleted all non-Talos UEFI entries (including JetKVM virtual media entry) rather than reordering — prevents any external boot source overriding Talos on future power cycles
+- Longhorn disk UUID reset via imperative `kubectl patch` (not GitOps) — stale UUID is a live controller-state problem, not representable in Git; Longhorn re-adds disk with correct UUID within seconds
+
+---
+
+## 2026-05-22 — `nvme-disk-config-talos`
+
+### Goal
+Install the Crucial P310 1TB NVMe drive in cp-02, reconfigure Talos to boot from it and use the Kingston as Longhorn storage, and promote Longhorn to 3-replica mode.
+
+### What we did
+- Shut down cp-02 with `talosctl shutdown` (note: `halt` command removed in Talos 1.9+; `shutdown` is the equivalent)
+- User installed Crucial P310 1TB 2230 NVMe in cp-02 and booted into Talos maintenance mode
+- Ran `talosctl get disks --insecure` to identify both drives: Crucial (`nvme1n1`, model `CT1000P310SSD2`, serial `25174FD70E4D`) as new drive; Kingston (`nvme0n1`, model `KINGSTON SNV3S1000G`, serial `50026B7383B9D0CC`) as former system disk
+- Updated `talos/talconfig.yaml`: changed `installDiskSelector.model` from `KINGSTON SNV3S1000G` → `CT1000P310SSD2`; added `machine.disks` patch mounting Kingston (`/dev/disk/by-id/nvme-KINGSTON_SNV3S1000G_50026B7383B9D0CC`) at `/var/mnt/longhorn-storage`; removed all cp-02 TODO comments
+- Ran `task talos:genconfig` to regenerate all three node configs from updated talconfig
+- Applied config in maintenance mode: `task talos:apply IP=10.60.0.202 INSECURE=true`; Talos installed to Crucial and rebooted cleanly
+- Verified mount layout post-reboot: `nvme1n1p4 → /var` (Crucial = system disk), `nvme0n1p1 → /var/mnt/longhorn-storage` (Kingston = Longhorn storage, XFS auto-formatted)
+- Waited for cp-02 to rejoin Kubernetes cluster as Ready control-plane node (all 3 nodes Ready, v1.36.1)
+- Updated `node-configs/talos-cp-02.yaml`: `allowScheduling: false → true`
+- Updated `helm/values.yaml`: `defaultClassReplicaCount` and `defaultReplicaCount` 2 → 3 (pending Flux reconciliation)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | cp-02 `installDiskSelector` → Crucial P310; `machine.disks` patch added for Kingston; TODO comments removed |
+| `kubernetes/apps/longhorn-system/longhorn/app/node-configs/talos-cp-02.yaml` | `allowScheduling: false → true`; holding comment removed |
+| `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml` | `defaultClassReplicaCount` and `defaultReplicaCount` 2 → 3; TODO comments removed |
+
+### Key decisions
+- `installDiskSelector.model: "CT1000P310SSD2"` used for Crucial — matches exact model string from `talosctl get disks`, consistent with cp-03's AirDisk selector pattern
+- Kingston device path uses `nvme-KINGSTON_SNV3S1000G_<serial>` form (not EUI WWID) — matches cp-01's existing Kingston disk patch for readability and consistency
+- Longhorn replica bump left as uncommitted GitOps change — takes effect via Flux reconciliation after push; no in-cluster emergency
+
+---
+
 ## 2026-05-22 — `cluster-doc-sync`
 
 ### Goal

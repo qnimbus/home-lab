@@ -76,10 +76,7 @@ nodes:
   - hostname: "talos-cp-02"                         # Lenovo M920Q #2 (i5-8500T, 64GB, X520-DA2)
     ipAddress: "10.60.0.202"
     installDiskSelector:
-      # TODO: when Crucial P310 1TB 2230 arrives — change model to "CT1000P310SSD8" (verify via talosctl get disks)
-      # and add machine.disks patch for Kingston (serial: talosctl get disks --nodes 10.60.0.202)
-      # Then ISO-boot cp-02 and apply in maintenance mode (task talos:apply IP=10.60.0.202 INSECURE=true)
-      model: "KINGSTON SNV3S1000G"                   # temporary — Kingston is sole disk; will become Longhorn storage once Crucial arrives
+      model: "CT1000P310SSD2"                        # Crucial P310 1TB 2230 — system disk; Kingston SNV3S1000G reserved for Longhorn storage
     machineSpec:
       secureboot: false
     talosImageURL: "${talosImageURL}"
@@ -87,6 +84,17 @@ nodes:
     nodeLabels:
       topology.kubernetes.io/region: *region
       topology.kubernetes.io/zone: homelab-cp-02
+    patches:
+      - |-
+        machine:
+          install:
+            wipe: true
+      - |-
+        machine:
+          disks:
+            - device: /dev/disk/by-id/nvme-KINGSTON_SNV3S1000G_50026B7383B9D0CC
+              partitions:
+                - mountpoint: /var/mnt/longhorn-storage
     networkInterfaces:
       - deviceSelector:
           driver: e1000e

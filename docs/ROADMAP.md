@@ -1,99 +1,30 @@
-# Home Lab — Cluster Roadmap
+# Home Lab — Cluster Roadmap <!-- omit from toc -->
 
 Pending work items for the cluster, roughly in priority / dependency order. Update this file as tasks are started, completed, or reprioritized.
+
+## Contents  <!-- omit from toc -->
+
+- [In Progress](#in-progress)
+  - [Future Storage Options](#future-storage-options)
+  - [Grafana](#grafana)
+  - [Alertmanager Receiver](#alertmanager-receiver)
+  - [Scheduling Topology: Follow-up Fixes](#scheduling-topology-follow-up-fixes)
+  - [Kubernetes Descheduler](#kubernetes-descheduler)
+  - [Talos Config, Image Extensions \& Patch Audit](#talos-config-image-extensions--patch-audit)
+  - [GitHub Actions Self-Hosted Runners (ARC + Claude PR Review)](#github-actions-self-hosted-runners-arc--claude-pr-review)
+  - [Researched Patterns (bykaj/home-ops)](#researched-patterns-bykajhome-ops)
+- [Completed](#completed)
 
 ---
 
 ## In Progress
 
-### Persistent Storage
+### Future Storage Options
 
-The cluster has no persistent storage layer. Without one, stateful workloads (databases, media
-apps, monitoring stacks) cannot run reliably. This item tracks the decision and rollout.
+Both stages are optional — Longhorn covers all current workload needs. Implement only if requirements emerge.
 
-#### Hardware snapshot
-
-| Node  | System disk              | Dedicated storage disk                  |
-|-------|--------------------------|-----------------------------------------|
-| cp-01 | 1 TB GoodRam IRDM PRO NANO (IRP-SSDPR-P44N-01T-30) | **1 TB Kingston SNV3S1000G** (`nvme-KINGSTON_SNV3S1000G_50026B7686F8B787`) — live at `/var/mnt/longhorn-storage` |
-| cp-02 | 1 TB Kingston SNV3S1000G (sole disk until Crucial arrives) | **Crucial P310 1TB 2230 + M.2 A/E adapter — on order, not yet installed** |
-| cp-03 | 128 GB AirDisk (system)    | **2 TB Crucial CT2000P310SSD8** (`nvme-CT2000P310SSD8_252450B1A33B`) — live |
-
-All nodes have dedicated 10 GbE storage bonds (`10.200.0.0/24`). Jumbo frames are a separate TODO.
-**cp-01** and **cp-03**: fully live. **cp-02 blocked** — storage drive (Crucial P310 1TB 2230) on order; once installed, ISO-boot cp-02 and swap Kingston to Longhorn storage (same procedure as cp-01).
-
-> **[Monitor — cp-03 storage disk]** At boot, `nvme1` (the Crucial CT2000P310SSD8 Longhorn disk) logs:
-> ```
-> nvme nvme1: using unchecked data buffer
-> ```
-> **What this means:** The Crucial P310 does not advertise support for the NVMe "metadata-in-data-buffer" feature (an optional NVMe 1.2+ spec capability). The Linux `nvme` driver detects this during controller initialisation and falls back to a simpler DMA path that skips the associated buffer integrity check. This is a one-time boot message — confirmed count of 1, no I/O errors, no resets, XFS mount clean. The disk is behaving normally at idle.
->
-> **Why to keep watching:** As of 2026-05-13 no Longhorn PVCs have been provisioned, so the disk has not yet been under sustained replication I/O load. Monitor once real workloads start using Longhorn storage on cp-03:
-> - Check `talosctl dmesg --nodes 10.60.0.203 | grep -i nvme` — the count should stay at 1; additional occurrences or any `I/O error` / `nvme reset` / `timeout` lines are a red flag.
-> - Watch for Longhorn replica faults on cp-03 specifically: `kubectl -n longhorn-system get replicas -o wide | grep cp-03`.
-
-#### Talos system-disk partitioning — researched, not viable
-
-Talos creates a fixed partition layout on the install disk: `EFI / BIOS-BOOT / META / STATE /
-EPHEMERAL`. The `EPHEMERAL` partition grows to consume **all remaining disk space** — there is
-no free tail to reclaim. Key findings:
-
-- `machine.disks` only targets non-system disks (e.g. cp-02's nvme1n1); cannot repartition the install disk.
-- The `UserVolume` API (Talos 1.9+) targets additional disks by selector; it does not carve space from `EPHEMERAL`.
-- Mounting a hostpath *within* `EPHEMERAL` (e.g. `/var/mnt/longhorn-storage`) is possible but shares IOPS and capacity with container images — risky for stateful data and not recommended.
-- cp-03's 2 TB system disk has notional slack (~1.9 TB after OS use) but it is inside `EPHEMERAL`; Kubernetes workloads cannot claim it cleanly without a dedicated disk.
-
-**Verdict**: all three nodes now have free nvme1n1 drives (verified live; cp-03's 2 TB Crucial freed after migrating Talos to a 128 GB AirDisk). `machine.disks` in `talconfig.yaml` is the correct mechanism for all three storage drives. No hardware purchases needed.
-
-#### Storage options
-
-| Option | HA? | Works today? | Notes |
-|--------|-----|-------------|-------|
-| **OpenEBS LocalPV** | No (node-local) | ✅ yes | Hostpath provisioner; zero hardware; good for cache/CI volumes |
-| **Longhorn** | ✅ 3-replica | ✅ yes | Archive precedent; GUI; VolSync integration; simpler than Ceph |
-| **Rook/Ceph** | ✅ full | ✅ yes | RWO + RWX + S3 object store; production-grade; ~2–3 GB RAM/OSD node |
-| **NFS/SMB CSI** | External | If NAS exists | ReadWriteMany; offloads storage to external NAS; archive has full patterns |
-| **TopoLVM** | With LVM VG | With dedicated VG | Thin provisioning; less home-lab traction |
-
-**All three nodes now have a free dedicated disk** — full 3-replica Longhorn or 3-OSD Ceph is achievable with no hardware purchases. cp-03's 2 TB Crucial (freed by migrating Talos to a 128 GB AirDisk) gives that node considerably more OSD capacity than cp-01/cp-02.
-
-#### Recommended staged rollout
-
-**Stage 1 — ✅ Done**
-**OpenEBS LocalPV** deployed and running in `openebs` namespace. `openebs-hostpath` StorageClass
-(non-default) live, base path `/var/mnt/openebs/local` (EPHEMERAL).
-
-**Stage 2 — ✅ Deployed (2-replica interim); one step remaining when cp-02 drive arrives**
-Talos prerequisites complete: `iscsi-tools` + `util-linux-tools` in schematic; per-node
-`machine.disks` patches applied for cp-01 (GoodRam IRDM PRO NANO, serial `G4E004578`) and
-cp-03 (Crucial CT2000P310SSD8, serial `252450B1A33B`); cp-02 upgraded to new schematic but
-no disk patch yet (Crucial P310 1TB 2230 on order).
-
-**Longhorn** deployed and running in `longhorn-system` namespace. Currently configured with
-`defaultClassReplicaCount: 2` (provisional — only cp-01 and cp-03 have storage disks).
-talos-cp-02 node-config has `allowScheduling: false`. When cp-02's drive arrives:
-- `talosctl get disks --nodes 10.60.0.202` → grab serial; add `machine.disks` inline patch for cp-02; `task talos:apply IP=10.60.0.202`
-- Set `allowScheduling: true` in `node-configs/talos-cp-02.yaml`
-- Bump `defaultClassReplicaCount` and `defaultReplicaCount` to `3` in `helm/values.yaml`
-
-**Stage 3 — Evaluate Rook/Ceph if object storage or RWX block is needed**
-Once Longhorn is stable, consider migrating to **Rook/Ceph** for S3-compatible object storage,
-`ReadWriteMany` block volumes, or more granular replication controls. The 3-disk hardware layout
-supports it directly. Not required if Longhorn meets all workload needs.
-
-**Stage 4 — If/when a NAS is added**
-Deploy **NFS CSI** (`csi-driver-nfs`) and/or **SMB CSI** (`csi-driver-smb`) for ReadWriteMany
-workloads (photo libraries, shared media). Wire SMB/NFS credentials via ExternalSecret from
-1Password (ESO + 1Password Connect are already deployed — no blocker).
-
-#### Dependency chain
-
-```
-cert-manager ✅ → external-secrets ✅ → onepassword-connect ✅   ← ✅ all deployed; unblocks NFS/SMB credentials (Stage 4)
-OpenEBS LocalPV                                ← ✅ Stage 1 — deployed, running
-cp-02 disk installed → allowScheduling: true + replicaCount: 3 → Longhorn 3x ← Stage 2, Longhorn live (2-replica), cp-02 drive pending
-Longhorn stable → evaluate Rook-Ceph                    ← Stage 3, optional
-```
+- **Stage 3 — Rook/Ceph**: S3-compatible object storage, `ReadWriteMany` block volumes, or more granular replication controls. The 3-disk hardware layout supports a 3-OSD Ceph cluster directly. Costs ~2–3 GB RAM per OSD node. Not required unless Longhorn's RWO-only model becomes a blocker.
+- **Stage 4 — NFS/SMB CSI**: Deploy `csi-driver-nfs` and/or `csi-driver-smb` for ReadWriteMany workloads (photo libraries, shared media) when a NAS is added. Wire credentials via ExternalSecret from 1Password (ESO + 1Password Connect already deployed — no blocker).
 
 ---
 
@@ -128,78 +59,6 @@ Wire an Alertmanager notification receiver so cluster alerts reach a human. Aler
 - Add `alertmanager.config` to `helm/values.yaml` with routes + receiver; keep the secret itself in 1Password
 
 **Dependencies:** kube-prometheus-stack ✅, onepassword-connect ✅
-
----
-
-### Pod Topology: Scheduling Concentration on cp-03 ✅
-
-The cluster had a structural imbalance: **41 pods on cp-03 vs. 18/16 on cp-01/cp-02**. This
-section documents the root cause, what was implemented, and what remains accepted as-is.
-
-#### Root cause
-
-cp-03 (AMD 32c/92 GB) wins almost every scheduling contest against the two M920Qs (i5-8500T/64 GB).
-Because no `topologySpreadConstraints` were set at deploy time, all major controllers — Flux,
-ESO, cert-manager, kube-prometheus-stack — landed there. Longhorn's `WaitForFirstConsumer`
-binding then pins each PVC to the node where its pod was first scheduled, making stateful
-workloads permanently sticky.
-
-#### What was implemented
-
-Two strategies were applied depending on the workload type:
-
-**Multi-replica services — scaled to 3 replicas, 1-per-node (`DoNotSchedule`)**
-
-| Deployment | Before | After | Constraint |
-|---|---|---|---|
-| `coredns` | 2 replicas, cp-02+cp-03 | 3 replicas, 1 per node | `DoNotSchedule` |
-| `envoy-external` | 2 replicas, cp-01+cp-03 | 3 replicas, 1 per node | `DoNotSchedule` + `matchLabelKeys` |
-| `envoy-internal` | 2 replicas, cp-01+cp-03 | 3 replicas, 1 per node | `DoNotSchedule` + `matchLabelKeys` |
-
-A 3rd replica on a 3-node cluster means any single node loss leaves two healthy pods across
-the other two nodes. `matchLabelKeys: [pod-template-hash]` on the Envoy proxies scopes the
-spread calculation to the current ReplicaSet, preventing rolling upgrades from blocking.
-
-**Stateless controllers — scaled to 2 replicas, spread across nodes**
-
-The key insight: topology spread alone does nothing for single-replica deployments (no other
-pods to spread against). The fix is `replicas: 2` — pre-placing one pod on each of two
-different nodes. When a node fails, the standby pod is already running; no scheduling delay.
-
-| Stack | Failover mechanism | Failover time | Constraint |
-|---|---|---|---|
-| Flux controllers (4×) | Leader election (`leaseDuration: 35s`) | ~35 s | `ScheduleAnyway` |
-| cert-manager controller + cainjector | Leader election (`leaseDuration: 60s`) | ~60 s | `DoNotSchedule` |
-| cert-manager webhook | HTTP server (all replicas active) | ~0 s | `DoNotSchedule` |
-| ESO controller | Concurrent mode (no leader election) | ~0 s | `DoNotSchedule` |
-| ESO webhook + certController | HTTP server (all replicas active) | ~0 s | `DoNotSchedule` |
-
-Flux uses `ScheduleAnyway` (soft) because 8 pods (4 controllers × 2 replicas) on 3 nodes
-target a 3/3/2 split — hard enforcement would block the 8th pod. cert-manager and ESO use
-`DoNotSchedule` (hard) because 6 pods (3 components × 2 replicas) on 3 nodes achieves a
-perfect 2/2/2 split.
-
-Flux required an additional kustomize patch to inject a shared pod label
-(`app.kubernetes.io/part-of: flux`) because `commonMetadata.labels` in the flux-instance
-values does not propagate to pod templates — verified live.
-
-#### Stateful workloads (Prometheus/Alertmanager — accept current state)
-
-Migrating existing Longhorn volumes between nodes requires VolSync or a manual backup/restore
-cycle — not worth the disruption for a homelab. The practical path:
-
-1. **Accept current placement** for existing Prometheus + Alertmanager volumes (both on cp-03).
-2. **When Grafana is deployed**, configure its PVC + pod to land on cp-01 or cp-02 using
-   `nodeAffinity` or a `topologySpreadConstraint` scoped to the `observability` namespace.
-3. **For all future stateful deployments**, set `topologySpreadConstraints` *before* the PVCs
-   are created — once `WaitForFirstConsumer` binds the volume to a node, the pod is sticky.
-
-#### What was not changed
-
-- `cloudflared` (stays at 2): Cloudflare tunnel redundancy is handled at the edge; 3rd replica adds no benefit.
-- `onepassword-connect` (stays at 1): server with local cache state; HA requires 1Password-specific config.
-- `flux-operator` (stays at 1): manages the FluxInstance CR only; HA adds no operational benefit.
-- Prometheus + Alertmanager: PVC-bound to cp-03 via Longhorn `WaitForFirstConsumer`; migration deferred until VolSync is deployed.
 
 ---
 
@@ -294,11 +153,11 @@ Deliverable: a PR updating `schematic.yaml` and the relevant patch files with re
 
 ---
 
-## GitHub Actions Self-Hosted Runners (ARC + Claude PR Review)
+### GitHub Actions Self-Hosted Runners (ARC + Claude PR Review)
 
 Deploy **Actions Runner Controller (ARC)** to run GitHub Actions jobs in-cluster, then wire up `claude-code-action` to automatically review Renovate PRs using the `pr-upgrade-reviewer` agent.
 
-### Why
+#### Why
 
 Renovate opens PRs constantly. The `pr-upgrade-reviewer` agent already knows how to assess upgrade risk, breaking changes, and merge safety — but today it must be invoked manually. Self-hosted runners mean:
 - Reviews run on our own hardware (no GitHub-hosted runner minutes consumed)
@@ -306,7 +165,7 @@ Renovate opens PRs constantly. The `pr-upgrade-reviewer` agent already knows how
 - `ANTHROPIC_API_KEY` stays inside the cluster, never leaving our network
 - Future CI jobs (linting, schema validation, dry-run applies) can also use the runners
 
-### Architecture
+#### Architecture
 
 Two ARC components, matching the multi-document `ks.yaml` operator-plus-instance pattern:
 
@@ -334,7 +193,7 @@ actions-runner-system/
 
 Reference: bykaj/home-ops uses both at chart version `0.14.1`.
 
-### Key configuration decisions
+#### Key configuration decisions
 
 **Runner mode — `kubernetes` not `docker`**
 Set `containerMode.type: kubernetes` in the scale set values. Each job runs as a **pod** (not a Docker container), which avoids Docker-in-Docker and integrates naturally with cluster RBAC. A work volume (25 Gi `openebs-hostpath` PVC) is provisioned per job and cleaned up automatically.
@@ -354,7 +213,7 @@ The runner ServiceAccount gets `cluster-admin` (homelab; acceptable risk). Addit
 **Runner image**
 bykaj uses `ghcr.io/home-operations/actions-runner` (community image with common tools pre-installed). Evaluate whether the standard `ghcr.io/actions/runner` base image suffices or whether the home-operations variant is preferable. Set `ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER=false` so jobs can run directly in the runner container without a nested job container.
 
-### Renovate PR auto-review workflow
+#### Renovate PR auto-review workflow
 
 Once runners are live, add a workflow at `.github/workflows/renovate-pr-review.yml`:
 
@@ -385,7 +244,7 @@ jobs:
 
 `ANTHROPIC_API_KEY` is stored in 1Password and injected into the runner pod via an `ExternalSecret` → Kubernetes Secret → runner env.
 
-### Steps to implement
+#### Steps to implement
 
 1. **Create GitHub App**: `github.com/settings/apps` → scoped to this repo → note App ID + Installation ID → generate private key
 2. **Add 1Password item** `actions-runner` with the three credential fields above; also add `ANTHROPIC_API_KEY` field
@@ -396,7 +255,7 @@ jobs:
 7. **Add workflow file** at `.github/workflows/renovate-pr-review.yml`
 8. **Verify**: open a test PR, confirm runner pod spawns, confirm Claude posts a comment
 
-### Dependencies
+#### Dependencies
 
 - `openebs-hostpath` StorageClass ✅ (work volume PVC per job)
 - `external-secrets` + `onepassword-connect` ✅ (GitHub App credentials + ANTHROPIC_API_KEY)
@@ -404,15 +263,11 @@ jobs:
 
 ---
 
-## Researched Patterns (bykaj/home-ops)
+### Researched Patterns (bykaj/home-ops)
 
-Patterns observed in the [`bykaj/home-ops`](https://github.com/bykaj/home-ops) repository that are worth adopting in this cluster. Each is independently implementable — ordered roughly by value vs. effort.
+Patterns observed in the [`bykaj/home-ops`](https://github.com/bykaj/home-ops) repository worth adopting. Each is independently implementable — ordered roughly by value vs. effort.
 
----
-
----
-
-### Kustomize Components (`kubernetes/components/`)
+#### Kustomize Components (`kubernetes/components/`)
 
 Reusable Kustomize Components (`apiVersion: kustomize.config.k8s.io/v1alpha1 / kind: Component`)
 that apps include in their `app/kustomization.yaml` via `components:` references. bykaj ships:
@@ -432,7 +287,7 @@ that apps include in their `app/kustomization.yaml` via `components:` references
 
 ---
 
-### Split Renovate Configuration (`.renovate/` directory)
+#### Split Renovate Configuration (`.renovate/` directory)
 
 Instead of a single `renovate.json5`, split config into files by concern so each section
 is independently reviewable in PRs. Reference pattern: `bykaj/home-ops` uses
@@ -488,6 +343,8 @@ triggering a Renovate dry-run after the split (check the Dependency Dashboard is
 
 | Area                          | Notes                                           |
 |-------------------------------|-------------------------------------------------|
+| Persistent Storage (OpenEBS + Longhorn 3-replica) | OpenEBS LocalPV live; Longhorn 3-replica active since 2026-05-23; all 3 nodes have dedicated storage disks (cp-01/cp-02: Kingston SNV3S1000G, cp-03: Crucial CT2000P310SSD8); cp-02 Crucial P310 installed via M.2 A/E adapter |
+| Pod Topology: scheduling concentration on cp-03   | Fixed imbalance; CoreDNS + Envoy proxies spread to 3 replicas 1/node (`DoNotSchedule`); Flux/cert-manager/ESO at 2 replicas + topology spread; stateful workloads (Prometheus/Alertmanager) accepted on cp-03 |
 | Talos machine configs         | 3 CP nodes, patches, schematic registered       |
 | Bootstrap go-task Taskfile    | Replaces scripts/bootstrap.sh                   |
 | SOPS age key + rules          | `age.key` generated, `.sops.yaml` configured    |
@@ -509,3 +366,5 @@ triggering a Renovate dry-run after the split (check the Dependency Dashboard is
 | ExternalDNS (Split-DNS)                | `external-dns-cloudflare` (watches `envoy-external`, `--cloudflare-proxied`, `txtOwnerId: k8s`) + `external-dns-unifi` (webhook sidecar, watches all gateways + services, `txtOwnerId: k8s-internal`); shared OCIRepository `ghcr.io/home-operations/charts-mirror/external-dns` v1.21.1; CF token mapped from `API_TOKEN` → `CF_API_TOKEN` via ESO `data[]` |
 | kube-prometheus-stack                  | Prometheus + Alertmanager in `observability` namespace; 20 Gi + 1 Gi Longhorn PVCs; node-exporter on all 3 nodes; full-cluster scraping (`*SelectorNilUsesHelmValues: false`); HTTPRoutes on `envoy-internal`; Grafana + receiver deferred |
 | metrics-server                         | `kube-system`; HelmRelease `v3.13.0` (OCIRepository `ghcr.io/kubernetes-sigs/charts/metrics-server`); `kubectl top` and HPA resource metrics enabled; `--kubelet-insecure-tls` flag set |
+
+> **[Monitor — cp-03 storage disk]** At boot, `nvme1` (the Crucial CT2000P310SSD8 Longhorn disk) logs `nvme nvme1: using unchecked data buffer`. This is a one-time boot message — the Crucial P310 does not advertise the NVMe "metadata-in-data-buffer" feature; the driver falls back to a simpler DMA path silently. Confirmed count of 1, no I/O errors, XFS mount clean. Watch for additional occurrences or any `I/O error` / `nvme reset` lines: `talosctl dmesg --nodes 10.60.0.203 | grep -i nvme`. Also watch for Longhorn replica faults on cp-03 specifically: `kubectl -n longhorn-system get replicas -o wide | grep cp-03`.

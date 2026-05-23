@@ -4,8 +4,7 @@
 persistence:
   defaultClass: true
   defaultFsType: ext4
-  # 2 replicas until talos-cp-02 storage disk installed; bump to 3 when ready
-  defaultClassReplicaCount: 2
+  defaultClassReplicaCount: 3
   volumeBindingMode: WaitForFirstConsumer
   defaultDataLocality: best-effort
   reclaimPolicy: Delete
@@ -15,8 +14,7 @@ csi:
 
 defaultSettings:
   defaultDataPath: /var/mnt/longhorn-storage
-  # 2 replicas until talos-cp-02 storage disk installed; bump to 3 when ready
-  defaultReplicaCount: 2
+  defaultReplicaCount: 3
   createDefaultDiskLabeledNodes: true
   allowEmptyDiskSelectorVolume: true
   storageOverProvisioningPercentage: 200

@@ -238,7 +238,7 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 | `longhorn-ui` | Deployment | Web UI for volume and backup management |
 | CSI components (`attacher`, `provisioner`, `resizer`, `snapshotter`) | Deployments | Standard CSI sidecar controllers that bind the Longhorn driver to the Kubernetes CSI framework |
 
-> **Replica count**: currently 2 (cp-02 storage drive not yet installed). Bump to 3 once `talos-cp-02`'s Crucial P310 1TB is installed and the by-id path is patched into `talconfig.yaml`.
+> **Replica count**: 3 — all three nodes have dedicated storage disks live and contributing. New volumes default to 3 replicas; existing volumes created at 2 replicas must be bumped manually via the Longhorn UI (Update Replica Count) or by enabling `Replicas Auto Balance` in Longhorn Settings.
 
 ---
 
@@ -289,14 +289,16 @@ Sourced via OCIRepository: `ghcr.io/bjw-s-labs/helm/app-template` (defined in `k
 
 | Node | Device | Size | Model | Role |
 |------|--------|------|-------|------|
-| talos-cp-01 | — | 1.0 TB | GoodRam IRDM PRO NANO (IRP-SSDPR-P44N-01T-30) via M.2 A/E adapter | Talos system disk |
-| talos-cp-01 | — | 1.0 TB | Kingston SNV3S1000G (`/dev/disk/by-id/nvme-KINGSTON_SNV3S1000G_50026B7686F8B787`) | Longhorn storage (`/var/mnt/longhorn-storage`) |
-| talos-cp-02 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G | Talos system disk (sole disk until Crucial P310 arrives) |
-| talos-cp-02 | — | — | — | **Pending** — Crucial P310 1TB 2230 + M.2 A/E adapter on order; once installed Kingston moves to Longhorn storage |
+| talos-cp-01 | nvme1n1 | 1.0 TB | GoodRam IRDM PRO NANO (IRP-SSDPR-P44N-01T-30) via M.2 A/E adapter | Talos system disk |
+| talos-cp-01 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G (`nvme-KINGSTON_SNV3S1000G_50026B7686F8B787`) | Longhorn storage (`/var/mnt/longhorn-storage`) |
+| talos-cp-02 | nvme1n1 | 1.0 TB | Crucial CT1000P310SSD2 (serial `25174FD70E4D`) via M.2 A/E adapter | Talos system disk |
+| talos-cp-02 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G (`nvme-KINGSTON_SNV3S1000G_50026B7383B9D0CC`) | Longhorn storage (`/var/mnt/longhorn-storage`) |
 | talos-cp-03 | nvme0n1 | 128 GB | AirDisk 128GB SSD | Talos system disk |
-| talos-cp-03 | nvme1n1 | 2.0 TB | Crucial CT2000P310SSD8 | Longhorn storage (`/dev/disk/by-id/nvme-CT2000P310SSD8_252450B1A33B`) |
+| talos-cp-03 | nvme1n1 | 2.0 TB | Crucial CT2000P310SSD8 (`nvme-CT2000P310SSD8_252450B1A33B`) | Longhorn storage (`/var/mnt/longhorn-storage`) |
 
-`talos-cp-01` and `talos-cp-03` are fully configured — storage disks live and mounted. `talos-cp-02`'s Crucial P310 1TB 2230 is on order — once installed, run `talosctl get disks --nodes 10.60.0.202`, update `talconfig.yaml` (change `installDiskSelector` to Crucial model, add `machine.disks` patch for Kingston), then ISO-boot cp-02 and apply in maintenance mode.
+All three nodes are fully configured — storage disks live, mounted, and contributing to Longhorn 3-replica mode.
+
+> **M920Q A/E slot boot note (cp-01, cp-02)**: The M920Q's A/E WiFi slot NVMe does not appear as a selectable boot entry in BIOS. Talos boots from it via the UEFI fallback path (`\EFI\BOOT\BOOTX64.EFI`) when no higher-priority UEFI entries exist. If cp-01 or cp-02 falls back to maintenance mode after a power cycle, check for competing UEFI boot entries (e.g. JetKVM virtual media). See **[BOOT-ISSUE-TROUBLESHOOTING.md](BOOT-ISSUE-TROUBLESHOOTING.md)** for the full diagnosis and fix procedure.
 
 #### System-disk swap migration procedure (cp-01 / cp-02)
 
