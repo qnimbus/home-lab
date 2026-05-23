@@ -21,6 +21,7 @@
         "redhat.vscode-yaml",
         "signageos.signageos-vscode-sops",
         "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "yzhang.markdown-all-in-one",
         "anthropic.claude-code"
       ],
       "settings": {
