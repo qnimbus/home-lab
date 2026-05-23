@@ -1,0 +1,26 @@
+---
+name: Auto-review Renovate PRs
+
+on:
+  pull_request:
+    types: [opened, reopened]
+    branches: [main]
+
+jobs:
+  review:
+    if: github.actor == 'renovate[bot]'
+    runs-on: home-lab
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: anthropic-ai/claude-code-action@v1
+        with:
+          # ANTHROPIC_API_KEY is injected into the runner pod via ExternalSecret → Kubernetes
+          # Secret → runner env; read from env rather than GitHub secrets.
+          anthropic_api_key: ${{ env.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review PR #${{ github.event.pull_request.number }} using the
+            pr-upgrade-reviewer agent. Assess upgrade risk, breaking changes,
+            and whether it is safe to merge. Post your findings as a PR comment.

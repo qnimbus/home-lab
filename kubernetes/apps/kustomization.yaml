@@ -12,3 +12,4 @@ resources:
   - ./openebs
   - ./observability
   - ./system-upgrade
+  - ./actions-runner-system

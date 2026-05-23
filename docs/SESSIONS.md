@@ -4,6 +4,50 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-23 — `arc-runner-deploy`
+
+### Goal
+Deploy GitHub Actions Runner Controller (ARC) with a self-hosted runner scale set and wire up claude-code-action to automatically review Renovate PRs using the pr-upgrade-reviewer agent.
+
+---
+
+## 2026-05-23 — `cloudflare-ssl-webhook-fix`
+
+### Goal
+Fix the broken GitHub Flux webhook by diagnosing and resolving Cloudflare Universal SSL's one-level wildcard limitation, an external-dns zone-filter misconfiguration, and a stale cloudflared in-process config.
+
+### What we did
+- Continued from `debug-flux-dns-tunnel` — the big multi-domain commit was applied but external-dns-cloudflare logged only 4 lines and never synced
+- Diagnosed the silence using a debug pod (`--once --dry-run --log-level=debug`): Cloudflare external-dns v0.21.0 requires the exact Cloudflare zone name in `domainFilters`; `cluster.vwn.io` doesn't match the `vwn.io` zone — it was silently skipping all desired records
+- User added `DOMAIN_IO: vwn.io` to `cluster-secrets.sops.yaml`; amended `64844f0` to add `${DOMAIN_IO}` to external-dns-cloudflare `domainFilters` (preserving original commit subject)
+- External-dns created `external.cluster.vwn.io` and `flux-webhook.cluster.vwn.io` Cloudflare CNAME records
+- GitHub webhook delivery failed with `tls: handshake failure` — root cause: cloudflared pods were 17-20h old and still running config with `originServerName: gateway.vwn.io` (the old CLUSTER_DOMAIN); restarted cloudflared
+- Second failure: Cloudflare Universal SSL covers `vwn.io` + `*.vwn.io` only (one wildcard level); `flux-webhook.cluster.vwn.io` is two levels deep — not covered by any cert at Cloudflare's edge
+- Investigated Option A (NS delegation for `cluster.vwn.io` sub-zone) — Cloudflare rejected it: "should not delegate subdomain to the same nameserver as current zone"
+- Chose Option C: move all public-facing endpoints to first-level `vwn.io` subdomains (covered by Universal SSL, no cost/complexity)
+- Changed `flux-webhook.${DOMAIN_CLUSTER}` → `flux-webhook.${DOMAIN_IO}`, `external.${DOMAIN_CLUSTER}` → `external.${DOMAIN_IO}` across httproute, dnsendpoint, gateway annotations, and cloudflared ingress; committed as `c98664c`
+- Waited for external-dns `policy: sync` to delete the old `cluster.vwn.io` CNAME + TXT records before removing the zone from `domainFilters` — removing early would have orphaned the ownership records
+- Confirmed cleanup in external-dns logs; removed `${DOMAIN_CLUSTER}` from cloudflare domainFilters and updated `originServerName` to `gateway.${DOMAIN_IO}`; committed as `67275b9`
+- cloudflared pods hadn't restarted after the ConfigMap update (process reads config only at startup); rolled deployment; webhook redeliver returned 200 OK
+- Deleted orphaned `wildcard-production-tls` Secret from `network` namespace (cert had been removed in Phase B but Secret persisted)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/vars/cluster-secrets.sops.yaml` | Added `DOMAIN_IO: vwn.io` (amended into `64844f0`) |
+| `kubernetes/apps/network/external-dns/cloudflare/helmrelease.yaml` | Added `${DOMAIN_IO}` to domainFilters; later removed `${DOMAIN_CLUSTER}` |
+| `kubernetes/apps/flux-system/flux-receiver/app/httproute.yaml` | Hostname `DOMAIN_CLUSTER` → `DOMAIN_IO` |
+| `kubernetes/apps/network/cloudflared/app/dnsendpoint.yaml` | `external.DOMAIN_CLUSTER` → `external.DOMAIN_IO` |
+| `kubernetes/apps/network/cloudflared/app/resources/config.yaml` | Removed `*.DOMAIN_CLUSTER` ingress; added `*.DOMAIN_IO`; updated `originServerName` |
+| `kubernetes/apps/network/envoy-gateway/config/gateway.yaml` | Both `external-dns` annotations → `external.DOMAIN_IO` |
+
+### Key decisions
+- Option C (first-level `vwn.io` subdomains) chosen over NS delegation (rejected by Cloudflare) and Advanced Certificate Manager (paid) — Universal SSL already covers `*.vwn.io` without additional setup
+- `${DOMAIN_CLUSTER}` kept in external-dns-cloudflare `domainFilters` until `policy: sync` cleaned up owned records; removing it earlier would have left orphan CNAME + TXT records in Cloudflare with no owner to clean them up
+- cloudflared `originServerName` uses `gateway.${DOMAIN_IO}` as TLS SNI for the tunnel → Envoy backend connection; Envoy routes using the HTTP Host header, not SNI — the mismatch is intentional and harmless with `noTLSVerify: true`
+
+---
+
 ## 2026-05-23 — `debug-flux-dns-tunnel`
 
 ### Goal
