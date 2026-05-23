@@ -1,5 +1,5 @@
 originRequest:
-  originServerName: "gateway.${DOMAIN_CLUSTER}"
+  originServerName: "gateway.${DOMAIN_IO}"
   noTLSVerify: true
 
 ingress:
