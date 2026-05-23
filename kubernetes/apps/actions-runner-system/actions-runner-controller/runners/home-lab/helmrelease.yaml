@@ -18,12 +18,16 @@ spec:
     maxRunners: 3
     containerMode:
       type: kubernetes
+      # Longhorn (network-backed RWO) instead of openebs-hostpath: openebs PVCs
+      # are pinned to a single node, but ARC hook pods have no node affinity and
+      # can land on any node — leaving the host-local PVC unmountable and the
+      # job hanging until GitHub's 5-minute runner timeout fires.
       kubernetesModeWorkVolumeClaim:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: openebs-hostpath
+        storageClassName: longhorn
         resources:
           requests:
-            storage: 25Gi
+            storage: 5Gi
     controllerServiceAccount:
       namespace: actions-runner-system
       name: actions-runner-controller
