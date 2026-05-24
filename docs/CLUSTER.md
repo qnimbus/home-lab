@@ -160,7 +160,7 @@ The Gateway API splits concerns into three levels: `GatewayClass` (which control
 
 Both Gateways share the `network/wildcard-production-tls` secret for TLS termination. HTTP requests on port 80 receive a 301 redirect to HTTPS on both Gateways via dedicated `HTTPRoute` resources.
 
-> **Adding a new app**: create an `HTTPRoute` in the app's namespace with a `parentRef` pointing at `envoy-external` or `envoy-internal` in the `network` namespace. The `https` listener's `allowedRoutes.namespaces.from: All` means no additional `ReferenceGrant` is required for the TLS listener.
+> **Adding a new app**: see [Exposing Services (HTTPRoute Workflow)](#exposing-services-httproute-workflow) below for the full step-by-step process covering internal-only, external, and dual-access scenarios.
 
 ---
 
@@ -188,6 +188,112 @@ The tunnel ingress config (mounted from a ConfigMap) routes `*.${CLUSTER_DOMAIN}
 | `external-dns-unifi` | UniFi webhook sidecar (`kashalls/external-dns-unifi-webhook`) | `gateway-httproute`, `Service` | `${CLUSTER_DOMAIN}` + `home.arpa` — creates A records for all gateways and LoadBalancer services on the local LAN |
 
 Both instances use `policy: sync` (records deleted when the resource is removed) and a `k8s.` TXT prefix to avoid collision. Cloudflare API token and UniFi credentials are sourced from 1Password via `ExternalSecret`.
+
+---
+
+## Exposing Services (HTTPRoute Workflow)
+
+All cluster endpoints are wired via **Gateway API** (`HTTPRoute`), not classic `Ingress`. The routing, DNS creation, and TLS termination are all automatic once you create an `HTTPRoute` — no certificate requests, no DNS annotations, no firewall rules needed.
+
+### The two gateways
+
+| Gateway | IP | Access |
+|---|---|---|
+| `envoy-external` | `10.60.0.230` | WAN + LAN — sits behind the cloudflared tunnel |
+| `envoy-internal` | `10.60.0.231` | LAN only — no tunnel, not reachable from the public internet |
+
+Both gateways share pre-issued wildcard TLS certificates (in the `network` namespace). TLS terminates at the gateway; `HTTPRoute` objects never need to reference certificates.
+
+### Domain convention
+
+| Variable | Domain | Routed externally? |
+|---|---|---|
+| `${DOMAIN_CLUSTER}` | `cluster.vwn.io` | No — absent from cloudflared config; internal-only |
+| `${DOMAIN_IO}` | `vwn.io` | Yes — covered by cloudflared tunnel |
+| `${DOMAIN_APP}` | *(encrypted)* | Yes — covered by cloudflared tunnel |
+| `${DOMAIN_CASA}` | *(encrypted)* | Yes — covered by cloudflared tunnel |
+| `${DOMAIN_APPS}` | *(encrypted)* | Yes — covered by cloudflared tunnel |
+
+Use `${DOMAIN_CLUSTER}` for internal-only services. Use any of the other domains for services that should be reachable from the internet.
+
+### Scenario 1 — Internal only (LAN)
+
+Attach to `envoy-internal` with a `${DOMAIN_CLUSTER}` hostname. Example for the Longhorn UI:
+
+```yaml
+# kubernetes/apps/longhorn-system/longhorn/app/httproute.yaml
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: longhorn
+spec:
+  parentRefs:
+    - name: envoy-internal
+      namespace: network
+      sectionName: https
+  hostnames:
+    - "longhorn.${DOMAIN_CLUSTER}"
+  rules:
+    - backendRefs:
+        - name: longhorn-frontend
+          port: 80
+```
+
+What happens automatically:
+- `external-dns-unifi` creates a DNS record in UniFi: `longhorn.cluster.vwn.io → CNAME internal.proxii.nl → 10.60.0.231`
+- `external-dns-cloudflare` does **not** act — it only watches `envoy-external`
+- TLS is handled by the pre-existing `cluster-vwn-io-tls` wildcard on the gateway
+
+### Scenario 2 — External (WAN + LAN)
+
+Attach to `envoy-external` with a hostname under any cloudflared-routed domain:
+
+```yaml
+spec:
+  parentRefs:
+    - name: envoy-external
+      namespace: network
+      sectionName: https
+  hostnames:
+    - "myapp.${DOMAIN_IO}"
+```
+
+What happens automatically:
+- `external-dns-cloudflare` creates a proxied CNAME in Cloudflare: `myapp.vwn.io → external.vwn.io`
+- `external-dns-unifi` creates a LAN DNS record so traffic from inside the network bypasses Cloudflare
+- WAN flow: `browser → Cloudflare CDN → cloudflared tunnel → envoy-external → service`
+- LAN flow: `browser → UniFi DNS → 10.60.0.230 (envoy-external) → service`
+
+### Scenario 3 — Dual access (same service on both internal and external)
+
+Use two `parentRefs` in a single `HTTPRoute`. Both ExternalDNS instances pick it up independently:
+
+```yaml
+spec:
+  parentRefs:
+    - name: envoy-external
+      namespace: network
+      sectionName: https
+    - name: envoy-internal
+      namespace: network
+      sectionName: https
+  hostnames:
+    - "myapp.${DOMAIN_IO}"
+```
+
+Alternatively, use two separate `HTTPRoute` objects with different hostnames pointing at the same backend Service.
+
+### Checklist for any new endpoint
+
+1. Create `httproute.yaml` in the app's `app/` directory
+2. Choose gateway: `envoy-internal` (LAN only) or `envoy-external` (WAN + LAN)
+3. Choose domain: `${DOMAIN_CLUSTER}` for internal-only; any other domain for external
+4. Add `httproute.yaml` to the app's `app/kustomization.yaml` resources list
+5. No TLS config needed — wildcard certs are pre-loaded on both gateways
+6. No ExternalDNS annotation needed — both instances auto-discover from `gateway-httproute` source
+
+> **No `ReferenceGrant` required.** Both gateways set `allowedRoutes.namespaces.from: All` on their `https` listeners, so `HTTPRoute` objects in any namespace can attach without an extra `ReferenceGrant` object.
 
 ---
 

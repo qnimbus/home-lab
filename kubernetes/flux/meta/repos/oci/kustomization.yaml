@@ -17,3 +17,4 @@ resources:
   - ./kube-prometheus-stack.yaml
   - ./gha-runner-scale-set-controller.yaml
   - ./gha-runner-scale-set.yaml
+  - ./tailscale-operator.yaml
