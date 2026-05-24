@@ -4,6 +4,32 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-24 — `tailscale-connector-crd-fix`
+
+### Goal
+Debug and fix the failing `tailscale-configs` Kustomization by tracing the missing `connectors.tailscale.com` CRD to a Helm chart values flag (`installCRDs: true`) and hardening the dependency ordering.
+
+### What we did
+- Used `/gitops-cluster-debug` skill (Workflow 3) to diagnose the failing `tailscale-configs` Kustomization; called `get_flux_instance` to confirm all 4 Flux controllers healthy with exactly 1 failing Kustomization
+- Fetched `tailscale-configs` Kustomization via MCP — error: `the server could not find the requested resource (patch connectors.tailscale.com subnet-router)`; confirmed `tailscale-operator` Kustomization was `Ready` and HelmRelease (v1.96.5) had installed successfully
+- Verified `connectors.tailscale.com` CRD absent via `kubectl get crd`; installed Tailscale CRDs were `dnsconfigs`, `proxyclasses`, `proxygrouppolicies`, `proxygroups`, `recorders`, `tailnets`
+- Checked `ProxyGroup` CRD schema — types: `egress`, `ingress`, `kube-apiserver`; no `subnet-router` type, ruling out a 1:1 swap
+- Queried Tailscale docs via context7 — confirmed `Connector` with `subnetRouter.advertiseRoutes` is still the official API for subnet routing in v1.96.x
+- Pulled Helm chart `tailscale-operator@1.96.5` tarball and read `templates/connector.yaml` — entire CRD gated behind `{{ if .Values.installCRDs }}`; root cause: `installCRDs` not set in HelmRelease values, silently skipping the CRD
+- Added `installCRDs: true` to HelmRelease values; changed `wait: false` → `wait: true` on the `tailscale-operator` Kustomization to eliminate the CRD registration race condition
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/tailscale/tailscale-operator/app/helmrelease.yaml` | Added `installCRDs: true` to values — enables `connectors.tailscale.com` CRD |
+| `kubernetes/apps/tailscale/tailscale-operator/ks.yaml` | `wait: false` → `wait: true` on `tailscale-operator` Kustomization |
+
+### Key decisions
+- Root-caused by pulling and inspecting the chart tarball directly — `connector.yaml` is a regular Helm template (not in `crds/`), making it opt-in and silently skippable; the ProxyGroup schema check and context7 lookup confirmed `Connector` is not deprecated, just opt-in
+- `wait: true` applied to `tailscale-operator` (not `tailscale-configs`) because the race is in the operator's CRD registration step, not in configs deployment
+
+---
+
 ## 2026-05-24 — `setup-flux-mcp-server`
 
 ### Goal

@@ -11,6 +11,7 @@ spec:
     namespace: flux-system
   interval: 1h
   values:
+    installCRDs: true
     fullnameOverride: *app
     oauthSecretVolume:
       secret:

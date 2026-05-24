@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-24 | `tailscale-connector-crd-fix` | `tailscale-configs` Kustomization failure traced to missing `connectors.tailscale.com` CRD; fixed with `installCRDs: true` + `wait: true` |
 > | 2026-05-24 | `setup-flux-mcp-server` | fluxcd/agent-skills installed (3 skills); flux-operator-mcp wired as MCP server; live cluster verified via get_flux_instance |
 > | 2026-05-23 | `arc-runner-deploy` | ARC runners + Claude PR review deployed; instant-exit loop root-caused to missing `command: run.sh`; reverted to openebs-hostpath; workflow hardened |
 > | 2026-05-23 | `cloudflare-ssl-webhook-fix` | Cloudflare Universal SSL wildcard limited to one level; moved webhook + tunnel to vwn.io; 200 OK confirmed |
@@ -11,7 +12,6 @@
 > | 2026-05-23 | `uncordon-cp-02-node` | JetKVM EFI boot entry (Boot0016) root-caused as cp-02 boot loop; entries cleared via efivars; Longhorn UUID mismatch fixed; cp-02 storage online |
 > | 2026-05-22 | `nvme-disk-config-talos` | Crucial P310 installed in cp-02; Talos reconfigured (system→Crucial, Longhorn→Kingston); all 3 nodes Ready; Longhorn bumped to 3-replica |
 > | 2026-05-22 | `cluster-doc-sync` | cluster-doctor audit all-green; synced 8 component versions in CLUSTER.md; metrics-server moved to Completed in ROADMAP |
-> | 2026-05-22 | `renovate-oci-tag-fix` | PRs #32 (cloudflared) and #38 (Envoy Gateway) reviewed; Renovate OCI tag drift fixed for envoy-gateway + cert-manager |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
