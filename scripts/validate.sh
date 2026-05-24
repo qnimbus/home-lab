@@ -5,7 +5,10 @@
 
 # This script validates the Flux custom resources and the kustomize
 # overlays using kubeconform against the Flux OpenAPI schemas bundled
-# in the assets directory.
+# in scripts/schemas/.
+#
+# SOURCE: fluxcd/agent-skills gitops-repo-audit skill (scripts/validate.sh + assets/schemas/)
+# UPDATE: run `task validate:update` after `claude skills update` to refresh this file and schemas.
 
 # Prerequisites
 # - yq >= 4.50
