@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-24 | `setup-flux-mcp-server` | fluxcd/agent-skills installed (3 skills); flux-operator-mcp wired as MCP server; live cluster verified via get_flux_instance |
 > | 2026-05-23 | `arc-runner-deploy` | ARC runners + Claude PR review deployed; instant-exit loop root-caused to missing `command: run.sh`; reverted to openebs-hostpath; workflow hardened |
 > | 2026-05-23 | `cloudflare-ssl-webhook-fix` | Cloudflare Universal SSL wildcard limited to one level; moved webhook + tunnel to vwn.io; 200 OK confirmed |
 > | 2026-05-23 | `debug-flux-dns-tunnel` | Multi-domain TLS + CLUSTER_DOMAIN removal; cloudflared tunnel routing fixed (external.proxii.nl → external.cluster.vwn.io); kube-api LB Service for split DNS |
@@ -11,7 +12,6 @@
 > | 2026-05-22 | `nvme-disk-config-talos` | Crucial P310 installed in cp-02; Talos reconfigured (system→Crucial, Longhorn→Kingston); all 3 nodes Ready; Longhorn bumped to 3-replica |
 > | 2026-05-22 | `cluster-doc-sync` | cluster-doctor audit all-green; synced 8 component versions in CLUSTER.md; metrics-server moved to Completed in ROADMAP |
 > | 2026-05-22 | `renovate-oci-tag-fix` | PRs #32 (cloudflared) and #38 (Envoy Gateway) reviewed; Renovate OCI tag drift fixed for envoy-gateway + cert-manager |
-> | 2026-05-22 | `app-template-v5-review` | PR #33 reviewed (app-template 4.6.2 → 5.0.1); v5 schema documented in CONVENTIONS.md, CLAUDE.md, and CLUSTER.md |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

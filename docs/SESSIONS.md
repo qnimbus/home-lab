@@ -4,6 +4,32 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-24 — `setup-flux-mcp-server`
+
+### Goal
+Install fluxcd/agent-skills (gitops-knowledge, gitops-cluster-debug, gitops-repo-audit) and wire up flux-operator-mcp as a new MCP server so the gitops-cluster-debug skill has live cluster access.
+
+### What we did
+- Installed 3 Flux skills from OCI image `ghcr.io/fluxcd/agent-skills` via `flux-operator skills install --agent claude-code`: `gitops-knowledge`, `gitops-cluster-debug`, `gitops-repo-audit`; artifact signature verified by cosign
+- Explored the `.claude/skills/` vs `.claude/commands/` distinction: installed OCI packages land in `skills/` (directory with `SKILL.md`, `assets/`, `evals/`, `references/`); hand-authored slash commands stay as flat `.md` files in `commands/`
+- Explored `.agents/skills/` structure: agent-agnostic registry with `catalog.yaml` (OCI source + cosign OIDC policy + target agents) and `catalog-lock.yaml` (pinned digest); `flux-operator skills install` projects skill content into `.claude/skills/` for Claude Code
+- Compared `cluster-doctor.md` against `gitops-cluster-debug`: confirmed not redundant — cluster-doctor covers full-stack Talos+K8s+CNI+storage diagnosis with live topology context; gitops-cluster-debug is Flux-only and requires `flux-operator-mcp` (not previously configured)
+- Added `flux-operator-mcp = "0.50.0"` to `.mise.toml` with Renovate datasource comment; added `flux-operator-mcp` server entry to `.mcp.json` (gitignored) with `--read-only` and pointing at existing `mcp-viewer.kubeconfig`
+- Ran `mise install flux-operator-mcp`; verified binary via `mise exec -- flux-operator-mcp --version`
+- Confirmed MCP connection after shell refresh: `get_flux_instance` returned full FluxInstance + FluxReport; all 4 controllers healthy; identified 1 failing Kustomization (32 total) and Flux v2.6.4 outdated notice (latest v2.8.8)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.mise.toml` | Added `flux-operator-mcp = "0.50.0"` with renovate comment |
+| `.mcp.json` | Added `flux-operator-mcp` server entry (gitignored — not tracked) |
+
+### Key decisions
+- Used `--read-only` for flux-operator-mcp to preserve GitOps discipline (no imperative cluster changes via AI tools)
+- Pinned flux-operator-mcp at `0.50.0` to match `flux-operator` already in `.mise.toml`; shared Renovate datasource comment keeps both in sync
+
+---
+
 ## 2026-05-23 — `arc-runner-deploy`
 
 ### Goal
