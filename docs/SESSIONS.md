@@ -9,6 +9,50 @@ A running record of work done, files modified, and decisions made across Claude 
 ### Goal
 Deploy GitHub Actions Runner Controller (ARC) with a self-hosted runner scale set and wire up claude-code-action to automatically review Renovate PRs using the pr-upgrade-reviewer agent.
 
+### What we did
+- Prioritised ARC + Claude PR review above other roadmap items; user created GitHub App and added credentials to 1Password
+- Created two OCIRepository sources for `gha-runner-scale-set-controller` and `gha-runner-scale-set` ARC charts under `flux/meta/repos/oci/`
+- Built multi-document `ks.yaml` (controller Kustomization → `dependsOn` → scale-set Kustomization) with `substitution.flux.home.arpa/disabled: "true"` on both to prevent cluster-apps postBuild expanding GitHub URLs as Flux variables
+- Created controller HelmRelease with explicit `serviceAccount.name: actions-runner-controller`; runner HelmRelease with kubernetes containerMode; ExternalSecrets for GitHub App creds (`home-lab-runner-secret`) and Anthropic API key (`anthropic-secret`)
+- Created RBAC: Kubernetes SA `actions-runner` + `cluster-admin` ClusterRoleBinding (intentional — runner workflows need full kubectl/flux access)
+- Created `.github/workflows/renovate-pr-review.yml` using `anthropic-ai/claude-code-action@v1` with `ANTHROPIC_API_KEY` injected via runner environment (ExternalSecret → pod env)
+- Fixed typo `anthropics/` → `anthropic-ai/` in action reference; fixed ExternalSecret `key:` for anthropic-secret (user corrected to `key: anthropic`)
+- Diagnosed Talos SA `ErrNamespaceNotAllowed`: `actions-runner-system` blocked by Talos SA namespace allowlist; removed Talos SA and its volume mounts — commit `fb3767e`
+- Observed two Renovate PRs (#39 actions/checkout, #40 kube-prometheus-stack) triggering simultaneously; runners created but cycling every ~5 minutes — initially misdiagnosed as openebs-hostpath node-locality PVC issue; applied Longhorn fix (`d2b5cb0`) — later found incorrect
+- Resumed next day: renewed MCP token; re-triggered run `26332793877` to test Longhorn fix; observed new failure mode: rapid create/destroy cycle at ~15 s intervals
+- Analysed ARC controller logs: `"exitCode": 0` at the exact same millisecond as `"ready": true` — runner binary not executing at all; no hook pods created
+- Consulted reference implementation `bykaj/home-ops`; identified missing `command: [/home/runner/run.sh]` — the `home-operations/actions-runner` image does not wire `run.sh` as Docker CMD, causing the container to exit immediately (exit 0) and producing the create/destroy loop
+- Added `command: [/home/runner/run.sh]` to runner container spec
+- User challenged Longhorn choice: confirmed `openebs-hostpath` uses `WaitForFirstConsumer` which records node affinity on the PV, automatically constraining ARC hook pods to the same node as the runner — Longhorn was unnecessary; reverted to `openebs-hostpath` with 10 Gi work volume
+- Hardened workflow: added `timeout-minutes: 15` (job) + per-step timeouts, `concurrency` group with `cancel-in-progress: true`, `synchronize` event type, explicit `github_token`
+- Reviewed `pr-upgrade-reviewer` agent: user added unattended operation constraints, PR number intake from CLI arg / `PR_NUMBER` env, Step 6 (mandatory PR comment posting with idempotent HTML-marker-based update-or-create logic)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/gha-runner-scale-set-controller.yaml` | Created OCIRepository source |
+| `kubernetes/flux/meta/repos/oci/gha-runner-scale-set.yaml` | Created OCIRepository source |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added two new OCI repo entries |
+| `kubernetes/apps/kustomization.yaml` | Added `actions-runner-system` resource |
+| `kubernetes/apps/actions-runner-system/kustomization.yaml` | Created namespace kustomization |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/ks.yaml` | Created two-doc Kustomization (controller + scale set) |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/app/helmrelease.yaml` | Created controller HelmRelease |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/app/kustomization.yaml` | Created app kustomization |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/kustomization.yaml` | Created runners kustomization |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab/helmrelease.yaml` | Created; fixed with `command: run.sh`, reverted to openebs-hostpath 10 Gi |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab/externalsecret.yaml` | Created two ExternalSecrets (runner creds + anthropic key) |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab/rbac.yaml` | Created SA + cluster-admin CRB (Talos SA added then removed) |
+| `.github/workflows/renovate-pr-review.yml` | Created; improved with timeout, concurrency, synchronize event, github_token |
+| `.claude/agents/pr-upgrade-reviewer.md` | Enhanced: unattended mode, PR number intake, Step 6 mandatory comment posting |
+
+### Key decisions
+- `substitution.flux.home.arpa/disabled: "true"` on both ARC Kustomizations — GitHub URLs and secret names contain `${...}` patterns that cluster-apps postBuild would expand as Flux variables
+- Multi-doc `ks.yaml` required — runner scale set CRDs must exist before instances; `dependsOn` + separate Kustomization prevents Flux dry-run failure at deploy time
+- Talos SA removed entirely — `actions-runner-system` is not in the Talos SA namespace allowlist; accessing Talos API from CI requires a different approach not yet implemented
+- `cluster-admin` intentionally granted — runner workflows need full cluster write access; homelab risk is accepted and documented in a `rbac.yaml` comment
+- `command: [/home/runner/run.sh]` required — `home-operations/actions-runner` does not use `run.sh` as Docker CMD; without it the container exits immediately (exit 0), creating an infinite rapid create/destroy loop indistinguishable from a passing run
+- openebs-hostpath with `WaitForFirstConsumer` over Longhorn — `WaitForFirstConsumer` records node affinity on the PV, constraining hook pods to the same node as the runner; Longhorn adds unnecessary network overhead; the earlier Longhorn switch was based on a misdiagnosis of the 5-minute timeout cycle
+
 ---
 
 ## 2026-05-23 — `cloudflare-ssl-webhook-fix`
