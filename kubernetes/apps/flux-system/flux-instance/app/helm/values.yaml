@@ -3,8 +3,7 @@ instance:
   distribution:
     # renovate: depName=ghcr.io/fluxcd/flux-operator datasource=docker
     version: "2.6.4"
-  cluster:
-    networkPolicy: false
+  cluster: {}
   components:
     - source-controller
     - kustomize-controller
