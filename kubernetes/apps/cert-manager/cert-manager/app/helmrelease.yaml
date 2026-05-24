@@ -10,6 +10,8 @@ spec:
     kind: OCIRepository
     name: cert-manager
     namespace: flux-system
+  driftDetection:
+    mode: enabled
   valuesFrom:
     - kind: ConfigMap
       name: cert-manager-values
