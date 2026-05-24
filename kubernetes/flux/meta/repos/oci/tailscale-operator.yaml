@@ -14,3 +14,8 @@ spec:
     # renovate: datasource=docker depName=ghcr.io/home-operations/charts-mirror/tailscale-operator
     tag: "1.96.5"
   url: oci://ghcr.io/home-operations/charts-mirror/tailscale-operator
+  verify:
+    provider: cosign
+    matchOIDCIdentity:
+      - issuer: https://token.actions.githubusercontent.com
+        subject: ^https://github.com/home-operations/

@@ -6,6 +6,7 @@ namespace: flux-system
 resources:
   - ./app-template.yaml
   - ./cert-manager.yaml
+  - ./cert-manager-cosign-key.yaml
   - ./external-dns.yaml
   - ./coredns.yaml
   - ./envoy-gateway.yaml

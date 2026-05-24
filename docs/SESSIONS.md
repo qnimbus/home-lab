@@ -4,6 +4,43 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-24 — `gitops-repo-audit`
+
+### Goal
+Perform a full GitOps best-practices and security audit of the cluster repository, then implement Cosign supply-chain verification for all OCIRepositories where publishers confirmed signed artifacts.
+
+### What we did
+- Invoked the `/gitops-repo-audit` skill; ran discovery script revealing 14 OCIRepositories, 20 HelmReleases, 30 Kustomizations across 14 app namespaces; classified repo as single-cluster GitOps monorepo (Flux Operator pattern)
+- Added `kustomize` and `kubeconform` to `.mise.toml` (missing tools); ran manifest validation — no Flux/Kubernetes manifest errors; non-Flux files (Talos patches, Taskfile) produced expected schema-skip results
+- Checked for deprecated Flux APIs — none found
+- Assessed best practices: dependency chains sound, SOPS encryption in place, global HelmRelease patch covers crds/remediation; identified gaps: no `driftDetection`, no `reconcile.fluxcd.io/watch` labels on cluster-vars ConfigMaps, no Flux Alert/Provider notification resources
+- Performed security review: OCIRepositories missing Cosign verification was the highest-priority finding
+- Investigated each OCI publisher for signature presence using registry API curl calls (`/v2/<repo>/manifests/sha256-<digest>.sig`) — confirmed 7 of 14 OCIRepositories are signed; 7 (tuppr, kube-prometheus-stack, coredns, spegel, gha-runner-scale-set*, envoy-gateway) are unsigned
+- Confirmed signing method per publisher: cert-manager uses key-based RSA (published PEM); flux-operator, flux-instance, external-dns, openebs, app-template, tailscale-operator all use keyless OIDC via GitHub Actions (`cosign sign --yes`)
+- Confirmed OIDC identities by reading each publisher's GitHub Actions workflows; used org-level subject regexp (`^https://github.com/<org>/`)
+- Added `verify:` blocks to 6 OCIRepositories (keyless OIDC); created `cert-manager-cosign-key.yaml` Secret with RSA public key for key-based verification; upgraded `openebs.yaml` from bare `provider: cosign` to include `matchOIDCIdentity`
+- Validated all changes with `kustomize build kubernetes/flux/meta/repos/oci/` — 15 resources output (14 OCIRepositories + 1 Secret), no errors
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/app-template.yaml` | Added keyless cosign verify (bjw-s-labs org) |
+| `kubernetes/flux/meta/repos/oci/cert-manager-cosign-key.yaml` | New: Secret with cert-manager RSA public key |
+| `kubernetes/flux/meta/repos/oci/cert-manager.yaml` | Added key-based cosign verify referencing cert-manager-cosign-key |
+| `kubernetes/flux/meta/repos/oci/external-dns.yaml` | Added keyless cosign verify (home-operations org) |
+| `kubernetes/flux/meta/repos/oci/flux-instance.yaml` | Added keyless cosign verify (controlplaneio-fluxcd org) |
+| `kubernetes/flux/meta/repos/oci/flux-operator.yaml` | Added keyless cosign verify (controlplaneio-fluxcd org) |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added cert-manager-cosign-key.yaml to resources list |
+| `kubernetes/flux/meta/repos/oci/openebs.yaml` | Upgraded bare `provider: cosign` to include `matchOIDCIdentity` (home-operations org) |
+| `kubernetes/flux/meta/repos/oci/tailscale-operator.yaml` | Added keyless cosign verify (home-operations org) |
+
+### Key decisions
+- Detected signatures without `cosign` CLI by querying the registry API for `.sig` manifest tags; initial `curl -sv` mixed stderr/stdout causing false 404s — switched to `curl -s -D - -o /dev/null` to properly separate headers from body
+- Stored cert-manager public key in a plain (non-SOPS) Secret — it is a published RSA public key, not a private credential, so encryption adds no security benefit
+- Used org-level regexp for `subject` (`^https://github.com/<org>/`) rather than pinning to a specific repo or branch — tolerates future repo reorganisation within the trusted org while keeping trust tightly scoped
+
+---
+
 ## 2026-05-24 — `tailscale-connector-crd-fix`
 
 ### Goal
