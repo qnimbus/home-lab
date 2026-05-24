@@ -36,6 +36,8 @@ jobs:
           anthropic_api_key: ${{ env.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           allowed_bots: 'renovate' # Or '*' to allow all bots
+          claude_args: |
+            --allowedTools "Read,WebFetch,WebSearch,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
           prompt: |
             Review PR #${{ github.event.pull_request.number }} using the
             pr-upgrade-reviewer agent. Assess upgrade risk, breaking changes,
