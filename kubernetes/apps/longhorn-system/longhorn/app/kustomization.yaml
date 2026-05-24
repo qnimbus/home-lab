@@ -12,6 +12,7 @@ configurations:
 resources:
   - ./namespace.yaml
   - ./helmrelease.yaml
+  - ./httproute.yaml
   - ./storageclass-retain.yaml
   - ./storageclass-single.yaml
   - ./node-configs/talos-cp-01.yaml
