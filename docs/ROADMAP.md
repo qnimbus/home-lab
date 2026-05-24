@@ -11,6 +11,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
   - [Scheduling Topology: Follow-up Fixes](#scheduling-topology-follow-up-fixes)
   - [Kubernetes Descheduler](#kubernetes-descheduler)
   - [Talos Config, Image Extensions \& Patch Audit](#talos-config-image-extensions--patch-audit)
+  - [Migrate Remaining HelmRepositories to `home-operations/charts-mirror`](#migrate-remaining-helmrepositories-to-home-operationscharts-mirror)
   - [Researched Patterns (bykaj/home-ops)](#researched-patterns-bykajhome-ops)
 - [Completed](#completed)
 
@@ -149,6 +150,116 @@ Areas to investigate:
 - Confirm `installDisk` is consistent with actual disk layout (nvme0n1 vs nvme1n1) post-wipe
 
 Deliverable: a PR updating `schematic.yaml` and the relevant patch files with reasoned changes; update `talenv.yaml` if the schematic ID changes (re-register at factory.talos.dev).
+
+---
+
+### Migrate Remaining HelmRepositories to `home-operations/charts-mirror`
+
+Two of our Flux chart sources still use the traditional `HelmRepository` kind (HTTP `index.yaml` polling). Every other chart source in the cluster has already been converted to `OCIRepository`. Migrating the two remaining outliers makes the source strategy uniform and unlocks cosign verification.
+
+**Background — what the mirror is:**
+
+`ghcr.io/home-operations/charts-mirror` is a community-maintained GitHub Actions pipeline ([home-operations/charts-mirror](https://github.com/home-operations/charts-mirror)) that:
+- Re-publishes upstream Helm charts as OCI artifacts under a consistent `ghcr.io` namespace
+- Signs every artifact with **cosign** (same key as the rest of the `home-operations` project)
+- Tags charts with the same semver as upstream — `1.21.1`, `4.4.0`, etc. — so Renovate can track them with `datasource=docker` instead of `datasource=helm`
+
+**Why OCI > HTTP `HelmRepository`:**
+
+| Dimension | HTTP `HelmRepository` | OCI `OCIRepository` (mirror) |
+|-----------|----------------------|-------------------------------|
+| Flux polling | Downloads the full `index.yaml` on every interval | Fetches only the tagged digest — no index |
+| Renovate datasource | `datasource=helm` (fetches index, brittle) | `datasource=docker` (registry API, reliable) |
+| Supply-chain | No verification | `verify.provider: cosign` available |
+| Upstream availability | Chart unavailable if upstream repo is down | Mirror caches last-pushed artifact |
+| Source kind uniformity | Breaks the all-OCI convention | All sources become `OCIRepository` |
+
+**Current state — two HTTP sources remain:**
+
+| Chart | Current source | Current kind | Mirror equivalent |
+|-------|---------------|--------------|-------------------|
+| `cilium` | `https://helm.cilium.io` | `HelmRepository` | `oci://ghcr.io/home-operations/charts-mirror/cilium` |
+| `metrics-server` | `https://kubernetes-sigs.github.io/metrics-server` | `HelmRepository` | `oci://ghcr.io/home-operations/charts-mirror/metrics-server` |
+
+Already on the mirror (no action needed): `external-dns`, `openebs`.  
+Already on their own OCI registries (fine as-is): `cert-manager` (quay.io/jetstack), `kube-prometheus-stack` (ghcr.io/prometheus-community), `coredns` (ghcr.io/coredns), `spegel` (ghcr.io/spegel-org), `envoy-gateway` (mirror.gcr.io/envoyproxy).
+
+**Steps to implement:**
+
+For each of the two charts (`cilium`, `metrics-server`):
+
+1. Delete (or replace) `kubernetes/flux/meta/repos/helm/<chart>.yaml` with an `OCIRepository`:
+   ```yaml
+   apiVersion: source.toolkit.fluxcd.io/v1
+   kind: OCIRepository
+   metadata:
+     name: cilium          # (or metrics-server)
+     namespace: flux-system
+   spec:
+     interval: 1h
+     layerSelector:
+       mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+       operation: copy
+     url: oci://ghcr.io/home-operations/charts-mirror/cilium
+     ref:
+       # renovate: datasource=docker depName=ghcr.io/home-operations/charts-mirror/cilium
+       tag: "<current-version>"
+     verify:
+       provider: cosign
+   ```
+2. Update the chart's `HelmRelease` to reference the new `OCIRepository` source kind:
+   ```yaml
+   spec:
+     chart:
+       spec:
+         sourceRef:
+           kind: OCIRepository   # was: HelmRepository
+           name: cilium
+   ```
+3. Update the `kustomization.yaml` in `flux/meta/repos/helm/` to remove the old file; add the new file to `flux/meta/repos/oci/`.
+4. Verify Flux reconciles cleanly: `flux get helmreleases -A | grep cilium`
+5. Confirm Renovate picks up the new `datasource=docker` annotation on the next Dependency Dashboard refresh.
+
+**Important — cilium is bootstrapped via Helmfile:**  
+`cilium` is deployed during `task bootstrap:cluster` via `kubernetes/bootstrap/helmfile.yaml` — not by Flux. The `HelmRepository` in `flux/meta/repos/helm/cilium.yaml` is only used if cilium is also reconciled by Flux post-bootstrap. Check whether the cilium HelmRelease in `kube-system` references this source before touching it; if the Flux HelmRelease is active, migrate it. If only the Helmfile bootstrap uses cilium, the `HelmRepository` source is effectively unused and can be removed outright.
+
+**Dependencies:** None — each migration is independently deployable. Low risk: Flux will switch the source on next reconcile; no pod restarts required.
+
+---
+
+### Tailscale kubectl Authentication (RBAC)
+
+Extend the deployed Tailscale operator so that Tailscale identity doubles as a `kubectl` credential. With this in place, running `tailscale configure kubeconfig home-lab` on any tailnet device writes a kubeconfig that authenticates via Tailscale — no kubeconfig file distribution, no service account tokens to rotate.
+
+**How it works:**
+The Tailscale Kubernetes operator exposes an OIDC-compatible identity endpoint. A `ClusterRoleBinding` maps the Tailscale user identity to a Kubernetes RBAC role. `kubectl` then authenticates transparently using the active Tailscale session.
+
+**Deployment notes:**
+- Add `rbac.yaml` to `kubernetes/apps/network/tailscale-operator/app/`:
+  ```yaml
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRoleBinding
+  metadata:
+    name: tailscale-user
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: cluster-admin
+  subjects:
+    - apiGroup: rbac.authorization.k8s.io
+      kind: User
+      name: "${TAILSCALE_USER}"   # Tailscale login email or identity
+  ```
+- Wire `TAILSCALE_USER` via `cluster-secrets` SOPS or a dedicated ExternalSecret (the bykaj reference used `substituteFrom` on the Kustomization)
+- Reference: `bykaj/home-ops` `kubernetes/apps/network/tailscale-operator/app/rbac.yaml`
+
+**On any tailnet device after deployment:**
+```sh
+tailscale configure kubeconfig home-lab
+kubectl get nodes   # authenticated via Tailscale identity
+```
+
+**Dependencies:** `tailscale-operator` ✅ (deployed in this session)
 
 ---
 
@@ -318,7 +429,7 @@ triggering a Renovate dry-run after the split (check the Dependency Dashboard is
 | Flux GitHub Webhook Receiver           | `flux-receiver` Kustomization in `flux-system`; ExternalSecret token from 1Password; HTTPRoute on `envoy-external`; GitHub webhook configured — reconcile latency ~5 min → seconds |
 | ExternalDNS (Split-DNS)                | `external-dns-cloudflare` (watches `envoy-external`, `--cloudflare-proxied`, `txtOwnerId: k8s`) + `external-dns-unifi` (webhook sidecar, watches all gateways + services, `txtOwnerId: k8s-internal`); shared OCIRepository `ghcr.io/home-operations/charts-mirror/external-dns` v1.21.1; CF token mapped from `API_TOKEN` → `CF_API_TOKEN` via ESO `data[]` |
 | kube-prometheus-stack                  | Prometheus + Alertmanager in `observability` namespace; 20 Gi + 1 Gi Longhorn PVCs; node-exporter on all 3 nodes; full-cluster scraping (`*SelectorNilUsesHelmValues: false`); HTTPRoutes on `envoy-internal`; Grafana + receiver deferred |
-| metrics-server                         | `kube-system`; HelmRelease `v3.13.0` (OCIRepository `ghcr.io/kubernetes-sigs/charts/metrics-server`); `kubectl top` and HPA resource metrics enabled; `--kubelet-insecure-tls` flag set |
+| metrics-server                         | `kube-system`; HelmRelease `v3.13.0` (HelmRepository `https://kubernetes-sigs.github.io/metrics-server`); `kubectl top` and HPA resource metrics enabled; `--kubelet-insecure-tls` flag set; migration to `home-operations/charts-mirror` OCIRepository tracked in roadmap |
 | GitHub Actions Self-Hosted Runners (ARC + Claude PR Review) | ARC `gha-runner-scale-set-controller@0.14.1` + `home-lab` scale set deployed in `actions-runner-system`; Flux HelmReleases Ready; listener pod active; Renovate PR auto-review via `claude-code-action` wired |
 
 > **[Monitor — cp-03 storage disk]** At boot, `nvme1` (the Crucial CT2000P310SSD8 Longhorn disk) logs `nvme nvme1: using unchecked data buffer`. This is a one-time boot message — the Crucial P310 does not advertise the NVMe "metadata-in-data-buffer" feature; the driver falls back to a simpler DMA path silently. Confirmed count of 1, no I/O errors, XFS mount clean. Watch for additional occurrences or any `I/O error` / `nvme reset` lines: `talosctl dmesg --nodes 10.60.0.203 | grep -i nvme`. Also watch for Longhorn replica faults on cp-03 specifically: `kubectl -n longhorn-system get replicas -o wide | grep cp-03`.
