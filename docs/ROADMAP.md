@@ -12,6 +12,8 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
   - [Kubernetes Descheduler](#kubernetes-descheduler)
   - [Talos Config, Image Extensions \& Patch Audit](#talos-config-image-extensions--patch-audit)
   - [Migrate Remaining HelmRepositories to `home-operations/charts-mirror`](#migrate-remaining-helmrepositories-to-home-operationscharts-mirror)
+  - [Tailscale kubectl Authentication (RBAC)](#tailscale-kubectl-authentication-rbac)
+  - [VolSync (PVC Backup)](#volsync-pvc-backup)
   - [Researched Patterns (bykaj/home-ops)](#researched-patterns-bykajhome-ops)
 - [Completed](#completed)
 
@@ -260,6 +262,132 @@ kubectl get nodes   # authenticated via Tailscale identity
 ```
 
 **Dependencies:** `tailscale-operator` ✅ (deployed in this session)
+
+---
+
+### VolSync (PVC Backup)
+
+Deploy VolSync to back up Longhorn PVCs to an off-cluster Restic repository. VolSync takes a CSI snapshot of a running volume and transfers it to a remote Restic backend — producing crash-consistent, encrypted, deduplicated point-in-time backups that are restorable on *any* Kubernetes cluster or locally via the `restic` CLI.
+
+**Why VolSync over Longhorn's built-in backup:**
+Longhorn's backup feature produces Longhorn-native volume snapshots that can only be restored into another Longhorn cluster. VolSync produces standard Restic repositories — portable, inspectable with `restic snapshots`, restorable anywhere, and verifiable offline without a running cluster.
+
+**Recommended backup target — Backblaze B2:**
+Restic supports any S3-compatible backend. B2 is the cost-effective choice: ~$0.006/GB/month storage, no per-request fees above the free tier, and Cloudflare-peered so egress from cluster → B2 is free. Self-hosted MinIO is the alternative if no egress cost or offline access is preferred — but adds another stateful workload to maintain.
+
+**Dependencies:** Longhorn ✅ (provides `longhorn-snapshot-vsc` VolumeSnapshotClass), external-secrets ✅, onepassword-connect ✅.
+
+---
+
+#### Phase 1 — Deploy the VolSync operator
+
+1. Add `kubernetes/flux/meta/repos/oci/volsync.yaml`:
+   ```yaml
+   apiVersion: source.toolkit.fluxcd.io/v1
+   kind: OCIRepository
+   metadata:
+     name: volsync
+     namespace: flux-system
+   spec:
+     interval: 1h
+     layerSelector:
+       mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+       operation: copy
+     url: oci://ghcr.io/backube/helm-charts/volsync
+     ref:
+       # renovate: datasource=docker depName=ghcr.io/backube/helm-charts/volsync
+       tag: "<latest>"
+   ```
+   > Check `ghcr.io/home-operations/charts-mirror/volsync` first — if mirrored, prefer the mirror URL and add `verify.provider: cosign`. The upstream backube registry does not publish cosign signatures.
+
+2. Create `kubernetes/apps/volsync/volsync/`:
+   - `app/namespace.yaml` — `volsync-system` namespace
+   - `app/helmrelease.yaml` — `chartRef: kind: OCIRepository, name: volsync`; no special values needed beyond metrics
+   - `app/helm/values.yaml` — `metrics.enabled: true` so Prometheus auto-discovers the VolSync metrics endpoint
+   - `app/kustomization.yaml`
+   - `ks.yaml` — `dependsOn: [longhorn]` (the `longhorn-snapshot-vsc` VolumeSnapshotClass must exist before any `ReplicationSource` is created)
+
+3. Add `volsync` to `kubernetes/apps/kustomization.yaml`.
+
+---
+
+#### Phase 2 — Seed backup credentials in 1Password
+
+VolSync's Restic mover reads credentials from a `Secret` with these exact keys. Create a 1Password item (e.g. `volsync-b2-restic`) with the following fields:
+
+| Secret key | Value |
+|------------|-------|
+| `RESTIC_REPOSITORY` | `s3:https://s3.<region>.backblazeb2.com/<bucket>/<path>` |
+| `RESTIC_PASSWORD` | strong random passphrase — **loss = backups permanently unrecoverable** |
+| `AWS_ACCESS_KEY_ID` | B2 application key ID |
+| `AWS_SECRET_ACCESS_KEY` | B2 application key secret |
+
+Steps:
+1. In the Backblaze console: create a private bucket and a dedicated application key scoped to that bucket only.
+2. Add the four fields above to the `volsync-b2-restic` 1Password item.
+3. For each namespace that needs backup, create an `ExternalSecret` that pulls these fields into a `Secret` named `volsync-secret`:
+   ```yaml
+   apiVersion: external-secrets.io/v1
+   kind: ExternalSecret
+   metadata:
+     name: volsync-secret
+     namespace: <target-namespace>
+   spec:
+     refreshInterval: 1h
+     secretStoreRef:
+       name: onepassword
+       kind: ClusterSecretStore
+     target:
+       name: volsync-secret
+     data:
+       - secretKey: RESTIC_REPOSITORY
+         remoteRef: { key: volsync-b2-restic, property: RESTIC_REPOSITORY }
+       - secretKey: RESTIC_PASSWORD
+         remoteRef: { key: volsync-b2-restic, property: RESTIC_PASSWORD }
+       - secretKey: AWS_ACCESS_KEY_ID
+         remoteRef: { key: volsync-b2-restic, property: AWS_ACCESS_KEY_ID }
+       - secretKey: AWS_SECRET_ACCESS_KEY
+         remoteRef: { key: volsync-b2-restic, property: AWS_SECRET_ACCESS_KEY }
+   ```
+
+---
+
+#### Phase 3 — Wire first workload: Prometheus PVC
+
+Prometheus has a 20 Gi Longhorn PVC (`prometheus-db`) — the obvious first backup target since it's already deployed. Add to `kubernetes/apps/observability/kube-prometheus-stack/app/`:
+
+- `volsync.yaml` — the `ReplicationSource`:
+  ```yaml
+  apiVersion: volsync.backube/v1alpha1
+  kind: ReplicationSource
+  metadata:
+    name: prometheus-db-backup
+    namespace: observability
+  spec:
+    sourcePVC: prometheus-db
+    trigger:
+      schedule: "0 2 * * *"          # daily at 02:00 UTC
+    restic:
+      repository: volsync-secret
+      copyMethod: Snapshot            # take a Longhorn CSI snapshot first; read from snapshot PVC
+      volumeSnapshotClassName: longhorn-snapshot-vsc
+      storageClassName: longhorn
+      retain:
+        daily: 7
+        weekly: 4
+        monthly: 12
+      pruneIntervalDays: 7
+  ```
+- The `ExternalSecret` for `volsync-secret` in the `observability` namespace (see Phase 2).
+- Reference both files in `app/kustomization.yaml`.
+
+**`copyMethod: Snapshot` is the key choice:** VolSync takes a Longhorn CSI snapshot, creates a temporary PVC from it, and backs up from *that* — the live Prometheus volume stays mounted and continues writing without interruption. Direct copy (`copyMethod: Direct`) would require the volume to be unmounted, which is not viable for a running Prometheus.
+
+---
+
+#### Phase 4 — `components/volsync/` Kustomize Component (deferred)
+
+Once 3+ apps have VolSync `ReplicationSource` + `ExternalSecret` manifests, extract the boilerplate into `kubernetes/components/volsync/` following the pattern described in the [Researched Patterns](#researched-patterns-bykajhome-ops) section. Until then, add per-app manifests directly.
 
 ---
 
