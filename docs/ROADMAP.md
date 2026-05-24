@@ -11,7 +11,6 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
   - [Scheduling Topology: Follow-up Fixes](#scheduling-topology-follow-up-fixes)
   - [Kubernetes Descheduler](#kubernetes-descheduler)
   - [Talos Config, Image Extensions \& Patch Audit](#talos-config-image-extensions--patch-audit)
-  - [GitHub Actions Self-Hosted Runners (ARC + Claude PR Review)](#github-actions-self-hosted-runners-arc--claude-pr-review)
   - [Researched Patterns (bykaj/home-ops)](#researched-patterns-bykajhome-ops)
 - [Completed](#completed)
 
@@ -150,116 +149,6 @@ Areas to investigate:
 - Confirm `installDisk` is consistent with actual disk layout (nvme0n1 vs nvme1n1) post-wipe
 
 Deliverable: a PR updating `schematic.yaml` and the relevant patch files with reasoned changes; update `talenv.yaml` if the schematic ID changes (re-register at factory.talos.dev).
-
----
-
-### GitHub Actions Self-Hosted Runners (ARC + Claude PR Review)
-
-Deploy **Actions Runner Controller (ARC)** to run GitHub Actions jobs in-cluster, then wire up `claude-code-action` to automatically review Renovate PRs using the `pr-upgrade-reviewer` agent.
-
-#### Why
-
-Renovate opens PRs constantly. The `pr-upgrade-reviewer` agent already knows how to assess upgrade risk, breaking changes, and merge safety — but today it must be invoked manually. Self-hosted runners mean:
-- Reviews run on our own hardware (no GitHub-hosted runner minutes consumed)
-- The runner has direct cluster access (kubectl, talosctl) for richer context
-- `ANTHROPIC_API_KEY` stays inside the cluster, never leaving our network
-- Future CI jobs (linting, schema validation, dry-run applies) can also use the runners
-
-#### Architecture
-
-Two ARC components, matching the multi-document `ks.yaml` operator-plus-instance pattern:
-
-```
-actions-runner-system/
-├── ks.yaml                          # two-doc: controller + runners (dependsOn controller)
-└── actions-runner-controller/
-    ├── app/
-    │   ├── kustomization.yaml
-    │   ├── ocirepository.yaml       # gha-runner-scale-set-controller
-    │   └── helmrelease.yaml         # controller only — no values needed
-    └── runners/
-        ├── kustomization.yaml
-        └── home-lab/
-            ├── kustomization.yaml
-            ├── ocirepository.yaml   # gha-runner-scale-set
-            ├── helmrelease.yaml     # runner pool config (minRunners, maxRunners, image)
-            ├── externalsecret.yaml  # GitHub App credentials from 1Password
-            └── rbac.yaml            # ServiceAccount + ClusterRoleBinding + Talos SA
-```
-
-**OCI sources** (both at `oci://ghcr.io/actions/actions-runner-controller-charts/`):
-- `gha-runner-scale-set-controller` — the cluster-wide controller
-- `gha-runner-scale-set` — one scale set per repo (or org)
-
-Reference: bykaj/home-ops uses both at chart version `0.14.1`.
-
-#### Key configuration decisions
-
-**Runner mode — `kubernetes` not `docker`**
-Set `containerMode.type: kubernetes` in the scale set values. Each job runs as a **pod** (not a Docker container), which avoids Docker-in-Docker and integrates naturally with cluster RBAC. A work volume (25 Gi `openebs-hostpath` PVC) is provisioned per job and cleaned up automatically.
-
-**Authentication — GitHub App (not PAT)**
-Create a GitHub App scoped to this repo with `Actions: Read/Write` and `Administration: Read` permissions. Store three values in 1Password under item `actions-runner`:
-```
-ACTIONS_RUNNER_APP_ID          → github_app_id
-ACTIONS_RUNNER_INSTALLATION_ID → github_app_installation_id
-ACTIONS_RUNNER_PRIVATE_KEY     → github_app_private_key
-```
-The `ExternalSecret` maps these to a `home-lab-runner-secret` Secret that the scale set HelmRelease references via `githubConfigSecret`.
-
-**Cluster access — RBAC + Talos ServiceAccount**
-The runner ServiceAccount gets `cluster-admin` (homelab; acceptable risk). Additionally, a Talos `ServiceAccount` CRD (`talos.dev/v1alpha1`) with `os:admin` role is created and its secret mounted at `/var/run/secrets/talos.dev` — this gives runner jobs direct `talosctl` access, useful for cluster validation steps.
-
-**Runner image**
-bykaj uses `ghcr.io/home-operations/actions-runner` (community image with common tools pre-installed). Evaluate whether the standard `ghcr.io/actions/runner` base image suffices or whether the home-operations variant is preferable. Set `ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER=false` so jobs can run directly in the runner container without a nested job container.
-
-#### Renovate PR auto-review workflow
-
-Once runners are live, add a workflow at `.github/workflows/renovate-pr-review.yml`:
-
-```yaml
-name: Auto-review Renovate PRs
-on:
-  pull_request:
-    types: [opened, reopened]
-    branches: [main]
-
-jobs:
-  review:
-    if: github.actor == 'renovate[bot]'
-    runs-on: home-lab               # matches the runner scale set's runnerGroup/label
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: anthropic-ai/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt: |
-            Review PR #${{ github.event.pull_request.number }} using the
-            pr-upgrade-reviewer agent. Assess upgrade risk, breaking changes,
-            and whether it is safe to merge. Post findings as a PR comment.
-```
-
-`ANTHROPIC_API_KEY` is stored in 1Password and injected into the runner pod via an `ExternalSecret` → Kubernetes Secret → runner env.
-
-#### Steps to implement
-
-1. **Create GitHub App**: `github.com/settings/apps` → scoped to this repo → note App ID + Installation ID → generate private key
-2. **Add 1Password item** `actions-runner` with the three credential fields above; also add `ANTHROPIC_API_KEY` field
-3. **Add OCI sources** to `kubernetes/flux/meta/repos/oci/` (or inline in `app/ocirepository.yaml` per bykaj pattern)
-4. **Create `kubernetes/apps/actions-runner-system/`** directory with the layout above
-5. **Add namespace** `actions-runner-system` to `kubernetes/flux/cluster/` (or via a `namespace.yaml` in the app kustomization)
-6. **Wire into cluster-apps** by adding to the parent `kustomization.yaml` under `kubernetes/apps/`
-7. **Add workflow file** at `.github/workflows/renovate-pr-review.yml`
-8. **Verify**: open a test PR, confirm runner pod spawns, confirm Claude posts a comment
-
-#### Dependencies
-
-- `openebs-hostpath` StorageClass ✅ (work volume PVC per job)
-- `external-secrets` + `onepassword-connect` ✅ (GitHub App credentials + ANTHROPIC_API_KEY)
-- GitHub App created (manual step, pre-deploy)
 
 ---
 
@@ -424,11 +313,12 @@ triggering a Renovate dry-run after the split (check the Dependency Dashboard is
 | External Secrets + 1Password Connect | ESO + 1Password Connect deployed; `ClusterSecretStore` live; `external-secrets`, `onepassword-connect`, `onepassword-store` Kustomizations all Ready |
 | Cluster-Level Variable Substitution | `cluster-vars` Kustomization live; `cluster-settings` ConfigMap + `cluster-secrets` SOPS Secret in `flux-system`; `substituteFrom` patch on `cluster-apps` covers all child Kustomizations |
 | Global HelmRelease Defaults Patch   | Nested patch on `cluster-apps` injects `crds: CreateReplace`, `timeout: 10m`, and upgrade remediation into all HelmReleases; `CLAUDE.md` convention note updated |
-| Envoy Gateway + Cilium L2 LoadBalancer | Envoy Gateway v1.7.3; `envoy-external` (10.60.0.230) + `envoy-internal` (10.60.0.231); wildcard production cert via DNS-01; HTTP→HTTPS redirect on both Gateways |
+| Envoy Gateway + Cilium L2 LoadBalancer | Envoy Gateway v1.8.0; `envoy-external` (10.60.0.230) + `envoy-internal` (10.60.0.231); wildcard production cert via DNS-01; HTTP→HTTPS redirect on both Gateways |
 | Cloudflare Tunnel (cloudflared)        | 2-replica HA deployment in `network` namespace; `*.vwn.io` + `vwn.io` → `envoy-external`; token via ExternalSecret from 1Password |
 | Flux GitHub Webhook Receiver           | `flux-receiver` Kustomization in `flux-system`; ExternalSecret token from 1Password; HTTPRoute on `envoy-external`; GitHub webhook configured — reconcile latency ~5 min → seconds |
 | ExternalDNS (Split-DNS)                | `external-dns-cloudflare` (watches `envoy-external`, `--cloudflare-proxied`, `txtOwnerId: k8s`) + `external-dns-unifi` (webhook sidecar, watches all gateways + services, `txtOwnerId: k8s-internal`); shared OCIRepository `ghcr.io/home-operations/charts-mirror/external-dns` v1.21.1; CF token mapped from `API_TOKEN` → `CF_API_TOKEN` via ESO `data[]` |
 | kube-prometheus-stack                  | Prometheus + Alertmanager in `observability` namespace; 20 Gi + 1 Gi Longhorn PVCs; node-exporter on all 3 nodes; full-cluster scraping (`*SelectorNilUsesHelmValues: false`); HTTPRoutes on `envoy-internal`; Grafana + receiver deferred |
 | metrics-server                         | `kube-system`; HelmRelease `v3.13.0` (OCIRepository `ghcr.io/kubernetes-sigs/charts/metrics-server`); `kubectl top` and HPA resource metrics enabled; `--kubelet-insecure-tls` flag set |
+| GitHub Actions Self-Hosted Runners (ARC + Claude PR Review) | ARC `gha-runner-scale-set-controller@0.14.1` + `home-lab` scale set deployed in `actions-runner-system`; Flux HelmReleases Ready; listener pod active; Renovate PR auto-review via `claude-code-action` wired |
 
 > **[Monitor — cp-03 storage disk]** At boot, `nvme1` (the Crucial CT2000P310SSD8 Longhorn disk) logs `nvme nvme1: using unchecked data buffer`. This is a one-time boot message — the Crucial P310 does not advertise the NVMe "metadata-in-data-buffer" feature; the driver falls back to a simpler DMA path silently. Confirmed count of 1, no I/O errors, XFS mount clean. Watch for additional occurrences or any `I/O error` / `nvme reset` lines: `talosctl dmesg --nodes 10.60.0.203 | grep -i nvme`. Also watch for Longhorn replica faults on cp-03 specifically: `kubectl -n longhorn-system get replicas -o wide | grep cp-03`.

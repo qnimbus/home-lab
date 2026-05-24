@@ -144,7 +144,7 @@ Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` anno
 
 ---
 
-### Envoy Gateway · `v1.7.3` · `network`
+### Envoy Gateway · `v1.8.0` · `network`
 
 **Gateway API ingress controller.** Implements the Kubernetes Gateway API (`gateway.networking.k8s.io/v1`) — the upstream successor to `Ingress` — to route external and internal HTTPS traffic into the cluster. Managed by Flux HelmRelease from an OCIRepository (`docker.io/envoyproxy/gateway-helm`); Renovate tracks the image tag.
 
@@ -164,7 +164,7 @@ Both Gateways share the `network/wildcard-production-tls` secret for TLS termina
 
 ---
 
-### Cloudflare Tunnel (cloudflared) · `2025.9.0` · `network`
+### Cloudflare Tunnel (cloudflared) · `2026.5.0` · `network`
 
 **Outbound tunnel to Cloudflare's edge.** Two cloudflared replicas maintain persistent encrypted connections to Cloudflare's network, making `*.${CLUSTER_DOMAIN}` reachable externally without port forwarding, a static external IP, or firewall rules. All inbound external traffic is forwarded to the `envoy-external` Gateway (`10.60.0.230`). Managed by Flux HelmRelease via the `bjw-s/app-template` OCIRepository.
 
@@ -252,7 +252,7 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 
 ---
 
-### kube-prometheus-stack · `v85.2.1` (chart) · `observability`
+### kube-prometheus-stack · `v85.3.0` (chart) · `observability`
 
 **Cluster monitoring stack.** Deploys Prometheus, Alertmanager, kube-state-metrics, and node-exporter as a unified stack. Full-cluster scraping is configured via `ServiceMonitor` and `PodMonitor` CRDs. Longhorn volumes provide persistence for Prometheus (20 GiB) and Alertmanager (1 GiB), both scheduled on cp-01. Grafana is **disabled** in the chart values — it will be deployed separately.
 
@@ -274,6 +274,21 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 |-----|---------|------|
 | `TalosUpgrade/cluster` | v1.13.2 | Tracks target Talos version; drives `talosctl upgrade` per node |
 | `KubernetesUpgrade/kubernetes` | v1.36.1 | Tracks target Kubernetes version; drives `talosctl upgrade-k8s` |
+
+### Actions Runner Controller (ARC) · `v0.14.2` · `actions-runner-system`
+
+**GitHub Actions self-hosted runner pool.** ARC provisions ephemeral Kubernetes pod runners on demand via the scale set pattern. Two HelmReleases work together: the cluster-wide controller and the `home-lab` runner scale set scoped to this repository.
+
+| Component | Type | Replicas | Role |
+|-----------|------|----------|------|
+| `actions-runner-controller` (gha-rs-controller) | Deployment | 1 | Cluster-wide controller that manages scale sets and creates runner pods on demand |
+| `home-lab` listener | Pod (ephemeral) | 1 (scales to 0 when idle) | Listens for queued GitHub Actions jobs; spins up runner pods per job; each pod uses a 25 Gi `openebs-hostpath` work volume |
+
+Runner pods are launched with `cluster-admin` RBAC and a Talos `ServiceAccount` (`os:admin`) mounted at `/var/run/secrets/talos.dev` — giving workflow steps direct `kubectl` and `talosctl` access. Authentication uses a GitHub App (App ID + Installation ID + private key) sourced from 1Password via `ExternalSecret`. Runners are labelled `home-lab` and match the `runs-on: home-lab` label in workflows.
+
+> **Primary use**: automatic Renovate PR review via `claude-code-action` — the `pr-upgrade-reviewer` agent reviews every Renovate-opened PR without consuming GitHub-hosted runner minutes.
+
+---
 
 ### app-template · `v5.x` · (shared chart library)
 

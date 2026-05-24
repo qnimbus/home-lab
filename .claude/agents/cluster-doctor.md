@@ -17,7 +17,7 @@ You understand both Kubernetes-level and Talos node-level debugging. Your primar
 The following section contains topology facts verified against the live cluster. It is automatically maintained — do not edit it manually.
 
 <!-- BEGIN: CLUSTER-STATE-AUTO -->
-### Nodes (last verified: 2026-05-15)
+### Nodes (last verified: 2026-05-24)
 
 | Hostname     | Role | Mgmt IP       | Storage IP    | Hardware                          |
 |--------------|------|---------------|---------------|-----------------------------------|
@@ -40,23 +40,24 @@ The following section contains topology facts verified against the live cluster.
 
 ### Active namespaces and key components
 
-| Namespace        | Key workloads                                                                                             |
-|------------------|-----------------------------------------------------------------------------------------------------------|
-| kube-system      | Cilium (CNI, kube-proxy replacement), CoreDNS, kube-vip (static pods), Spegel (mirror), metrics-server  |
-| flux-system      | flux-operator, flux-instance (source/kustomize/helm/notification controllers), webhook receiver           |
-| cert-manager     | cert-manager, cainjector, webhook                                                                         |
-| external-secrets | external-secrets, ESO webhook, cert-controller, onepassword-connect (1Password Connect)                  |
-| longhorn-system  | Longhorn CSI v1.11.2 (2-replica mode; cp-02 has NO storage disk yet; only cp-01 and cp-03 have disks)   |
-| openebs          | OpenEBS LocalPV (openebs-hostpath StorageClass)                                                           |
-| network          | envoy-gateway, envoy-external (L2 IP 10.60.0.230), envoy-internal (L2 IP 10.60.0.231), cloudflared (2r), external-dns-cloudflare, external-dns-unifi |
-| observability    | kube-prometheus-stack v75.10.0 (Prometheus + Alertmanager + node-exporter + kube-state-metrics + operator) |
-| system-upgrade   | tuppr v0.1.28 upgrade controller (TalosUpgrade + KubernetesUpgrade CRDs)                                 |
+| Namespace             | Key workloads                                                                                                              |
+|-----------------------|----------------------------------------------------------------------------------------------------------------------------|
+| kube-system           | Cilium v1.19.4 (CNI, kube-proxy replacement), CoreDNS chart v1.45.2, kube-vip (static pods), Spegel v0.7.1, metrics-server chart v3.13.0 |
+| flux-system           | flux-operator v0.50.0, flux-instance (Flux v2.6.4: source/kustomize/helm/notification controllers), webhook receiver      |
+| cert-manager          | cert-manager v1.20.2, cainjector, webhook                                                                                  |
+| external-secrets      | external-secrets v2.5.0, ESO webhook, cert-controller, onepassword-connect (1Password Connect chart v2.4.1)               |
+| longhorn-system       | Longhorn CSI v1.11.2 (3-replica mode; all 3 nodes have dedicated storage disks)                                           |
+| openebs               | OpenEBS LocalPV v4.4.0 (openebs-hostpath StorageClass)                                                                    |
+| network               | envoy-gateway v1.8.0, envoy-external (L2 IP 10.60.0.230), envoy-internal (L2 IP 10.60.0.231), cloudflared v2026.5.0 (2r), external-dns-cloudflare v1.21.1, external-dns-unifi v1.21.1 |
+| observability         | kube-prometheus-stack chart v85.3.0 (Prometheus + Alertmanager + node-exporter + kube-state-metrics + operator)           |
+| system-upgrade        | tuppr v0.1.35 upgrade controller (TalosUpgrade + KubernetesUpgrade CRDs)                                                  |
+| actions-runner-system | ARC gha-runner-scale-set-controller v0.14.2 + home-lab runner scale set v0.14.2                                            |
 
 ### Storage classes
 
 | Class              | Provisioner      | Reclaim   | Notes                                                                       |
 |--------------------|------------------|-----------|-----------------------------------------------------------------------------|
-| longhorn (default) | Longhorn CSI     | Delete    | 2 replicas; WaitForFirstConsumer                                            |
+| longhorn (default) | Longhorn CSI     | Delete    | 3 replicas; WaitForFirstConsumer                                            |
 | longhorn-retain    | Longhorn CSI     | Retain    | For stateful apps needing manual PV cleanup                                 |
 | longhorn-single    | Longhorn CSI     | Retain    | 1 replica; single-node workloads (NOTE: ReclaimPolicy is Retain, not Delete)|
 | longhorn-static    | Longhorn CSI     | Delete    | Immediate binding; for static PV use cases                                  |
