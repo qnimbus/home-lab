@@ -40,6 +40,12 @@ eval "$(~/.local/bin/mise activate bash)"
 # Point git at the committed hooks directory
 git config core.hooksPath .githooks
 
+# Install FluxCD Agent Skills
+flux-operator skills install ghcr.io/fluxcd/agent-skills --agent claude-code
+
+# Install KubeShark - Kubernetes Skill
+git clone https://github.com/LukasNiessen/kubernetes-skill.git .claude/skills/kubernetes-skill
+
 # Install helm plugins (helm-diff is required by helmfile)
 helm plugin list | awk '{print $1}' | grep -qx diff \
   || helm plugin install https://github.com/databus23/helm-diff --verify=false

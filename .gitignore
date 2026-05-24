@@ -1,5 +1,7 @@
 # Ignore files and directories that should not be committed to the repository
 .archive/
+.agents
+.claude/skills
 .claude/settings.local.json
 
 # Ignore IDE/editor specific files and folders
