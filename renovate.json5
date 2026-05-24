@@ -142,6 +142,17 @@
     // ignoreTests: true is needed because this repo has no CI to wait for.
 
     {
+      // GitHub deprecates runner versions with little warning; a deprecated runner breaks
+      // CI entirely — creating a circular deadlock where CI can't approve its own fix.
+      // Auto-merge unconditionally breaks this cycle. Runner bumps are safe: they only
+      // update the runner binary, not workflow logic.
+      description: "Auto-merge GitHub Actions runner image (all update types)",
+      matchPackageNames: ["ghcr.io/home-operations/actions-runner"],
+      automerge: true,
+      automergeType: "branch",
+      ignoreTests: true,
+    },
+    {
       description: "Auto-merge mise tool updates (minor + patch only)",
       matchManagers: ["mise"],
       automerge: true,
