@@ -5,12 +5,17 @@
     "config:recommended",    // Sensible defaults: PR limits, grouping minor+patch, etc.
     "docker:enableMajor",    // Also open PRs for major Docker image bumps (Talos, k8s use docker datasource)
     ":dependencyDashboard",  // Maintain a GitHub Issue listing every pending update — your control panel
-    ":disableRateLimiting",  // Remove the default cap on concurrent PRs (fine for a home lab)
     ":semanticCommits",      // Conventional commit messages on Renovate's own commits
   ],
 
   dependencyDashboard: true,
   dependencyDashboardTitle: "Renovate Dashboard",
+
+  // Stagger PR creation to avoid saturating the Claude review workflow.
+  // Renovate runs every ~1h during the weekend window; prHourlyLimit caps new PRs per run,
+  // prConcurrentLimit caps total open PRs. A backlog drains at 2/hour, max 5 open at once.
+  prHourlyLimit: 2,
+  prConcurrentLimit: 5,
 
   // Only scan on weekends — avoids noise during the week; change to "at any time" to run continuously
   schedule: ["every weekend"],
