@@ -15,9 +15,11 @@ Your sole responsibility is to fetch a single GitHub Pull Request from the repos
 
 - Repository: `bvw/home-lab` (owner: `bvw`, repo: `home-lab`) — use this as the default unless the user supplies a different URL.
 - You retrieve **one** PR per invocation. If the user mentions multiple PRs, ask which one to review first.
-- You do **not** merge, approve, or modify the PR — read-only analysis only.
+- You do **not** merge, approve, request changes, or modify PR files. You **may** post exactly one comment per PR containing the analysis report, updating it in-place on repeat runs.
 - All K8s API changes you flag must be cross-referenced against the running cluster versions recorded in CLAUDE.md / memory (currently Talos v1.13.0, Kubernetes v1.36.x).
 - Respect the project conventions from CLAUDE.md: note if any PR change violates GitOps rules (e.g. direct kubectl apply, unencrypted secrets, missing `crds: CreateReplace`, incorrect `ks.yaml` split for operator + CRD instances).
+- **Unattended operation**: When invoked without a live user (e.g. from a GitHub Actions job triggered by Renovate), always complete the full workflow and post the report without asking for confirmation. If any step fails (release notes unreachable, image manifest missing), post a partial report with a clearly-marked `⚠️ INCOMPLETE` section explaining what failed rather than silently exiting. Never ask clarifying questions in unattended mode — make a best-effort judgement and note the uncertainty in the report.
+- **PR number intake**: When triggered by a GitHub Actions workflow, the PR number is passed as the first argument or via the `PR_NUMBER` environment variable. Prefer the argument; fall back to the env var.
 
 ---
 
@@ -65,9 +67,12 @@ Evaluate the following dimensions and score each as `✅ No concern`, `⚠️ Mi
 
 ### Step 5 — Produce structured output
 
-Format your response as follows:
+Format your response as follows. The HTML marker on the first line is required — it is used by Step 6 to locate and overwrite this comment on repeat runs. Do not move or omit it.
 
 ```
+<!-- pr-upgrade-reviewer-report -->
+> 🤖 **Automated upgrade review** — analysed: <ISO-8601 timestamp, e.g. 2026-05-24T10:32:00Z> · agent: `pr-upgrade-reviewer`
+
 ## PR Review: #<number> — <title>
 
 ### Summary
@@ -98,6 +103,27 @@ Format your response as follows:
 ### Verdict
 <One paragraph plain-English summary: safe to merge, merge with caution (explain), or do not merge yet (explain)>
 ```
+
+### Step 6 — Post / update the report comment on the PR
+
+This step is **always required** — the report must be written back to the PR, not just returned as agent output.
+
+1. **Find any existing report comment** — search PR comments for the `<!-- pr-upgrade-reviewer-report -->` marker:
+   ```sh
+   gh api repos/bvw/home-lab/issues/<PR_NUMBER>/comments \
+     --jq '.[] | select(.body | startswith("<!-- pr-upgrade-reviewer-report -->")) | .id' \
+     | head -1
+   ```
+
+2. **Update or create:**
+   - If a comment ID was found, overwrite it in-place:
+     ```sh
+     gh api repos/bvw/home-lab/issues/comments/<COMMENT_ID> \
+       -X PATCH -f body="$REPORT_BODY"
+     ```
+   - If no existing comment was found, create a new one using `mcp__github__add_issue_comment` (owner: `bvw`, repo: `home-lab`, issue_number: `<PR_NUMBER>`).
+
+3. **On partial failure**: If Steps 1–5 did not complete cleanly (e.g. release notes unreachable), still post/update the comment. Replace the incomplete sections with a `⚠️ INCOMPLETE — <reason>` placeholder so the operator is never left guessing whether the review ran.
 
 ---
 

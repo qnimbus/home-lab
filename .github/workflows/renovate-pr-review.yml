@@ -3,23 +3,33 @@ name: Auto-review Renovate PRs
 
 on:
   pull_request:
-    types: [opened, reopened]
+    types: [opened, reopened, synchronize]
     branches: [main]
+
+# Cancel any in-progress review for the same PR when a new commit is pushed.
+concurrency:
+  group: renovate-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   review:
     if: github.actor == 'renovate[bot]'
     runs-on: home-lab
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
-      - uses: anthropic-ai/claude-code-action@v1
+        timeout-minutes: 5
+
+      - uses: anthropics/claude-code-action@v1
+        timeout-minutes: 10
         with:
-          # ANTHROPIC_API_KEY is injected into the runner pod via ExternalSecret → Kubernetes
-          # Secret → runner env; read from env rather than GitHub secrets.
+          # ANTHROPIC_API_KEY is injected into the runner pod via ExternalSecret →
+          # Kubernetes Secret → runner env; read from env rather than GitHub secrets.
           anthropic_api_key: ${{ env.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             Review PR #${{ github.event.pull_request.number }} using the
             pr-upgrade-reviewer agent. Assess upgrade risk, breaking changes,
