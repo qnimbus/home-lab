@@ -9,6 +9,7 @@ resources:
   - ./kube-system
   - ./longhorn-system
   - ./network
+  - ./tailscale
   - ./openebs
   - ./observability
   - ./system-upgrade
