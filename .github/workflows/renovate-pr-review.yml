@@ -23,6 +23,11 @@ jobs:
       - uses: actions/checkout@v4
         timeout-minutes: 5
 
+      - name: Export Kubernetes-injected secrets to GitHub env context
+        # ${{ env.* }} expressions only read from the Actions env context, not
+        # from OS-level env vars injected by Kubernetes. This step bridges the gap.
+        run: echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" >> $GITHUB_ENV
+
       - uses: anthropics/claude-code-action@v1
         timeout-minutes: 10
         with:
