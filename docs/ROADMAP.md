@@ -12,6 +12,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
   - [Kubernetes Descheduler](#kubernetes-descheduler)
   - [Talos Config, Image Extensions \& Patch Audit](#talos-config-image-extensions--patch-audit)
   - [Migrate Remaining HelmRepositories to `home-operations/charts-mirror`](#migrate-remaining-helmrepositories-to-home-operationscharts-mirror)
+  - [FluxInstance: Migrate Sync to GitHub App Authentication](#fluxinstance-migrate-sync-to-github-app-authentication)
   - [Tailscale kubectl Authentication (RBAC)](#tailscale-kubectl-authentication-rbac)
   - [VolSync (PVC Backup)](#volsync-pvc-backup)
   - [Researched Patterns (bykaj/home-ops)](#researched-patterns-bykajhome-ops)
@@ -226,6 +227,63 @@ For each of the two charts (`cilium`, `metrics-server`):
 `cilium` is deployed during `task bootstrap:cluster` via `kubernetes/bootstrap/helmfile.yaml` — not by Flux. The `HelmRepository` in `flux/meta/repos/helm/cilium.yaml` is only used if cilium is also reconciled by Flux post-bootstrap. Check whether the cilium HelmRelease in `kube-system` references this source before touching it; if the Flux HelmRelease is active, migrate it. If only the Helmfile bootstrap uses cilium, the `HelmRepository` source is effectively unused and can be removed outright.
 
 **Dependencies:** None — each migration is independently deployable. Low risk: Flux will switch the source on next reconcile; no pod restarts required.
+
+---
+
+### FluxInstance: Migrate Sync to GitHub App Authentication
+
+The FluxInstance currently syncs via an SSH deploy key (`ssh://git@github.com/qnimbus/home-lab`). Migrating to GitHub App authentication removes a long-lived credential in favour of short-lived tokens that the Flux operator mints automatically, and enables fine-grained repository permissions without a machine account.
+
+**Why GitHub App > SSH deploy key:**
+
+| Dimension | SSH deploy key | GitHub App |
+|---|---|---|
+| Token lifetime | Long-lived; manual rotation required | Short-lived (1 h); auto-rotated by Flux operator |
+| Scope granularity | Repo-level only | Per-repo, per-permission (contents: read) |
+| Audit trail | Key identity only | App + installation ID in GitHub audit log |
+| Revocation | Delete key from repo settings | Suspend/delete App installation |
+
+**Deployment notes:**
+
+1. Create a GitHub App on the account/org:
+   - Permissions: `Contents: Read-only`, `Metadata: Read-only`
+   - Install the App on the `home-lab` repository only
+   - Note the `App ID` and `Installation ID`; generate and download a private key (`.pem`)
+
+2. Create the sync Secret in `flux-system` (replace the current SSH key Secret):
+   ```yaml
+   apiVersion: v1
+   kind: Secret
+   metadata:
+     name: flux-system      # must match sync.pullSecret in FluxInstance
+     namespace: flux-system
+   stringData:
+     githubAppID: "<app-id>"
+     githubAppInstallationID: "<installation-id>"
+     githubAppPrivateKey: |
+       -----BEGIN RSA PRIVATE KEY-----
+       ...
+       -----END RSA PRIVATE KEY-----
+   ```
+   Encrypt with SOPS (`sops --encrypt --in-place`) before committing — matches the existing `kubernetes/**/*.sops.yaml` rule.
+
+3. Update `kubernetes/apps/flux-system/flux-instance/app/helm/values.yaml`:
+   ```yaml
+   sync:
+     kind: GitRepository
+     provider: github          # add this line
+     url: "https://github.com/qnimbus/home-lab"   # change ssh:// → https://
+     ref: refs/heads/main
+     path: ./kubernetes/flux/cluster
+     pullSecret: flux-system
+   ```
+   Note: `provider: github` requires the `url` to be HTTPS, not SSH.
+
+4. Apply the updated FluxInstance values and verify the GitRepository transitions from `ssh` to token-based auth: `flux get sources git -n flux-system`.
+
+5. Remove the old SSH deploy key from the GitHub repository settings once Flux is confirmed healthy on the new auth.
+
+**Dependencies:** None — independently implementable. The existing `flux-system` Secret name (`pullSecret: flux-system`) can be reused; only its content changes.
 
 ---
 
