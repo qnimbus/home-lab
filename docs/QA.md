@@ -26,6 +26,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 - [Why does `charts/tuppr` not support cosign, when `charts-mirror/openebs` does?](#why-does-ghcriohome-operationschartstuppr-not-support-cosign-verification-when-ghcriohome-operationscharts-mirroropenebs-does)
 - [Why does `valuesFrom` require both a `configMapGenerator` and a `kustomizeconfig.yaml`?](#why-does-every-app-that-uses-valuesfrom-need-both-a-configmapgenerator-and-a-kustomizeconfigyaml)
 - [Can a HelmRelease override `timeout` (or other fields set by the global `cluster-apps` patch)?](#can-a-helmrelease-override-timeout-or-other-fields-set-by-the-global-cluster-apps-patch)
+- [A resource using `${VARIABLE}` syntax is not being substituted — what's happening?](#a-resource-using-variable-syntax-is-not-being-substituted--whats-happening)
 - [What are the risks of bypassing a Kustomization finalizer, and how should I delete a Flux resource safely?](#what-are-the-risks-of-bypassing-a-kustomization-finalizer-and-how-should-i-delete-a-flux-resource-safely)
 - [How do I choose between HelmRepository and OCIRepository — and what happens if I use the wrong one?](#how-do-i-choose-between-helmrepository-and-ocirepository--and-what-happens-if-i-use-the-wrong-one)
 
@@ -594,6 +595,39 @@ data:
 ```
 
 This keeps per-chart overrides local to the chart's own directory and avoids touching the cluster-level file. It requires: (1) changing the global patch to use the substitution syntax, and (2) each chart that needs a non-default value adding `HELM_TIMEOUT` to its substitution source. The global `cluster-apps` variable substitution patch already runs before the HelmRelease defaults patch, so the variable is resolved correctly.
+
+---
+
+### A resource using `${VARIABLE}` syntax is not being substituted — what's happening?
+
+**Short answer:** The Flux Kustomization that manages the resource has `substitution.flux.home.arpa/disabled: "true"` in its labels. This opts it out of the `cluster-apps` global patch that injects `postBuild.substituteFrom`, so variables are never resolved. The literal `${VARIABLE}` string reaches the API server — either silently wrong or rejected outright by validation.
+
+**How the substitution pipeline works:**
+
+The `cluster-apps` Kustomization (`kubernetes/flux/cluster/ks.yaml`) has a `patches:` block that targets child Kustomizations **without** the `substitution.flux.home.arpa/disabled: "true"` label. Matching Kustomizations receive an injected `postBuild.substituteFrom` pointing at `cluster-settings` ConfigMap and `cluster-secrets` Secret. Kustomizations with the disabled label are excluded entirely — no substitution source is wired up.
+
+**Symptom:**
+
+Adding a resource with `${DOMAIN_CLUSTER}` (or any cluster variable) to a disabled Kustomization causes Flux to apply the literal string. For strictly-validated resource types like `HTTPRoute` (which enforces a DNS hostname regex), the dry-run fails and blocks the entire Kustomization:
+
+```
+HTTPRoute.gateway.networking.k8s.io "longhorn" is invalid:
+spec.hostnames[0]: Invalid value: "longhorn.${DOMAIN_CLUSTER}":
+spec.hostnames[0] in body should match '^(\*\.)?[a-z0-9]...'
+```
+
+No resources from that path are applied until the error is resolved.
+
+**Find which Kustomizations have substitution disabled:**
+
+```sh
+kubectl get kustomization -n flux-system -o json \
+  | jq -r '.items[] | select(.metadata.labels["substitution.flux.home.arpa/disabled"] == "true") | .metadata.name'
+```
+
+**Fix:**
+
+Remove the `substitution.flux.home.arpa/disabled: "true"` label from the Kustomization's `ks.yaml`. Existing resources in that path that don't use `${...}` syntax are completely unaffected — substitution is a no-op for them.
 
 ---
 
