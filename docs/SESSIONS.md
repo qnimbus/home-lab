@@ -4,6 +4,37 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-25 — `flux-alertmanager-notifications`
+
+### Goal
+Implement Flux alerting by wiring notification-controller to Alertmanager for event-driven resource failure alerts, and adding a Prometheus PodMonitor and PrometheusRules for controller-level health monitoring.
+
+### What we did
+- Reviewed `docs/REPO-AUDIT.md` W1 (no Flux Alert/Provider configured); used `gitops-knowledge` skill to enumerate all supported Flux Provider types
+- Decided on `alertmanager` Provider: in-cluster, integrates with existing kube-prometheus-stack, no extra infrastructure
+- Cross-referenced with bykaj's home-ops repo: they use PrometheusRules + PodMonitor (metric-based) rather than Flux Alert/Provider; identified that their approach misses individual HelmRelease/Kustomization failure alerting — the two approaches are complementary
+- Created `flux-alerts` app with Flux `Provider` (type: `alertmanager`, in-cluster Service URL) and `Alert` (`eventSeverity: error`, watches all `Kustomization` + `HelmRelease` resources, three noise-exclusion patterns)
+- Added `PodMonitor` (scrapes all 4 Flux controllers via `http-prom`) and `PrometheusRule` (`FluxInstanceAbsent` + `FluxInstanceNotReady`, 5m threshold) to the `flux-instance` app
+- Confirmed `flux-system` is correct for all resources: `kube-prometheus-stack` has `*SelectorNilUsesHelmValues: false`, enabling cluster-wide PodMonitor/PrometheusRule discovery from any namespace
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/flux-system/flux-alerts/ks.yaml` | Created — Flux Kustomization, dependsOn kube-prometheus-stack |
+| `kubernetes/apps/flux-system/flux-alerts/app/kustomization.yaml` | Created |
+| `kubernetes/apps/flux-system/flux-alerts/app/notifications.yaml` | Created — Provider (alertmanager) + Alert (flux-errors, error severity) |
+| `kubernetes/apps/flux-system/flux-instance/app/podmonitor.yaml` | Created — scrapes helm/source/kustomize/notification controllers |
+| `kubernetes/apps/flux-system/flux-instance/app/prometheusrule.yaml` | Created — FluxInstanceAbsent + FluxInstanceNotReady rules |
+| `kubernetes/apps/flux-system/flux-instance/app/kustomization.yaml` | Updated — added podmonitor and prometheusrule resources |
+| `kubernetes/apps/flux-system/kustomization.yaml` | Updated — added flux-alerts entry |
+
+### Key decisions
+- Used in-cluster Service URL (`svc.cluster.local:9093`) for the alertmanager Provider address — avoids a gateway hop and keeps alerting functional even when external ingress is down
+- Co-located PodMonitor + PrometheusRule in `flux-instance` app (not `observability`) — "app owns its observability" pattern; `*SelectorNilUsesHelmValues: false` enables Prometheus to discover them from any namespace
+- Implemented both Flux Alert/Provider AND PrometheusRules as complementary layers: event-driven covers individual resource failures; metric-based covers controller-level health and absence detection
+
+---
+
 ## 2026-05-25 — `drift-detection-global-default`
 
 ### Goal
