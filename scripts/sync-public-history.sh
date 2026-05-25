@@ -30,6 +30,7 @@ EXCLUDE_GLOBS=(
   ":(glob)docs/CONVENTIONS.md"
   ":(glob)docs/ROADMAP.md"
   ":(glob)docs/SESSIONS.md"
+  ":(glob)docs/REPO-AUDIT.md"
   ":(glob)docs/BOOT-ISSUE-TROUBLESHOOTING.md"
   ":(glob)docs/POTENTIAL-DEPLOYMENTS.md"
   ":(glob)scripts/mcp.sh"
