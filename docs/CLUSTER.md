@@ -530,6 +530,14 @@ GitOps:   cluster-meta → cluster-vars → cluster-apps → <individual app Kus
 
 ---
 
+## GitOps Repository Audit
+
+For a periodic audit of the repository's Flux configuration quality, schema validation results, security posture, and open recommendations, see **[REPO-AUDIT.md](REPO-AUDIT.md)**.
+
+Re-run the audit after adding or removing major components; the commands are listed in the [How to Re-Audit](REPO-AUDIT.md#how-to-re-audit) section.
+
+---
+
 ## Bootstrap Runbook
 
 Step-by-step guide for bootstrapping the cluster from scratch or after a full reset. All commands run from the repo root inside the devcontainer.

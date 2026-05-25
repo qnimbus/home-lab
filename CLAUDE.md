@@ -19,6 +19,8 @@ This repository provisions and manages a bare-metal Talos Linux Kubernetes clust
 > For YAML comment style rules and community research guidance, see [CONVENTIONS.md](docs/CONVENTIONS.md).
 
 > For a high-level overview of the cluster and FluxCD structure, see [CLUSTER.md](docs/CLUSTER.md).
+
+> For a periodic audit of Flux configuration quality, manifest validation, security posture, and open recommendations, see [REPO-AUDIT.md](docs/REPO-AUDIT.md). Re-run `gitops-repo-audit` skill after significant changes to refresh findings.
 > Keep `docs/CLUSTER.md` up to date as the cluster evolves: when adding new components, changing core infrastructure (CNI, DNS, storage, secrets strategy), or completing major bootstrap phases, update the relevant section. Keep entries concise and high-level — implementation details belong in code or `CLAUDE.md`.
 >
 > For pending and in-progress work items, see [ROADMAP.md](docs/ROADMAP.md). Update it when tasks are started, completed, or reprioritized.
