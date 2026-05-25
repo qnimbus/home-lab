@@ -1,7 +1,7 @@
 ---
 instance:
   distribution:
-    # renovate: depName=ghcr.io/fluxcd/flux-operator datasource=docker
+    # renovate: depName=ghcr.io/controlplaneio-fluxcd/flux-operator-manifests datasource=docker
     version: "2.6.4"
   cluster: {}
   components:
