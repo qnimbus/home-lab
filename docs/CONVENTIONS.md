@@ -78,7 +78,7 @@ resource (not the Kustomization):
 ```yaml
 metadata:
   labels:
-    driftDetection.flux.home.arpa/disabled: "true"
+    drift-detection.flux.home.arpa/disabled: "true"
 ```
 
 Use this only when an external controller **writes to `.spec` fields** of Helm-managed resources
