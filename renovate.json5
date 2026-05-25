@@ -98,6 +98,7 @@
         "/flux-operator/",
         "/flux-instance/",
         "ghcr.io/fluxcd/flux-operator",
+        "fluxcd/flux2",
       ],
     },
     {
