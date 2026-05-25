@@ -133,3 +133,29 @@ spec:
       target:
         group: kustomize.toolkit.fluxcd.io
         kind: Kustomization
+    # Drift detection default — opt out per-release with label:
+    #   driftDetection.flux.home.arpa/disabled: "true"
+    # Add spec.driftDetection.ignore rules to the HelmRelease for paths
+    # managed by other controllers (e.g. HPA → /spec/replicas, VPA → resources).
+    - patch: |-
+        apiVersion: kustomize.toolkit.fluxcd.io/v1
+        kind: Kustomization
+        metadata:
+          name: not-used
+        spec:
+          patches:
+            - patch: |-
+                apiVersion: helm.toolkit.fluxcd.io/v2
+                kind: HelmRelease
+                metadata:
+                  name: not-used
+                spec:
+                  driftDetection:
+                    mode: enabled
+              target:
+                group: helm.toolkit.fluxcd.io
+                kind: HelmRelease
+                labelSelector: driftDetection.flux.home.arpa/disabled notin (true)
+      target:
+        group: kustomize.toolkit.fluxcd.io
+        kind: Kustomization

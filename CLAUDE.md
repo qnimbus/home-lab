@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-25 | `drift-detection-global-default` | `driftDetection: enabled` added as cluster-wide default via `cluster-apps` patch; opt-out label + full CONVENTIONS.md docs |
 > | 2026-05-24 | `gitops-repo-audit` | Full GitOps audit; cosign supply-chain verification added to 7 OCIRepositories (6 keyless OIDC, 1 key-based RSA) |
 > | 2026-05-24 | `tailscale-connector-crd-fix` | `tailscale-configs` Kustomization failure traced to missing `connectors.tailscale.com` CRD; fixed with `installCRDs: true` + `wait: true` |
 > | 2026-05-24 | `setup-flux-mcp-server` | fluxcd/agent-skills installed (3 skills); flux-operator-mcp wired as MCP server; live cluster verified via get_flux_instance |
@@ -11,7 +12,6 @@
 > | 2026-05-23 | `cloudflare-ssl-webhook-fix` | Cloudflare Universal SSL wildcard limited to one level; moved webhook + tunnel to vwn.io; 200 OK confirmed |
 > | 2026-05-23 | `debug-flux-dns-tunnel` | Multi-domain TLS + CLUSTER_DOMAIN removal; cloudflared tunnel routing fixed (external.proxii.nl → external.cluster.vwn.io); kube-api LB Service for split DNS |
 > | 2026-05-23 | `uncordon-cp-02-node` | JetKVM EFI boot entry (Boot0016) root-caused as cp-02 boot loop; entries cleared via efivars; Longhorn UUID mismatch fixed; cp-02 storage online |
-> | 2026-05-22 | `nvme-disk-config-talos` | Crucial P310 installed in cp-02; Talos reconfigured (system→Crucial, Longhorn→Kingston); all 3 nodes Ready; Longhorn bumped to 3-replica |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
@@ -217,17 +217,27 @@ upgrade:
   remediation:
     remediateLastFailure: true
     retries: 2
+driftDetection:
+  mode: enabled   # opt out per-release — see below
 ```
 
 `crds: CreateReplace` ensures CRD schemas are updated on chart upgrades (Helm's default is to
 never update CRDs).
 
+`driftDetection: enabled` detects and reverts any out-of-band changes to Helm-managed resources
+on every reconciliation interval. See **[CONVENTIONS.md → Drift Detection](docs/CONVENTIONS.md#drift-detection)**
+for the opt-out label and `ignore` rules pattern.
+
 **Important — the global patch is the last writer.** Because the patch is injected as a nested
 `spec.patches` entry appended to every child Kustomization, it always runs after any local
-patches. This means **setting `timeout:` (or any other patched field) directly in a HelmRelease
-has no effect** — the global patch overwrites it. To change the timeout cluster-wide, edit
-`kubernetes/flux/cluster/ks.yaml`. For per-chart overrides, see the `timeout` entry in
+patches. This means **setting `timeout:` (or any other patched scalar field) directly in a
+HelmRelease has no effect** — the global patch overwrites it. To change the timeout cluster-wide,
+edit `kubernetes/flux/cluster/ks.yaml`. For per-chart overrides, see the `timeout` entry in
 [QA.md](docs/QA.md).
+
+Exception: `spec.driftDetection.ignore` rules set directly in a HelmRelease **do survive** the
+global patch — the patch only writes `mode`, leaving the `ignore` list untouched (strategic merge
+on object sub-fields).
 
 ### app-template v5 (bjw-s/app-template)
 

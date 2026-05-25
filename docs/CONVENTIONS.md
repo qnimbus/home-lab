@@ -63,6 +63,64 @@ Full schema reference: [bjw-s app-template docs](https://bjw-s-labs.github.io/he
 
 ---
 
+## Drift Detection
+
+All HelmReleases get `driftDetection: { mode: enabled }` by default via the global `cluster-apps`
+patch (`kubernetes/flux/cluster/ks.yaml`). Flux detects and reverts any out-of-band mutation to
+Helm-managed resources on every reconciliation interval — `kubectl edit`, operator mutations, manual
+`helm upgrade`, accidental deletes.
+
+### Opt-out label
+
+To fully disable drift detection on a specific HelmRelease, add this label to the **HelmRelease**
+resource (not the Kustomization):
+
+```yaml
+metadata:
+  labels:
+    driftDetection.flux.home.arpa/disabled: "true"
+```
+
+Use this only when an external controller **writes to `.spec` fields** of Helm-managed resources
+(not just `.status`). Examples: VPA mutating `resources.requests`, a custom operator that
+self-tunes its own CRD spec.
+
+### Ignore rules (preferred over full opt-out)
+
+For targeted exclusions — where drift detection should stay on but skip specific paths — add
+`spec.driftDetection.ignore` directly to the HelmRelease YAML. These rules **survive the global
+patch** (the patch only writes `mode`; `ignore` is a different sub-field under strategic merge).
+
+```yaml
+spec:
+  driftDetection:
+    # mode: not needed — injected by global patch
+    ignore:
+      - paths: ["/spec/replicas"]
+        target:
+          kind: Deployment
+      - paths: ["/spec/resources/requests/cpu", "/spec/resources/requests/memory"]
+        target:
+          kind: Deployment
+```
+
+Common `ignore` scenarios:
+
+| Controller | Path to ignore | Why |
+|---|---|---|
+| HPA | `/spec/replicas` on `Deployment`/`StatefulSet` | HPA owns the replica count |
+| VPA | `/spec/*/resources/requests` on `Deployment` | VPA mutates resource requests at runtime |
+| Kubernetes auto-assign | `/spec/ports/*/nodePort` on `Service` | Kubernetes assigns nodePort; Flux would clear and re-assign a different port |
+| Mutating webhook | `/metadata/annotations` or `/metadata/labels` on target resource | Webhook injects annotations Flux doesn't know about |
+
+### What drift detection does NOT watch
+
+Drift detection only tracks **Helm-managed resources** (those with helm-controller's server-side
+apply field ownership). Pods, EphemeralRunners, and any resource created by a subordinate
+controller are outside Flux's ownership graph and are never reverted.
+
+---
+
 ## Community research before new deployments
 
 Before planning any new application deployment or writing a new Kustomization, search **[kubesearch.dev](https://kubesearch.dev/)** for the chart or app name. This indexes public home-lab GitOps repos and surfaces real-world `HelmRelease`, `values.yaml`, and `ExternalSecret` patterns used by other home labbers running the same stack (Talos + Flux + Cilium).

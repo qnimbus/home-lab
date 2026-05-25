@@ -4,6 +4,38 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-25 — `drift-detection-global-default`
+
+### Goal
+Enable `driftDetection: enabled` as a cluster-wide default for all HelmReleases via the `cluster-apps` global patch, with a label-based opt-out mechanism and full documentation.
+
+### What we did
+- Reviewed `docs/REPO-AUDIT.md`; identified W2 (drift detection on only 5/20 HelmReleases) as the primary work item
+- Explained drift detection: Flux detects and reverts out-of-band mutations to Helm-owned resources (via server-side apply field ownership) on every reconciliation interval; `mode: warn` detects without reverting, `mode: enabled` detects and corrects
+- Audited all 15 HelmReleases missing drift detection (`grep -rL driftDetection`); confirmed none have HPA, VPA, or other controllers that write back to `.spec` fields — all are safe to enable
+- Identified non-HPA risk cases: VPA (resources.requests), Service `nodePort` auto-assignment, mutating admission webhooks adding annotations to Helm-managed resources, operators that write to CRD `.spec` (not just `.status`)
+- Confirmed `spec.driftDetection.ignore` rules survive the global patch (strategic merge on object sub-fields; global patch only writes `mode`), but `mode: disabled` does not survive (global patch is last writer on scalar fields)
+- Added a **separate** drift detection patch block to `kubernetes/flux/cluster/ks.yaml` (kept separate from install/upgrade defaults so the label selector doesn't accidentally exclude other defaults)
+- Implemented opt-out label selector `driftDetection.flux.home.arpa/disabled notin (true)` on the inner HelmRelease target — same pattern as `substitution.flux.home.arpa/disabled`
+- Updated `CLAUDE.md` HelmRelease defaults section: added `driftDetection: enabled` to the defaults YAML, added note that `ignore` rules survive the global patch (the exception to "last writer wins")
+- Added "Drift Detection" section to `docs/CONVENTIONS.md`: opt-out label, `ignore` rules pattern, table of common ignore scenarios (HPA, VPA, nodePort, mutating webhooks), note on what drift detection doesn't watch
+- Marked W2 resolved in `docs/REPO-AUDIT.md`
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/cluster/ks.yaml` | Added drift detection patch block with `driftDetection.flux.home.arpa/disabled` opt-out label selector |
+| `CLAUDE.md` | Updated HelmRelease defaults section with drift detection default and ignore-rules survival note |
+| `docs/CONVENTIONS.md` | Added Drift Detection section: opt-out label, ignore rules, risk table, ownership scope |
+| `docs/REPO-AUDIT.md` | Marked W2 resolved; updated audit note |
+
+### Key decisions
+- **Separate patch block** rather than folding `driftDetection` into the existing install/upgrade defaults patch — the existing patch has no label selector and applies universally; mixing them would mean the opt-out label accidentally excludes install/upgrade defaults too
+- **`ignore` rules in HelmRelease YAML survive the global patch** because `driftDetection` is an object field and strategic merge only writes `mode`; this allows per-release path exclusions without needing a local Kustomize patch
+- **Full opt-out requires the label on the HelmRelease** (not the Kustomization) because the inner patch target operates at the HelmRelease level
+
+---
+
 ## 2026-05-24 — `gitops-repo-audit`
 
 ### Goal

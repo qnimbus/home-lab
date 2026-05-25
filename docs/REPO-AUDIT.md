@@ -1,7 +1,7 @@
 # GitOps Repository Audit <!-- omit from toc -->
 
 > **Living document** — re-run the audit commands in [How to Re-Audit](#how-to-re-audit) after significant changes and update the findings below.
-> Last audited: **2026-05-25** · Auditor: Claude Code (`gitops-repo-audit` skill)
+> Last audited: **2026-05-25** · Auditor: Claude Code (`gitops-repo-audit` skill) — W2 resolved same session
 
 ## Contents <!-- omit from toc -->
 
@@ -108,13 +108,9 @@ All Flux resources use current stable API versions. No migration required.
 
 The `Receiver` only handles inbound webhook triggers; it does not send outbound notifications. See [ROADMAP.md → Alertmanager Receiver](ROADMAP.md#alertmanager-receiver) for the planned Alertmanager wiring. A minimal Flux-native alert should also be added independently of Alertmanager — a Slack/Discord webhook `Provider` + `Alert` with `severity: error` across `flux-system` gives immediate feedback on reconciliation failures.
 
-#### ⚠️ WARNING — Drift detection on 5/20 HelmReleases only
+#### ✅ RESOLVED — Drift detection now cluster-wide default
 
-`driftDetection.mode: enabled` is set on: `cilium`, `cert-manager`, `longhorn`, `envoy-gateway`, `external-secrets`.
-
-The remaining 15 HelmReleases have no drift detection. Out-of-band changes (e.g. `kubectl edit`, operator mutations) go undetected and unreverted.
-
-**Recommendation**: add `driftDetection: { mode: enabled }` to all remaining HelmReleases. For workloads where HPA or an operator manages `.spec.replicas`, add a `driftDetection.ignore` rule for that path.
+`driftDetection.mode: enabled` added to the global `cluster-apps` patch (`kubernetes/flux/cluster/ks.yaml`). All 20 HelmReleases now have drift detection enabled. Per-release opt-out via label `driftDetection.flux.home.arpa/disabled: "true"`; fine-grained path exclusions via `spec.driftDetection.ignore` in the HelmRelease YAML. See [CONVENTIONS.md → Drift Detection](CONVENTIONS.md#drift-detection).
 
 #### ℹ️ INFO — FluxInstance `cluster.size` not set
 
@@ -201,7 +197,7 @@ _None._
 | # | Finding | Action |
 |---|---|---|
 | W1 | No Flux `Alert`/`Provider` configured — reconciliation errors are silent | Add a Discord/Slack `Provider` + `Alert` in `flux-system` with `severity: error` |
-| W2 | Drift detection on 5/20 HelmReleases only | Add `driftDetection: { mode: enabled }` to remaining 15 HelmReleases |
+| ~~W2~~ | ~~Drift detection on 5/20 HelmReleases only~~ | ✅ Resolved — global patch in `cluster-apps` now injects `driftDetection: enabled` for all HelmReleases |
 
 ### Info
 
