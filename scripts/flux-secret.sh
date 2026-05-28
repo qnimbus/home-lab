@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# DEPRECATED — This script managed the SSH deploy key used by the FluxInstance
+# for Git authentication. The cluster now uses GitHub App auth via the
+# flux-github-app Secret (see task bootstrap:flux-github-app). Kept for reference.
 set -Eeuo pipefail
 
 DEFAULT_OP_VAULT="homelab"

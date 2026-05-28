@@ -21,8 +21,28 @@ tasks:
       - {msg: "talosctl not found", sh: "which talosctl"}
       - {msg: "sops not found", sh: "which sops"}
 
+  flux-github-app:
+    desc: Create flux-github-app Secret in flux-system from 1Password GitHub App credentials (idempotent) [VAULT=homelab ITEM="GitHub App"]
+    vars:
+      VAULT: '{{.VAULT | default "homelab"}}'
+      ITEM:  '{{.ITEM  | default "GitHub App"}}'
+    cmds:
+      - kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply --server-side -f -
+      - |
+        kubectl create secret generic flux-github-app \
+          --namespace flux-system \
+          --from-literal="githubAppID=$(op read 'op://{{.VAULT}}/{{.ITEM}}/githubAppID')" \
+          --from-literal="githubAppInstallationID=$(op read 'op://{{.VAULT}}/{{.ITEM}}/githubAppInstallationID')" \
+          --from-literal="githubAppPrivateKey=$(op read 'op://{{.VAULT}}/{{.ITEM}}/githubAppPrivateKey')" \
+          --dry-run=client -o yaml | kubectl apply -f -
+    preconditions:
+      - {msg: "kubeconfig not found",                                                                               sh: "test -f {{.KUBECONFIG}}"}
+      - {msg: "op not found — install 1Password CLI",                                                              sh: "which op"}
+      - {msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer", sh: "test -n \"$OP_SERVICE_ACCOUNT_TOKEN\""}
+      - {msg: "kubectl not found",                                                                                  sh: "which kubectl"}
+
   flux-secret:
-    desc: Fetch Flux SSH deploy key from 1Password, create flux-system secret, reconcile [VAULT=homelab ITEM=flux-deploy-key]
+    desc: "[DEPRECATED — use flux-github-app] Fetch SSH deploy key from 1Password, create flux-system secret"
     vars:
       VAULT: '{{.VAULT | default "homelab"}}'
       ITEM:  '{{.ITEM  | default "flux-deploy-key"}}'

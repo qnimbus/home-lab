@@ -468,10 +468,10 @@ Values for both live under `kubernetes/apps/flux-system/*/app/helm/values.yaml` 
 | URL | `ssh://git@github.com/qnimbus/home-lab` |
 | Ref | `refs/heads/main` |
 | Path | `./kubernetes/flux/cluster` |
-| Auth | `flux-system` secret in `flux-system` namespace (SSH deploy key) |
+| Auth | `flux-github-app` secret in `flux-system` namespace (GitHub App token exchange) |
 | Poll interval | 5 minutes |
 
-The `flux-system` secret must be created imperatively during bootstrap (it cannot come from Git). Store the private key in 1Password.
+The `flux-github-app` secret must be created imperatively during bootstrap (it cannot come from Git — Flux needs it to pull from Git in the first place). The secret is also managed day-2 by an ExternalSecret in `kubernetes/apps/flux-system/flux-instance/app/externalsecret.yaml`, which keeps it in sync with 1Password after the cluster is running.
 
 ### Kustomization Tree
 
@@ -524,7 +524,7 @@ This works because `cluster-apps` only directly renders the child `Kustomization
 
 ```
 Helmfile: cilium → coredns → spegel → cert-manager → flux-operator → flux-instance
-          (then create flux-system SSH secret)
+          (then create flux-github-app secret via task bootstrap:flux-github-app)
 GitOps:   cluster-meta → cluster-vars → cluster-apps → <individual app Kustomizations>
 ```
 
@@ -615,20 +615,21 @@ Once helmfile completes, Cilium is running and nodes will transition to `Ready`.
 task talos:wait-bootstrap
 ```
 
-### Phase 3 — Flux SSH deploy key secret
+### Phase 3 — Flux GitHub App secret
 
 This is the only imperative step post-bootstrap. The secret cannot come from Git because Flux needs it to pull from Git in the first place.
 
 ```bash
-task bootstrap:flux-secret
+task bootstrap:flux-github-app
 ```
 
-Fetches the SSH deploy key from 1Password (`homelab` vault → `flux-deploy-key` item), creates the `flux-system` secret in the `flux-system` namespace with keys `identity`, `identity.pub`, and `known_hosts`, then immediately reconciles the `flux-system` GitRepository so Flux picks up the new secret without waiting for the next poll interval.
+Fetches the GitHub App credentials from 1Password (`homelab` vault → `GitHub App` item) and creates the `flux-github-app` secret in the `flux-system` namespace with keys `githubAppID`, `githubAppInstallationID`, and `githubAppPrivateKey`. Once Flux is running, the companion ExternalSecret in `kubernetes/apps/flux-system/flux-instance/app/externalsecret.yaml` keeps this secret in sync with 1Password automatically.
 
-To verify the secret independently:
+To verify the secret exists after bootstrap:
 
 ```bash
-scripts/flux-secret.sh verify
+kubectl get secret flux-github-app -n flux-system \
+  -o jsonpath='{.data.githubAppID}' | base64 -d
 ```
 
 ### Phase 4 — Hand off to GitOps
@@ -681,8 +682,8 @@ task talos:apply IP=10.60.0.201
 | `talosctl version --insecure` times out | Node still rebooting | Wait and retry |
 | `apply-all` fails with `connection refused` | Node not yet in maintenance mode | Wait and retry |
 | `bootstrap:apps` fails on `flux-instance` | Running `helmfile apply` instead of `sync` | Always use `task bootstrap:apps` |
-| Flux shows `Secret not found` | `flux-system` secret missing | Run `task bootstrap:flux-secret` |
-| Flux shows `unable to clone` | SSH key not in GitHub deploy keys | Add `identity.pub` to repo deploy keys |
+| Flux shows `Secret not found` | `flux-github-app` secret missing | Run `task bootstrap:flux-github-app` |
+| Flux shows `unable to clone` or `401 Unauthorized` | GitHub App not installed on repo, or credentials rotated | Verify app is installed at github.com/settings/installations; re-run `task bootstrap:flux-github-app` to refresh the secret |
 | `talosctl upgrade` installs to wrong disk | `upgrade` always targets the current system disk — `installDiskSelector` is ignored | Boot from Talos ISO → `task talos:apply IP=x INSECURE=true` |
 | Installer refuses to touch disk with existing partitions | `wipe: false` (default) — installer skips non-Talos disks | Add temporary `machine: install: wipe: true` node patch; remove after migration |
 | `talosctl upgrade` fails with `too_many_pings` / `ENHANCE_YOUR_CALM` | Client version newer than server — gRPC keepalive rate-limited | `mise install talosctl@<server-version>` then `mise exec talosctl@<version> -- talosctl upgrade ...` |
@@ -703,7 +704,7 @@ task talos:apply IP=10.60.0.201
 | Secret type | Mechanism | Location |
 |-------------|-----------|----------|
 | Talos secrets | SOPS + age | `talos/talsecret.sops.yaml` |
-| Flux SSH deploy key | Kubernetes secret (imperative) | `flux-system/flux-system` |
+| Flux GitHub App credentials | Kubernetes secret (imperative at bootstrap, then ESO-managed) | `flux-system/flux-github-app` |
 | 1Password Connect bootstrap credential | Kubernetes secret (imperative, via `task bootstrap:onepassword-connect-secret`) | `external-secrets/onepassword-connect-secrets` — **NOT** managed by ExternalSecrets; it is the credential for the secret manager itself; must be recreated manually after any cluster recovery |
 | Application secrets | External Secrets Operator + 1Password Connect | `kubernetes/apps/` |
 
