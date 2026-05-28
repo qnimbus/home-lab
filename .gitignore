@@ -2,6 +2,7 @@
 .archive/
 .agents
 .claude/skills
+.claude/skills/*
 .claude/settings.local.json
 
 # Ignore IDE/editor specific files and folders
