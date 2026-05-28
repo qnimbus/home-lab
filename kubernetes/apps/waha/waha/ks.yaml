@@ -6,7 +6,7 @@ metadata:
   name: &app waha
   namespace: flux-system
 spec:
-  targetNamespace: waha
+  targetNamespace: default
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
