@@ -465,7 +465,7 @@ Values for both live under `kubernetes/apps/flux-system/*/app/helm/values.yaml` 
 
 | Setting | Value |
 |---------|-------|
-| URL | `ssh://git@github.com/qnimbus/home-lab` |
+| URL | `https://github.com/qnimbus/home-lab` |
 | Ref | `refs/heads/main` |
 | Path | `./kubernetes/flux/cluster` |
 | Auth | `flux-github-app` secret in `flux-system` namespace (GitHub App token exchange) |

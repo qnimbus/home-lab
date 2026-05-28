@@ -11,11 +11,12 @@ instance:
     - notification-controller
   sync:
     kind: GitRepository
+    provider: github
     interval: 5m0s
-    url: "ssh://git@github.com/qnimbus/home-lab"
+    url: "https://github.com/qnimbus/home-lab"
     ref: refs/heads/main
     path: ./kubernetes/flux/cluster
-    pullSecret: flux-system
+    pullSecret: flux-github-app
   commonMetadata:
     labels:
       app.kubernetes.io/name: flux
