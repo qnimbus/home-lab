@@ -13,6 +13,8 @@ spec:
   values:
     controllers:
       waha:
+        annotations:
+          reloader.stakater.com/auto: "true"
         type: deployment
         replicas: 1
         strategy: Recreate
