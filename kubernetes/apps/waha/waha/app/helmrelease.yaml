@@ -31,7 +31,7 @@ spec:
               WHATSAPP_HOOK_EVENTS: "message,session.status"
               WAHA_LOG_FORMAT: "JSON"
               WAHA_LOG_LEVEL: "info"
-              TZ: "Europe/Amsterdam"
+              TZ: "${CLUSTER_TIMEZONE}"
               WHATSAPP_FILES_LIFETIME: "180"
             envFrom:
               - secretRef:

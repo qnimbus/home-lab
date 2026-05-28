@@ -176,6 +176,26 @@ named `myapp`:
 
 ---
 
+## Cluster-wide variables (cluster-settings)
+
+`kubernetes/flux/vars/cluster-settings.yaml` is a `ConfigMap` in `flux-system` that holds cluster-scoped values. The `cluster-apps` Kustomization injects it via `postBuild.substituteFrom` into every child Kustomization (unless the Kustomization carries `substitution.flux.home.arpa/disabled: "true"`). Variables are available as `${VAR_NAME}` placeholders in **any YAML file** the Kustomization manages — including HelmRelease manifests.
+
+### Current variables
+
+| Key | Value | Use for |
+|---|---|---|
+| `CLUSTER_NAME` | `home-lab` | App labels, dashboard titles |
+| `CLUSTER_TIMEZONE` | `Europe/Amsterdam` | Container `TZ` env var |
+
+### Rules
+
+- **Use `${CLUSTER_TIMEZONE}` instead of hardcoding a timezone string** in any HelmRelease `env:` block. Every container that honours `TZ` should reference this variable — one place to change the cluster timezone.
+- **Never hardcode `Europe/Amsterdam`** (or any other cluster-specific literal that already has a `cluster-settings` entry) directly in app manifests.
+- To add a new cluster-wide value, add it to `cluster-settings.yaml` and document it in the table above.
+- Variable substitution does **not** apply to Kustomizations labeled `substitution.flux.home.arpa/disabled: "true"` — check before adding `${…}` syntax to resources managed by such a Kustomization.
+
+---
+
 ## Community research before new deployments
 
 Before planning any new application deployment or writing a new Kustomization, search **[kubesearch.dev](https://kubesearch.dev/)** for the chart or app name. This indexes public home-lab GitOps repos and surfaces real-world `HelmRelease`, `values.yaml`, and `ExternalSecret` patterns used by other home labbers running the same stack (Talos + Flux + Cilium).
