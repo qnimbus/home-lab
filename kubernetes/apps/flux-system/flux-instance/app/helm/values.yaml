@@ -2,7 +2,7 @@
 instance:
   distribution:
     # renovate: datasource=github-releases depName=fluxcd/flux2
-    version: "2.6.4"
+    version: v2.8.8
   cluster: {}
   components:
     - source-controller
