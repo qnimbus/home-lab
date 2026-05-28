@@ -23,7 +23,7 @@ spec:
             image:
               repository: docker.io/devlikeapro/waha
               # renovate: datasource=docker depName=docker.io/devlikeapro/waha
-              tag: "gows-2026.4.3"
+              tag: "gows-2026.5.1"
             env:
               WHATSAPP_DEFAULT_ENGINE: "GOWS"
               WHATSAPP_RESTART_ALL_SESSIONS: "true"
