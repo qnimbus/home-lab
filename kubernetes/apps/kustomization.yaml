@@ -14,3 +14,4 @@ resources:
   - ./observability
   - ./system-upgrade
   - ./actions-runner-system
+  - ./waha
