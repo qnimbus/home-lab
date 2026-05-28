@@ -6,14 +6,14 @@ metadata:
   name: &app waha
   namespace: flux-system
 spec:
-  targetNamespace: default
+  targetNamespace: automation
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
   wait: false
   prune: true
   interval: 1h
-  path: ./kubernetes/apps/waha/waha/app
+  path: ./kubernetes/apps/automation/waha/app
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -25,4 +25,4 @@ spec:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: *app
-      namespace: default
+      namespace: automation

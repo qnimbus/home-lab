@@ -15,4 +15,4 @@ resources:
   - ./system-upgrade
   - ./actions-runner-system
   - ./system
-  - ./waha
+  - ./automation
