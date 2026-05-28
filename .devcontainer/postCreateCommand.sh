@@ -10,6 +10,14 @@ sudo apt-get update
 # sudo apt-get install -y gnupg ca-certificates iputils-ping dnsutils trash-cli tree libgtk2.0-0 libgtk-3-0 libgbm-dev libnotify-dev libnss3 libxss1 libasound2 libxtst6 xauth xvfb nmap
 sudo apt-get install -y netcat-openbsd nmap iputils-ping dnsutils
 
+# Install chezmoi to ~/.local/bin if not already present
+if ! command -v chezmoi &>/dev/null; then
+    sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
+fi
+
+# Clone dotfiles repo and apply (ephemeral=true auto-detected via VSCODE_REMOTE_CONTAINERS_SESSION)
+chezmoi init --apply https://github.com/qnimbus/dotfiles
+
 # Find the most recent .claude.json backup in ~/.claude/backups and restore it to ~/.claude.json
 BACKUP_FILE=$(ls -t ~/.claude/backups/.*.json.backup* 2>/dev/null | head -n 1)
 if [ -f "$BACKUP_FILE" ]; then

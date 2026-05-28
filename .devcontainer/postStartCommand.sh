@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Pull latest dotfiles and re-apply on each start
+if command -v chezmoi &>/dev/null; then
+    chezmoi update --no-tty
+fi
+
 # Activate mise for the current session
 eval "$(~/.local/bin/mise activate bash)"
 
