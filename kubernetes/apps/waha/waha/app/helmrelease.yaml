@@ -41,9 +41,10 @@ spec:
                 enabled: true
                 custom: true
                 spec:
-                  # WAHA applies API key auth to all HTTP routes; tcpSocket avoids auth entirely
-                  tcpSocket:
+                  httpGet:
+                    path: /ping
                     port: &port 3000
+                    scheme: HTTP
                   initialDelaySeconds: 30
                   periodSeconds: 30
                   timeoutSeconds: 5
@@ -52,8 +53,10 @@ spec:
                 enabled: true
                 custom: true
                 spec:
-                  tcpSocket:
+                  httpGet:
+                    path: /ping
                     port: *port
+                    scheme: HTTP
                   initialDelaySeconds: 10
                   periodSeconds: 15
                   timeoutSeconds: 5
