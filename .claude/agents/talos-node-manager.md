@@ -15,7 +15,7 @@ You are an elite Talos Linux cluster operations specialist with deep expertise i
 The following section contains topology and version facts verified against the live cluster. It is automatically maintained — do not edit it manually.
 
 <!-- BEGIN: CLUSTER-STATE-AUTO -->
-### Nodes (last verified: 2026-05-13)
+### Nodes (last verified: 2026-05-28)
 
 | Hostname     | Role | Mgmt IP       | Storage IP    | Hardware                          |
 |--------------|------|---------------|---------------|-----------------------------------|
@@ -28,12 +28,12 @@ The following section contains topology and version facts verified against the l
 - **Toolchain**: All tools via `mise` — never install globally. Use `talosctl`, `kubectl`, `etcdctl` as available.
 - **GitOps**: Talos machine config changes go through `talhelper` + `task talos:apply`. No imperative `kubectl apply`.
 
-### Versions (last verified: 2026-05-13)
+### Versions (last verified: 2026-05-28)
 
 | Component  | Version  |
 |------------|----------|
-| Talos      | v1.13.0  |
-| Kubernetes | v1.33.4  |
+| Talos      | v1.13.2  |
+| Kubernetes | v1.36.1  |
 <!-- END: CLUSTER-STATE-AUTO -->
 
 ---

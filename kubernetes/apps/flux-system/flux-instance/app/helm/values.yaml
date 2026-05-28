@@ -118,17 +118,16 @@ instance:
           kind: Deployment
           name: (helm-controller|kustomize-controller|notification-controller)
       # Spread the 6 scalable Flux controller pods (3 controllers x 2 replicas) across 3 nodes.
-      # DoNotSchedule (hard) is safe: 6 pods on 3 nodes achieves a perfect 2/2/2 split and the
-      # label group is scoped to only these 3 controllers — no asymmetric unconstrained pods
-      # inflate the per-node count. matchLabelKeys omitted: ScheduleAnyway was replaced with
-      # DoNotSchedule which already prevents co-location without needing per-ReplicaSet scoping.
+      # ScheduleAnyway (soft) keeps controllers running through single-node upgrade reboots —
+      # DoNotSchedule would leave helm-controller and notification-controller Pending for the
+      # entire ~80-minute reboot window on every Talos/K8s upgrade, stalling reconciliation.
       - patch: |
           - op: add
             path: /spec/template/spec/topologySpreadConstraints
             value:
               - maxSkew: 1
                 topologyKey: kubernetes.io/hostname
-                whenUnsatisfiable: DoNotSchedule
+                whenUnsatisfiable: ScheduleAnyway
                 labelSelector:
                   matchLabels:
                     app.kubernetes.io/part-of: flux
