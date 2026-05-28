@@ -121,6 +121,61 @@ controller are outside Flux's ownership graph and are never reverted.
 
 ---
 
+## ExternalSecret conventions
+
+All `ExternalSecret` resources in this repo must use the `dataFrom.extract` + `rewrite.regexp`
+pattern rather than listing individual `data` entries. This keeps 1Password item fields short and
+prefix-free while the resulting Kubernetes Secret keys carry the application prefix.
+
+### Pattern
+
+```yaml
+spec:
+  dataFrom:
+    - extract:
+        key: <1password-item-name>
+      rewrite:
+        - regexp:
+            source: (.*)
+            target: APP_$1   # adds APP_ prefix to every extracted field
+```
+
+With this pattern, a 1Password field named `API_KEY` becomes `APP_API_KEY` in the Kubernetes
+Secret. Name 1Password fields **without** the application prefix — the rewrite adds it.
+
+### When to add a `template` block
+
+If the application's expected env var names don't all share a single prefix (or differ in any
+other way from the rewritten key names), add a `template` section to remap:
+
+```yaml
+spec:
+  target:
+    template:
+      engineVersion: v2   # required for {{ .KEY }} syntax
+      data:
+        EXPECTED_KEY_NAME: "{{ .PREFIXED_KEY }}"
+```
+
+The template runs **after** the rewrite — reference keys by their post-rewrite names. Always set
+`engineVersion: v2`; the v1 default uses a different interpolation format and is deprecated.
+
+See `kubernetes/apps/tailscale/tailscale-operator/app/externalsecret.yaml` for a live example of
+this pattern with both `rewrite` and `template`.
+
+### 1Password field naming
+
+Name fields in the 1Password item without any application-specific prefix. Examples for an app
+named `myapp`:
+
+| 1Password field | Kubernetes Secret key (after `MYAPP_$1` rewrite) |
+|---|---|
+| `API_KEY` | `MYAPP_API_KEY` |
+| `DASHBOARD_USERNAME` | `MYAPP_DASHBOARD_USERNAME` |
+| `DASHBOARD_PASSWORD` | `MYAPP_DASHBOARD_PASSWORD` |
+
+---
+
 ## Community research before new deployments
 
 Before planning any new application deployment or writing a new Kustomization, search **[kubesearch.dev](https://kubesearch.dev/)** for the chart or app name. This indexes public home-lab GitOps repos and surfaces real-world `HelmRelease`, `values.yaml`, and `ExternalSecret` patterns used by other home labbers running the same stack (Talos + Flux + Cilium).

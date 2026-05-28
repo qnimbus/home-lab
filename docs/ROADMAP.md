@@ -5,6 +5,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 ## Contents  <!-- omit from toc -->
 
 - [In Progress](#in-progress)
+  - [Migrate ExternalSecrets to `dataFrom` + `rewrite` Pattern](#migrate-externalsecrets-to-datafrom--rewrite-pattern)
   - [Future Storage Options](#future-storage-options)
   - [Grafana](#grafana)
   - [Alertmanager Receiver](#alertmanager-receiver)
@@ -21,6 +22,29 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 ---
 
 ## In Progress
+
+### Migrate ExternalSecrets to `dataFrom` + `rewrite` Pattern
+
+All `ExternalSecret` files must be migrated to the `dataFrom.extract` + `rewrite.regexp` pattern documented in [CONVENTIONS.md](CONVENTIONS.md#externalsecret-conventions). The convention keeps 1Password item field names short and prefix-free; the `rewrite` adds the application prefix when writing keys into the Kubernetes Secret.
+
+**Reference implementation:** `kubernetes/apps/tailscale/tailscale-operator/app/externalsecret.yaml` and `kubernetes/apps/waha/waha/app/externalsecret.yaml` (both already compliant).
+
+**Files to migrate:**
+
+| File | 1Password item | Required 1Password renames | Notes |
+|---|---|---|---|
+| `network/cloudflared/app/externalsecret.yaml` | `cloudflared` | `TUNNEL_TOKEN` → `TOKEN` | Rewrite: `TUNNEL_$1`; no template needed |
+| `network/external-dns/cloudflare/externalsecret.yaml` | `cloudflared` | none (field is already `API_TOKEN`) | Rewrite: `CF_$1`; no template needed |
+| `network/external-dns/unifi/externalsecret.yaml` | `unifi` | `UNIFI_HOST` → `HOST`, `UNIFI_API_KEY` → `API_KEY` | Rewrite: `UNIFI_$1`; no template needed |
+| `flux-system/flux-receiver/app/externalsecret.yaml` | `flux` | `FLUX_GITHUB_WEBHOOK_TOKEN` → `GITHUB_WEBHOOK_TOKEN` | Rewrite: `FLUX_$1`; template remaps to `token:` (Flux Receiver key name) |
+| `cert-manager/cluster-issuers/app/externalsecret.yaml` | `cloudflared` | none | Already uses `dataFrom.extract`; add rewrite `CF_$1` + template `API_TOKEN: "{{ .CF_API_TOKEN }}"` to scope secret to exactly one key and match cert-manager's `apiTokenSecretRef` |
+| `actions-runner-system/.../externalsecret.yaml` | `actions-runner`, `anthropic` | `ACTIONS_RUNNER_APP_ID` → `APP_ID`, `ACTIONS_RUNNER_INSTALLATION_ID` → `INSTALLATION_ID`, `ACTIONS_RUNNER_PRIVATE_KEY` → `PRIVATE_KEY`, `ANTHROPIC_API_KEY` → `API_KEY` | Two ExternalSecrets in one file; rewrite `ACTIONS_RUNNER_$1`; template remaps to `github_app_id` etc. (ARC controller expects snake_case) |
+
+**Important — do 1Password renames first.** The ExternalSecret begins syncing the moment it is reconciled. If the manifest references a rewritten key that doesn't exist yet in 1Password, the ExternalSecret will enter a `SecretSyncError` state. Rename the 1Password fields and confirm with `op item get <item>` before committing the updated manifest.
+
+**Dependencies:** `external-secrets` ✅, `onepassword-connect` ✅.
+
+---
 
 ### Future Storage Options
 
