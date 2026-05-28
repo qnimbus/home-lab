@@ -44,7 +44,11 @@ git config core.hooksPath .githooks
 flux-operator skills install ghcr.io/fluxcd/agent-skills --agent claude-code
 
 # Install KubeShark - Kubernetes Skill
-git clone https://github.com/LukasNiessen/kubernetes-skill.git .claude/skills/kubernetes-skill
+if [ -d ".claude/skills/kubernetes-skill" ]; then
+    git -C .claude/skills/kubernetes-skill pull --ff-only
+else
+    git clone https://github.com/LukasNiessen/kubernetes-skill.git .claude/skills/kubernetes-skill
+fi
 
 # Install helm plugins (helm-diff is required by helmfile)
 helm plugin list | awk '{print $1}' | grep -qx diff \
