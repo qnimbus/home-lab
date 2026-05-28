@@ -117,16 +117,35 @@ spec:
                 spec:
                   install:
                     crds: CreateReplace
+                    # RetryOnFailure retries the Helm install in-place (faster than
+                    # uninstall+reinstall between attempts). After 1 retry Flux
+                    # uninstalls the failed release (remediateLastFailure) so the
+                    # next reconciliation starts clean.
+                    # On persistent failure: check the failure reason with
+                    #   flux logs --kind=HelmRelease --name=<name> -n <namespace>
+                    # then fix values or the chart version and push — Flux retries
+                    # on the next interval, or trigger immediately with:
+                    #   flux reconcile helmrelease <name> -n <namespace>
+                    strategy:
+                      name: RetryOnFailure
                     remediation:
-                      retries: -1
+                      retries: 1
                       remediateLastFailure: true
                   timeout: 15m
                   upgrade:
                     cleanupOnFail: true
                     crds: CreateReplace
+                    # RetryOnFailure retries the upgrade in-place up to 3 times.
+                    # On exhaustion Flux rolls back to the previous release revision
+                    # (remediateLastFailure + rollback) and marks the HelmRelease
+                    # failed. Fix the issue and push, or force a retry with:
+                    #   flux reconcile helmrelease <name> -n <namespace>
+                    strategy:
+                      name: RetryOnFailure
                     remediation:
                       remediateLastFailure: true
                       retries: 3
+                      strategy: rollback
               target:
                 group: helm.toolkit.fluxcd.io
                 kind: HelmRelease

@@ -207,16 +207,21 @@ child Kustomizations. You do **not** need to declare these per-chart:
 ```yaml
 install:
   crds: CreateReplace
+  strategy:
+    name: RetryOnFailure   # retry in-place (no uninstall between attempts)
   remediation:
-    retries: 3
-    remediateLastFailure: true
+    retries: 1             # 1 retry after first failure, then give up
+    remediateLastFailure: true  # uninstall the failed release so next reconcile starts clean
 timeout: 15m
 upgrade:
   cleanupOnFail: true
   crds: CreateReplace
+  strategy:
+    name: RetryOnFailure   # retry upgrade in-place before rolling back
   remediation:
     remediateLastFailure: true
-    retries: 2
+    retries: 3             # 3 retries, then rollback to previous revision
+    strategy: rollback
 driftDetection:
   mode: enabled   # opt out per-release — see below
 ```
