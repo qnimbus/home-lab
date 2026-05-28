@@ -39,9 +39,8 @@ spec:
                 enabled: true
                 custom: true
                 spec:
-                  httpGet:
-                    # /health is unauthenticated; /api/health requires X-Api-Key and returns 401
-                    path: /health
+                  # WAHA applies API key auth to all HTTP routes; tcpSocket avoids auth entirely
+                  tcpSocket:
                     port: &port 3000
                   initialDelaySeconds: 30
                   periodSeconds: 30
@@ -51,8 +50,7 @@ spec:
                 enabled: true
                 custom: true
                 spec:
-                  httpGet:
-                    path: /health
+                  tcpSocket:
                     port: *port
                   initialDelaySeconds: 10
                   periodSeconds: 15
