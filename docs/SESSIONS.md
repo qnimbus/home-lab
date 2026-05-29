@@ -4,6 +4,46 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-29 — `cloudnative-pg-deploy`
+
+### Goal
+Deploy CloudNativePG operator and a shared 3-instance PostgreSQL 17 cluster as new database infrastructure for the home-lab cluster.
+
+### What we did
+- Researched CNPG community patterns on kubesearch.dev and studied the `tmp/home-ops-bykaj` reference (operator/cluster/barman-cloud/postgres-backup-local structure, ObjectStore CR, ExternalSecret pattern, PrometheusRules, variable-substituted cluster naming for major-version upgrades)
+- Decided on a single shared `postgres-v17` cluster (not per-app) and deferred S3/barman-cloud backup to a future session; cluster has HA via 3-replica streaming replication with no PITR until backup is wired in
+- Verified current chart version `0.28.2` via `gh api` GHCR query; added OCIRepository to `flux/meta/repos/oci/`
+- Created `database` namespace and top-level kustomization; wired into `kubernetes/apps/kustomization.yaml`
+- Created multi-doc `ks.yaml` following CLAUDE.md operator+CRD pattern: `cloudnative-pg-operator` (wait+healthChecks, dependsOn cert-manager) and `cloudnative-pg-cluster` (dependsOn operator + onepassword-store)
+- CNPG operator HelmRelease: `crds.create: true`, `monitoring.podMonitorEnabled: true`, Grafana dashboard enabled; PrometheusRule with 7 alert rules (replication lag, XID age, WAL archiver failure, deadlocks, backend waits, long transactions, replica WAL receiver down)
+- `postgres-v17` Cluster CR: 3 instances, `openebs-hostpath` 20Gi, `initdb` bootstrap (fresh cluster), `enablePodMonitor: true`, synchronous replication (any 1 standby), `enablePDB: false` (CNPG issue #2570)
+- ExternalSecrets updated to CONVENTIONS.md pattern: `dataFrom.extract` + `rewrite: CNPG_$1` + `template` mapping to CNPG's expected `username`/`password` keys; 1Password fields prefix-free (`SUPER_USER`, `SUPER_PASS`, `BOOTSTRAP_USER`, `BOOTSTRAP_PASS`)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/cloudnative-pg.yaml` | Created: OCIRepository for CNPG chart, tag 0.28.2, Renovate-tracked |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added cloudnative-pg.yaml resource |
+| `kubernetes/apps/kustomization.yaml` | Added `./database` resource |
+| `kubernetes/apps/database/namespace.yaml` | Created: Namespace database |
+| `kubernetes/apps/database/kustomization.yaml` | Created: aggregates namespace.yaml + cloudnative-pg |
+| `kubernetes/apps/database/cloudnative-pg/ks.yaml` | Created: multi-doc Kustomizations (operator + cluster) |
+| `kubernetes/apps/database/cloudnative-pg/kustomization.yaml` | Created: includes ks.yaml |
+| `kubernetes/apps/database/cloudnative-pg/operator/app/helmrelease.yaml` | Created: CNPG operator HelmRelease with monitoring |
+| `kubernetes/apps/database/cloudnative-pg/operator/app/prometheusrule.yaml` | Created: 7 PrometheusRule alert rules |
+| `kubernetes/apps/database/cloudnative-pg/operator/app/kustomization.yaml` | Created |
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/cluster.yaml` | Created: postgres-v17 Cluster CR, 3 instances, openebs-hostpath |
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/externalsecret.yaml` | Created: superuser + bootstrap ExternalSecrets, rewrite+template pattern |
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/kustomization.yaml` | Created |
+
+### Key decisions
+- `openebs-hostpath` over Longhorn for PostgreSQL storage: CNPG replicates data across 3 pods itself; Longhorn would add double-replication with I/O amplification and no reliability benefit
+- S3 backup (barman-cloud plugin) deferred: user chose HA-only for initial deployment; PITR can be layered on without recreating the cluster
+- `enablePDB: false` following bykaj reference (CNPG issue #2570): default PDB can block Talos node drain during upgrades on a 3-control-plane-only cluster
+- Chart pinned at `0.28.2` (verified via `gh api` GHCR query) rather than guessing a version; Renovate tracks future releases via `datasource=docker` comment
+
+---
+
 ## 2026-05-29 — `external-services-truenas`
 
 ### Goal

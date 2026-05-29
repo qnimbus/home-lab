@@ -19,3 +19,4 @@ resources:
   - ./gha-runner-scale-set.yaml
   - ./reloader.yaml
   - ./tailscale-operator.yaml
+  - ./cloudnative-pg.yaml

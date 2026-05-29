@@ -1,0 +1,48 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/postgresql.cnpg.io/cluster_v1.json
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-v17
+spec:
+  instances: 3
+  # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+      secret:
+        name: cloudnative-pg-bootstrap-secret
+  affinity:
+    podAntiAffinityType: required
+  # Ref: https://github.com/cloudnative-pg/cloudnative-pg/issues/2570
+  enablePDB: false
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: cloudnative-pg-secret
+  monitoring:
+    enablePodMonitor: true
+  postgresql:
+    parameters:
+      max_connections: "300"
+      pg_stat_statements.max: "10000"
+      pg_stat_statements.track: all
+      shared_buffers: 512MB
+    synchronous:
+      method: any
+      number: 1
+  primaryUpdateStrategy: unsupervised
+  replicationSlots:
+    highAvailability:
+      enabled: true
+    updateInterval: 30
+  resources:
+    requests:
+      cpu: 80m
+      memory: 768Mi
+    limits:
+      memory: 2Gi
+  storage:
+    size: 20Gi
+    storageClass: openebs-hostpath

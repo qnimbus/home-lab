@@ -5,6 +5,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 ## Contents  <!-- omit from toc -->
 
 - [In Progress](#in-progress)
+  - [CloudNativePG: Backup, PITR, and Per-App Provisioning](#cloudnative-pg-backup-pitr-and-per-app-provisioning)
   - [Migrate ExternalSecrets to `dataFrom` + `rewrite` Pattern](#migrate-externalsecrets-to-datafrom--rewrite-pattern)
   - [Future Storage Options](#future-storage-options)
   - [Grafana](#grafana)
@@ -22,6 +23,82 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 ---
 
 ## In Progress
+
+### CloudNativePG: Backup, PITR, and Per-App Provisioning
+
+The `cloudnative-pg-deploy` session deployed the CNPG operator and a shared `postgres-v17` cluster (3 instances, `openebs-hostpath`). Three follow-on items were explicitly deferred:
+
+#### 1 — Barman-cloud plugin + S3 WAL archiving (PITR)
+
+The cluster currently has HA via streaming replication but **no point-in-time recovery**. If all 3 replicas lose their `openebs-hostpath` volumes simultaneously (node failures, accidental PVC deletion), data is gone. Adding barman-cloud provides continuous WAL archiving to S3-compatible storage and enables PITR.
+
+**What to add** (following `tmp/home-ops-bykaj` reference):
+
+1. **OCIRepository** `kubernetes/flux/meta/repos/oci/barman-cloud.yaml` — `oci://ghcr.io/cloudnative-pg/charts/plugin-barman-cloud`
+2. **barman-cloud Kustomization** `kubernetes/apps/database/cloudnative-pg/barman-cloud/` — HelmRelease + cert-manager Certificates for plugin mTLS (the plugin communicates with the operator over a mutual-TLS gRPC channel)
+3. **ObjectStore CR** `kubernetes/apps/database/cloudnative-pg/cluster/app/objectstore.yaml` — points at Cloudflare R2 (or Backblaze B2); S3 credentials via ExternalSecret
+4. **ScheduledBackup CR** `kubernetes/apps/database/cloudnative-pg/cluster/app/scheduledbackup.yaml` — daily base backup, `method: plugin`, `backupOwnerReference: self`
+5. **Cluster CR updates** — add `plugins:` (WAL archiver) and `externalClusters:` (recovery source) entries; introduce `postBuild.substitute` with `CNPG_V17_CURRENT_CLUSTER` in `ks.yaml` so recovery `serverName` can be managed without editing the manifest
+
+**1Password fields to add** to the existing `cloudnative-pg` item:
+
+| Field | Value |
+|-------|-------|
+| `S3_ACCESS_KEY` | R2 / B2 access key ID |
+| `S3_SECRET_KEY` | R2 / B2 secret key |
+
+Update `cluster/app/externalsecret.yaml` to include these in the superuser secret template (`CNPG_S3_ACCESS_KEY`, `CNPG_S3_SECRET_KEY`).
+
+**Dependency chain update:**
+```
+cloudnative-pg-operator → barman-cloud → cloudnative-pg-cluster
+```
+The cluster ks.yaml `dependsOn` must gain `barman-cloud` once the plugin is wired in.
+
+**Reference:** `tmp/home-ops-bykaj/kubernetes/apps/database/cloudnative-pg/barman-cloud/` and `cluster/app/objectstore.yaml`.
+
+---
+
+#### 2 — Local NFS backup (postgres-backup-local)
+
+A daily `pg_dump`-based CronJob that writes compressed SQL backups to TrueNAS over NFS. This is a second backup tier separate from barman WAL archiving — the WAL archive is optimised for PITR; the NFS dump is a portable, human-inspectable copy.
+
+**What to add:**
+
+1. **OCIRepository** for `docker.io/prodrigestivill/postgres-backup-local`
+2. **Kustomization** `kubernetes/apps/database/cloudnative-pg/postgres-backup-local/` — `app-template` CronJob mounting the TrueNAS NFS path (`10.10.0.41:/mnt/...`) as a `persistence.nfs` volume; retention via `BACKUP_KEEP_DAYS: 7`, `BACKUP_KEEP_MONTHS: 6`
+
+TrueNAS is already proxied via `envoy-internal` (`truenas.${DOMAIN_CLUSTER}`). The NFS mount must use the direct storage IP (`10.10.0.41`) not the HTTPRoute — NFS is not HTTP.
+
+**Reference:** `tmp/home-ops-bykaj/kubernetes/apps/database/cloudnative-pg/postgres-backup-local/`
+
+---
+
+#### 3 — Per-app database and user provisioning
+
+Apps that need PostgreSQL connect to the shared `postgres-v17` cluster. Two patterns exist:
+
+**Option A — CNPG managed resources (preferred):** Use the `Database` and `Pooler` CRDs that CNPG installs. Each app gets its own `Database` CR (creates the database), a `ClusterRoleBinding` for the app's service account, and optionally a `Pooler` CR (PgBouncer sidecar for connection pooling). Credentials surface as a Secret that the app mounts.
+
+**Option B — Manual provisioning:** `kubectl exec` into the primary pod and run `CREATE DATABASE` / `CREATE USER` / `GRANT`. Fast but not GitOps — avoids CRD complexity for one-off databases.
+
+For the first app needing Postgres, use Option B to unblock quickly; migrate to Option A once the pattern is clear.
+
+**Connection string format** (within cluster):
+```
+postgresql://<user>:<password>@postgres-v17-rw.database.svc.cluster.local:5432/<dbname>
+```
+The `postgres-v17-rw` Service is created automatically by CNPG and always points to the current primary.
+
+---
+
+#### 4 — Major version upgrade path (17 → 18)
+
+CNPG supports in-place major version upgrades by creating a new cluster from a backup of the old one. The `postBuild.substitute` + `CNPG_V17_CURRENT_CLUSTER` / `CNPG_V17_PREVIOUS_CLUSTER` variables in `ks.yaml` (see bykaj reference `cluster/ks.yaml`) encode the active and previous cluster names so the `recovery.source` in the Cluster CR can be managed without editing YAML.
+
+**When to implement:** after barman-cloud backup is wired in (item 1 above) — the upgrade path depends on a working WAL archive and base backup to restore from.
+
+---
 
 ### Migrate ExternalSecrets to `dataFrom` + `rewrite` Pattern
 
