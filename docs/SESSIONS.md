@@ -4,6 +4,29 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-29 — `waha-session-autostart`
+
+### Goal
+Add a `postStart` lifecycle hook to the WAHA HelmRelease to auto-start the default WhatsApp session via the REST API on pod start, replacing non-functional PLUS-only env vars.
+
+### What we did
+- Diagnosed that `WHATSAPP_START_SESSION`, `WHATSAPP_RESTART_ALL_SESSIONS`, and `WAHA_WORKER_RESTART_SESSIONS` are PLUS-only and are no-ops in the CORE image currently deployed
+- Evaluated Kubernetes options for post-start API calls: `postStart` lifecycle hook vs sidecar container; chose `postStart` as the cleaner pattern (no idle container, well-defined timing before readiness probes fire)
+- Confirmed `curl` availability in the WAHA container by exec-ing into the running pod (`waha-5f59684d8b-lgf64`): Debian 12 Bookworm base with `curl 7.88.1` at `/usr/bin/curl`
+- Added `postStart` hook to the `app` container: polls `/ping` until the app responds, then calls `POST /api/sessions` with `{"name":"default","start":true}`; falls back to `POST /api/sessions/default/start` for the case where the session already exists on the PVC (409 conflict on create)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/automation/waha/app/helmrelease.yaml` | Added `lifecycle.postStart` hook (15 lines) to auto-start the default WhatsApp session via REST API |
+
+### Key decisions
+- Chose `postStart` over a sidecar: `curl` confirmed present in the Debian 12 base image, so no external image needed; sidecar would require `sleep infinity` to keep the pod alive, consuming resources permanently
+- Two-step fallback (`POST /api/sessions` → `POST /api/sessions/default/start`): handles both fresh PVC (session must be created) and restart with existing session data (create returns 409, start-only call succeeds)
+- `|| true` at the end prevents a non-zero hook exit (e.g. session already started) from triggering a container restart loop
+
+---
+
 ## 2026-05-29 — `externalsecret-migration`
 
 ### Goal

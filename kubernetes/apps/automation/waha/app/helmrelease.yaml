@@ -26,19 +26,45 @@ spec:
               # renovate: datasource=docker depName=docker.io/devlikeapro/waha
               tag: "gows-2026.5.1"
             env:
+              # PLUS-only: these three vars are no-ops on CORE; session auto-start is handled by the postStart hook below
               WHATSAPP_START_SESSION: "true"
+              WHATSAPP_RESTART_ALL_SESSIONS: "true"
+              WAHA_WORKER_RESTART_SESSIONS: "true"
               WHATSAPP_FILES_LIFETIME: "180"
               WHATSAPP_DEFAULT_ENGINE: "GOWS"
-              WHATSAPP_RESTART_ALL_SESSIONS: "true"
               WHATSAPP_HOOK_EVENTS: "message,session.status"
               WAHA_AUTO_START_DELAY_SECONDS: "5"
-              WAHA_WORKER_RESTART_SESSIONS: "true"
               WAHA_LOG_FORMAT: "JSON"
               WAHA_LOG_LEVEL: "info"
               TZ: "${CLUSTER_TIMEZONE}"
             envFrom:
               - secretRef:
                   name: waha-secret
+            lifecycle:
+              postStart:
+                # WAHA CORE does not auto-start sessions on server restart; this hook replicates that behaviour.
+                # Runs concurrently with the app process; container stays in ContainerCreating until the hook exits,
+                # so the session is started before readiness probes ever fire.
+                # Step 1: POST /api/sessions creates+starts the session (fresh PVC).
+                # Step 2: on restart the session already exists (409), so fall back to start-only call.
+                # "|| true" prevents a hook failure from triggering an unnecessary container restart.
+                # WAHA_API_KEY is a bcrypt hash; WAHA auto-detects this and uses bcrypt-verify mode,
+                # so the hook must send the plain key (WAHA_API_KEY_PLAIN) for bcrypt verification to pass.
+                # Use $VAR not ${VAR}: Flux PostBuild substitution matches ${VAR} and silently empties
+                # undefined cluster variables — bare $VAR is passed through to the shell unchanged.
+                exec:
+                  command:
+                    - /bin/sh
+                    - -c
+                    - |
+                      until curl -sf http://localhost:3000/ping > /dev/null; do sleep 2; done
+                      curl -sf -X POST http://localhost:3000/api/sessions \
+                        -H "Content-Type: application/json" \
+                        -H "X-Api-Key: $WAHA_API_KEY_PLAIN" \
+                        -d '{"name":"default","start":true}' || \
+                      curl -sf -X POST http://localhost:3000/api/sessions/default/start \
+                        -H "Content-Type: application/json" \
+                        -H "X-Api-Key: $WAHA_API_KEY_PLAIN" || true
             probes:
               liveness:
                 enabled: true
