@@ -74,8 +74,10 @@ spec:
                 # WAHA CORE does not auto-start sessions on server restart; this hook replicates that behaviour.
                 # Runs concurrently with the app process; container stays in ContainerCreating until the hook exits,
                 # so the session is started before readiness probes ever fire.
-                # Step 1: POST /api/sessions creates+starts the session (fresh PVC).
-                # Step 2: on restart the session already exists (409), so fall back to start-only call.
+                # Step 1: POST /api/sessions/default/start — works cleanly on restart (session on PVC).
+                # Step 2: 404 means fresh PVC; fall back to POST /api/sessions to create+start.
+                # Start-first avoids the 422 "already exists" error log WAHA emits on every restart
+                # when the create endpoint is called first.
                 # "|| true" prevents a hook failure from triggering an unnecessary container restart.
                 # WAHA_API_KEY is a bcrypt hash; WAHA uses bcrypt-verify mode, so the hook sends the plain
                 # key read from the file mount — keeping it out of the process environment entirely.
@@ -85,13 +87,13 @@ spec:
                     - -c
                     - |
                       until curl -sf http://localhost:3000/ping > /dev/null; do sleep 2; done
+                      curl -sf -X POST http://localhost:3000/api/sessions/default/start \
+                        -H "Content-Type: application/json" \
+                        -H "X-Api-Key: $(cat /run/secrets/waha/WAHA_API_KEY_PLAIN)" || \
                       curl -sf -X POST http://localhost:3000/api/sessions \
                         -H "Content-Type: application/json" \
                         -H "X-Api-Key: $(cat /run/secrets/waha/WAHA_API_KEY_PLAIN)" \
-                        -d '{"name":"default","start":true}' || \
-                      curl -sf -X POST http://localhost:3000/api/sessions/default/start \
-                        -H "Content-Type: application/json" \
-                        -H "X-Api-Key: $(cat /run/secrets/waha/WAHA_API_KEY_PLAIN)" || true
+                        -d '{"name":"default","start":true}' || true
             probes:
               liveness:
                 enabled: true
