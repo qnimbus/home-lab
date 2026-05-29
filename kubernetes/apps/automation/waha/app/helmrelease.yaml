@@ -17,6 +17,7 @@ spec:
           reloader.stakater.com/auto: "true"
         type: deployment
         replicas: 1
+        revisionHistoryLimit: 1
         strategy: Recreate
         containers:
           app:
