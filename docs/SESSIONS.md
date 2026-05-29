@@ -4,6 +4,30 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-29 — `waha-hook-auth-fix`
+
+### Goal
+Debug and fix persistent 401s from the WAHA postStart hook — traced through WAHA bcrypt-verify mode, Flux PostBuild variable substitution silently emptying `${VAR}` patterns, and hardened by moving the plain API key to a file mount to keep it out of the process environment.
+
+### What we did
+- Observed consistent 401s from the postStart hook across multiple pod restarts despite the manual `curl` from inside the pod returning 422 (authenticated); confirmed `WAHA_API_KEY_PLAIN` was set and non-empty in the running pod
+- Diagnosed root cause 1: `WAHA_API_KEY` is a bcrypt hash; WAHA auto-detects this and switches to bcrypt-verify mode — the hook was sending the hash, not the plain key; switched hook to `$WAHA_API_KEY_PLAIN`
+- Diagnosed root cause 2: Flux PostBuild substitution (active on the `waha` Kustomization) matched `${WAHA_API_KEY_PLAIN}` and silently replaced it with an empty string (undefined cluster variable); confirmed by inspecting the rendered HelmRelease in-cluster — `"X-Api-Key: "` in the applied spec; fixed by switching to bare `$WAHA_API_KEY_PLAIN` (no braces), which Flux's `${VAR}` pattern does not match
+- Hook succeeded after fix: `POST /api/sessions` → 422 (session exists, authenticated) → fallback `POST /api/sessions/default/start` → 201; `[Client] Successfully authenticated` in logs
+- Implemented file-mount approach to keep plain key out of process environment: replaced `envFrom: secretRef: waha-secret` with explicit `env` entries per key (excluding `WAHA_API_KEY_PLAIN`); added `waha-secret` volume mount at `/run/secrets/waha`; hook reads key via `$(cat /run/secrets/waha/WAHA_API_KEY_PLAIN)` (shell command substitution — immune to Flux `${VAR}` substitution)
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/automation/waha/app/helmrelease.yaml` | Three iterations: switched to `WAHA_API_KEY_PLAIN`, fixed Flux substitution with bare `$VAR`, switched to file-mount auth with explicit env entries |
+
+### Key decisions
+- Used bare `$VAR` not `${VAR}` to defeat Flux PostBuild substitution — Flux only matches the braced form; bare `$VAR` is left untouched and the shell expands it at runtime. This is a reusable pattern for any hook script referencing values that are not cluster-level substitution variables
+- Used `$(cat /run/secrets/waha/WAHA_API_KEY_PLAIN)` (shell command substitution) rather than a bare env var — this is also immune to Flux `${VAR}` substitution since it's not that syntactic pattern
+- Chose explicit `env` entries over `envFrom` to selectively exclude `WAHA_API_KEY_PLAIN` from the environment; `envFrom` maps all secret keys to env vars with no exclusion mechanism
+
+---
+
 ## 2026-05-29 — `waha-session-autostart`
 
 ### Goal

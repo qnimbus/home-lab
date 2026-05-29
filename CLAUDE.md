@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-29 | `waha-hook-auth-fix` | Traced 401s to bcrypt-verify mode + Flux ${VAR} substitution emptying key; fixed with bare $VAR then file-mount for plain key out of env |
 > | 2026-05-29 | `waha-session-autostart` | postStart lifecycle hook added to WAHA HelmRelease; curl confirmed in Debian 12 base; two-step create+start fallback for fresh vs existing PVC |
 > | 2026-05-29 | `externalsecret-migration` | Migrated 6 ExternalSecrets to dataFrom+rewrite; fixed flux-receiver via Connect restart; 3 staged pending 1P field renames |
 > | 2026-05-25 | `flux-alertmanager-notifications` | Flux Alert/Provider wired to Alertmanager for error events; PodMonitor + PrometheusRules added for controller health |
@@ -11,7 +12,6 @@
 > | 2026-05-24 | `gitops-repo-audit` | Full GitOps audit; cosign supply-chain verification added to 7 OCIRepositories (6 keyless OIDC, 1 key-based RSA) |
 > | 2026-05-24 | `tailscale-connector-crd-fix` | `tailscale-configs` Kustomization failure traced to missing `connectors.tailscale.com` CRD; fixed with `installCRDs: true` + `wait: true` |
 > | 2026-05-24 | `setup-flux-mcp-server` | fluxcd/agent-skills installed (3 skills); flux-operator-mcp wired as MCP server; live cluster verified via get_flux_instance |
-> | 2026-05-23 | `arc-runner-deploy` | ARC runners + Claude PR review deployed; instant-exit loop root-caused to missing `command: run.sh`; reverted to openebs-hostpath; workflow hardened |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

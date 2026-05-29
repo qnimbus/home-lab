@@ -25,6 +25,8 @@ spec:
               repository: docker.io/devlikeapro/waha
               # renovate: datasource=docker depName=docker.io/devlikeapro/waha
               tag: "gows-2026.5.1"
+            # Secret keys injected individually so WAHA_API_KEY_PLAIN is excluded from the environment;
+            # the plain key is accessible only via the file mount at /run/secrets/waha (see persistence below).
             env:
               # PLUS-only: these three vars are no-ops on CORE; session auto-start is handled by the postStart hook below
               WHATSAPP_START_SESSION: "true"
@@ -37,9 +39,36 @@ spec:
               WAHA_LOG_FORMAT: "JSON"
               WAHA_LOG_LEVEL: "info"
               TZ: "${CLUSTER_TIMEZONE}"
-            envFrom:
-              - secretRef:
-                  name: waha-secret
+              WAHA_API_KEY:
+                valueFrom:
+                  secretKeyRef:
+                    name: waha-secret
+                    key: WAHA_API_KEY
+              WAHA_DASHBOARD_USERNAME:
+                valueFrom:
+                  secretKeyRef:
+                    name: waha-secret
+                    key: WAHA_DASHBOARD_USERNAME
+              WAHA_DASHBOARD_PASSWORD:
+                valueFrom:
+                  secretKeyRef:
+                    name: waha-secret
+                    key: WAHA_DASHBOARD_PASSWORD
+              WHATSAPP_HOOK_HMAC_KEY:
+                valueFrom:
+                  secretKeyRef:
+                    name: waha-secret
+                    key: WHATSAPP_HOOK_HMAC_KEY
+              WHATSAPP_SWAGGER_USERNAME:
+                valueFrom:
+                  secretKeyRef:
+                    name: waha-secret
+                    key: WHATSAPP_SWAGGER_USERNAME
+              WHATSAPP_SWAGGER_PASSWORD:
+                valueFrom:
+                  secretKeyRef:
+                    name: waha-secret
+                    key: WHATSAPP_SWAGGER_PASSWORD
             lifecycle:
               postStart:
                 # WAHA CORE does not auto-start sessions on server restart; this hook replicates that behaviour.
@@ -48,10 +77,8 @@ spec:
                 # Step 1: POST /api/sessions creates+starts the session (fresh PVC).
                 # Step 2: on restart the session already exists (409), so fall back to start-only call.
                 # "|| true" prevents a hook failure from triggering an unnecessary container restart.
-                # WAHA_API_KEY is a bcrypt hash; WAHA auto-detects this and uses bcrypt-verify mode,
-                # so the hook must send the plain key (WAHA_API_KEY_PLAIN) for bcrypt verification to pass.
-                # Use $VAR not ${VAR}: Flux PostBuild substitution matches ${VAR} and silently empties
-                # undefined cluster variables — bare $VAR is passed through to the shell unchanged.
+                # WAHA_API_KEY is a bcrypt hash; WAHA uses bcrypt-verify mode, so the hook sends the plain
+                # key read from the file mount — keeping it out of the process environment entirely.
                 exec:
                   command:
                     - /bin/sh
@@ -60,11 +87,11 @@ spec:
                       until curl -sf http://localhost:3000/ping > /dev/null; do sleep 2; done
                       curl -sf -X POST http://localhost:3000/api/sessions \
                         -H "Content-Type: application/json" \
-                        -H "X-Api-Key: $WAHA_API_KEY_PLAIN" \
+                        -H "X-Api-Key: $(cat /run/secrets/waha/WAHA_API_KEY_PLAIN)" \
                         -d '{"name":"default","start":true}' || \
                       curl -sf -X POST http://localhost:3000/api/sessions/default/start \
                         -H "Content-Type: application/json" \
-                        -H "X-Api-Key: $WAHA_API_KEY_PLAIN" || true
+                        -H "X-Api-Key: $(cat /run/secrets/waha/WAHA_API_KEY_PLAIN)" || true
             probes:
               liveness:
                 enabled: true
@@ -112,6 +139,12 @@ spec:
           http:
             port: *port
     persistence:
+      waha-secrets:
+        type: secret
+        name: waha-secret
+        globalMounts:
+          - path: /run/secrets/waha
+            readOnly: true
       sessions:
         type: persistentVolumeClaim
         storageClass: longhorn
