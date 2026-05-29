@@ -4,6 +4,41 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-29 — `externalsecret-migration`
+
+### Goal
+Audit and migrate all ExternalSecrets to the `dataFrom.extract` + `rewrite.regexp` + `template` pattern per CONVENTIONS.md, and fix a pre-existing `flux-receiver` breakage caused by stale 1Password Connect cache.
+
+### What we did
+- Audited all 10 ExternalSecrets: identified 6 needing migration, confirmed 2 already compliant (`tailscale-operator`, `waha`), found `flux-receiver` partially migrated with a wrong template output key (`FLUX_GITHUB_WEBHOOK_TOKEN` vs the required `token`)
+- Inspected all 5 relevant 1Password items (`cloudflared`, `unifi`, `flux`, `actions-runner`, `anthropic`) for field names, types, and shape — confirmed `cloudflared` item is shared by 3 ExternalSecrets, requiring `template` scoping on all three to prevent field leakage
+- Diagnosed `flux-receiver` `Ready: False`: root cause was 1Password Connect cache staleness, not a missing item — `flux` item existed with both field names but Connect hadn't synced it; item has been accessible in the vault since ~2026-05-15
+- Restarted 1Password Connect (`kubectl rollout restart deployment/onepassword-connect -n external-secrets`) → all 10 ExternalSecrets returned to `SecretSynced: True`
+- Fixed `flux-receiver` ExternalSecret template key: `FLUX_GITHUB_WEBHOOK_TOKEN` → `token`; annotated Receiver to force reconcile → `Ready: True`, webhook URL restored
+- Migrated `cert-manager/cluster-issuers`: added `rewrite: CF_$1` + scoping template exposing exactly `API_TOKEN` key (cert-manager `apiTokenSecretRef` requirement)
+- Migrated `network/external-dns/cloudflare`: switched from `data[]` to `dataFrom.extract` + `rewrite: CF_$1` + template
+- Migrated `network/cloudflared`: switched to `dataFrom.extract` + `rewrite: CF_$1` + template (`TUNNEL_TOKEN: "{{ .CF_TUNNEL_TOKEN }}"`) — staged, requires `TUNNEL_TOKEN` → `TOKEN` 1P rename before commit
+- Migrated `network/external-dns/unifi`: `dataFrom.extract` + `rewrite: UNIFI_$1` + template — staged, requires `UNIFI_HOST` → `HOST` and `UNIFI_API_KEY` → `API_KEY` renames
+- Migrated both `actions-runner-system` ExternalSecrets: `dataFrom.extract` + rewrite + template — staged, requires `ACTIONS_RUNNER_*` → short names and `ANTHROPIC_API_KEY` → `API_KEY` renames
+- Provided `op item edit --template` commands for user to run for all four 1P items; auto-mode classifier correctly blocked write operations as production-secrets mutations
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/flux-system/flux-receiver/app/externalsecret.yaml` | Fixed template output key to `token` (Flux Receiver CRD requirement) |
+| `kubernetes/apps/cert-manager/cluster-issuers/app/externalsecret.yaml` | Added `rewrite: CF_$1` + scoping template; was partially migrated (no rewrite) |
+| `kubernetes/apps/network/external-dns/cloudflare/externalsecret.yaml` | Migrated `data[]` → `dataFrom.extract` + `rewrite: CF_$1` + template |
+| `kubernetes/apps/network/cloudflared/app/externalsecret.yaml` | Migrated `data[]` → `dataFrom.extract` + `rewrite: CF_$1` + template (staged; needs 1P rename) |
+| `kubernetes/apps/network/external-dns/unifi/externalsecret.yaml` | Migrated `data[]` → `dataFrom.extract` + `rewrite: UNIFI_$1` + template (staged; needs 1P rename) |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab/externalsecret.yaml` | Both ExternalSecrets migrated to `dataFrom.extract` + rewrite + template (staged; needs 1P renames) |
+
+### Key decisions
+- Added `template` scoping to ALL migrations regardless of roadmap's "no template needed" notes — the shared `cloudflared` item has 3 fields; without scoping, all three app secrets would receive unrelated keys (e.g. tunnel `cert-manager-secret` would also contain `CF_TUNNEL_TOKEN`)
+- Used `CF_$1` rewrite for `cloudflared` tunnel (roadmap proposed `TUNNEL_$1`) — keeps all three cloudflared-derived ExternalSecrets on a consistent `CF_` prefix, matching `external-dns-cloudflare` and `cert-manager` which were already established; the template then maps `CF_TUNNEL_TOKEN` → `TUNNEL_TOKEN` for the consumer
+- The staged cloudflared/unifi/actions-runner manifests reference post-rename field names; they **must not be committed before the 1P renames complete** or all three ExternalSecrets will immediately enter `SecretSyncError`
+
+---
+
 ## 2026-05-25 — `flux-alertmanager-notifications`
 
 ### Goal
