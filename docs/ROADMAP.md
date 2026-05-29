@@ -6,6 +6,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 
 - [In Progress](#in-progress)
   - [CloudNativePG: Backup, PITR, and Per-App Provisioning](#cloudnative-pg-backup-pitr-and-per-app-provisioning)
+  - [Postgres NFS Backup: Restore Drill](#postgres-nfs-backup-restore-drill)
   - [Future Storage Options](#future-storage-options)
   - [Grafana](#grafana)
   - [Alertmanager Receiver](#alertmanager-receiver)
@@ -58,18 +59,17 @@ The cluster ks.yaml `dependsOn` must gain `barman-cloud` once the plugin is wire
 
 ---
 
-#### 2 — Local NFS backup (postgres-backup-local)
+#### 2 — Local NFS backup (postgres-backup-local) ✅
 
-A daily `pg_dump`-based CronJob that writes compressed SQL backups to TrueNAS over NFS. This is a second backup tier separate from barman WAL archiving — the WAL archive is optimised for PITR; the NFS dump is a portable, human-inspectable copy.
+Deployed. `pg_dumpall` CronJob running daily at midnight (Europe/Amsterdam) writing to `10.200.0.41:/mnt/tank/Cluster/cloudnative-pg` (storage VLAN). Retention: 7 days / 4 weeks / 6 months. Runs as UID 4000 (non-root).
 
-**What to add:**
+**Gotchas discovered during deployment:**
+- TrueNAS NFS service must be explicitly bound to the storage VLAN interface (`bond1`) — it does not auto-bind to new interfaces
+- `POSTGRES_DB: "*"` glob-expands to the NFS mount directory name (`backups`) in the script's working directory — use `POSTGRES_CLUSTER: "TRUE"` instead
+- `pg_dumpall` does not support `-Z` (compression) or `-C` (create database) flags — use `POSTGRES_EXTRA_OPTS: "-c"` only
+- TrueNAS dataset must be `chown 4000:4000` before the pod runs; numeric UID works fine without a named user on TrueNAS
 
-1. **OCIRepository** for `docker.io/prodrigestivill/postgres-backup-local`
-2. **Kustomization** `kubernetes/apps/database/cloudnative-pg/postgres-backup-local/` — `app-template` CronJob mounting the TrueNAS NFS path (`10.10.0.41:/mnt/...`) as a `persistence.nfs` volume; retention via `BACKUP_KEEP_DAYS: 7`, `BACKUP_KEEP_MONTHS: 6`
-
-TrueNAS is already proxied via `envoy-internal` (`truenas.${DOMAIN_CLUSTER}`). The NFS mount must use the direct storage IP (`10.10.0.41`) not the HTTPRoute — NFS is not HTTP.
-
-**Reference:** `tmp/home-ops-bykaj/kubernetes/apps/database/cloudnative-pg/postgres-backup-local/`
+**Restore workflow:** see roadmap item [Postgres NFS Backup: Restore Drill](#postgres-nfs-backup-restore-drill).
 
 ---
 
@@ -96,6 +96,47 @@ The `postgres-v17-rw` Service is created automatically by CNPG and always points
 CNPG supports in-place major version upgrades by creating a new cluster from a backup of the old one. The `postBuild.substitute` + `CNPG_V17_CURRENT_CLUSTER` / `CNPG_V17_PREVIOUS_CLUSTER` variables in `ks.yaml` (see bykaj reference `cluster/ks.yaml`) encode the active and previous cluster names so the `recovery.source` in the Cluster CR can be managed without editing YAML.
 
 **When to implement:** after barman-cloud backup is wired in (item 1 above) — the upgrade path depends on a working WAL archive and base backup to restore from.
+
+---
+
+### Postgres NFS Backup: Restore Drill
+
+The `postgres-backup-local` CronJob writes a daily `pg_dumpall` backup to TrueNAS (`/mnt/tank/Cluster/cloudnative-pg`). A backup that has never been tested for restore is not a backup. This item tracks the restore workflow and periodic drills.
+
+**Restore procedure (full cluster restore):**
+
+1. Locate the latest backup on TrueNAS:
+   ```sh
+   ls -lh /mnt/tank/Cluster/cloudnative-pg/last/
+   # e.g. postgres-20260529-203903.sql.gz
+   ```
+
+2. Copy the dump to a pod with `psql` access (or use a temporary pod):
+   ```sh
+   kubectl run -n database restore-shell --rm -it \
+     --image=docker.io/prodrigestivill/postgres-backup-local:17 \
+     --overrides='{"spec":{"volumes":[{"name":"backups","nfs":{"server":"10.200.0.41","path":"/mnt/tank/Cluster/cloudnative-pg"}}],"containers":[{"name":"restore-shell","image":"docker.io/prodrigestivill/postgres-backup-local:17","command":["bash"],"volumeMounts":[{"name":"backups","mountPath":"/backups"}]}]}}' -- bash
+   ```
+
+3. Run the restore inside the pod:
+   ```sh
+   gunzip -c /backups/last/postgres-latest.sql.gz | \
+     psql -h postgres-v17-rw.database.svc.cluster.local \
+          -U postgres \
+          --set ON_ERROR_STOP=on
+   ```
+   The dump includes `DROP`/`CREATE` statements (`-c` flag), so re-importing into an existing cluster is idempotent.
+
+**Restore drill checklist:**
+- [ ] Restore into a temporary database (`CREATE DATABASE restore_test`) rather than overwriting live data
+- [ ] Confirm row counts match between source and restored DB for key tables
+- [ ] Confirm `pg_restore_log` has no errors
+- [ ] Document the time taken (sets expectations for RTO)
+- [ ] Delete the test database when done
+
+**When to drill:** after first successful backup, then every 3 months or after any major Postgres version upgrade.
+
+**Dependencies:** `postgres-backup-local` ✅ (backup running)
 
 ---
 

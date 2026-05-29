@@ -4,6 +4,36 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-29 — `postgres-nfs-backup`
+
+### Goal
+Deploy and verify a daily `pg_dumpall`-based NFS backup CronJob for the `postgres-v17` cluster, writing to TrueNAS over the storage VLAN.
+
+### What we did
+- Confirmed ExternalSecret `dataFrom+rewrite` migration was fully complete: verified all 12 cluster ExternalSecrets `SecretSynced: True` via `kubectl get externalsecrets -A`; updated ROADMAP.md to move the item to Completed
+- Designed TrueNAS NFS configuration: dedicated dataset `/mnt/tank/Cluster/cloudnative-pg` on `tank` pool; NFS share on storage VLAN via `bond1` (10.200.0.41/24); dataset `chown 4000:4000` for non-root container; `maproot: root` not needed since UID 4000 passes through numerically without a named user
+- Built `postgres-backup-local` app-template v5 CronJob: `POSTGRES_CLUSTER: "TRUE"` for `pg_dumpall`, `POSTGRES_DB: postgres` to satisfy image validation, `POSTGRES_EXTRA_OPTS: "-c"` only (pg_dumpall doesn't accept `-Z` or `-C`); daily schedule with 7d/4w/6m retention; runs as UID 4000 (`runAsNonRoot: true`); `enableServiceLinks: false`; `ttlSecondsAfterFinished: 43200`
+- Added Flux Kustomization to `cloudnative-pg/ks.yaml` as third doc with `dependsOn: cloudnative-pg-cluster`; reuses existing `cloudnative-pg-secret` rather than a new ExternalSecret
+- Debugged three live failures: (1) `SYN_SENT` — TrueNAS NFS not bound to bond1 interface; (2) `database "backups" does not exist` — `POSTGRES_DB: "*"` glob-expands to `/backups` mount dir in script working dir; (3) `invalid option -- 'Z'` — pg_dumpall doesn't accept `-Z6`
+- Fixed all three issues iteratively via live `kubectl patch cronjob` + manual job triggers; verified `Completed` pod with correct symlinks (`daily/`, `weekly/`, `monthly/`, `last/`) on TrueNAS
+- Added restore drill roadmap entry with step-by-step `pg_dumpall` restore procedure and drill checklist
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/database/cloudnative-pg/ks.yaml` | Added `postgres-backup-local` Kustomization as third doc |
+| `kubernetes/apps/database/cloudnative-pg/postgres-backup-local/app/helmrelease.yaml` | Created: app-template v5 CronJob with NFS persistence, UID 4000, pg_dumpall config |
+| `kubernetes/apps/database/cloudnative-pg/postgres-backup-local/app/kustomization.yaml` | Created: Kustomize entry-point |
+| `docs/ROADMAP.md` | Marked ExternalSecret migration complete; marked NFS backup item ✅ with gotchas; added restore drill entry |
+
+### Key decisions
+- **Storage VLAN (10.200.0.41) over management VLAN** — TrueNAS has bond1 on the same storage fabric as the node storage bonds; isolates backup traffic from kube-apiserver/etcd on the management NIC
+- **UID 4000 (non-root) over root** — matches both reference implementations; requires one `chown 4000:4000` on TrueNAS but eliminates rootless-root in the database namespace; numeric UID works without a named user on TrueNAS
+- **`POSTGRES_CLUSTER: "TRUE"` over `POSTGRES_DB: "*"`** — `*` glob-expands to the NFS mount directory name in the script's working directory; `pg_dumpall` is also future-proof for new databases added to the shared cluster
+- **Reuse `cloudnative-pg-secret`** over a new ExternalSecret — credentials already present in the `database` namespace; avoided duplicating the same 1Password fields
+
+---
+
 ## 2026-05-29 — `pgadmin-deploy`
 
 ### Goal

@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-29 | `postgres-nfs-backup` | pg_dumpall CronJob to TrueNAS storage VLAN (10.200.0.41); UID 4000; debugged NFS bind, glob-expand, pg_dumpall flag issues; restore drill roadmap added |
 > | 2026-05-29 | `pgadmin-deploy` | pgAdmin deployed in database namespace; initContainer seeds .pgpass; servers.json declarative; Longhorn PVC; envoy-internal HTTPRoute |
 > | 2026-05-29 | `cloudnative-pg-deploy` | CloudNativePG operator + shared postgres-v17 cluster deployed; backup deferred; ExternalSecrets follow rewrite+template convention |
 > | 2026-05-29 | `external-services-truenas` | TrueNAS proxied via envoy-internal (EndpointSlice+Service+HTTPRoute); dedicated envoy-services gateway options documented |
@@ -11,7 +12,6 @@
 > | 2026-05-29 | `waha-session-autostart` | postStart lifecycle hook added to WAHA HelmRelease; curl confirmed in Debian 12 base; two-step create+start fallback for fresh vs existing PVC |
 > | 2026-05-29 | `externalsecret-migration` | Migrated 6 ExternalSecrets to dataFrom+rewrite; fixed flux-receiver via Connect restart; 3 staged pending 1P field renames |
 > | 2026-05-25 | `flux-alertmanager-notifications` | Flux Alert/Provider wired to Alertmanager for error events; PodMonitor + PrometheusRules added for controller health |
-> | 2026-05-25 | `drift-detection-global-default` | `driftDetection: enabled` added as cluster-wide default via `cluster-apps` patch; opt-out label + full CONVENTIONS.md docs |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
