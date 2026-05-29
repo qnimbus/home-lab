@@ -4,6 +4,41 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-29 — `pgadmin-deploy`
+
+### Goal
+Deploy pgAdmin as a web-based admin UI for the shared `postgres-v17` CNPG cluster, living in the `database` namespace alongside the cluster it manages.
+
+### What we did
+- Discussed CNPG pod distribution: established that `podAntiAffinityType: required` prevents initial co-location but does not change node-failure recovery behaviour because `openebs-hostpath` PVCs are node-local regardless; the PVC's own node-affinity is the binding scheduling constraint on failure
+- Discussed CNPG automatic failover: confirmed the operator promotes the most up-to-date standby (synchronous standby preferred), re-targets the `postgres-v17-rw` Service, and rejoins the old primary as standby via `pg_rewind` once its node recovers — no manual intervention
+- Researched pgAdmin patterns on kubesearch.dev and studied both `tmp/home-ops-bykaj` and `tmp/home-ops.old` reference implementations; chose the `dpage/pgadmin4` image with `ghcr.io/home-operations/k8s-sidecar` initContainer pattern
+- Created pgAdmin Kustomization with `dependsOn: cloudnative-pg-cluster + onepassword-store`; kept in `database` namespace alongside CNPG (single namespace simpler for future NetworkPolicy rules)
+- HelmRelease (app-template v5): initContainer creates per-user storage folder and seeds `.pgpass` with correct permissions (chmod 600); Longhorn 2Gi PVC for config data so pod can reschedule across nodes after failure; startup + liveness/readiness probes on `/misc/ping`; `PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"` makes server config declarative
+- ExternalSecret pulls from two 1Password items: `pgadmin` (→ `PA_` prefix, email + password) and `cloudnative-pg` (→ `DB_` prefix, reusing existing superuser fields); template produces `PGADMIN_DEFAULT_EMAIL`, `PGADMIN_DEFAULT_PASSWORD`, `pgpass`, and `servers.json` keys in a single Secret
+- `servers.json` hardcodes `postgres-v17-rw.database.svc.cluster.local` as the connection target with `sslmode: prefer` and `passfile: /.pgpass`; no Flux substitution variables needed
+- Compared old reference initContainer (function-based, multi-user, backup symlink, `/tmp/secrets/pgpass`) vs current implementation (inline, single-user, `/tmp/secrets/.pgpass` via subPath); all differences are intentional simplifications for single-admin home lab without backup volumes
+- HTTPRoute on `envoy-internal` → `pgadmin.${DOMAIN_CLUSTER}` (LAN-only); standalone `httproute.yaml` following cluster convention
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/database/pgadmin/ks.yaml` | Created: Flux Kustomization; dependsOn cloudnative-pg-cluster + onepassword-store |
+| `kubernetes/apps/database/pgadmin/app/kustomization.yaml` | Created: Kustomize entry-point |
+| `kubernetes/apps/database/pgadmin/app/helmrelease.yaml` | Created: app-template v5 with initContainer, Longhorn PVC, probes, envFrom |
+| `kubernetes/apps/database/pgadmin/app/externalsecret.yaml` | Created: pulls pgadmin + cloudnative-pg items; produces pgpass + servers.json |
+| `kubernetes/apps/database/pgadmin/app/httproute.yaml` | Created: HTTPRoute on envoy-internal for pgadmin.${DOMAIN_CLUSTER} |
+| `kubernetes/apps/database/kustomization.yaml` | Added `./pgadmin` resource |
+
+### Key decisions
+- **`database` namespace over `tools`**: co-location simplifies future NetworkPolicy allow-rules (pgAdmin is inside the namespace it talks to); easy to move later if a general `tools` namespace emerges
+- **Longhorn PVC (not openebs-hostpath)**: pgAdmin is a single-pod stateless-ish app — Longhorn allows pod to reschedule to any node after a node failure, unlike openebs-hostpath which is node-local
+- **No OIDC/OAuth2**: dropped from references (requires Authentik, not deployed); `internal` auth only; can be layered on later
+- **Hardcoded DB hostname in ExternalSecret template**: avoids Flux substitution variables in the ESO template layer; `postgres-v17-rw.database.svc.cluster.local` is stable and doesn't need to be parameterised
+- **`podAntiAffinityType: required` on CNPG cluster** (committed in previous session): hard placement guarantee at initial scheduling; no effect on recovery since openebs-hostpath PVC node-affinity is the real binding constraint
+
+---
+
 ## 2026-05-29 — `cloudnative-pg-deploy`
 
 ### Goal
