@@ -127,5 +127,6 @@ spec:
                 subPath: servers.json
       tmp:
         type: emptyDir
+        medium: Memory
         globalMounts:
           - path: /tmp
