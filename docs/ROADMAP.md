@@ -613,6 +613,23 @@ triggering a Renovate dry-run after the split (check the Dependency Dashboard is
 
 ---
 
+#### Dedicated `envoy-services` Gateway (Future)
+
+A third Gateway alongside `envoy-external` and `envoy-internal`, purpose-built for LAN infrastructure proxying (Proxmox, PBS, NAS, home appliances). Currently deferred — all LAN services route through `envoy-internal` with TLS terminated at the gateway (see [CLUSTER.md → Scenario 4](CLUSTER.md#scenario-4--lan-resource-proxy-external-services)).
+
+**When to revisit:**
+- You need IP-level ACLs: a dedicated CiliumLB IP lets UniFi firewall rules restrict Proxmox/PBS to the admin VLAN without affecting `envoy-internal` cluster-app traffic
+- A LAN host requires TLS passthrough (e.g. Proxmox with its own ACME cert via a `TLSRoute`): adding a `TLS: Passthrough` listener to `envoy-internal` widens its surface area; a dedicated gateway contains the change to a separate resource
+- `envoy-internal` HTTPRoutes grow too large and you want independent observability/audit surfaces per gateway
+
+**Migration cost:** low — HTTPRoutes only need `parentRefs.name` changed from `envoy-internal` to `envoy-services`. Claim one IP from the `10.60.0.230–249` Cilium pool, create the `Gateway` resource in `envoy-gateway/config/gateway.yaml`, and add an ExternalDNS annotation targeting `services.${DOMAIN_CLUSTER}`.
+
+**Overhead:** one additional Envoy proxy Deployment (3 replicas × ~256 Mi each) and one IP from the Cilium pool.
+
+**Reference:** `bykaj/home-ops` `kubernetes/apps/network/external-services/` uses this pattern with an `envoy-services` gateway on a dedicated IP.
+
+---
+
 ## Completed
 
 | Area                          | Notes                                           |

@@ -284,6 +284,59 @@ spec:
 
 Alternatively, use two separate `HTTPRoute` objects with different hostnames pointing at the same backend Service.
 
+### Scenario 4 — LAN resource proxy (external services)
+
+To expose a LAN host (Proxmox, NAS, home appliance) via a cluster domain, use a headless `Service` backed by a manual `EndpointSlice`. No pod is involved — `envoy-internal` reverse-proxies requests to the static LAN IP.
+
+```yaml
+# endpoint.yaml — static LAN IP; label binds EndpointSlice to the Service
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: proxmox
+  labels:
+    kubernetes.io/service-name: proxmox
+    endpointslice.kubernetes.io/managed-by: proxmox
+addressType: IPv4
+endpoints:
+  - addresses: ["10.60.0.10"]
+    conditions: { ready: true }
+ports:
+  - name: http
+    port: 8006
+---
+# service.yaml — no selector; backed by the EndpointSlice above
+apiVersion: v1
+kind: Service
+metadata:
+  name: proxmox
+spec:
+  ports:
+    - name: http
+      port: 8006
+      targetPort: 8006
+---
+# httproute.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: proxmox
+spec:
+  hostnames: ["proxmox.${DOMAIN_CLUSTER}"]
+  parentRefs:
+    - name: envoy-internal
+      namespace: network
+      sectionName: https
+  rules:
+    - backendRefs:
+        - name: proxmox
+          port: 8006
+```
+
+Group all LAN services under `kubernetes/apps/network/external-services/` — one subdirectory per service, each with its own Flux `Kustomization` in a multi-document `ks.yaml`. TLS terminates at `envoy-internal` using the pre-loaded `cluster-vwn-io-tls` wildcard; the backend connection is plaintext HTTP to the LAN host.
+
+> **TLS passthrough (end-to-end HTTPS):** requires a `TLS: Passthrough` listener on `envoy-internal` and a `TLSRoute` instead of an `HTTPRoute`. A future dedicated `envoy-services` gateway avoids adding this listener to `envoy-internal` — see [ROADMAP.md → Dedicated envoy-services Gateway](../docs/ROADMAP.md).
+
 ### Checklist for any new endpoint
 
 1. Create `httproute.yaml` in the app's `app/` directory

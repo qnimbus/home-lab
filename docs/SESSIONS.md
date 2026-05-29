@@ -4,6 +4,38 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-29 — `external-services-truenas`
+
+### Goal
+Audit bykaj's external-services pattern, evaluate envoy-internal reuse vs a dedicated envoy-services gateway, document the decision, and implement the pattern for TrueNAS as the first LAN resource proxy.
+
+### What we did
+- Audited `bykaj/home-ops` external-services: identified three routing variants (plain HTTP via `HTTPRoute`, TLS passthrough via `TLSRoute`, FQDN-based via Envoy `Backend` CRD with ConsistentHash LB for Proxmox session affinity); noted EndpointSlice label requirements (`kubernetes.io/service-name`, `endpointslice.kubernetes.io/managed-by`) and a port mismatch in `proxmox-backup-server`
+- Evaluated dedicated `envoy-services` gateway vs reusing `envoy-internal`; decided on reuse — no TLS passthrough or IP-level ACL requirements at this stage, and adding a `TLS: Passthrough` listener to `envoy-internal` would widen its surface area unnecessarily
+- Added Scenario 4 (LAN resource proxy) to `docs/CLUSTER.md` with a complete 3-file YAML example and `external-services/` directory convention; added forward reference to ROADMAP.md for TLS passthrough path
+- Added "Dedicated `envoy-services` Gateway (Future)" to `docs/ROADMAP.md` under Researched Patterns with three concrete migration triggers (IP-level ACLs, TLS passthrough, scale) and cost estimate (+3 Envoy pod replicas, +1 CiliumLB IP)
+- Created `kubernetes/apps/network/external-services/truenas/`: `EndpointSlice` → `10.10.0.41:8080`, headless `Service` (no selector), `HTTPRoute` on `envoy-internal` → `truenas.${DOMAIN_CLUSTER}`; top-level `ks.yaml` with `targetNamespace: network` and `dependsOn: envoy-gateway-config`
+- Wired `./external-services/ks.yaml` into `kubernetes/apps/network/kustomization.yaml`
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/CLUSTER.md` | Added Scenario 4: LAN resource proxy with 3-file YAML example and envoy-services cross-reference |
+| `docs/ROADMAP.md` | Added Dedicated envoy-services Gateway (Future) under Researched Patterns |
+| `kubernetes/apps/network/kustomization.yaml` | Added `./external-services/ks.yaml` resource |
+| `kubernetes/apps/network/external-services/ks.yaml` | Created: Flux Kustomization, `targetNamespace: network`, `dependsOn: envoy-gateway-config` |
+| `kubernetes/apps/network/external-services/truenas/endpoint.yaml` | Created: EndpointSlice pointing to 10.10.0.41:8080 |
+| `kubernetes/apps/network/external-services/truenas/service.yaml` | Created: headless Service (no selector), port 8080 |
+| `kubernetes/apps/network/external-services/truenas/httproute.yaml` | Created: HTTPRoute `truenas.${DOMAIN_CLUSTER}` → envoy-internal |
+| `kubernetes/apps/network/external-services/truenas/kustomization.yaml` | Created: Kustomize entry-point listing 3 resources |
+
+### Key decisions
+- Reuse `envoy-internal` over a dedicated `envoy-services` gateway — avoids extra Envoy pod fleet and CiliumLB IP; migration triggers and cost documented in ROADMAP.md for when IP-level ACLs or TLS passthrough are needed
+- Use `${DOMAIN_CLUSTER}` (internal-only, absent from cloudflared config) for all LAN resource hostnames; TLS terminates at `envoy-internal` with the pre-loaded wildcard — no per-service cert needed
+- `ks.yaml` declares `targetNamespace: network` explicitly rather than relying on namespace fields in manifests, keeping the individual resource YAMLs namespace-agnostic
+
+---
+
 ## 2026-05-29 — `waha-hook-auth-fix`
 
 ### Goal
