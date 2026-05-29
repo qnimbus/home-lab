@@ -25,14 +25,16 @@ spec:
               # renovate: datasource=docker depName=docker.io/devlikeapro/waha
               tag: "gows-2026.5.1"
             env:
+              WHATSAPP_START_SESSION: "true"
+              WHATSAPP_FILES_LIFETIME: "180"
               WHATSAPP_DEFAULT_ENGINE: "GOWS"
               WHATSAPP_RESTART_ALL_SESSIONS: "true"
-              WAHA_AUTO_START_DELAY_SECONDS: "5"
               WHATSAPP_HOOK_EVENTS: "message,session.status"
+              WAHA_AUTO_START_DELAY_SECONDS: "5"
+              WAHA_WORKER_RESTART_SESSIONS: "true"
               WAHA_LOG_FORMAT: "JSON"
               WAHA_LOG_LEVEL: "info"
               TZ: "${CLUSTER_TIMEZONE}"
-              WHATSAPP_FILES_LIFETIME: "180"
             envFrom:
               - secretRef:
                   name: waha-secret
