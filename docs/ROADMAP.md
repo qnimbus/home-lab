@@ -6,7 +6,6 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 
 - [In Progress](#in-progress)
   - [CloudNativePG: Backup, PITR, and Per-App Provisioning](#cloudnative-pg-backup-pitr-and-per-app-provisioning)
-  - [Migrate ExternalSecrets to `dataFrom` + `rewrite` Pattern](#migrate-externalsecrets-to-datafrom--rewrite-pattern)
   - [Future Storage Options](#future-storage-options)
   - [Grafana](#grafana)
   - [Alertmanager Receiver](#alertmanager-receiver)
@@ -97,29 +96,6 @@ The `postgres-v17-rw` Service is created automatically by CNPG and always points
 CNPG supports in-place major version upgrades by creating a new cluster from a backup of the old one. The `postBuild.substitute` + `CNPG_V17_CURRENT_CLUSTER` / `CNPG_V17_PREVIOUS_CLUSTER` variables in `ks.yaml` (see bykaj reference `cluster/ks.yaml`) encode the active and previous cluster names so the `recovery.source` in the Cluster CR can be managed without editing YAML.
 
 **When to implement:** after barman-cloud backup is wired in (item 1 above) — the upgrade path depends on a working WAL archive and base backup to restore from.
-
----
-
-### Migrate ExternalSecrets to `dataFrom` + `rewrite` Pattern
-
-All `ExternalSecret` files must be migrated to the `dataFrom.extract` + `rewrite.regexp` pattern documented in [CONVENTIONS.md](CONVENTIONS.md#externalsecret-conventions). The convention keeps 1Password item field names short and prefix-free; the `rewrite` adds the application prefix when writing keys into the Kubernetes Secret.
-
-**Reference implementation:** `kubernetes/apps/tailscale/tailscale-operator/app/externalsecret.yaml` and `kubernetes/apps/waha/waha/app/externalsecret.yaml` (both already compliant).
-
-**Files to migrate:**
-
-| File | 1Password item | Required 1Password renames | Notes |
-|---|---|---|---|
-| `network/cloudflared/app/externalsecret.yaml` | `cloudflared` | `TUNNEL_TOKEN` → `TOKEN` | Rewrite: `TUNNEL_$1`; no template needed |
-| `network/external-dns/cloudflare/externalsecret.yaml` | `cloudflared` | none (field is already `API_TOKEN`) | Rewrite: `CF_$1`; no template needed |
-| `network/external-dns/unifi/externalsecret.yaml` | `unifi` | `UNIFI_HOST` → `HOST`, `UNIFI_API_KEY` → `API_KEY` | Rewrite: `UNIFI_$1`; no template needed |
-| `flux-system/flux-receiver/app/externalsecret.yaml` | `flux` | `FLUX_GITHUB_WEBHOOK_TOKEN` → `GITHUB_WEBHOOK_TOKEN` | Rewrite: `FLUX_$1`; template remaps to `token:` (Flux Receiver key name) |
-| `cert-manager/cluster-issuers/app/externalsecret.yaml` | `cloudflared` | none | Already uses `dataFrom.extract`; add rewrite `CF_$1` + template `API_TOKEN: "{{ .CF_API_TOKEN }}"` to scope secret to exactly one key and match cert-manager's `apiTokenSecretRef` |
-| `actions-runner-system/.../externalsecret.yaml` | `actions-runner`, `anthropic` | `ACTIONS_RUNNER_APP_ID` → `APP_ID`, `ACTIONS_RUNNER_INSTALLATION_ID` → `INSTALLATION_ID`, `ACTIONS_RUNNER_PRIVATE_KEY` → `PRIVATE_KEY`, `ANTHROPIC_API_KEY` → `API_KEY` | Two ExternalSecrets in one file; rewrite `ACTIONS_RUNNER_$1`; template remaps to `github_app_id` etc. (ARC controller expects snake_case) |
-
-**Important — do 1Password renames first.** The ExternalSecret begins syncing the moment it is reconciled. If the manifest references a rewritten key that doesn't exist yet in 1Password, the ExternalSecret will enter a `SecretSyncError` state. Rename the 1Password fields and confirm with `op item get <item>` before committing the updated manifest.
-
-**Dependencies:** `external-secrets` ✅, `onepassword-connect` ✅.
 
 ---
 
@@ -735,5 +711,6 @@ A third Gateway alongside `envoy-external` and `envoy-internal`, purpose-built f
 | kube-prometheus-stack                  | Prometheus + Alertmanager in `observability` namespace; 20 Gi + 1 Gi Longhorn PVCs; node-exporter on all 3 nodes; full-cluster scraping (`*SelectorNilUsesHelmValues: false`); HTTPRoutes on `envoy-internal`; Grafana + receiver deferred |
 | metrics-server                         | `kube-system`; HelmRelease `v3.13.0` (HelmRepository `https://kubernetes-sigs.github.io/metrics-server`); `kubectl top` and HPA resource metrics enabled; `--kubelet-insecure-tls` flag set; migration to `home-operations/charts-mirror` OCIRepository tracked in roadmap |
 | GitHub Actions Self-Hosted Runners (ARC + Claude PR Review) | ARC `gha-runner-scale-set-controller@0.14.1` + `home-lab` scale set deployed in `actions-runner-system`; Flux HelmReleases Ready; listener pod active; Renovate PR auto-review via `claude-code-action` wired |
+| ExternalSecrets `dataFrom` + `rewrite` migration | All 9 ExternalSecrets migrated to `dataFrom.extract` + `rewrite.regexp` pattern; 1Password field renames completed; all 12 cluster ExternalSecrets `SecretSynced: True` |
 
 > **[Monitor — cp-03 storage disk]** At boot, `nvme1` (the Crucial CT2000P310SSD8 Longhorn disk) logs `nvme nvme1: using unchecked data buffer`. This is a one-time boot message — the Crucial P310 does not advertise the NVMe "metadata-in-data-buffer" feature; the driver falls back to a simpler DMA path silently. Confirmed count of 1, no I/O errors, XFS mount clean. Watch for additional occurrences or any `I/O error` / `nvme reset` lines: `talosctl dmesg --nodes 10.60.0.203 | grep -i nvme`. Also watch for Longhorn replica faults on cp-03 specifically: `kubectl -n longhorn-system get replicas -o wide | grep cp-03`.
