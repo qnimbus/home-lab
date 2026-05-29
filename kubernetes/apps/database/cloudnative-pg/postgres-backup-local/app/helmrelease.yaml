@@ -31,7 +31,8 @@ spec:
             env:
               POSTGRES_HOST: postgres-v17-rw.database.svc.cluster.local
               POSTGRES_PORT: "5432"
-              POSTGRES_DB: "*"
+              POSTGRES_CLUSTER: "TRUE"
+              POSTGRES_DB: postgres
               SCHEDULE: "@daily"
               BACKUP_DIR: /backups
               BACKUP_KEEP_DAYS: "7"
@@ -39,7 +40,7 @@ spec:
               BACKUP_KEEP_MONTHS: "6"
               BACKUP_KEEP_MINS: "7200"
               BACKUP_LATEST_TYPE: symlink
-              POSTGRES_EXTRA_OPTS: "-Z6 -c -C"
+              POSTGRES_EXTRA_OPTS: "-c"
               TZ: "${CLUSTER_TIMEZONE}"
               POSTGRES_USER:
                 valueFrom:
