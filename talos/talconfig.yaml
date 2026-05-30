@@ -71,7 +71,7 @@ nodes:
         dhcp: false
         addresses:
           - "10.200.0.201/24"
-        mtu: 1500                                   # TODO: Configure and enable jumbo frames for storage traffic
+        mtu: 9000
 
   - hostname: "talos-cp-02"                         # Lenovo M920Q #2 (i5-8500T, 64GB, X520-DA2)
     ipAddress: "10.60.0.202"
@@ -123,7 +123,7 @@ nodes:
         dhcp: false
         addresses:
           - "10.200.0.202/24"
-        mtu: 1500                                   # TODO: Configure and enable jumbo frames for storage
+        mtu: 9000
 
   - hostname: "talos-cp-03"                         # Minisforum MS-A2 (AMD, 32 cores, 92GB, X710)
     ipAddress: "10.60.0.203"
@@ -184,7 +184,7 @@ nodes:
         dhcp: false
         addresses:
           - "10.200.0.203/24"
-        mtu: 1500                                   # TODO: Configure and enable jumbo frames for storage traffic
+        mtu: 9000
 
 patches:
   - "@./patches/global/machine-features.yaml"

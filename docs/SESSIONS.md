@@ -4,6 +4,33 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-30 — `jumbo-frames-storage-vlan`
+
+### Goal
+Benchmark storage VLAN throughput between Talos nodes and TrueNAS, then implement MTU 9000 jumbo frames across all storage bonds and Cilium to reduce switch incast retransmits.
+
+### What we did
+- Ran iperf3 benchmarks from Kubernetes pods (pod-network and host-network) against TrueNAS (10.200.0.41); demonstrated LACP layer3+4 hashing behaviour and why all 4 `-P 4` streams hash-collided onto one bond member (port numbers differing only in low 6 bits, discarded by `>> 6` shift)
+- Established that host-network pods bound to the storage VLAN IP (`-B 10.200.0.201`) bypass Cilium overlay and measure the raw bond path: single stream 9.42 Gbps vs 5.49 Gbps through Cilium (40% overhead from encapsulation suppressing CUBIC cwnd growth)
+- Showed 16-stream test at MTU 1500 yielded 13.4 Gbps with 181,203 retransmits — identified switch incast (too many packets per second overflowing port buffers) as the binding constraint, not LACP distribution
+- Implemented MTU 9000: updated `talconfig.yaml` storage bonds (cp-01 `bond0`, cp-02 `bond0`, cp-03 `bond1`) from `mtu: 1500` to `mtu: 9000`, removed TODO comments; added `MTU: 9000` to Cilium values and corrected wrong interface-name comment (had cp-01/cp-03 layout swapped); ran `talhelper genconfig`
+- Applied configs node-by-node with MTU and Ready verification between each; cp-01 live with no reboot; cp-02 rebooted unexpectedly (M920Q thermal protection, BIOS hard power-cut leaving no dmesg trace — unrelated to config change), recovered and MTU confirmed; cp-03 applied without reboot
+- Held cp-03 apply while cp-02 was offline to preserve 2/3 etcd quorum; diagnosed link-selector warnings as cosmetic (LACP bond MAC propagates to both slaves, alias controller skips — bond operational)
+- Post-MTU 16-stream test: 14.2 Gbps, 40,086 retransmits (−78%); single stream 9.90 Gbps; identified BBR congestion control as next step to reduce remaining CUBIC incast backoff
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | Changed storage bond mtu 1500→9000 on cp-01 (bond0), cp-02 (bond0), cp-03 (bond1); removed TODO comments |
+| `kubernetes/apps/kube-system/cilium/app/helm/values.yaml` | Added `MTU: 9000`; corrected interface layout comment (had cp-01 and cp-03 swapped) |
+
+### Key decisions
+- **Host-network pods with `-B <storage-IP>`** for raw bond measurements — pod-network path through Cilium suppresses CUBIC cwnd growth and is not representative of NFS storage performance
+- **Explicit `MTU: 9000` in Cilium values** — Cilium native-routing mode auto-detects MTU from the default-route interface (management NIC, 1500 MTU), so pod veth interfaces would remain at 1500 even after bond change without an explicit override
+- **Node-by-node apply with etcd quorum guard** — never applied cp-03 while cp-02 was down; a second simultaneous failure would have dropped etcd to 1/3 and made the cluster API read-only
+
+---
+
 ## 2026-05-29 — `postgres-nfs-backup`
 
 ### Goal

@@ -9,11 +9,12 @@ cgroup:
     enabled: false
   hostRoot: /sys/fs/cgroup
 # This cluster has two active bonds per node with different names across nodes:
-#   cp-01: management=bond0 (r8169+igc), storage=bond1 (i40e)
-#   cp-02/03: management=enp1s0f0 (e1000e), storage=bond0 (ixgbe)
+#   cp-01/02: management=e1000e (single port), storage=bond0 (ixgbe X520)
+#   cp-03:    management=bond0 (RTL8125+igc),  storage=bond1 (i40e X710)
 # Cilium auto-detects the primary interface via the default route (management).
 # Uncomment and adjust if Cilium attaches to the wrong interface:
 # devices: bond+ enp+
+MTU: 9000
 endpointRoutes:
   enabled: true
 ipam:
