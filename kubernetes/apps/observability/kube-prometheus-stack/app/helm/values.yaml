@@ -59,6 +59,14 @@ grafana:
   grafana.ini:
     server:
       root_url: "https://grafana.${DOMAIN_CLUSTER}"
+  dashboards:
+    default:
+      node-exporter-full:
+        # Full hardware dashboard: CPU/mem/disk/network + hwmon temperatures (node_hwmon_temp_celsius)
+        # renovate: depName="Node Exporter Full" dashboardId=1860 revisionId=37
+        gnetId: 1860
+        revision: 37
+        datasource: Prometheus
 
 # Talos runs without kube-proxy (Cilium replaces it with eBPF)
 kubeProxy:
@@ -118,3 +126,16 @@ prometheusOperator:
     - key: node-role.kubernetes.io/control-plane
       operator: Exists
       effect: NoSchedule
+
+prometheus-node-exporter:
+  prometheus:
+    monitor:
+      metricRelabelings:
+        # Drop the nct6686 super-I/O chip's unconnected thermistor inputs on the M920Q nodes.
+        # Thermistor 7 (temp5) nct6686 sensors reads ~127-128°C when the
+        # thermistor pin is floating — a hardware artefact, not a real temperature.
+        # Drops at the scrape level so the phantom value never enters the time-series database.
+        # Valid nct6686 sensors (temp1-temp4: PECI 0.0, PCH CHIP, Diode 0, Diode 1) are retained.
+        - sourceLabels: [chip, sensor]
+          regex: "nct6686.*;temp[5]"
+          action: drop
