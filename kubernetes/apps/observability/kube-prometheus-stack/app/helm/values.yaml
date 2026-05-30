@@ -27,10 +27,38 @@ alertmanager:
               storage: 1Gi
 
 grafana:
-  # Deferred to a follow-up session; Prometheus + Alertmanager are sufficient for initial observability.
-  enabled: false
-  # Prevents the chart from pushing dashboard ConfigMaps into every namespace even when Grafana is disabled.
-  forceDeployDashboards: false
+  enabled: true
+  # Deploy pre-built dashboards for kube-prometheus-stack, node-exporter, and Longhorn
+  # even if Grafana were deployed separately; with Grafana enabled these are picked up automatically.
+  forceDeployDashboards: true
+  admin:
+    existingSecret: grafana-admin-secret
+    userKey: admin-user
+    passwordKey: admin-password
+  # Recreate required: the Longhorn PVC is RWO and cannot be simultaneously attached to two pods
+  # during a rolling update. Recreate terminates the old pod before the new one starts.
+  deploymentStrategy:
+    type: Recreate
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+  persistence:
+    enabled: true
+    storageClassName: longhorn
+    accessModes: [ReadWriteOnce]
+    size: 5Gi
+  sidecar:
+    dashboards:
+      enabled: true
+      # Search all namespaces for ConfigMaps labelled grafana_dashboard: "1"
+      # (Longhorn deploys dashboards into longhorn-system)
+      searchNamespace: ALL
+    datasources:
+      enabled: true
+  grafana.ini:
+    server:
+      root_url: "https://grafana.${DOMAIN_CLUSTER}"
 
 # Talos runs without kube-proxy (Cilium replaces it with eBPF)
 kubeProxy:

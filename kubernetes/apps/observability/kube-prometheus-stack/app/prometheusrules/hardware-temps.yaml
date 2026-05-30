@@ -1,0 +1,69 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/prometheusrule_v1.json
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: hardware-temperatures
+  namespace: observability
+spec:
+  groups:
+    - name: hardware.temperatures
+      # 30s eval interval — temps change slowly; no need for the default 1m scrape interval
+      interval: 30s
+      rules:
+        # ── CPU temperature (Intel + AMD) ─────────────────────────────────────
+        # Scoped to coretemp (Intel Package id 0) and k10temp (AMD Tctl) only.
+        # This intentionally excludes nct6686 "Thermistor 7" which reads ~127°C
+        # on the M920Q when the thermistor input is unconnected.
+        - alert: NodeCpuTemperatureWarning
+          expr: |
+            node_hwmon_temp_celsius{chip=~"coretemp.*|k10temp.*", sensor="temp1"} > 80
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: High CPU temperature on {{ $labels.instance }}
+            description: >-
+              CPU temperature is {{ $value | printf "%.0f" }}°C on {{ $labels.instance }}
+              (chip: {{ $labels.chip }}). Normal range < 80°C.
+              AMD Tctl includes a +10°C offset over actual die temp.
+
+        - alert: NodeCpuTemperatureCritical
+          expr: |
+            node_hwmon_temp_celsius{chip=~"coretemp.*|k10temp.*", sensor="temp1"} > 90
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: Critical CPU temperature on {{ $labels.instance }}
+            description: >-
+              CPU temperature is {{ $value | printf "%.0f" }}°C on {{ $labels.instance }}
+              (chip: {{ $labels.chip }}). Immediate attention required.
+
+        # ── NVMe composite temperature ─────────────────────────────────────────
+        # sensor="temp1" is the composite (highest of all NVMe sensors).
+        # 65°C warning / 75°C critical — NVMe spec allows up to 70–85°C depending
+        # on the drive, but sustained operation above 65°C degrades longevity.
+        - alert: NodeNvmeTemperatureWarning
+          expr: |
+            node_hwmon_temp_celsius{chip=~"nvme.*", sensor="temp1"} > 65
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: High NVMe temperature on {{ $labels.instance }}
+            description: >-
+              NVMe composite temperature is {{ $value | printf "%.0f" }}°C on
+              {{ $labels.instance }} (chip: {{ $labels.chip }}).
+
+        - alert: NodeNvmeTemperatureCritical
+          expr: |
+            node_hwmon_temp_celsius{chip=~"nvme.*", sensor="temp1"} > 75
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: Critical NVMe temperature on {{ $labels.instance }}
+            description: >-
+              NVMe composite temperature is {{ $value | printf "%.0f" }}°C on
+              {{ $labels.instance }} (chip: {{ $labels.chip }}).

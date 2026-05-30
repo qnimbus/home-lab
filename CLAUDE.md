@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-05-30 | `hardware-monitoring` | Discovered all hwmon sensor drivers loaded (coretemp/k10temp/nvme/nct6686); deployed Grafana+smartctl-exporter DaemonSet+PrometheusRules for CPU/NVMe temps |
 > | 2026-05-30 | `jumbo-frames-storage-vlan` | iperf3 storage VLAN benchmarks; MTU 9000 jumbo frames Talos+Cilium; retransmits 181k→40k (-78%); cp-02 thermal event |
 > | 2026-05-29 | `postgres-nfs-backup` | pg_dumpall CronJob to TrueNAS storage VLAN (10.200.0.41); UID 4000; debugged NFS bind, glob-expand, pg_dumpall flag issues; restore drill roadmap added |
 > | 2026-05-29 | `pgadmin-deploy` | pgAdmin deployed in database namespace; initContainer seeds .pgpass; servers.json declarative; Longhorn PVC; envoy-internal HTTPRoute |
@@ -11,7 +12,6 @@
 > | 2026-05-29 | `external-services-truenas` | TrueNAS proxied via envoy-internal (EndpointSlice+Service+HTTPRoute); dedicated envoy-services gateway options documented |
 > | 2026-05-29 | `waha-hook-auth-fix` | Traced 401s to bcrypt-verify mode + Flux ${VAR} substitution emptying key; fixed with bare $VAR then file-mount for plain key out of env |
 > | 2026-05-29 | `waha-session-autostart` | postStart lifecycle hook added to WAHA HelmRelease; curl confirmed in Debian 12 base; two-step create+start fallback for fresh vs existing PVC |
-> | 2026-05-29 | `externalsecret-migration` | Migrated 6 ExternalSecrets to dataFrom+rewrite; fixed flux-receiver via Connect restart; 3 staged pending 1P field renames |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

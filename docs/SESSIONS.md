@@ -4,6 +4,44 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-30 — `hardware-monitoring`
+
+### Goal
+Audit hardware sensor coverage, then deploy Grafana (with pre-built dashboards), a privileged `smartctl-exporter` DaemonSet for SMART disk health, and PrometheusRules for hardware temperature alerting.
+
+### What we did
+- Audited hardware monitoring coverage: confirmed `prometheus-node-exporter` DaemonSet already collects CPU/mem/disk/network; queried `talosctl ls /sys/class/hwmon` across all 3 nodes — all key temperature drivers already auto-loaded (`coretemp` on cp-01/cp-02, `k10temp` on cp-03 MS-A2, `nvme` × 2 per node, `nct6686` super-I/O on M920Q, `ixgbe` NIC on cp-02)
+- Sampled live sensor readings: cp-01 CPU 49°C, cp-02 CPU 38°C, cp-03 AMD Tctl 69°C (elevated — mini-PC chassis), NVMe composite 44–53°C; identified `nct6686` Thermistor 7 at 127°C as a phantom (unconnected thermistor input, not a real alert)
+- Researched bykaj reference: their `smartctl-exporter` ScrapeConfig points to `${NAS_HOST}:9633` — not a K8s DaemonSet; bykaj runs Talos VMs on Proxmox so the hypervisor layer covers disk health; bare-metal deployment requires an in-cluster DaemonSet instead
+- Enabled Grafana in kube-prometheus-stack: 5 Gi Longhorn PVC, `Recreate` strategy, admin password via ExternalSecret from 1Password `grafana` item, `forceDeployDashboards: true`, sidecar searching all namespaces, `root_url` set for proper redirect handling
+- Added `grafana.${DOMAIN_CLUSTER}` HTTPRoute on `envoy-internal` pointing at `kube-prometheus-stack-grafana:80`
+- Deployed `prometheus-smartctl-exporter` as a privileged DaemonSet (chart `0.16.1`, app `v0.14.0`): chart hardcodes `privileged: true` + `/dev` hostPath mount, auto-scans NVMe devices, `observability` namespace already has `pod-security.kubernetes.io/enforce: privileged`; built-in SMART health PrometheusRules enabled (media errors, critical warning, spare threshold, device status), SMART temperature rule disabled in favour of hwmon
+- Created `hardware-temps` PrometheusRule: CPU warning >80°C / critical >90°C scoped to `coretemp.*|k10temp.*` (naturally excludes nct6686 phantom); NVMe warning >65°C / critical >75°C via `nvme.*` hwmon chip
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/smartctl-exporter.yaml` | New OCIRepository for `prometheus-community/charts/prometheus-smartctl-exporter:0.16.1` |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added `smartctl-exporter.yaml` resource |
+| `kubernetes/apps/observability/smartctl-exporter/ks.yaml` | New Kustomization; `dependsOn: kube-prometheus-stack` |
+| `kubernetes/apps/observability/smartctl-exporter/app/kustomization.yaml` | New; ConfigMapGenerator for values |
+| `kubernetes/apps/observability/smartctl-exporter/app/helmrelease.yaml` | New HelmRelease using smartctl-exporter OCIRepository |
+| `kubernetes/apps/observability/smartctl-exporter/app/helm/values.yaml` | New; ServiceMonitor + SMART health rules enabled, temperature rule disabled |
+| `kubernetes/apps/observability/kustomization.yaml` | Added `smartctl-exporter/ks.yaml` resource |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/externalsecret.yaml` | New; pulls `ADMIN_PASSWORD` from 1Password `grafana` → `grafana-admin-secret` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/helm/values.yaml` | Grafana enabled; persistence, admin secret, dashboard sidecar, tolerations, `root_url` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/httproute.yaml` | Added `grafana.${DOMAIN_CLUSTER}` HTTPRoute |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/kustomization.yaml` | Added `externalsecret.yaml` and `prometheusrules` directory |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/prometheusrules/hardware-temps.yaml` | New PrometheusRule: CPU + NVMe temperature alerts |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/prometheusrules/kustomization.yaml` | New; resources the hardware-temps rule |
+
+### Key decisions
+- **Chip-scoped temperature alerts (`coretemp.*|k10temp.*`)** rather than a broad `node_hwmon_temp_celsius > N` — avoids nct6686 Thermistor 7 phantom reading (127°C) triggering false critical alerts on M920Q nodes without needing an explicit exclusion filter
+- **SMART temperature rule disabled** in smartctl-exporter PrometheusRules — NVMe SMART temperatures are sampled by the drive firmware and less precise than kernel hwmon; hwmon composite temp (`nvme.*`) is more representative for alerting
+- **`Recreate` deployment strategy for Grafana** — Longhorn PVC is `ReadWriteOnce`; a rolling update would try to attach the volume to two pods simultaneously and stall
+
+---
+
 ## 2026-05-30 — `jumbo-frames-storage-vlan`
 
 ### Goal

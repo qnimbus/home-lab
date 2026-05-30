@@ -15,6 +15,7 @@ resources:
   - ./spegel.yaml
   - ./tuppr.yaml
   - ./kube-prometheus-stack.yaml
+  - ./smartctl-exporter.yaml
   - ./gha-runner-scale-set-controller.yaml
   - ./gha-runner-scale-set.yaml
   - ./reloader.yaml
