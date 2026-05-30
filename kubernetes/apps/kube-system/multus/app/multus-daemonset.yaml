@@ -34,9 +34,8 @@ spec:
       serviceAccountName: multus
       initContainers:
         - name: install-cni-plugins
-          # renovate: datasource=docker depName=ghcr.io/siderolabs/cni
-          image: ghcr.io/siderolabs/cni:v1.13.0
-          command: ["sh", "-c", "cp /opt/cni/bin/macvlan /opt/cni/bin/ipvlan /host/opt/cni/bin/"]
+          image: busybox:1.36
+          command: ["sh", "-c", "cp /cni-src/opt/cni/bin/macvlan /cni-src/opt/cni/bin/ipvlan /host/opt/cni/bin/ && chmod 755 /host/opt/cni/bin/macvlan /host/opt/cni/bin/ipvlan"]
           resources:
             requests:
               cpu: 10m
@@ -45,6 +44,9 @@ spec:
             privileged: true
           terminationMessagePolicy: FallbackToLogsOnError
           volumeMounts:
+            - name: cni-plugins-src
+              mountPath: /cni-src
+              readOnly: true
             - name: cnibin
               mountPath: /host/opt/cni/bin
               mountPropagation: Bidirectional
@@ -115,6 +117,11 @@ spec:
                   fieldPath: spec.nodeName
       terminationGracePeriodSeconds: 10
       volumes:
+        - name: cni-plugins-src
+          image:
+            # renovate: datasource=docker depName=ghcr.io/siderolabs/cni
+            reference: ghcr.io/siderolabs/cni:v1.13.0
+            pullPolicy: IfNotPresent
         - name: cni
           hostPath:
             path: /etc/cni/net.d
