@@ -29,6 +29,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 - [A resource using `${VARIABLE}` syntax is not being substituted — what's happening?](#a-resource-using-variable-syntax-is-not-being-substituted--whats-happening)
 - [What are the risks of bypassing a Kustomization finalizer, and how should I delete a Flux resource safely?](#what-are-the-risks-of-bypassing-a-kustomization-finalizer-and-how-should-i-delete-a-flux-resource-safely)
 - [How do I choose between HelmRepository and OCIRepository — and what happens if I use the wrong one?](#how-do-i-choose-between-helmrepository-and-ocirepository--and-what-happens-if-i-use-the-wrong-one)
+- [I changed `helm/values.yaml`, pushed, and the Kustomization reconciled — but the HelmRelease never upgraded. Why?](#i-changed-helmvaluesyaml-pushed-and-the-kustomization-reconciled--but-the-helmrelease-never-upgraded-why)
 
 **Kubernetes Workloads**
 - [A healthy Deployment shows both `Available` and `Progressing` — is something wrong?](#a-healthy-deployment-shows-both-available-and-progressing--is-something-wrong)
@@ -732,6 +733,29 @@ spec:
 ```
 
 **Prevention rule:** Before writing any new Helm source, run the verification command above and check [kubesearch.dev](https://kubesearch.dev) to confirm the chart is actually published at that URL.
+
+---
+
+### I changed `helm/values.yaml`, pushed, and the Kustomization reconciled — but the HelmRelease never upgraded. Why?
+
+**Short answer:** `driftDetection: mode: enabled` (injected cluster-wide by the `cluster-apps` patch) changes the helm-controller's reconciliation code path. With drift detection enabled, the controller does not immediately re-render values from `valuesFrom` when a referenced ConfigMap changes. The upgrade sits in a queue but won't fire until either the 1h interval elapses or you trigger it manually.
+
+**Detail:** The normal helm-controller flow watches ConfigMaps referenced in `valuesFrom` — when the ConfigMap changes, it queues the HelmRelease for an immediate reconcile. With `driftDetection: mode: enabled`, the controller instead uses a drift-check loop that compares deployed resources against chart manifests. The `valuesFrom` hash change is detected but processed behind the drift cycle rather than immediately, so the upgrade is effectively delayed by up to the full `interval` (1h in this cluster).
+
+Concretely: the Kustomization applies the updated ConfigMap and reports `Ready` (in under a second, because `wait: false`) while the HelmRelease still shows the old `configDigest` in its status. The HelmRelease is not failing — it just hasn't run yet.
+
+**Fix — force the upgrade immediately:**
+
+```bash
+KUBECONFIG=/workspaces/home-lab/kubeconfig \
+  flux reconcile helmrelease <name> -n <namespace> --with-source
+```
+
+`--with-source` re-fetches the OCIRepository artifact first; omit it if only values changed (not the chart version), since the source is already current.
+
+**How to confirm the upgrade happened:** the HelmRelease `status.history[0].configDigest` will change to a new hash, and `status.conditions[0].message` will read `Helm upgrade succeeded`.
+
+**Affected releases:** every HelmRelease in this cluster, because `cluster-apps` injects `driftDetection: mode: enabled` via a nested patch on all child Kustomizations.
 
 ---
 
