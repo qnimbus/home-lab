@@ -34,8 +34,8 @@ spec:
       serviceAccountName: multus
       initContainers:
         - name: install-cni-plugins
-          # renovate: datasource=docker depName=ghcr.io/k8snetworkplumbingwg/plugins
-          image: ghcr.io/k8snetworkplumbingwg/plugins:v1.6.2
+          # renovate: datasource=docker depName=ghcr.io/siderolabs/cni
+          image: ghcr.io/siderolabs/cni:v1.13.0
           command: ["sh", "-c", "cp /opt/cni/bin/macvlan /opt/cni/bin/ipvlan /host/opt/cni/bin/"]
           resources:
             requests:
