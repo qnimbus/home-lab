@@ -26,7 +26,7 @@ spec:
             image:
               repository: docker.io/prodrigestivill/postgres-backup-local
               # renovate: datasource=docker depName=docker.io/prodrigestivill/postgres-backup-local
-              tag: "17"
+              tag: "18"
             command: ["/backup.sh"]
             env:
               POSTGRES_HOST: postgres-v17-rw.database.svc.cluster.local
