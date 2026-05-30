@@ -350,6 +350,74 @@ Both stages are optional — Longhorn covers all current workload needs. Impleme
 
 ---
 
+### Storage VLAN Performance Benchmarking
+
+A repeatable benchmark suite for the storage VLAN fabric. Run after any network change (MTU, bonding config, switch firmware, node add/replace) and periodically as a regression check. Methodology developed during the `jumbo-frames-storage-vlan` session.
+
+All tests use host-network pods bound to the storage VLAN IP (`-B 10.200.x.x`) to bypass Cilium and measure the raw bond path. The iperf3 server on TrueNAS must be running (`iperf3 -s -D`; for the bond test also `iperf3 -s -p 5202 -D`).
+
+#### Test 1 — Single-stream link health (run per node)
+
+```bash
+kubectl run iperf3-raw --restart=Never --image=networkstatic/iperf3 \
+  --overrides='{"spec":{"hostNetwork":true,"nodeSelector":{"kubernetes.io/hostname":"talos-cp-01"}}}' \
+  -- -c 10.200.0.41 -B 10.200.0.201 -t 10
+# Repeat with cp-02 (10.200.0.202) and cp-03 / -B 10.200.0.203 / bond1
+```
+
+**Pass:** ≥9.8 Gbps, ≤100 retransmits. Failure indicates link degradation, MTU mismatch, or CC misconfiguration.
+
+#### Test 2 — MTU end-to-end verification (MSS 8960 = MTU 9000 − 40)
+
+```bash
+kubectl run iperf3-raw --restart=Never --image=networkstatic/iperf3 \
+  --overrides='{"spec":{"hostNetwork":true,"nodeSelector":{"kubernetes.io/hostname":"talos-cp-03"}}}' \
+  -- -c 10.200.0.41 -B 10.200.0.203 -t 5 -M 8960
+```
+
+**Pass:** connection succeeds, Cwnd reaches ≥2 MB. Failure means a hop is still at 1500 MTU.
+
+#### Test 3 — Bond utilization (bidirectional simultaneous)
+
+```bash
+kubectl run iperf3-send --restart=Never --image=networkstatic/iperf3 \
+  --overrides='{"spec":{"hostNetwork":true,"nodeSelector":{"kubernetes.io/hostname":"talos-cp-03"}}}' \
+  -- -c 10.200.0.41 -B 10.200.0.203 -t 12 -P 8 -p 5201 &
+kubectl run iperf3-recv --restart=Never --image=networkstatic/iperf3 \
+  --overrides='{"spec":{"hostNetwork":true,"nodeSelector":{"kubernetes.io/hostname":"talos-cp-03"}}}' \
+  -- -c 10.200.0.41 -B 10.200.0.203 -t 12 -P 8 -p 5202 -R &
+```
+
+**Pass:** combined send + receive ≥25 Gbps (proves both bond members active). ≤10 Gbps total means one bond member is down or the switch is distributing incorrectly.
+
+#### Prometheus metrics to monitor
+
+Node-exporter exposes per-interface byte counters. Wire into Grafana once deployed:
+
+```promql
+# Per-bond-member throughput on storage NICs
+rate(node_network_receive_bytes_total{device=~"enp1s0f[01]|enp5s0f[01]np[01]"}[5m]) * 8
+rate(node_network_transmit_bytes_total{device=~"enp1s0f[01]|enp5s0f[01]np[01]"}[5m]) * 8
+# TCP retransmit rate (cluster-wide)
+rate(node_netstat_Tcp_RetransSegs[5m])
+```
+
+Bond member devices: cp-01/02 bond0 → `enp1s0f0` / `enp1s0f1`; cp-03 bond1 → `enp5s0f0np0` / `enp5s0f1np1`.
+
+#### Baselines (2026-05-30 — MTU 9000 + BBR)
+
+| Test | Result |
+|------|--------|
+| Single stream cp-01 → TrueNAS | 9.90 Gbps, 0 retx |
+| Single stream cp-03 → TrueNAS | 9.91 Gbps, 0 retx |
+| TrueNAS → cp-03 reverse | 9.87 Gbps, 0 retx |
+| MTU verify (MSS 8960) | ✅ Cwnd 2.36 MB |
+| Bidirectional 8+8 streams (cp-03) | 13.1 + 13.9 = **27.0 Gbps** — both bond members confirmed |
+
+**Dependencies:** storage VLAN jumbo frames ✅ (`jumbo-frames-storage-vlan`), BBR + fq ✅. Independent of all other roadmap items.
+
+---
+
 ### Grafana
 
 Deploy Grafana as a follow-up to kube-prometheus-stack. Grafana is currently disabled in the kube-prometheus-stack HelmRelease (`grafana.enabled: false`) to keep the initial deployment scope small.
