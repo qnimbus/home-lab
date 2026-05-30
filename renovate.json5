@@ -283,6 +283,16 @@
       versioning: "regex:^gows-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
     },
 
+    // ── Per-image version constraints ───────────────────────────────────────────
+
+    {
+      // postgres-backup-local image major version must match the CNPG cluster's Postgres major.
+      // Remove this rule when the cluster upgrades to v18.
+      description: "postgres-backup-local — hold at v17 until CNPG cluster upgrades",
+      matchPackageNames: ["docker.io/prodrigestivill/postgres-backup-local"],
+      allowedVersions: "/^17/",
+    },
+
     // ── Ignoring specific packages (examples — uncomment to use) ────────────────
     //
     // Permanently disable a package by name:
