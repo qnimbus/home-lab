@@ -1,0 +1,18 @@
+---
+# see: https://github.com/k8snetworkplumbingwg/whereabouts/blob/v0.9.3/helm/whereabouts/values.yaml
+
+# Add NoExecute toleration — default chart only has NoSchedule.
+# All nodes in this cluster are control-plane with both taints.
+tolerations:
+  - operator: Exists
+    effect: NoSchedule
+  - operator: Exists
+    effect: NoExecute
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 50Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi

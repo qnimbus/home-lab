@@ -27,6 +27,7 @@ defaultSettings:
   nodeDownPodDeletionPolicy: delete-both-statefulset-and-deployment-pod
   csiStorageCapacityTracking: true
   replicaAutoBalance: best-effort
+  replicaReplenishmentWaitInterval: "900"
 
 service:
   ui:

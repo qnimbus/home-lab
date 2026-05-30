@@ -1,0 +1,16 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ./multus-crd.yaml
+  - ./multus-rbac.yaml
+  - ./multus-configmap.yaml
+  - ./multus-daemonset.yaml
+  - ./whereabouts-helmrelease.yaml
+configMapGenerator:
+  - name: whereabouts-values
+    files:
+      - values.yaml=./helm/whereabouts-values.yaml
+configurations:
+  - ./helm/kustomizeconfig.yaml
