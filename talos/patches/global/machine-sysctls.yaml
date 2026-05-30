@@ -81,3 +81,22 @@ machine:
     # seconds until metrics are re-measured. Setting this to 1 forces every
     # reconnect to start fresh.
     net.ipv4.tcp_no_metrics_save: "1"         # 1 = discard cached metrics on close
+
+    # ── Congestion control ────────────────────────────────────────────────────
+    # CUBIC (the kernel default) treats packet loss as a congestion signal and
+    # halves its window on every drop. On a private storage VLAN under incast
+    # (multiple streams competing for the same switch port buffer), CUBIC
+    # produces cascading window reductions — observed as 60k+ retransmits at
+    # 16 parallel streams despite the link being otherwise healthy.
+    #
+    # BBR (Bottleneck Bandwidth and RTT) models the available bandwidth directly
+    # by measuring delivery rate and RTT. It paces output to match the measured
+    # bottleneck rather than reacting to loss, making it significantly more
+    # resilient to incast on high-speed storage fabrics.
+    #
+    # fq (Fair Queue) is a hard requirement for BBR: BBR relies on the qdisc to
+    # pace packets at the measured rate. Without fq, BBR sends bursts that
+    # overflow switch buffers instead of pacing steadily — retransmits would
+    # increase rather than decrease.
+    net.core.default_qdisc: "fq"
+    net.ipv4.tcp_congestion_control: "bbr"
