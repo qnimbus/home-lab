@@ -34,7 +34,7 @@ spec:
       serviceAccountName: multus
       initContainers:
         - name: install-cni-plugins
-          image: busybox:1.36
+          image: busybox:1.38
           command: ["sh", "-c", "cp /cni-src/opt/cni/bin/macvlan /cni-src/opt/cni/bin/ipvlan /host/opt/cni/bin/ && chmod 755 /host/opt/cni/bin/macvlan /host/opt/cni/bin/ipvlan"]
           resources:
             requests:
