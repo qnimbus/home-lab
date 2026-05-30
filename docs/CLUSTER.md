@@ -459,6 +459,39 @@ Sourced via OCIRepository: `ghcr.io/bjw-s-labs/helm/app-template` (defined in `k
 
 ---
 
+### CloudNativePG · `v0.28.2` (chart) · `database`
+
+**Managed PostgreSQL operator.** Provisions and manages a shared 3-instance Postgres 17 cluster (`postgres-v17`) with streaming replication across all three nodes. The operator handles failover, connection routing, and lifecycle management via CRDs.
+
+| Component | Type | Replicas | Role |
+|-----------|------|----------|------|
+| `cloudnative-pg` operator | Deployment | 1 | Watches `Cluster`, `Backup`, and `ScheduledBackup` CRDs; manages PostgreSQL pod lifecycle and failover |
+| `postgres-v17` | StatefulSet (3 pods) | 3 | One primary + two hot standbys; spread across nodes via required pod anti-affinity |
+| `postgres-v17-rw` | Service | — | Always routes to the current primary; operator updates endpoints automatically on failover |
+| `postgres-v17-r` | Service | — | Load-balances across all instances; used for read-only queries |
+| `pgadmin` | Deployment | 1 | Web UI for browsing and querying the cluster; accessible at `pgadmin.${DOMAIN_CLUSTER}` (internal only) |
+
+**Storage**: `openebs-hostpath` — 20 Gi local NVMe per instance (non-replicated at the storage layer). Postgres streaming replication between the 3 instances provides data redundancy at the application layer. Required pod anti-affinity ensures one instance per node, so any single-node loss leaves 2 replicas intact and the cluster healthy.
+
+**Synchronous replication**: `method: any`, `number: 1` — at least one standby must confirm a WAL record before the primary acknowledges the write. Prevents data loss on primary crash at the cost of one network round-trip per write.
+
+**pgAdmin**: Deployed via `app-template`; uses a Longhorn PVC (2 Gi) for persistent storage. An `initContainer` seeds `.pgpass` (from a 1Password ExternalSecret) into the user storage folder before the main container starts — pgAdmin evaluates `.pgpass` at login time and the path must exist before the first request.
+
+#### Backup strategy
+
+Two layers, one deployed and one planned:
+
+| Layer | Mechanism | Target | Frequency | Retention |
+|---|---|---|---|---|
+| **Logical dump** ✅ | `postgres-backup-local` CronJob (`pg_dumpall`) | TrueNAS NFS `10.200.0.41:/mnt/tank/Cluster/cloudnative-pg` | `@daily` | 7 days / 4 weeks / 6 months |
+| **WAL archiving / PITR** 🔲 | barman-cloud plugin + `ObjectStore` CR | Cloudflare R2 / Backblaze B2 | Continuous | TBD |
+
+The logical backup runs as UID 4000, writes gzip-compressed SQL, and keeps a `last/postgres-latest.sql.gz` symlink for quick restore access. The `-c` flag in `POSTGRES_EXTRA_OPTS` emits `DROP ... IF EXISTS` before each object, making restores clean and idempotent.
+
+> **Current recovery limit**: without WAL archiving, the only recovery point is the most recent daily dump. Data written between the last dump and a total PVC loss (all three nodes) is unrecoverable. See **[ROADMAP.md → CloudNativePG: Backup, PITR, and Per-App Provisioning](ROADMAP.md#cloudnative-pg-backup-pitr-and-per-app-provisioning)** for the barman-cloud implementation plan and **[ROADMAP.md → Postgres NFS Backup: Restore Drill](ROADMAP.md#postgres-nfs-backup-restore-drill)** for the manual restore procedure.
+
+---
+
 ## Node Disk Inventory
 
 | Node | Device | Size | Model | Role |
