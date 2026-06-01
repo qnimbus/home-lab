@@ -28,7 +28,10 @@ defaultSettings:
   csiStorageCapacityTracking: true
   replicaAutoBalance: best-effort
   replicaReplenishmentWaitInterval: "900"
-  storageNetwork: "longhorn-system/longhorn-storage"
+  # macvlan bridge cannot route same-host host→pod: the engine TGT binds to the macvlan
+  # storageIP but the host iscsiadm (run via nsenter) cannot reach its own macvlan child.
+  # Revisit with ipvlan L3 + static host routes in talconfig.yaml.
+  storageNetwork: ""
 
 service:
   ui:
