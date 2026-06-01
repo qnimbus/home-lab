@@ -4,6 +4,55 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-05-31 — `multus-nad-talos-setup`
+
+### Goal
+Deploy Multus CNI + whereabouts IPAM, create a macvlan NAD on the storage VLAN, rename storage bonds to `bond-storage` across all 3 Talos nodes, and enable Longhorn's `storageNetwork` setting to move engine↔replica traffic off the Cilium pod network.
+
+### What we did
+- Continued from compacted context (previous session hit context limit mid-implementation); completed all Phase 2 manifests — vendored Multus thick DaemonSet v4.2.4 split into 4 files (CRD, RBAC, ConfigMap, DaemonSet), whereabouts HelmRelease with `chartRef` → new `whereabouts-chart` OCIRepository (tag `0.9.3`), configMapGenerator + kustomizeconfig for values
+- Extended `longhorn/ks.yaml` to multi-doc: added `longhorn-nad` Kustomization with `dependsOn: [multus, longhorn]`; added `nad/storage-nad.yaml` macvlan NAD on master `bond-storage`, whereabouts range `10.200.0.64/26`, MTU 9000
+- Committed and pushed `82bc07a` (feat(longhorn): deploy Multus CNI and storage VLAN network isolation); monitored Flux reconciliation live via MCP tools
+- **Three consecutive image fixes** during live reconciliation monitoring:
+  - `docker.io/containernetworking/plugins:v1.9.1` — tag does not exist; `containernetworking/plugins` never publishes to Docker Hub
+  - `ghcr.io/k8snetworkplumbingwg/plugins:v1.6.2` — pulled successfully but image only contains k8snetworkplumbingwg extra plugins (no macvlan/ipvlan)
+  - `ghcr.io/siderolabs/cni:v1.13.0` directly — correct binaries confirmed via `crane export`; image is distroless (no shell), `sh -c "cp ..."` fails with `exec: "sh": not found`
+  - **Final fix** (`8301702`): used K8s `imageVolume` (beta in 1.36, confirmed available via dry-run) to mount `siderolabs/cni:v1.13.0` as read-only volume + `busybox` init container to copy macvlan/ipvlan; binary paths `/opt/cni/bin/macvlan` and `ipvlan` confirmed via `crane export`
+- Monitored full reconciliation to green: whereabouts 3/3, Multus DaemonSet 3/3 Running, NAD `longhorn-storage` created in `longhorn-system`, Kustomizations `multus` and `longhorn-nad` both `Applied revision: 8301702`
+- Verified macvlan + ipvlan + multus-shim binaries present in `/opt/cni/bin/` on all nodes via `talosctl ls`
+- Applied Talos machine configs to all 3 nodes (`task talos:apply IP=10.60.0.20X`) — all applied live without reboot; `bond-storage` with `10.200.0.201/202/203` confirmed live on all nodes via `talosctl get addresses`
+- Phase 4: added `storageNetwork: "longhorn-system/longhorn-storage"` to Longhorn values; verified all 8 PVCs are RWO (no RWX detach constraint); ready to commit/push
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | Renamed storage bonds: bond0→bond-storage (cp-01, cp-02), bond1→bond-storage (cp-03) |
+| `kubernetes/flux/meta/repos/oci/whereabouts-chart.yaml` | New OCIRepository for `ghcr.io/k8snetworkplumbingwg/whereabouts-chart:0.9.3` |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added whereabouts-chart entry |
+| `kubernetes/apps/kube-system/kustomization.yaml` | Added `./multus/ks.yaml` |
+| `kubernetes/apps/kube-system/multus/ks.yaml` | New Kustomization; dependsOn cilium; healthChecks DaemonSet + whereabouts HelmRelease |
+| `kubernetes/apps/kube-system/multus/app/kustomization.yaml` | New; configMapGenerator for whereabouts values |
+| `kubernetes/apps/kube-system/multus/app/multus-crd.yaml` | New; vendored NetworkAttachmentDefinition CRD from Multus v4.2.4 |
+| `kubernetes/apps/kube-system/multus/app/multus-rbac.yaml` | New; vendored ClusterRole/ClusterRoleBinding/ServiceAccount |
+| `kubernetes/apps/kube-system/multus/app/multus-configmap.yaml` | New; vendored multus-daemon-config ConfigMap |
+| `kubernetes/apps/kube-system/multus/app/multus-daemonset.yaml` | New; vendored DaemonSet v4.2.4-thick; imageVolume pattern for CNI plugin install |
+| `kubernetes/apps/kube-system/multus/app/whereabouts-helmrelease.yaml` | New; HelmRelease using chartRef OCIRepository |
+| `kubernetes/apps/kube-system/multus/app/helm/whereabouts-values.yaml` | New; NoExecute toleration + resource limits |
+| `kubernetes/apps/kube-system/multus/app/helm/kustomizeconfig.yaml` | New; nameReference for ConfigMap hash propagation |
+| `kubernetes/apps/longhorn-system/longhorn/ks.yaml` | Extended to multi-doc; added longhorn-nad Kustomization |
+| `kubernetes/apps/longhorn-system/longhorn/nad/kustomization.yaml` | New |
+| `kubernetes/apps/longhorn-system/longhorn/nad/storage-nad.yaml` | New macvlan NAD; master bond-storage; whereabouts 10.200.0.64/26 |
+| `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml` | Added replicaReplenishmentWaitInterval 900s (committed); storageNetwork setting (pending commit) |
+
+### Key decisions
+- **imageVolume pattern for distroless source**: K8s 1.36 `imageVolume` (beta) mounts a container image filesystem as read-only; lets `busybox` copy specific binaries from `siderolabs/cni` without needing a shell in the source image — cleaner than runtime GitHub downloads
+- **siderolabs/cni as CNI plugin source**: Talos's own CNI bundle matches running Talos version; `crane export` confirmed macvlan+ipvlan at `/opt/cni/bin/`; `containernetworking/plugins` never publishes images; `k8snetworkplumbingwg/plugins` is extra plugins only
+- **macvlan over ipvlan**: Both work on bare metal; macvlan is the Longhorn-documented default; ipvlan is preferred for cloud/hypervisor environments with MAC spoofing enforcement (not applicable here)
+- **`storageNetwork` affects more than RWX**: Longhorn chart comment says "mounting RWX volumes" but the setting also attaches secondary interfaces to instance-manager pods (all volume I/O); all cluster PVCs are RWO so no RWX detach constraint applies
+- **No reboot required for bond rename**: Talos applies network interface name changes live via its network controller; all 3 nodes accepted the bond-storage rename without rebooting
+
+---
+
 ## 2026-05-30 — `hardware-monitoring`
 
 ### Goal

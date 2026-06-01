@@ -28,6 +28,7 @@ defaultSettings:
   csiStorageCapacityTracking: true
   replicaAutoBalance: best-effort
   replicaReplenishmentWaitInterval: "900"
+  storageNetwork: "longhorn-system/longhorn-storage"
 
 service:
   ui:
