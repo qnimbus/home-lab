@@ -9,9 +9,9 @@ spec:
     {
       "cniVersion": "0.3.1",
       "name": "longhorn-storage",
-      "type": "macvlan",
+      "type": "ipvlan",
       "master": "bond-storage",
-      "mode": "bridge",
+      "mode": "l2",
       "mtu": 9000,
       "ipam": {
         "type": "whereabouts",
