@@ -341,6 +341,65 @@ kubectl -n longhorn-system get replicas -o jsonpath='{range .items[*]}{.metadata
 
 ---
 
+### cp-02 Thermal Stability (Lenovo M920Q)
+
+**Incident — 2026-06-01:** cp-02 shut down twice under hardware thermal protection, causing a 124-minute outage (09:29–11:33 UTC). This blocked the Cilium `cni.exclusive=false` HelmRelease upgrade (Helm timed out because the Cilium DaemonSet health check failed on the stuck pod) and delayed the Longhorn storage network rollout.
+
+#### Root cause — findings from Prometheus
+
+Captured at 30 s resolution from `node_hwmon_temp_celsius`:
+
+```
+09:26:55  CPU cores: 47–48°C   nct6683/temp2 (VRM/board): 53°C  — normal
+09:27:25  CPU cores: 64–66°C   nct6683/temp2: 64°C               — all 6 cores +15–18°C in one scrape
+09:27:55  CPU cores: 48–53°C   nct6683/temp2: 68°C               — cores recover via TCC throttle
+09:28:25  CPU cores: 48–52°C   nct6683/temp2: 71°C               — board keeps heating
+09:29:25  CPU cores: 47–52°C   nct6683/temp2: 72°C               — last reading; BIOS cuts power
+```
+
+**Key finding:** CPU cores recovered (throttling kicked in) but the nct6683/temp2 sensor — the NCT6683D system monitor IC's board/VRM temperature channel — continued rising even after load dropped. The BIOS thermal protection tripped on the **board/VRM temperature**, not the CPU die. ACPI trip points confirm: fan first activates at 50°C (barely above idle), active trip at 71°C, critical at 119°C — but the BIOS has an unlisted hardware VRM threshold around 72–75°C.
+
+**The pattern** (all cores spike simultaneously + board keeps heating after core recovery) is consistent with a **degraded thermal path causing poor airflow over the VRM area** — dried thermal paste and/or a dust-clogged fan reducing airflow over both the CPU heatsink and the motherboard components behind it.
+
+#### Required physical actions
+
+- [ ] **Open the M920Q and blow out the fan/heatsink assembly** with compressed air — the M920Q accumulates dust between the fan blades and the heatsink fins; a single blocked fin halves effective airflow
+- [ ] **Reapply thermal paste** — the i5-8500T stock TIM on a 6–8-year-old machine has very likely dried and cracked; Noctua NT-H2 or similar recommended
+- [ ] **Verify the fan spins up under load** — listen or use `talosctl dmesg` to confirm no fan-stall events; the M920Q fan is audible when ramping
+
+#### Monitoring enhancement
+
+Add a PrometheusRule for the board temperature sensor so future thermal stress is caught before shutdown:
+
+```yaml
+# in kubernetes/apps/observability/kube-prometheus-stack/app/helm/values.yaml
+# additionalPrometheusRulesMap:
+- alert: NodeVRMTemperatureHigh
+  expr: node_hwmon_temp_celsius{chip="platform_nct6683_2592", sensor="temp2"} > 65
+  for: 2m
+  labels:
+    severity: warning
+  annotations:
+    summary: "cp-{{ $labels.instance }} board/VRM temperature above 65°C"
+- alert: NodeVRMTemperatureCritical
+  expr: node_hwmon_temp_celsius{chip="platform_nct6683_2592", sensor="temp2"} > 72
+  for: 30s
+  labels:
+    severity: critical
+  annotations:
+    summary: "cp-{{ $labels.instance }} board/VRM near thermal shutdown threshold"
+```
+
+> Note: `chip` label uses the nct6683 designation. Verify against live `node_hwmon_temp_celsius` labels — cp-01 confirmed `platform_nct6683_2592`. Exclude the phantom `temp5` sensor (always 127.5°C) which is already filtered via `metricRelabelings` in the node-exporter ServiceMonitor.
+
+#### BIOS fan curve (optional)
+
+If the thermal paste reapplication does not stabilise temperatures, the BIOS fan curve may be too conservative. The active trip at 50°C means the fan should ramp at idle — but the *speed* at that trip may be too low. Enter BIOS → Hardware Monitor → Fan Control and lower the target temp or raise the fan speed percentage at the 50°C trip point.
+
+**Dependencies:** physical access to cp-02. No cluster changes required for the physical fix. The PrometheusRule addition is independent and can be done immediately.
+
+---
+
 ### Future Storage Options
 
 Both stages are optional — Longhorn covers all current workload needs. Implement only if requirements emerge.

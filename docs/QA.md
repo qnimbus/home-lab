@@ -412,6 +412,10 @@ Each app's values live in `app/helm/values.yaml`. Rather than inline them into t
 
 `cluster-apps` injects a `spec.patches` block into every child Kustomization. This patch targets all `HelmRelease` objects and sets `timeout`, `crds: CreateReplace`, and remediation retries cluster-wide. Because this patch is appended last in the rendering chain, it always wins over any `timeout:` set directly in an individual HelmRelease.
 
+**Gotcha — two separate `spec.patches` injections cancel each other out:**
+
+If two separate outer patches in `cluster-apps` both inject a `spec.patches` list into Kustomizations (e.g. one for HelmRelease defaults, one for drift detection), Kustomize treats `spec.patches` as an unkeyed list and uses **replace** semantics. The second entry overwrites the first — the Kustomizations end up with only the last patch's list. The fix is to merge both inner patch items into a **single** outer patch entry so the full list is set atomically. See `kubernetes/flux/cluster/ks.yaml` — both HelmRelease defaults and drift detection share one outer block.
+
 **Key invariants to remember:**
 
 - `source-controller` must have a ready artifact before anything downstream can proceed. DNS failure → no artifact → everything blocks.
