@@ -28,12 +28,12 @@ defaultSettings:
   csiStorageCapacityTracking: true
   replicaAutoBalance: best-effort
   replicaReplenishmentWaitInterval: "900"
-  # storageNetwork (attempt 5): routes engine↔replica + instance-manager I/O over the storage
-  # VLAN via the kube-system/longhorn-storage NAD (ipvlan l3, whereabouts node_slice_size /28).
-  # The whereabouts chroot node-name blocker is fixed by the PR #703 backport in the whereabouts
-  # HelmRelease; per-node /28 IPAM was validated in isolation before enabling. Re-enable requires
-  # all volumes detached (consumers quiesced) — see docs/longhorn-storage-network.md.
-  storageNetwork: "kube-system/longhorn-storage"
+  # storageNetwork disabled (attempt 4 reverted): the whereabouts CNI *plugin* runs inside
+  # the multus thick-daemon's chroot:/hostroot, so it reads the HOST's /etc/hostname (absent
+  # on Talos, read-only /etc) and panics on node_slice_size leader election. The daemon-pod
+  # /etc/hostname fix does not reach this context. Needs a node-name source that works in the
+  # chroot (or per-node IPPools instead of node_slice_size). See docs/longhorn-storage-network.md.
+  storageNetwork: ""
 
 service:
   ui:
