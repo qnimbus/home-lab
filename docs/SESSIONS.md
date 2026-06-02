@@ -4,6 +4,34 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-02 — `postgres-backup-monitoring`
+
+### Goal
+Add a liveness probe and Prometheus alerting rules to the postgres-backup-local CronJob for container-level health enforcement and cluster-level failure detection.
+
+### What we did
+- Added `HEALTHCHECK_PORT: "8080"` env var to the backup container so it exposes an HTTP health endpoint on port 8080
+- Wired a custom liveness probe (`httpGet /` on port 8080) with `initialDelaySeconds: 7200` (2h) to match the backup window, `failureThreshold: 1`, `periodSeconds: 60` — tight dead-man's switch at the container layer
+- Created `prometheusrule.yaml` with two alerts:
+  - `PostgresBackupMissed` — dead-man's switch using `kube_cronjob_status_last_successful_time`; fires (critical) if no successful backup in 25h or the CronJob disappears entirely
+  - `PostgresBackupJobFailed` — fires (warning) when any `postgres-backup-local-*` Job records a failure; auto-resolves when the failed Job is GC'd
+- Registered the new PrometheusRule in `kustomization.yaml`
+- Committed as `8d12e96`
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/database/cloudnative-pg/postgres-backup-local/app/helmrelease.yaml` | Added `HEALTHCHECK_PORT: "8080"` env var and custom liveness probe |
+| `kubernetes/apps/database/cloudnative-pg/postgres-backup-local/app/kustomization.yaml` | Added `prometheusrule.yaml` as a resource |
+| `kubernetes/apps/database/cloudnative-pg/postgres-backup-local/app/prometheusrule.yaml` | New file — PrometheusRule with `PostgresBackupMissed` and `PostgresBackupJobFailed` alerts |
+
+### Key decisions
+- `initialDelaySeconds: 7200` matches the backup duration window; setting it shorter would kill the pod mid-backup
+- Alert threshold is 90000s (25h not 24h) to absorb slight CronJob scheduling drift without false positives
+- Used `kube_cronjob_status_last_successful_time` from kube-state-metrics (already present) rather than adding custom metrics to the backup container — zero instrumentation overhead
+
+---
+
 ## 2026-05-31 — `multus-nad-talos-setup`
 
 ### Goal
