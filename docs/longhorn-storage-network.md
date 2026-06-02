@@ -401,11 +401,12 @@ warrant investigation. Consider checking the cp-02 manager's OOMKill history and
 
 ## Current State
 
-- **storageNetwork**: `""` — disabled. All volumes healthy on Cilium network.
-- **NAD**: `ipvlan l2` mode (872efe6) — in Git but storageNetwork disabled, not in use.
-- **talconfig.yaml**: no static routes yet.
-- **Ceph**: evaluated as an alternative; deferred pending Attempt 3 result.
-- **Next**: execute Implementation Plan: Attempt 3 above.
+- **storageNetwork**: `kube-system/longhorn-storage` — enabled (Attempt 3).
+- **NAD**: `ipvlan l3` + `node_slice_size: "/28"` in `kube-system`.
+- **NodeSlicePool**: live in `kube-system`; cp-01→.64/28, cp-02→.80/28, cp-03→.96/28.
+- **talconfig.yaml**: cross-node /28 routes applied to all nodes (no reboot required).
+- **Pending validation**: confirm `lhnet1` IPs land in correct /28 ranges; confirm same-host
+  iSCSI attach succeeds. See Pre-Flight Checklist step 4–6.
 
 ---
 

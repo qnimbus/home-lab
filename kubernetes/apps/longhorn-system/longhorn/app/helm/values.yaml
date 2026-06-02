@@ -28,11 +28,9 @@ defaultSettings:
   csiStorageCapacityTracking: true
   replicaAutoBalance: best-effort
   replicaReplenishmentWaitInterval: "900"
-  # Attempt 3 (ipvlan L3): NAD moved to kube-system (NodeSlicePool owner-ref fix); l3 mode +
-  # node_slice_size /28; Talos static routes added per node. Re-enable as kube-system/longhorn-storage
-  # after Talos route configs are applied and validated.
-  # See docs/longhorn-storage-network.md for full analysis and implementation plan.
-  storageNetwork: ""
+  # ipvlan L3 + per-node /28 via whereabouts node_slice_size. NAD in kube-system.
+  # See docs/longhorn-storage-network.md for full analysis.
+  storageNetwork: "kube-system/longhorn-storage"
 
 service:
   ui:
