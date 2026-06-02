@@ -73,6 +73,11 @@ nodes:
         addresses:
           - "10.200.0.201/24"
         mtu: 9000
+        routes:
+          - network: "10.200.0.80/28"    # cp-02 pod range (ipvlan L3: no ARP cross-node)
+            gateway: "10.200.0.202"
+          - network: "10.200.0.96/28"    # cp-03 pod range
+            gateway: "10.200.0.203"
 
   - hostname: "talos-cp-02"                         # Lenovo M920Q #2 (i5-8500T, 64GB, X520-DA2)
     ipAddress: "10.60.0.202"
@@ -126,6 +131,11 @@ nodes:
         addresses:
           - "10.200.0.202/24"
         mtu: 9000
+        routes:
+          - network: "10.200.0.64/28"    # cp-01 pod range (ipvlan L3: no ARP cross-node)
+            gateway: "10.200.0.201"
+          - network: "10.200.0.96/28"    # cp-03 pod range
+            gateway: "10.200.0.203"
 
   - hostname: "talos-cp-03"                         # Minisforum MS-A2 (AMD, 32 cores, 92GB, X710)
     ipAddress: "10.60.0.203"
@@ -188,6 +198,11 @@ nodes:
         addresses:
           - "10.200.0.203/24"
         mtu: 9000
+        routes:
+          - network: "10.200.0.64/28"    # cp-01 pod range (ipvlan L3: no ARP cross-node)
+            gateway: "10.200.0.201"
+          - network: "10.200.0.80/28"    # cp-02 pod range
+            gateway: "10.200.0.202"
 
 patches:
   - "@./patches/global/machine-features.yaml"

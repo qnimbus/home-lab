@@ -11,11 +11,12 @@ spec:
       "name": "longhorn-storage",
       "type": "ipvlan",
       "master": "bond-storage",
-      "mode": "l2",
+      "mode": "l3",
       "mtu": 9000,
       "ipam": {
         "type": "whereabouts",
         "range": "10.200.0.64/26",
+        "node_slice_size": "/28",
         "routes": [
           {"dst": "10.200.0.0/24"}
         ]
