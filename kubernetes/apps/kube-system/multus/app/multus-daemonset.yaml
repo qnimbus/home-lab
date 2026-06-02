@@ -80,8 +80,11 @@ spec:
               cpu: 100m
               memory: 50Mi
             limits:
-              cpu: 100m
-              memory: 50Mi
+              # 256Mi (not 50Mi): the thick multus-daemon OOMs when it has to service a
+              # burst of queued CNI ADD requests after a node's pod backlog builds up
+              # (e.g. node reboot or daemon restart). 50Mi triggers an OOMKilled crash-loop
+              # that never clears the backlog. No CPU limit — avoid throttling recovery.
+              memory: 256Mi
           securityContext:
             privileged: true
           terminationMessagePolicy: FallbackToLogsOnError
