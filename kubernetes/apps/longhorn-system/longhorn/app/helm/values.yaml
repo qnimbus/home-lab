@@ -28,9 +28,11 @@ defaultSettings:
   csiStorageCapacityTracking: true
   replicaAutoBalance: best-effort
   replicaReplenishmentWaitInterval: "900"
-  # ipvlan L2: shares bond-storage MAC; kernel routes host→pod directly without bridge isolation.
-  # macvlan bridge mode was tried first but host cannot reach its own macvlan children (kernel bridge drops parent→child at L2).
-  storageNetwork: "longhorn-system/longhorn-storage"
+  # storageNetwork disabled: both macvlan bridge and ipvlan L2 fail for same-host iSCSI
+  # (host cannot reach pod IP on same node — switch hairpin required but not available).
+  # Next attempt: ipvlan L3 + per-node /28 whereabouts ranges + static routes in talconfig.yaml.
+  # See docs/longhorn-storage-network.md for full analysis and implementation plan.
+  storageNetwork: ""
 
 service:
   ui:
