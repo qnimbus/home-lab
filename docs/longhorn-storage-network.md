@@ -399,14 +399,146 @@ warrant investigation. Consider checking the cp-02 manager's OOMKill history and
 
 ---
 
+## Attempt 3: ipvlan L3 — BLOCKED on Talos + whereabouts incompatibility (2026-06-02)
+
+### What was completed successfully
+
+All infrastructure work was applied and validated:
+
+- NAD updated to `ipvlan l3` + `node_slice_size: "/28"` in `kube-system` (not `longhorn-system` — see NodeSlicePool GC issue below)
+- `NodeSlicePool` persisted with correct per-node allocation: cp-01→`.64/28`, cp-02→`.80/28`, cp-03→`.96/28`
+- Talos static routes applied live (no reboot): each node has routes to the other two nodes' /28 ranges via `bond-storage`
+- `storageNetwork: "kube-system/longhorn-storage"` set in Longhorn values
+- Longhorn HelmRelease reconciled; instance-managers restarted with `k8s.v1.cni.cncf.io/networks: kube-system/longhorn-storage` annotation
+
+### Blocker: whereabouts crashes on Talos — missing `/etc/hostname`
+
+When whereabouts IPAM allocates an IP with `node_slice_size` active, it reads `/etc/hostname`
+to determine which node it's on (needed for NodeSlicePool lookup + leader election identity).
+Talos does not create `/etc/hostname` — it sets the hostname via `sethostname` syscall only.
+
+```
+[error] Could not determine nodename and could not open /etc/hostname: no such file or directory
+[error] Failed to create leader elector: open /etc/hostname: no such file or directory
+panic: runtime error: invalid memory address or nil pointer dereference
+```
+
+The nil pointer dereference: `NewLeaderElector` returns nil on error, the code calls `Run(nil)`,
+immediate panic. whereabouts exits non-zero → Multus reports CNI failure → pod stays in
+`ContainerCreating` indefinitely.
+
+### Failed fix attempt: `machine.files` for `/etc/hostname`
+
+Attempted to create `/etc/hostname` on each Talos node via `machine.files` in `talconfig.yaml`:
+
+```yaml
+machine:
+  files:
+    - path: /etc/hostname
+      permissions: 0644
+      op: create
+      content: "talos-cp-01\n"
+```
+
+**Result**: This change requires a reboot and BLOCKS the Talos boot sequence. The
+`machine.files` write to `/etc/hostname` fails or stalls during the overlay filesystem setup
+phase, preventing `kubelet`, `etcd`, and `cri` from ever being registered as services. All
+three nodes were applied simultaneously (error — should have been staggered), causing a full
+cluster outage. Recovery required reverting the `machine.files` patches and reapplying to each
+node (each triggering a second reboot).
+
+**Confirmed**: `/etc/hostname` does NOT exist on Talos nodes and cannot be created via
+`machine.files`. Talos's overlay filesystem for `/etc` does not support this path via the
+machine config files mechanism.
+
+### Additional issue found: NodeSlicePool cross-namespace GC
+
+First attempt had `longhorn-nad` Kustomization targeting `longhorn-system`. The whereabouts
+node-slice controller creates NodeSlicePools in `kube-system` with an owner reference to the
+NAD. Cross-namespace owner references cause immediate GC deletion:
+
+```
+Warning  OwnerRefInvalidNamespace  nodeslicepool/longhorn-storage
+  ownerRef NAD namespace "kube-system" does not exist in namespace "kube-system"
+```
+
+**Fixed**: changed `longhorn-nad` Kustomization to `targetNamespace: kube-system`. The NAD
+moved to `kube-system`, NodeSlicePool owner reference is now same-namespace and persists.
+The NAD must stay in `kube-system` permanently.
+
+Also found: when the old `longhorn-system` NAD deletion event and the new `kube-system` NAD
+creation event arrived at the controller simultaneously, the deletion handler deleted the
+newly created NodeSlicePool (keyed by name only). Fix: touch the NAD annotation to force a
+clean re-reconcile after the old NAD is fully gone.
+
+### Current state after recovery
+
+`storageNetwork` reverted to `""`. Instance-managers running without Multus annotation.
+All volumes re-attached healthy. All workloads running.
+
+---
+
+## Unblocking Path for Attempt 4: fix `/etc/hostname` on Talos
+
+The only blocker is: whereabouts IPAM needs `/etc/hostname` to exist on the host. Three
+options to solve this on Talos:
+
+### Option A: whereabouts DaemonSet initContainer (recommended)
+
+Patch the whereabouts Helm values to add a hostPath initContainer to the DaemonSet.
+The initContainer writes `/etc/hostname` using the downward API to inject the node name:
+
+```yaml
+# In whereabouts-values.yaml:
+initContainers:
+  - name: write-hostname
+    image: busybox:1.36
+    command: ["/bin/sh", "-c", "echo $NODE_NAME > /host-etc/hostname"]
+    env:
+      - name: NODE_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: spec.nodeName
+    volumeMounts:
+      - name: host-etc
+        mountPath: /host-etc
+volumes:
+  - name: host-etc
+    hostPath:
+      path: /etc
+      type: Directory
+```
+
+This writes `/etc/hostname` on each node when the whereabouts DaemonSet starts. No Talos
+config changes, no reboots. The DaemonSet has `hostNetwork: true` already so it has the
+right privileges.
+
+**Risk**: writes directly to the host's `/etc` directory. On Talos, `/etc` is an overlayfs
+over tmpfs — the write is ephemeral and lost on reboot. The DaemonSet re-writes on every
+restart (which happens on reboot), so this is self-healing.
+
+### Option B: whereabouts configuration file override
+
+Check whether `whereabouts.conf` at `/etc/cni/net.d/whereabouts.d/whereabouts.conf` supports
+a `nodeName` field that bypasses the `/etc/hostname` lookup. If supported, the whereabouts
+DaemonSet could write a per-node conf file (different content per node via downward API).
+
+### Option C: abandon `node_slice_size`, use IPPool CRDs per node
+
+Pre-create three `IPPool` CRDs (one per node) with node-affinity selectors, if whereabouts
+supports per-node pool routing without needing `node_slice_size`. Avoids the hostname problem
+entirely. Requires research into whereabouts `IPPool` node selection behaviour.
+
+---
+
 ## Current State
 
-- **storageNetwork**: `kube-system/longhorn-storage` — enabled (Attempt 3).
-- **NAD**: `ipvlan l3` + `node_slice_size: "/28"` in `kube-system`.
-- **NodeSlicePool**: live in `kube-system`; cp-01→.64/28, cp-02→.80/28, cp-03→.96/28.
-- **talconfig.yaml**: cross-node /28 routes applied to all nodes (no reboot required).
-- **Pending validation**: confirm `lhnet1` IPs land in correct /28 ranges; confirm same-host
-  iSCSI attach succeeds. See Pre-Flight Checklist step 4–6.
+- **storageNetwork**: `""` — disabled. All volumes healthy on Cilium network.
+- **NAD**: `ipvlan l3` + `node_slice_size: "/28"` in `kube-system` (in Git, ready to use).
+- **NodeSlicePool**: live in `kube-system`; correct per-node /28 allocation confirmed.
+- **talconfig.yaml**: cross-node /28 routes live on all nodes.
+- **Blocker**: whereabouts panics on Talos (no `/etc/hostname`). Fix via DaemonSet initContainer before re-enabling `storageNetwork`.
+- **Next**: implement Option A (whereabouts initContainer), re-enable `storageNetwork`.
 
 ---
 

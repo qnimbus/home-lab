@@ -28,9 +28,9 @@ defaultSettings:
   csiStorageCapacityTracking: true
   replicaAutoBalance: best-effort
   replicaReplenishmentWaitInterval: "900"
-  # ipvlan L3 + per-node /28 via whereabouts node_slice_size. NAD in kube-system.
-  # See docs/longhorn-storage-network.md for full analysis.
-  storageNetwork: "kube-system/longhorn-storage"
+  # storageNetwork disabled: whereabouts node_slice_size reads /etc/hostname which Talos
+  # does not create. Attempt 3 blocked. See docs/longhorn-storage-network.md.
+  storageNetwork: ""
 
 service:
   ui:
