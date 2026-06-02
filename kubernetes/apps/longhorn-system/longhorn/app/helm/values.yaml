@@ -28,10 +28,12 @@ defaultSettings:
   csiStorageCapacityTracking: true
   replicaAutoBalance: best-effort
   replicaReplenishmentWaitInterval: "900"
-  # Routes engine<->replica iSCSI over the storage VLAN via the Multus lhnet1 NAD.
-  # ipvlan L3 + whereabouts node_slice_size (one /28 per node); host /etc/hostname is
-  # provided to whereabouts by a postRenderer initContainer. See docs/longhorn-storage-network.md.
-  storageNetwork: "kube-system/longhorn-storage"
+  # storageNetwork disabled (attempt 4 reverted): the whereabouts CNI *plugin* runs inside
+  # the multus thick-daemon's chroot:/hostroot, so it reads the HOST's /etc/hostname (absent
+  # on Talos, read-only /etc) and panics on node_slice_size leader election. The daemon-pod
+  # /etc/hostname fix does not reach this context. Needs a node-name source that works in the
+  # chroot (or per-node IPPools instead of node_slice_size). See docs/longhorn-storage-network.md.
+  storageNetwork: ""
 
 service:
   ui:
