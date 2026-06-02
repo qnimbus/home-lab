@@ -4,6 +4,38 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-02 — `longhorn-storagenetwork-attempt4`
+
+### Goal
+Re-enable Longhorn `storageNetwork` over the ipvlan-L3 storage VLAN (attempt 4) by fixing the whereabouts `/etc/hostname` panic and the multus OOM crash-loop — ultimately blocked by a multus-chroot root cause and reverted, with recovery from a mid-migration cp-02 hard-down.
+
+### What we did
+- **whereabouts `/etc/hostname` fix (`3c624a8`)**: the chart has no `initContainers` hook, so injected one via a Flux **`postRenderers`** Kustomize patch on the HelmRelease. First cut wrote to a hostPath host `/etc` and failed (`Read-only file system`); reworked to an `emptyDir` + `subPath` populating the daemon pod's own `/etc/hostname`. Verified all 3 whereabouts pods healthy with correct per-node hostname (v3 deployed).
+- Unstuck a Flux/Helm deadlock: the first render wedged the release in `pending-upgrade` (helm `--wait` on a crash-looping pod); restarting the helm-controller pod cleared the stale operation and applied the corrected render.
+- **multus OOM fix (`49ea52c`)**: discovered `kube-multus-ds` on cp-02 in `CrashLoopBackOff` (22 restarts, `OOMKilled` exit 137) — the 50Mi limit couldn't service the burst of queued CNI ADD requests, blocking ALL pod sandbox creation on the node and degrading every Longhorn volume. Raised limit to 256Mi, dropped the CPU limit. cp-02 recovered, instance-manager started, all 5 volumes rebuilt to `healthy` 3/3.
+- **storageNetwork re-enable (`0edb316`) + quiesce**: suspended the consuming workloads' HelmReleases and scaled consumers to 0 (patched Prometheus/Alertmanager **CR** `replicas`, not the operator-managed StatefulSets); volumes detached cleanly.
+- **Definitive blocker found**: re-enabling made instance-managers request `lhnet1` and IP allocation **still panicked** on `/etc/hostname`. Root cause: the whereabouts **CNI plugin** (not the daemon pod) runs inside the multus thick-daemon's **`chroot:/hostroot`**, so it reads the **host's** `/etc/hostname` — absent on Talos, read-only `/etc`. The daemon-pod fix never reaches that context.
+- **Reverted (`ad1666a`)** to restore service. Cleared the setting, deleted wedged instance-manager pods carrying the stale `lhnet1` annotation, resumed HelmReleases.
+- **cp-02 hard-down incident**: during the migration thrash cp-02 went unreachable on BOTH NICs (talosctl `no route to host`, kubelet heartbeat stopped 15:32:45). User power-cycled; cp-02 rejoined cleanly and volumes rebuilt to `healthy` 3/3. Post-reboot `dmesg` held only the current boot — pre-crash logs lost (ring buffer reset). Root cause deferred to a tracked follow-up; multus held at 256Mi through the reboot with only 1 restart.
+- Updated `docs/longhorn-storage-network.md` with the Attempt 4 outcome, chroot root cause, recovery procedure, and Attempt 5 research direction; saved an open cp-02-outage investigation note to persistent memory.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/kube-system/multus/app/whereabouts-helmrelease.yaml` | Added `postRenderers` patch injecting `/etc/hostname` initContainer (emptyDir + subPath) — `3c624a8` |
+| `kubernetes/apps/kube-system/multus/app/multus-daemonset.yaml` | Raised daemon memory limit 50Mi→256Mi, dropped CPU limit — `49ea52c` |
+| `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml` | Re-enabled then reverted `storageNetwork`; comment documents the multus-chroot blocker — `0edb316`, `ad1666a` |
+| `docs/longhorn-storage-network.md` | Documented Attempt 4 outcome, chroot root cause, cp-02 incident, recovery procedure, Attempt 5 direction (uncommitted) |
+
+### Key decisions
+- Used Flux `postRenderers` rather than chart values — the whereabouts chart exposes no `initContainers`/`extraVolumes` hooks.
+- Targeted the daemon pod's own `/etc/hostname` (emptyDir+subPath) because the host `/etc` is read-only on Talos and `hostNetwork` shares only the net namespace — though this later proved insufficient for the CNI-plugin allocation path.
+- Sequenced as separate pushes (multus OOM fix validated to full health *before* the storageNetwork re-enable) so a risky change wasn't coupled to a still-recovering node.
+- Reverted rather than pushing forward: the chroot blocker is design-level (needs Option B node-identity-without-host-hostname or Option C per-node IPPools), not a live-cluster guess — restore service first.
+- cp-02 root cause deliberately deferred: pre-crash kernel logs were unrecoverable post-reboot, so investigation is tracked separately rather than blocking recovery.
+
+---
+
 ## 2026-06-02 — `postgres-backup-monitoring`
 
 ### Goal

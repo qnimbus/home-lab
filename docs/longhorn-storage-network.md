@@ -513,9 +513,18 @@ This writes `/etc/hostname` on each node when the whereabouts DaemonSet starts. 
 config changes, no reboots. The DaemonSet has `hostNetwork: true` already so it has the
 right privileges.
 
-**Risk**: writes directly to the host's `/etc` directory. On Talos, `/etc` is an overlayfs
-over tmpfs — the write is ephemeral and lost on reboot. The DaemonSet re-writes on every
-restart (which happens on reboot), so this is self-healing.
+> ⚠️ **ATTEMPTED 2026-06-02 — DID NOT WORK. See "Attempt 4" below.** Two reasons:
+> (1) Talos mounts the host `/etc` **read-only**, so a busybox initContainer writing to a
+> hostPath `/etc` fails with `Read-only file system` (the overlayfs-is-writable assumption
+> below was wrong). (2) More fundamentally this targets the wrong filesystem: `hostNetwork`
+> shares only the *net* namespace, and the whereabouts **daemon pod** is not where per-allocation
+> IPAM runs. The IP allocation is done by the whereabouts **CNI plugin**, invoked by the multus
+> thick-daemon inside `chroot:/hostroot` — it reads the **host's** `/etc/hostname`. A variant
+> that deploys cleanly (emptyDir + subPath into the daemon pod's own `/etc/hostname`) fixes the
+> daemon pod but NOT the allocation path.
+
+**Risk (original, now disproven)**: assumed writes to the host's `/etc` were ephemeral on a
+writable overlayfs. In reality `/etc` is read-only on Talos — the write fails outright.
 
 ### Option B: whereabouts configuration file override
 
@@ -531,14 +540,62 @@ entirely. Requires research into whereabouts `IPPool` node selection behaviour.
 
 ---
 
+## Attempt 4 (2026-06-02): chroot blocker confirmed + cp-02 outage
+
+Implemented the daemon-pod `/etc/hostname` fix and re-enabled `storageNetwork`. Two fixes
+landed and are **kept** (they are correct, just insufficient on their own):
+
+1. **`3c624a8`** — whereabouts `/etc/hostname` via a Flux **`postRenderers`** Kustomize patch on
+   the HelmRelease (the chart has no `initContainers` hook). The first cut wrote to a hostPath
+   host `/etc` and failed (`Read-only file system`); the working version uses an `emptyDir` +
+   `subPath` to populate the **daemon pod's own** `/etc/hostname`.
+2. **`49ea52c`** — raised the multus thick-daemon memory limit `50Mi → 256Mi` (+ dropped the CPU
+   limit). The daemon was being **OOMKilled** (exit 137) servicing the burst of queued CNI ADD
+   requests after a node's pod backlog built up, crash-looping (22 restarts on cp-02) and blocking
+   ALL pod sandbox creation on that node. This had degraded every Longhorn volume (cp-02 couldn't
+   host its replica). Fixing it restored 3/3 replicas. The 256Mi limit later survived a real node
+   reboot with only 1 restart — confirmed durable.
+
+**Root-cause of the storageNetwork blocker (definitive):** re-enabling `storageNetwork` made
+every instance-manager request `lhnet1`, and IP allocation **still panicked** with the same
+`/etc/hostname` nil-pointer. Reason: the whereabouts **CNI plugin** (not the daemon pod) does the
+allocation, and the multus thick-daemon runs it inside **`chroot:/hostroot`** → it reads the
+**host's** `/etc/hostname`, which Talos does not provide and we cannot create (read-only `/etc`).
+Fixing the daemon pod never reaches this context. → `storageNetwork` reverted (**`ad1666a`**).
+
+**Collateral incident:** during the migration thrash, **cp-02 went hard-down** (100% packet loss
+on BOTH NICs, talosctl `no route to host`; kubelet heartbeat stopped 15:32:45). Required a manual
+power-cycle. Post-reboot `dmesg` showed only the current boot — pre-crash logs lost (ring buffer
+reset; Talos doesn't persist kernel logs). Root cause undetermined; cp-02 has a thermal-event
+history. Tracked separately for follow-up. After power-cycle, cp-02 rejoined cleanly and all
+volumes rebuilt to `healthy` 3/3.
+
+**Recovery procedure that worked** (for reference if revisiting): suspend the consuming workloads'
+HelmReleases → scale consumers to 0 (for operator-managed Prometheus/Alertmanager, patch the CR
+`replicas`, not the StatefulSet) → volumes detach cleanly → flip `storageNetwork` via Git → if
+instance-manager pods wedge in `ContainerCreating` with the stale `lhnet1` annotation, delete them
+so Longhorn recreates with the new spec → resume HelmReleases to restore replicas.
+
+---
+
 ## Current State
 
-- **storageNetwork**: `""` — disabled. All volumes healthy on Cilium network.
-- **NAD**: `ipvlan l3` + `node_slice_size: "/28"` in `kube-system` (in Git, ready to use).
-- **NodeSlicePool**: live in `kube-system`; correct per-node /28 allocation confirmed.
+- **storageNetwork**: `""` — disabled (reverted in `ad1666a`). All volumes `attached / healthy`,
+  3/3 replicas, on the Cilium/management network.
+- **NAD**: `ipvlan l3` + `node_slice_size: "/28"` in `kube-system` (in Git, unused while disabled).
+- **NodeSlicePool**: live in `kube-system`; correct per-node /28 allocation.
 - **talconfig.yaml**: cross-node /28 routes live on all nodes.
-- **Blocker**: whereabouts panics on Talos (no `/etc/hostname`). Fix via DaemonSet initContainer before re-enabling `storageNetwork`.
-- **Next**: implement Option A (whereabouts initContainer), re-enable `storageNetwork`.
+- **whereabouts daemon pod**: has `/etc/hostname` (postRenderer fix, kept).
+- **multus daemon**: 256Mi limit, stable (kept).
+- **Blocker (unchanged, now precisely understood)**: the whereabouts **CNI plugin** runs in the
+  multus daemon's `chroot:/hostroot` and needs the **host's** `/etc/hostname` for `node_slice_size`
+  leader election — unavailable on Talos.
+- **Next (Attempt 5 — research, not a live-cluster guess)**: either
+  (a) **Option B** — find a way to give the CNI plugin its node identity without host `/etc/hostname`
+  (e.g. whereabouts reading node name from the pod ref via the K8s API, a config/env override, or a
+  newer whereabouts version), or
+  (b) **Option C** — drop `node_slice_size` entirely and use per-node `IPPool` CRDs with node selectors
+  so no hostname lookup is needed. Validate in isolation before touching `storageNetwork` again.
 
 ---
 
