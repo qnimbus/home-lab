@@ -198,13 +198,19 @@ named `talos-cp-01`, `talos-cp-02`, `talos-cp-03` (alphabetical allocation order
 | talos-cp-03 | `10.200.0.96/28`  | `.97` – `.110`   |
 
 **Prerequisite**: `node_slice_size` requires the whereabouts **node-slice controller** — a
-separate Deployment in the whereabouts chart that may be off by default. Verify it is
-running before deploying this NAD.
+separate Deployment in the whereabouts chart. Already running as
+`whereabouts-whereabouts-chart-controller` in `kube-system`.
 
-**Verify allocation before writing routes**: after the NAD is deployed (storageNetwork still
-disabled), confirm actual allocation matches the table:
+**NAD must be in `kube-system`**: the node-slice controller creates NodeSlicePools in
+`kube-system` with an owner reference pointing to the NAD. If the NAD is in a different
+namespace (e.g. `longhorn-system`), Kubernetes GC immediately deletes the NodeSlicePool
+with `OwnerRefInvalidNamespace`. The `longhorn-nad` Kustomization must use
+`targetNamespace: kube-system`. The Longhorn storageNetwork setting becomes
+`kube-system/longhorn-storage`.
+
+**Verify allocation after NAD is applied to kube-system**:
 ```bash
-kubectl get nodeslicepool -A -o yaml
+kubectl get nodeslicepool -n kube-system -o yaml
 ```
 
 **Same-host routing** (no explicit routes needed): the host already has a `/24` connected
@@ -280,7 +286,7 @@ routes are live and validated on all three nodes.
 5. **Apply Talos configs one node at a time** (staggered to protect etcd quorum):
    cp-01 → wait `Ready` → cp-02 → wait `Ready` → cp-03
 6. **Run all pre-flight checks** (see Pre-Flight Checklist above, especially step 6)
-7. **Re-enable `storageNetwork`** in Longhorn HelmRelease — commit, push; Flux applies
+7. **Re-enable `storageNetwork: "kube-system/longhorn-storage"`** in Longhorn HelmRelease — commit, push; Flux applies
 8. Watch instance-manager pods restart; confirm `lhnet1` IPs land in expected /28 ranges
 9. Monitor volumes — all should reach `attached/healthy` within a few minutes
 

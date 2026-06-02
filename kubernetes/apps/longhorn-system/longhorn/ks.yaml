@@ -33,7 +33,7 @@ metadata:
   labels:
     substitution.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: longhorn-system
+  targetNamespace: kube-system
   commonMetadata:
     labels:
       app.kubernetes.io/name: longhorn-nad
