@@ -28,9 +28,10 @@ defaultSettings:
   csiStorageCapacityTracking: true
   replicaAutoBalance: best-effort
   replicaReplenishmentWaitInterval: "900"
-  # storageNetwork disabled: whereabouts node_slice_size reads /etc/hostname which Talos
-  # does not create. Attempt 3 blocked. See docs/longhorn-storage-network.md.
-  storageNetwork: ""
+  # Routes engine<->replica iSCSI over the storage VLAN via the Multus lhnet1 NAD.
+  # ipvlan L3 + whereabouts node_slice_size (one /28 per node); host /etc/hostname is
+  # provided to whereabouts by a postRenderer initContainer. See docs/longhorn-storage-network.md.
+  storageNetwork: "kube-system/longhorn-storage"
 
 service:
   ui:
