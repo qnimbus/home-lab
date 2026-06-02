@@ -14,3 +14,43 @@ spec:
   valuesFrom:
     - kind: ConfigMap
       name: whereabouts-values
+  # Talos does not create /etc/hostname; whereabouts node_slice_size reads it for leader
+  # election identity and panics if absent. The chart has no initContainers hook, so inject
+  # via postRenderers. hostNetwork shares only the net namespace — the process reads its OWN
+  # container's /etc/hostname, so write into a shared emptyDir and subPath-mount the file in.
+  # (Writing the host's /etc fails: Talos mounts it read-only.)
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: DaemonSet
+              name: whereabouts-whereabouts-chart
+            patch: |
+              apiVersion: apps/v1
+              kind: DaemonSet
+              metadata:
+                name: whereabouts-whereabouts-chart
+              spec:
+                template:
+                  spec:
+                    initContainers:
+                      - name: write-hostname
+                        image: busybox:1.37.0
+                        command: ["/bin/sh", "-c", "echo $NODE_NAME > /work/hostname"]
+                        env:
+                          - name: NODE_NAME
+                            valueFrom:
+                              fieldRef:
+                                fieldPath: spec.nodeName
+                        volumeMounts:
+                          - name: hostname-vol
+                            mountPath: /work
+                    containers:
+                      - name: whereabouts-chart
+                        volumeMounts:
+                          - name: hostname-vol
+                            mountPath: /etc/hostname
+                            subPath: hostname
+                    volumes:
+                      - name: hostname-vol
+                        emptyDir: {}
