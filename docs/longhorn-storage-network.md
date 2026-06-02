@@ -578,24 +578,96 @@ so Longhorn recreates with the new spec → resume HelmReleases to restore repli
 
 ---
 
+## Attempt 5 (2026-06-02): whereabouts node-name fix — BLOCKER SOLVED, IPAM validated
+
+### Root cause confirmed against upstream
+
+The Attempt-4 `chroot:/hostroot` diagnosis is an **exact match for upstream issue
+[#518](https://github.com/k8snetworkplumbingwg/whereabouts/issues/518)** ("fast ranges not working
+out of the box", filed by maintainer dougbtv, still open): same `node_slice_size` →
+`Failed to create leader elector` → nil-pointer panic at `pkg/storage/kubernetes/ipam.go`, because
+the on-host CNI binary resolves its node name from the host instead of the apiserver node name. We
+are not in novel territory — it is a known bug.
+
+Reading the v0.9.3 source settles the fix. `getNodeName` resolves node identity in order:
+**(1)** `$NODENAME` env → **(2)** a `nodename` file at `<configuration_path>/nodename` →
+**(3)** `/etc/hostname`. The CNI plugin runs in the multus chroot, so it never inherits the daemon
+pod's `NODENAME` env (1) and Talos has no `/etc/hostname` (3) → panic. **Path (2) works on v0.9.3**
+— the code is present — but v0.9.3's `install-cni.sh`/`lib.sh` never write the file nor set
+`configuration_path`. Upstream PR
+[#703](https://github.com/k8snetworkplumbingwg/whereabouts/pull/703) adds exactly that, but it
+**merged to `master` on 2026-06-02, after the latest release v0.9.3 (2026-02-19)** — so there is no
+chart bump to wait for. We backport PR #703's two changes ourselves.
+
+### The fix (commit `448ed24`)
+
+`kubernetes/apps/kube-system/multus/app/whereabouts-helmrelease.yaml` — the `/etc/hostname` emptyDir
+postRenderer (Attempt 4, insufficient) is **replaced** by a postRenderer that overrides the
+DaemonSet container `args` to reproduce PR #703 against the v0.9.3 image: after `install-cni.sh`
+generates `whereabouts.conf`, it (a) injects `"configuration_path": "/etc/cni/net.d/whereabouts.d"`
+into that flatfile and (b) writes `$NODENAME` (downward API) to
+`/host/etc/cni/net.d/whereabouts.d/nodename`. Both land in the host CNI dir, which **is writable on
+Talos** (whereabouts already writes its kubeconfig there) — unlike `/etc/hostname`. The chart already
+provides the `NODENAME` env and the writable `/host/etc/cni/net.d` mount, so no other change.
+
+> **Sharp edge:** `configuration_path` MUST live in the flatfile `whereabouts.conf`, **not** the NAD.
+> `getNodeName` treats it as a directory (`<path>/nodename`), but `GetFlatIPAM` treats a NAD-supplied
+> `configuration_path` as a *file* and `io.ReadAll`s it — a directory there breaks all config loading.
+> PR #703 (and our backport) put it in the flatfile, satisfying both call sites.
+
+### Isolated validation — PASSED (no volumes touched)
+
+After Flux rolled all 3 whereabouts pods (clean, `restartCount: 0`, no panic), verified on-host via
+`talosctl read`: `/etc/cni/net.d/whereabouts.d/nodename` = `talos-cp-03`, and `whereabouts.conf`
+contains `configuration_path`. Then exercised the **CNI plugin path** (the one that panicked) with
+throwaway pods annotated `k8s.v1.cni.cncf.io/networks: kube-system/longhorn-storage`, pinned per node:
+
+| Node | NodeSlicePool /28 | Allocated `net1` | Result |
+|------|-------------------|------------------|--------|
+| talos-cp-01 | `10.200.0.64/28` | `10.200.0.65` | ✅ Running, no panic |
+| talos-cp-02 | `10.200.0.80/28` | `10.200.0.81` | ✅ Running, no panic |
+| talos-cp-03 | `10.200.0.96/28` | `10.200.0.97` | ✅ Running, no panic |
+
+Each node received its own slice's first usable address → the chroot'd plugin reads the `nodename`
+file correctly per node and the `NodeSlicePool` lookup + leader election succeed. Probe pods deleted.
+
+### Follow-up
+
+When a whereabouts release **> 0.9.3** ships PR #703, Renovate will bump
+`kubernetes/flux/meta/repos/oci/whereabouts-chart.yaml`; at that point **remove the `args` override
+backport** from `whereabouts-helmrelease.yaml` (the chart does it natively). A comment in the
+HelmRelease records this so the backport isn't orphaned.
+
+---
+
 ## Current State
 
-- **storageNetwork**: `""` — disabled (reverted in `ad1666a`). All volumes `attached / healthy`,
-  3/3 replicas, on the Cilium/management network.
-- **NAD**: `ipvlan l3` + `node_slice_size: "/28"` in `kube-system` (in Git, unused while disabled).
-- **NodeSlicePool**: live in `kube-system`; correct per-node /28 allocation.
-- **talconfig.yaml**: cross-node /28 routes live on all nodes.
-- **whereabouts daemon pod**: has `/etc/hostname` (postRenderer fix, kept).
+- **Attempt 5 fix**: ✅ live (`448ed24`). whereabouts CNI plugin resolves node name via the
+  `nodename` file in the multus chroot — `node_slice_size` IPAM validated on all 3 nodes.
+- **storageNetwork**: still `""` — **not yet re-enabled** (Phase 2, gated on the validation above).
+- **NAD**: `ipvlan l3` + `node_slice_size: "/28"` in `kube-system`; **NodeSlicePool** live with
+  correct per-node /28 allocation; **talconfig.yaml** cross-node /28 routes live on all nodes.
 - **multus daemon**: 256Mi limit, stable (kept).
-- **Blocker (unchanged, now precisely understood)**: the whereabouts **CNI plugin** runs in the
-  multus daemon's `chroot:/hostroot` and needs the **host's** `/etc/hostname` for `node_slice_size`
-  leader election — unavailable on Talos.
-- **Next (Attempt 5 — research, not a live-cluster guess)**: either
-  (a) **Option B** — find a way to give the CNI plugin its node identity without host `/etc/hostname`
-  (e.g. whereabouts reading node name from the pod ref via the K8s API, a config/env override, or a
-  newer whereabouts version), or
-  (b) **Option C** — drop `node_slice_size` entirely and use per-node `IPPool` CRDs with node selectors
-  so no hostname lookup is needed. Validate in isolation before touching `storageNetwork` again.
+- **Workloads quiesced for Phase 2 (2026-06-02)**: HelmReleases `pgadmin` (database), `waha`
+  (automation), `kube-prometheus-stack` (observability) **suspended**; their consumers scaled to 0
+  (Deployments `pgadmin`/`waha`/`kube-prometheus-stack-grafana`; operator CRs `Prometheus` and
+  `Alertmanager` `replicas: 0`). All 5 Longhorn volumes `detached`. Ready for the `storageNetwork`
+  flip.
+- **Next (Phase 2)**: set `storageNetwork: "kube-system/longhorn-storage"` in Longhorn values →
+  migrate instance-managers onto `lhnet1` → resume the suspended HelmReleases → verify replica
+  `storageIP`s land in each node's /28 and same-host `iscsiadm` works. Recovery procedure (Attempt 4)
+  ready if needed.
+
+### Un-quiesce (to restore service without the storageNetwork change)
+
+```bash
+kubectl -n observability patch prometheus   kube-prometheus-stack-prometheus   --type=merge -p '{"spec":{"replicas":1}}'
+kubectl -n observability patch alertmanager kube-prometheus-stack-alertmanager --type=merge -p '{"spec":{"replicas":1}}'
+kubectl -n database     patch helmrelease pgadmin               --type=merge -p '{"spec":{"suspend":false}}'
+kubectl -n automation   patch helmrelease waha                  --type=merge -p '{"spec":{"suspend":false}}'
+kubectl -n observability patch helmrelease kube-prometheus-stack --type=merge -p '{"spec":{"suspend":false}}'
+# resuming the HelmReleases lets Flux scale the Deployments/grafana back to their chart values
+```
 
 ---
 
