@@ -14,11 +14,24 @@ spec:
   valuesFrom:
     - kind: ConfigMap
       name: whereabouts-values
-  # Talos does not create /etc/hostname; whereabouts node_slice_size reads it for leader
-  # election identity and panics if absent. The chart has no initContainers hook, so inject
-  # via postRenderers. hostNetwork shares only the net namespace — the process reads its OWN
-  # container's /etc/hostname, so write into a shared emptyDir and subPath-mount the file in.
-  # (Writing the host's /etc fails: Talos mounts it read-only.)
+  # Backport of upstream whereabouts PR #703 (fixes issue #518), which is merged to master but
+  # NOT yet in any release — v0.9.3 (the latest, pinned here) predates it. With node_slice_size,
+  # the whereabouts CNI *plugin* must resolve its node name for the NodeSlicePool lookup +
+  # per-pool leader election. getNodeName (pkg/storage/kubernetes/ipam.go) resolves in order:
+  #   (1) $NODENAME env  →  (2) <configuration_path>/nodename file  →  (3) /etc/hostname
+  # The plugin is exec'd by the multus thick-daemon inside chroot:/hostroot, so it does NOT
+  # inherit this pod's NODENAME env, and Talos provides no /etc/hostname (and /etc is read-only)
+  # → it panics (nil-pointer in leader election) and the CNI ADD fails. We use path (2): write
+  # the apiserver node name into the host CNI dir (writable on Talos, unlike /etc/hostname) and
+  # emit configuration_path so the on-host binary consults it.
+  #
+  # configuration_path MUST live in the flatfile whereabouts.conf, NOT the NAD: getNodeName treats
+  # it as a directory (<path>/nodename), but GetFlatIPAM treats a NAD-supplied configuration_path
+  # as a *file* and io.ReadAll's it — a directory there breaks all config loading.
+  #
+  # The chart has no hook for this, so override the DaemonSet container args (NODENAME env and the
+  # writable /host/etc/cni/net.d mount are already provided by the chart). When a whereabouts
+  # release > 0.9.3 containing PR #703 ships, drop this backport — the chart will do it natively.
   postRenderers:
     - kustomize:
         patches:
@@ -33,24 +46,15 @@ spec:
               spec:
                 template:
                   spec:
-                    initContainers:
-                      - name: write-hostname
-                        image: busybox:1.37.0
-                        command: ["/bin/sh", "-c", "echo $NODE_NAME > /work/hostname"]
-                        env:
-                          - name: NODE_NAME
-                            valueFrom:
-                              fieldRef:
-                                fieldPath: spec.nodeName
-                        volumeMounts:
-                          - name: hostname-vol
-                            mountPath: /work
                     containers:
                       - name: whereabouts-chart
-                        volumeMounts:
-                          - name: hostname-vol
-                            mountPath: /etc/hostname
-                            subPath: hostname
-                    volumes:
-                      - name: hostname-vol
-                        emptyDir: {}
+                        command: ["/bin/sh"]
+                        args:
+                          - -c
+                          - |
+                            SLEEP=false source /install-cni.sh
+                            CONF=/host/etc/cni/net.d/whereabouts.d/whereabouts.conf
+                            grep -q '"configuration_path"' "$CONF" || sed -i 's#"datastore": "kubernetes",#"datastore": "kubernetes",\n  "configuration_path": "/etc/cni/net.d/whereabouts.d",#' "$CONF"
+                            printf '%s' "$NODENAME" > /host/etc/cni/net.d/whereabouts.d/nodename
+                            /token-watcher.sh &
+                            /ip-control-loop -log-level debug
