@@ -4,6 +4,34 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-02 — `longhorn-storagenetwork-attempt5`
+
+### Goal
+Backport the unreleased upstream whereabouts fix to break the multus-chroot node-name blocker, validate per-node `node_slice_size` IPAM in isolation, then attempt the Longhorn `storageNetwork` flip — which failed on the same-host iSCSI path and was rolled back, restoring service.
+
+### What we did
+- **Pinned the Attempt-4 blocker to upstream.** Read the v0.9.3 whereabouts source: `getNodeName` resolves node identity as `$NODENAME` env → `<configuration_path>/nodename` file → `/etc/hostname`. The CNI plugin runs in the multus `chroot:/hostroot`, so it never inherits the daemon's `NODENAME` env and Talos has no `/etc/hostname` → nil-pointer panic. Exact match for open upstream issue **#518**; the fix is PR **#703**, which **merged to `master` on 2026-06-02 but is unreleased** (latest release v0.9.3 predates it) — so no chart bump was available.
+- **Backported PR #703 (`448ed24`, KEPT).** Replaced the insufficient `/etc/hostname` emptyDir postRenderer with a DaemonSet `args` override that, after `install-cni.sh`, injects `"configuration_path": "/etc/cni/net.d/whereabouts.d"` into the flatfile `whereabouts.conf` and writes `$NODENAME` to `/host/etc/cni/net.d/whereabouts.d/nodename`. Both land in the host CNI dir (writable on Talos, unlike `/etc/hostname`). Sharp edge confirmed from source: `configuration_path` must live in the flatfile, **not** the NAD — `GetFlatIPAM` treats a NAD value as a *file* and `io.ReadAll`s a directory.
+- **Validated in isolation (gate passed).** All 3 whereabouts pods rolled clean (no panic); verified the on-host `nodename` + `configuration_path` files via `talosctl read`; throwaway probe pods pinned per node each pulled their `/28` slice's first IP through the chroot — cp-01 `10.200.0.65`, cp-02 `.81`, cp-03 `.97` — the exact path that panicked in Attempts 3–4.
+- **Quiesced + flipped (`d6be5da`).** Suspended HelmReleases `pgadmin`/`waha`/`kube-prometheus-stack`, scaled Deployments to 0, patched Prometheus/Alertmanager **CR** replicas to 0; all 5 volumes detached. Set `storageNetwork: "kube-system/longhorn-storage"`. Flux reconciled; instance-managers recreated with `lhnet1` attached at the correct per-node `/28` IPs (`.65`/`.81`/`.97`).
+- **FAILED on same-host iSCSI.** All 5 engines co-located on cp-03 stuck `starting`; volumes cycled `attaching ↔ detaching`. Host routing showed the plan's load-bearing assumption was wrong: the kernel does **not** add a `/32` route to a local pod's ipvlan IP (the slave lives in the pod netns), and ipvlan L3 suppresses ARP — so a node cannot reach a pod's storage IP on its **own** host. Cross-node `/28` routes worked; same-host is structurally broken in this design (same wall as Attempts 1–2).
+- **Rolled back (`f719cef`) and recovered service.** `git revert d6be5da` + push set `storageNetwork: ""`. Longhorn cleared the setting (`value=""`, `applied=false`) but deadlocked — the old IMs kept `lhnet1` and volumes never cleanly detached. Broke the deadlock by deleting the instance-manager pods (user-run; the classifier blocked agent attempts at the live setting patch / HR suspend / IM deletion as out-of-band infra changes). Recreated IMs came up clean; all 5 volumes re-attached on the pod network (2 `healthy`, 3 `degraded` rebuilding at session end); consumers recovered.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/kube-system/multus/app/whereabouts-helmrelease.yaml` | Replaced `/etc/hostname` emptyDir postRenderer with PR #703 backport — `configuration_path` in flatfile + `nodename` file via DaemonSet `args` override — `448ed24` (**kept**) |
+| `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml` | Enabled then reverted `storageNetwork` — `d6be5da`, `f719cef` (net unchanged) |
+| `docs/longhorn-storage-network.md` | Added Attempt 5 section then reverted with the flip — `d6be5da`, `f719cef` (net unchanged; **re-add pending**) |
+
+### Key decisions
+- **Backported the unreleased PR #703** (~5 lines via postRenderer) rather than wait for a whereabouts release or jump to Ceph — it was the sole blocker. Tracked to remove when a release > 0.9.3 ships it.
+- **Two-phase gated rollout** — validating IPAM in isolation before the disruptive flip is exactly why the flip's failure was unambiguously attributable to same-host routing, not the CNI fix.
+- **Rolled back via Git, not a live patch** — the classifier (correctly) blocked out-of-band mutation of shared Longhorn infra; the user ran the IM-pod deletion to break Longhorn's detach deadlock.
+- **same-host iSCSI over ipvlan L3 remains unsolved** — the `/28`+static-routes scheme only fixes cross-node. Next options: host-side ipvlan shim (route to local pod IPs), ipvlan L3S, or Rook-Ceph (native dual-network). The Attempt-5 writeup must be re-added to `docs/longhorn-storage-network.md` (lost in the revert).
+
+---
+
 ## 2026-06-02 — `longhorn-storagenetwork-attempt4`
 
 ### Goal

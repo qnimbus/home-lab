@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-02 | `longhorn-storagenetwork-attempt5` | Attempt 5: backported whereabouts PR #703; per-node IPAM validated; storageNetwork flip failed same-host iSCSI, reverted |
 > | 2026-06-02 | `longhorn-storagenetwork-attempt4` | storageNetwork attempt 4: multus-chroot /etc/hostname blocker, reverted; kept multus OOM fix; cp-02 hard-down recovered |
 > | 2026-06-02 | `postgres-backup-monitoring` | Added liveness probe (2h delay) and PrometheusRules (dead-man's switch + failed-job alert) to postgres-backup-local |
 > | 2026-05-31 | `multus-nad-talos-setup` | Multus CNI+whereabouts+macvlan NAD deployed; 3x image fix iterations (imageVolume pattern); bond-storage live on all nodes; Phase 4 storageNetwork pending push |
@@ -11,7 +12,6 @@
 > | 2026-05-30 | `jumbo-frames-storage-vlan` | iperf3 storage VLAN benchmarks; MTU 9000 jumbo frames Talos+Cilium; retransmits 181k→40k (-78%); cp-02 thermal event |
 > | 2026-05-29 | `postgres-nfs-backup` | pg_dumpall CronJob to TrueNAS storage VLAN (10.200.0.41); UID 4000; debugged NFS bind, glob-expand, pg_dumpall flag issues; restore drill roadmap added |
 > | 2026-05-29 | `pgadmin-deploy` | pgAdmin deployed in database namespace; initContainer seeds .pgpass; servers.json declarative; Longhorn PVC; envoy-internal HTTPRoute |
-> | 2026-05-29 | `cloudnative-pg-deploy` | CloudNativePG operator + shared postgres-v17 cluster deployed; backup deferred; ExternalSecrets follow rewrite+template convention |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
