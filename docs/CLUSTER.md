@@ -17,13 +17,13 @@ Three-node bare-metal Talos Linux cluster (all control-plane, scheduling allowed
 | Subnet | Purpose |
 |--------|---------|
 | `10.60.0.0/24` | Management / Kubernetes API |
-| `10.200.0.0/24` | Storage (Longhorn replication and CSI I/O) |
+| `10.200.0.0/24` | Storage bond — NFS traffic now; reserved for future Rook-Ceph replication |
 | `10.42.0.0/16` | Pod network (Cilium) |
 | `10.43.0.0/16` | Service network |
 
 ### Node NIC topology
 
-Each node has a dedicated 10 GbE storage bond on the `10.200.0.0/24` subnet. Longhorn replication and CSI I/O flow over this bond, keeping storage traffic off the management interface.
+Each node has a dedicated 10 GbE storage bond on the `10.200.0.0/24` subnet. Today this bond carries **NFS traffic only** (Postgres backups to TrueNAS at `10.200.0.41`). Longhorn replication does **not** use it — the Longhorn `storageNetwork` setting is disabled (`""`), so replication and CSI I/O traverse the Cilium pod network (`10.42.0.0/16`). Routing Longhorn onto this VLAN was abandoned after 5 attempts (see [SESSIONS.md → `longhorn-storagevlan-rollback`](SESSIONS.md)); the bond is now reserved for a future **Rook-Ceph** deployment, whose native `cluster_network` on `hostNetwork` OSDs will put replication here without a CNI.
 
 | Node | Management | Storage bond |
 |------|------------|-------------|
@@ -31,7 +31,7 @@ Each node has a dedicated 10 GbE storage bond on the `10.200.0.0/24` subnet. Lon
 | talos-cp-02 | `eno1` — single Intel I219-LM (e1000e), `10.60.0.202/24` | `bond0` — 2× Intel X520-DA2 SFP+ (ixgbe), `10.200.0.202/24` |
 | talos-cp-03 | `bond0` — 2× NIC (RTL8125 r8169 + Intel I225 igc), `10.60.0.203/24` | `bond1` — 2× Intel X710 SFP+ (i40e), `10.200.0.203/24` |
 
-All bonds run **802.3ad LACP** (fast rate, `layer3+4` hash policy). MTU is currently 1500 on both subnets — jumbo frames (9000 MTU) for the storage bond are a pending TODO.
+All bonds run **802.3ad LACP** (fast rate, `layer3+4` hash policy). The management interfaces (`eno1` and cp-03's mgmt `bond0`) run at MTU 1500; the storage bonds (`bond-storage`) run at **MTU 9000 (jumbo frames)** on all three nodes — verified live via `talosctl get links`, configured during the `jumbo-frames-storage-vlan` session.
 
 > etcd peer traffic is restricted to the management subnet (`advertisedSubnets: ["10.60.0.0/24"]`) — it never crosses the storage VLAN.
 
@@ -164,7 +164,7 @@ Both Gateways share the `network/wildcard-production-tls` secret for TLS termina
 
 ---
 
-### Cloudflare Tunnel (cloudflared) · `2026.5.0` · `network`
+### Cloudflare Tunnel (cloudflared) · `2026.5.2` · `network`
 
 **Outbound tunnel to Cloudflare's edge.** Two cloudflared replicas maintain persistent encrypted connections to Cloudflare's network, making `*.${CLUSTER_DOMAIN}` reachable externally without port forwarding, a static external IP, or firewall rules. All inbound external traffic is forwarded to the `envoy-external` Gateway (`10.60.0.230`). Managed by Flux HelmRelease via the `bjw-s/app-template` OCIRepository.
 
@@ -335,6 +335,8 @@ spec:
 
 Group all LAN services under `kubernetes/apps/network/external-services/` — one subdirectory per service, each with its own Flux `Kustomization` in a multi-document `ks.yaml`. TLS terminates at `envoy-internal` using the pre-loaded `cluster-vwn-io-tls` wildcard; the backend connection is plaintext HTTP to the LAN host.
 
+> **Live external-services**: `truenas` (TrueNAS web UI) and `wan-failover` are both deployed under this pattern today — useful as working reference examples when adding a new LAN proxy.
+
 > **TLS passthrough (end-to-end HTTPS):** requires a `TLS: Passthrough` listener on `envoy-internal` and a `TLSRoute` instead of an `HTTPRoute`. A future dedicated `envoy-services` gateway avoids adding this listener to `envoy-internal` — see [ROADMAP.md → Dedicated envoy-services Gateway](../docs/ROADMAP.md).
 
 ### Checklist for any new endpoint
@@ -384,6 +386,8 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 
 > **Topology spread**: helm-controller, kustomize-controller, and notification-controller share the pod label `app.kubernetes.io/part-of: flux` (injected via kustomize patch). 6 pods / 3 nodes = 2/2/2 split enforced via `DoNotSchedule`. A node failure causes leader-election failover within ~35 s (Flux lease duration). source-controller and flux-operator are intentionally excluded: source-controller's artifact HTTP server only starts on the leader so non-leader replicas are permanently NotReady; flux-operator manages the FluxInstance CR only and has no HA value.
 
+> **Reconciliation alerting (`flux-alerts`).** A Flux `Provider` (`alertmanager`, pointing at the in-cluster `kube-prometheus-stack-alertmanager` service) and an `Alert` (`flux-errors`, `eventSeverity: error` across all Kustomizations + HelmReleases) live in `flux-system` — see `kubernetes/apps/flux-system/flux-alerts/`. This forwards reconciliation failures into Alertmanager. ⚠️ **Outbound delivery is not yet wired**: Alertmanager has no receiver/route configured, so alerts currently terminate at its default `null` receiver and do not reach a human. See [REPO-AUDIT.md](REPO-AUDIT.md) finding **W1** and [ROADMAP.md → Alertmanager Receiver](ROADMAP.md#alertmanager-receiver).
+
 ---
 
 ### Longhorn · `v1.11.2` · `longhorn-system`
@@ -411,9 +415,9 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 
 ---
 
-### kube-prometheus-stack · `v85.3.0` (chart) · `observability`
+### kube-prometheus-stack · `v86.1.0` (chart) · `observability`
 
-**Cluster monitoring stack.** Deploys Prometheus, Alertmanager, kube-state-metrics, and node-exporter as a unified stack. Full-cluster scraping is configured via `ServiceMonitor` and `PodMonitor` CRDs. Longhorn volumes provide persistence for Prometheus (20 GiB) and Alertmanager (1 GiB), both scheduled on cp-01. Grafana is **disabled** in the chart values — it will be deployed separately.
+**Cluster monitoring stack.** Deploys Prometheus, Alertmanager, Grafana, kube-state-metrics, and node-exporter as a unified stack. Full-cluster scraping is configured via `ServiceMonitor` and `PodMonitor` CRDs. Longhorn volumes provide persistence for Prometheus (20 GiB) and Alertmanager (1 GiB), both scheduled on cp-01. Grafana is **enabled** and runs in-stack (admin credentials sourced from 1Password via `ExternalSecret`).
 
 | Component | Type | Replicas | Role |
 |-----------|------|----------|------|
@@ -422,10 +426,21 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 | `alertmanager-kube-prometheus-stack-alertmanager` | StatefulSet | 1 | Deduplicates, groups, and routes alerts from Prometheus rules |
 | `kube-prometheus-stack-kube-state-metrics` | Deployment | 1 | Exposes Kubernetes object state as Prometheus metrics |
 | `kube-prometheus-stack-prometheus-node-exporter` | DaemonSet | 3 (one/node) | Exposes per-node hardware and OS metrics |
+| `kube-prometheus-stack-grafana` | Deployment | 1 | Visualisation/dashboards over Prometheus; admin password from 1Password via `ExternalSecret` |
 
 ---
 
-### tuppr · `v0.1.35` · `system-upgrade`
+### smartctl-exporter · `v0.16.1` (chart) · `observability`
+
+**Disk SMART metrics exporter.** A per-node DaemonSet that reads SMART attributes from the NVMe drives via `smartctl` and exposes them as Prometheus metrics (temperature, wear, error counters), feeding the hardware-temperature `PrometheusRule` alerts added in the `hardware-monitoring` session.
+
+| Pod | Type | Replicas | Role |
+|-----|------|----------|------|
+| `smartctl-exporter` | DaemonSet | 3 (one/node) | Scrapes NVMe SMART data on each node; privileged access to block devices |
+
+---
+
+### tuppr · `v0.1.36` · `system-upgrade`
 
 **GitOps upgrade controller.** Watches `TalosUpgrade` and `KubernetesUpgrade` CRDs and performs rolling upgrades node-by-node. Triggered by Renovate PRs that bump version fields in `talenv.yaml` and `kubernetesupgrade.yaml`. Managed by Flux HelmRelease.
 
@@ -489,6 +504,28 @@ Two layers, one deployed and one planned:
 The logical backup runs as UID 4000, writes gzip-compressed SQL, and keeps a `last/postgres-latest.sql.gz` symlink for quick restore access. The `-c` flag in `POSTGRES_EXTRA_OPTS` emits `DROP ... IF EXISTS` before each object, making restores clean and idempotent.
 
 > **Current recovery limit**: without WAL archiving, the only recovery point is the most recent daily dump. Data written between the last dump and a total PVC loss (all three nodes) is unrecoverable. See **[ROADMAP.md → CloudNativePG: Backup, PITR, and Per-App Provisioning](ROADMAP.md#cloudnative-pg-backup-pitr-and-per-app-provisioning)** for the barman-cloud implementation plan and **[ROADMAP.md → Postgres NFS Backup: Restore Drill](ROADMAP.md#postgres-nfs-backup-restore-drill)** for the manual restore procedure.
+
+---
+
+### Reloader · `v2.2.11` (chart) · `reloader`
+
+**ConfigMap/Secret change propagator.** Watches `ConfigMap` and `Secret` objects and performs a rolling restart of any Deployment/DaemonSet/StatefulSet that references them (via the `reloader.stakater.com/auto` annotation or explicit `configmap.reloader.stakater.com/reload`). Closes the gap where a mounted config changes but the pod keeps the stale copy until manually restarted.
+
+| Pod | Type | Replicas | Role |
+|-----|------|----------|------|
+| `reloader` | Deployment | 1 | Watches referenced ConfigMaps/Secrets and triggers rolling restarts on change |
+
+> **Not a hard dependency.** Per repo convention, never add Reloader to a `dependsOn` chain — it is an optional convenience controller (see [CONVENTIONS.md] / memory `dependsOn strictness`).
+
+---
+
+### WAHA · `v5.0.1` (chart) · `automation`
+
+**WhatsApp HTTP API.** Self-hosted WhatsApp gateway exposing a REST API for automation workflows. Deployed via `app-template`; all secrets (API keys, session credentials) sourced from 1Password via `ExternalSecret`. Exposed internally via an `HTTPRoute` on `envoy-internal`.
+
+| Pod | Type | Replicas | Role |
+|-----|------|----------|------|
+| `waha` | Deployment | 1 | WhatsApp HTTP API server |
 
 ---
 
