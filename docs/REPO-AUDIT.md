@@ -1,7 +1,7 @@
 # GitOps Repository Audit <!-- omit from toc -->
 
 > **Living document** — re-run the audit commands in [How to Re-Audit](#how-to-re-audit) after significant changes and update the findings below.
-> Last audited: **2026-05-25** · Auditor: Claude Code (`gitops-repo-audit` skill) — W2 resolved same session
+> Last audited: **2026-06-05** · Auditor: Claude Code (`gitops-repo-audit` skill) — post storage-VLAN rollback; I3 resolved, W1 partially resolved (see below)
 
 ## Contents <!-- omit from toc -->
 
@@ -31,18 +31,20 @@
 
 | Kind | Count |
 |---|---|
-| HelmRelease | 20 |
-| Kustomization | 30 |
-| OCIRepository | 14 |
+| HelmRelease | 26 |
+| Kustomization | 40 |
+| OCIRepository | 17 |
 | HelmRepository | 5 |
 | Receiver | 1 |
-| Alert | 0 |
-| Provider | 0 |
+| Alert | 1 |
+| Provider | 1 |
 | ImageUpdateAutomation | 0 |
 
-**Namespaces**: actions-runner-system, cert-manager, external-secrets, flux-system, kube-system, longhorn-system, network, observability, openebs, system-upgrade, tailscale
+**Namespaces**: actions-runner-system, automation, cert-manager, database, external-secrets, flux-system, kube-system, longhorn-system, network, observability, openebs, system, system-upgrade, tailscale
 
-**Applications**: cilium · coredns · cert-manager · external-secrets · onepassword-connect · longhorn · openebs · envoy-gateway · cloudflared · external-dns (cloudflare + unifi) · tailscale-operator · actions-runner-controller · kube-prometheus-stack · spegel · metrics-server · tuppr · flux-operator · flux-instance · flux-receiver
+**Applications**: cilium · coredns · cert-manager · external-secrets · onepassword-connect · longhorn · openebs · envoy-gateway · cloudflared · external-dns (cloudflare + unifi) · tailscale-operator · actions-runner-controller · kube-prometheus-stack · smartctl-exporter · spegel · metrics-server · reloader · tuppr · cloudnative-pg (+ pgadmin + postgres-backup-local) · waha · external-services (truenas + wan-failover) · flux-operator · flux-instance · flux-receiver · flux-alerts
+
+> **Removed in the 2026-06-05 storage-VLAN rollback** (commit `299904e`): the Multus stack (`kube-system/multus/`), the whereabouts OCI chart source + HelmRelease (incl. the PR #703 backport), and the Longhorn `longhorn-storage` NAD + its `longhorn-nad` Kustomization. Longhorn-on-storage-VLAN was abandoned after 5 attempts; the cluster is pivoting to Rook-Ceph. See [SESSIONS.md → `longhorn-storagevlan-rollback`](SESSIONS.md) and `docs/longhorn-storage-network.md`.
 
 ---
 
@@ -102,11 +104,20 @@ All Flux resources use current stable API versions. No migration required.
 
 ### Gaps
 
-#### ⚠️ WARNING — No Flux Alerts configured
+#### ⚠️ WARNING — Flux alerts wired, but Alertmanager has no outbound receiver
 
-`Alert` and `Provider` resources are absent. Errors from any HelmRelease or Kustomization are silently swallowed — there is no path to a human operator.
+**Half resolved (2026-06-05).** `kubernetes/apps/flux-system/flux-alerts/` now deploys a Flux-native
+`Provider` (`type: alertmanager`, in-cluster address — resilient to gateway outages) + `Alert`
+(`eventSeverity: error`, `eventSources` = all `Kustomization` + `HelmRelease`, with a sensible
+`exclusionList`). So reconciliation errors **are** now forwarded into Alertmanager.
 
-The `Receiver` only handles inbound webhook triggers; it does not send outbound notifications. See [ROADMAP.md → Alertmanager Receiver](ROADMAP.md#alertmanager-receiver) for the planned Alertmanager wiring. A minimal Flux-native alert should also be added independently of Alertmanager — a Slack/Discord webhook `Provider` + `Alert` with `severity: error` across `flux-system` gives immediate feedback on reconciliation failures.
+**Remaining gap:** the kube-prometheus-stack `alertmanagerSpec` sets only tolerations + storage — there
+is **no `config:` / receiver / route**. Alertmanager therefore runs the chart's default config, whose
+top-level route terminates in the `null` receiver. Net effect: Flux errors reach Alertmanager's state
+but **never page a human**. Routing *into* the pipeline (done) and routing *out* to a channel (missing)
+are independent. Add an Alertmanager `config:` block (or `alertmanager.config` in the chart values) with a
+Slack/Discord/email/PagerDuty receiver and a `route` that matches the Flux alerts. Tracked in
+[ROADMAP.md → Alertmanager Receiver](ROADMAP.md#alertmanager-receiver).
 
 #### ✅ RESOLVED — Drift detection now cluster-wide default
 
@@ -124,11 +135,11 @@ The `Receiver` only handles inbound webhook triggers; it does not send outbound 
 
 **Tracked in**: [ROADMAP.md → FluxInstance: Migrate Sync to GitHub App Authentication](ROADMAP.md#fluxinstance-migrate-sync-to-github-app-authentication)
 
-#### ℹ️ INFO — No `retryInterval` on any HelmRelease
+#### ✅ RESOLVED — `retryInterval` now a cluster-wide default
 
-No HelmRelease sets `retryInterval`. Failed reconciliations retry on the controller's default schedule rather than a predictable interval.
-
-**Recommendation**: add `retryInterval: 1m` to HelmReleases as a cluster-wide default (via the `cluster-apps` global patch) or on individual critical releases. This gives faster recovery from transient failures without overwhelming the API server.
+`retryInterval: 2m` is now set on the top-level Flux Kustomizations and injected via the global
+`cluster-apps` patch (`kubernetes/flux/cluster/ks.yaml`), so failed reconciliations retry on a
+predictable schedule rather than the controller default. (Was I3.)
 
 ---
 
@@ -154,7 +165,7 @@ No HelmRelease sets `retryInterval`. Failed reconciliations retry on the control
 
 ### OCI Supply Chain (Cosign Verification)
 
-14 OCIRepositories in use. 6 have `spec.verify.provider: cosign`:
+17 OCIRepositories in use. 6 have `spec.verify.provider: cosign`:
 
 | OCIRepository | Cosign |
 |---|---|
@@ -165,15 +176,23 @@ No HelmRelease sets `retryInterval`. Failed reconciliations retry on the control
 | external-dns | ✅ |
 | openebs | ✅ |
 | cert-manager | ❌ |
+| cloudnative-pg | ❌ (new) |
 | coredns | ❌ |
 | envoy-gateway | ❌ |
 | gha-runner-scale-set-controller | ❌ |
 | gha-runner-scale-set | ❌ |
 | kube-prometheus-stack | ❌ |
+| reloader | ❌ (new) |
+| smartctl-exporter | ❌ (new) |
 | spegel | ❌ |
 | tuppr | ❌ |
 
-The 8 unverified repositories should be assessed individually — some upstream projects (e.g. cert-manager, coredns) publish cosign signatures; others (gha-runner-scale-set) may not yet. The session `2026-05-24 gitops-repo-audit` added cosign to the 6 that support it; the remaining 8 are downstream-limited or not yet investigated.
+The 11 unverified repositories should be assessed individually — some upstream projects (e.g.
+cert-manager, coredns) publish cosign signatures; others (gha-runner-scale-set) may not yet. The
+session `2026-05-24 gitops-repo-audit` added cosign to the 6 that support it. Three new repos
+(`cloudnative-pg`, `reloader`, `smartctl-exporter`) were added since without verification and should
+be checked for upstream cosign availability. (The whereabouts chart source — previously unverified —
+was removed in the 2026-06-05 storage-VLAN rollback.)
 
 ### Network & RBAC
 
@@ -196,18 +215,18 @@ _None._
 
 | # | Finding | Action |
 |---|---|---|
-| W1 | No Flux `Alert`/`Provider` configured — reconciliation errors are silent | Add a Discord/Slack `Provider` + `Alert` in `flux-system` with `severity: error` |
+| W1 | Flux `Alert`/`Provider` now forward errors into Alertmanager, but Alertmanager has **no outbound receiver** (default `null` route) — errors still don't reach a human | Add an Alertmanager `config:` with a Slack/Discord/email/PagerDuty receiver + `route` (tracked in ROADMAP → Alertmanager Receiver) |
 | ~~W2~~ | ~~Drift detection on 5/20 HelmReleases only~~ | ✅ Resolved — global patch in `cluster-apps` now injects `driftDetection: enabled` for all HelmReleases |
 
 ### Info
 
 | # | Finding | Action |
 |---|---|---|
-| I1 | FluxInstance `cluster.size` unset | Set `cluster.size: medium` in `flux-instance` values |
+| I1 | FluxInstance `cluster.size` unset (`cluster: {}`) — now 26 HR / 40 KS | Set `cluster.size: medium` in `flux-instance` values |
 | I2 | FluxInstance sync: SSH deploy key | Migrate to GitHub App auth (tracked in ROADMAP) |
-| I3 | No `retryInterval` on HelmReleases | Add `retryInterval: 1m` via global `cluster-apps` patch |
-| I4 | 8 OCIRepositories without cosign | Audit each upstream for cosign availability; add verification where supported |
-| I5 | Validation CI picks up non-K8s YAMLs | Add `-e talos -e assets -e kubernetes/bootstrap` to validate invocation |
+| ~~I3~~ | ~~No `retryInterval` on HelmReleases~~ | ✅ Resolved — `retryInterval: 2m` in the global `cluster-apps` patch + top-level Kustomizations |
+| I4 | 11 OCIRepositories without cosign (3 new: `cloudnative-pg`, `reloader`, `smartctl-exporter`) | Audit each upstream for cosign availability; add verification where supported |
+| I5 | Validation CI picks up non-K8s YAMLs (`Taskfile.yaml`) | Add `-e talos -e assets -e kubernetes/bootstrap` to validate invocation; `Taskfile.yaml` at root is an unavoidable false positive |
 | I6 | kustomize-controller co-location on cp-02 | Add `podAntiAffinity` (preferred) (tracked in ROADMAP) |
 
 ---

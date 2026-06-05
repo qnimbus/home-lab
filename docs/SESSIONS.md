@@ -4,6 +4,40 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-05 — `longhorn-storagevlan-rollback`
+
+### Goal
+Abandon the Longhorn-on-storage-VLAN effort after 5 failed attempts and cleanly remove all of its scaffolding (Multus/whereabouts/NAD/Cilium override + the dead Talos `/28` routes), pivoting storage-VLAN replication to a future Rook-Ceph deployment.
+
+### What we did
+- **Mapped the full storage-VLAN footprint** and split it along a GitOps-vs-machine-config seam: everything under `kubernetes/` is self-pruning (delete file → Flux GCs the live object), while the `talconfig.yaml` routes are baked into each node's machine config and only leave via `genconfig` + apply.
+- **Part A — GitOps teardown (commit `299904e`).** Deleted the entire `kube-system/multus/` stack (incl. the `448ed24` PR #703 whereabouts backport), the whereabouts OCIRepository source, the `longhorn-storage` NAD + its `longhorn-nad` Kustomization document, and reverted Cilium `cni.exclusive: false`. Refreshed the now-permanent `storageNetwork: ""` comment to point at the Ceph decision. Validated all touched kustomizations with `kubectl kustomize` before committing (+40/−504, overwhelmingly removal).
+- **Part B — Talos route removal.** Stripped the cross-node `/28` static routes from all three `bond-storage` blocks in `talconfig.yaml` (kept the bond, `/24` addresses, jumbo MTU — Ceph reuses them). `genconfig` regenerated clean configs; a `--dry-run` apply proved each change is **"Applied configuration without a reboot"** — a live route withdrawal, overturning the doc's inherited assumption that route changes need reboots. Applied cp-01 → cp-03 → cp-02, each verified reboot-free with only the `/24` route remaining.
+- **Monitored the reconcile.** Flux picked up `299904e`: multus DaemonSets gone, whereabouts HelmRelease Helm-uninstalled, NodeSlicePool GC'd (the `net-attach-def` CRD itself removed). Cilium Helm upgrade succeeded and rolled its agents to reclaim CNI exclusivity.
+- **cp-02 hard-down (2nd occurrence) during the Cilium agent rollout.** cp-02 went `NotReady` — kubelet heartbeat stopped, 100% mgmt-network packet loss, Talos `apid` unreachable; same signature as 2026-06-02. cp-01/cp-03 took the identical Cilium restart cleanly. Confirmed etcd quorum held (2/3), recovered via user power-cycle, then watched all 5 Longhorn volumes rebuild cp-02 replicas back to `healthy` 3/3. Notably, the later reboot-free route apply did **not** trigger another down — narrowing the suspect to agent-restart/eBPF-reload stress.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/kube-system/multus/**` (9 files) | Deleted the entire Multus + whereabouts stack (incl. PR #703 backport) |
+| `kubernetes/apps/kube-system/kustomization.yaml` | Dropped `./multus/ks.yaml` resource |
+| `kubernetes/flux/meta/repos/oci/whereabouts-chart.yaml` | Deleted the whereabouts OCIRepository source |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Dropped `./whereabouts-chart.yaml` resource |
+| `kubernetes/apps/longhorn-system/longhorn/nad/**` (2 files) | Deleted the `longhorn-storage` NAD |
+| `kubernetes/apps/longhorn-system/longhorn/ks.yaml` | Removed the `longhorn-nad` Kustomization document |
+| `kubernetes/apps/kube-system/cilium/app/helm/values.yaml` | Reverted `cni.exclusive: false` → exclusive default |
+| `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml` | Refreshed `storageNetwork: ""` comment (abandoned → Ceph) |
+| `talos/talconfig.yaml` | Removed cross-node `/28` routes; kept bond/addrs/MTU; updated comments |
+| `docs/longhorn-storage-network.md` | Added "⛔ ABANDONED → Rook-Ceph" banner (history preserved) |
+
+### Key decisions
+- **Abandoned Longhorn-on-storage-VLAN rather than pursue Attempt 6.** The whereabouts chroot blocker was solved, but same-host iSCSI over ipvlan-L3 is structurally unsolvable here; Rook-Ceph's native `cluster_network` on `hostNetwork` OSDs sidesteps it entirely with no CNI.
+- **Kept the `bond-storage` fabric (interface, `/24` addresses, jumbo MTU).** Removing only the ipvlan-L3-specific `/28` routes leaves the storage VLAN clean and Ceph-ready.
+- **Dry-ran the Talos apply before committing to it.** Confirming the route removal was reboot-free eliminated the staggered-reboot ceremony and, crucially, the exposure to cp-02's reboot fragility.
+- **Recorded the cp-02 recurrence as a real data point** (now 2-for-2 with network-stack reconciles, both during agent churn, never during a live config edit) in the open `cp02-outage-investigation`.
+
+---
+
 ## 2026-06-02 — `longhorn-storagenetwork-attempt5`
 
 ### Goal
