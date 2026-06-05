@@ -8,11 +8,6 @@ cgroup:
   automount:
     enabled: false
   hostRoot: /sys/fs/cgroup
-# Allow Multus to coexist as the default CNI — Multus writes 00-multus.conf which
-# wraps Cilium as primary. Without this, Cilium renames 00-multus.conf to
-# 00-multus.conf.cilium_bak and kubelet uses Cilium directly, bypassing Multus.
-cni:
-  exclusive: false
 # Bond layout (all nodes use bond-storage for storage after talconfig.yaml rename):
 #   cp-01/02: management=e1000e (single port), storage=bond-storage (ixgbe X520)
 #   cp-03:    management=bond0 (RTL8125+igc),  storage=bond-storage (i40e X710)

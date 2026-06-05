@@ -57,7 +57,9 @@ nodes:
       # LinkAliasConfig documents (required for bond member enslavement) for hardwareAddr/driver
       # selectors. The alias controller emits a transient "matched multiple links" warning after
       # LACP propagates the bond MAC to both slaves — this is cosmetic only; bonds form correctly.
-      # bond-storage: consistent name across all 3 nodes — required for the Multus NAD master field.
+      # bond-storage: consistent name across all 3 nodes — retained as the storage-VLAN fabric
+      # for Rook-Ceph (cluster_network on hostNetwork OSDs). The /24 connected route below is all
+      # that's needed; the old per-node /28 cross-node routes (for whereabouts ipvlan-L3) are gone.
       - interface: bond-storage
         bond:
           mode: 802.3ad
@@ -73,11 +75,6 @@ nodes:
         addresses:
           - "10.200.0.201/24"
         mtu: 9000
-        routes:
-          - network: "10.200.0.80/28"    # cp-02 pod range (ipvlan L3: no ARP cross-node)
-            gateway: "10.200.0.202"
-          - network: "10.200.0.96/28"    # cp-03 pod range
-            gateway: "10.200.0.203"
 
   - hostname: "talos-cp-02"                         # Lenovo M920Q #2 (i5-8500T, 64GB, X520-DA2)
     ipAddress: "10.60.0.202"
@@ -115,7 +112,9 @@ nodes:
           ip: "${clusterEndpoint}"
       # Storage — LACP bond of 2x SFP+ ports (Intel X520-DA2, enp1s0f0 + enp1s0f1)
       # See cp-01 comment above re: hardwareAddr selector rationale.
-      # bond-storage: consistent name across all 3 nodes — required for the Multus NAD master field.
+      # bond-storage: consistent name across all 3 nodes — retained as the storage-VLAN fabric
+      # for Rook-Ceph (cluster_network on hostNetwork OSDs). The /24 connected route below is all
+      # that's needed; the old per-node /28 cross-node routes (for whereabouts ipvlan-L3) are gone.
       - interface: bond-storage
         bond:
           mode: 802.3ad
@@ -131,11 +130,6 @@ nodes:
         addresses:
           - "10.200.0.202/24"
         mtu: 9000
-        routes:
-          - network: "10.200.0.64/28"    # cp-01 pod range (ipvlan L3: no ARP cross-node)
-            gateway: "10.200.0.201"
-          - network: "10.200.0.96/28"    # cp-03 pod range
-            gateway: "10.200.0.203"
 
   - hostname: "talos-cp-03"                         # Minisforum MS-A2 (AMD, 32 cores, 92GB, X710)
     ipAddress: "10.60.0.203"
@@ -182,7 +176,9 @@ nodes:
       # NOTE: driver: i40e matched both ports simultaneously; Talos skipped the alias and bond1
       # never formed. hardwareAddr selectors give unique per-port matches. See cp-01 comment
       # for why name: selectors cannot be used here.
-      # bond-storage: consistent name across all 3 nodes — required for the Multus NAD master field.
+      # bond-storage: consistent name across all 3 nodes — retained as the storage-VLAN fabric
+      # for Rook-Ceph (cluster_network on hostNetwork OSDs). The /24 connected route below is all
+      # that's needed; the old per-node /28 cross-node routes (for whereabouts ipvlan-L3) are gone.
       - interface: bond-storage
         bond:
           mode: 802.3ad
@@ -198,11 +194,6 @@ nodes:
         addresses:
           - "10.200.0.203/24"
         mtu: 9000
-        routes:
-          - network: "10.200.0.64/28"    # cp-01 pod range (ipvlan L3: no ARP cross-node)
-            gateway: "10.200.0.201"
-          - network: "10.200.0.80/28"    # cp-02 pod range
-            gateway: "10.200.0.202"
 
 patches:
   - "@./patches/global/machine-features.yaml"

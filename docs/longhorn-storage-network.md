@@ -1,5 +1,32 @@
 # Longhorn Storage Network Isolation — Tracking Document
 
+> ## ⛔ ABANDONED (2026-06-05) — pivoting to Rook-Ceph
+>
+> After **5 attempts**, driving Longhorn engine↔replica traffic onto the storage VLAN via Multus +
+> whereabouts (ipvlan-L3) is **abandoned**. The whereabouts chroot node-name blocker *was* solved
+> (backport of upstream [PR #703](https://github.com/k8snetworkplumbingwg/whereabouts/pull/703) for
+> [issue #518](https://github.com/k8snetworkplumbingwg/whereabouts/issues/518) — write a `nodename`
+> file + `configuration_path` into the on-host flatfile `whereabouts.conf`; the value must live in
+> the flatfile, not the NAD, because `getNodeName` treats it as a directory while `GetFlatIPAM`
+> treats a NAD value as a file). That finding is preserved here even though the code is now removed.
+>
+> The remaining, **unsolvable** blocker is **same-host iSCSI over ipvlan-L3**: when a Longhorn engine
+> and the consuming node's `iscsiadm` are co-located, the host kernel has no route to the pod's
+> `lhnet1` IP — the ipvlan-L3 slave lives in the pod netns (no host `/32` route) and ipvlan-L3
+> suppresses ARP. The per-node `/28` + static-route scheme only fixes *cross*-node traffic.
+>
+> **Decision:** storage-VLAN replication moves to **Rook-Ceph**, whose native `cluster_network` on
+> `hostNetwork: true` OSDs puts replication on `10.200.0.0/24` with no CNI involvement — sidestepping
+> the same-host problem entirely.
+>
+> **Removed in this rollback (GitOps + Talos):** the Multus stack (`kube-system/multus/`), the
+> whereabouts chart source + HelmRelease (incl. the PR #703 backport), the `longhorn-storage` NAD +
+> its `longhorn-nad` Kustomization, the Cilium `cni.exclusive: false` override, and the cross-node
+> `/28` static routes in `talconfig.yaml`. **Kept:** `bond-storage` + its `10.200.0.20x/24` addresses
+> + jumbo MTU (Ceph reuses this fabric); Longhorn itself, running on the Cilium pod network.
+>
+> The history below is retained for posterity (Attempts 1–5 + the same-host root-cause analysis).
+
 ## Goal
 
 Move Longhorn engine↔replica traffic from the Cilium pod network (`10.42.x.x`) onto the

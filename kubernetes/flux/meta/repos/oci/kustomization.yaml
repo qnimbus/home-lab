@@ -21,4 +21,3 @@ resources:
   - ./reloader.yaml
   - ./tailscale-operator.yaml
   - ./cloudnative-pg.yaml
-  - ./whereabouts-chart.yaml
