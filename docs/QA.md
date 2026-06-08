@@ -8,6 +8,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 
 **Storage**
 - [Longhorn CSI components are in CrashLoopBackOff / no pods created for `longhorn-csi-plugin`](#longhorn-csi-components-are-in-crashloopbackoff--longhorn-csi-plugin-daemonset-has-0-pods)
+- [Why was routing Longhorn replica traffic onto the storage VLAN abandoned?](#why-was-routing-longhorn-replica-traffic-onto-the-storage-vlan-abandoned)
 
 **Networking**
 - [Why does cp-03 show many `eth0: renamed from tmp<random>` messages?](#why-does-the-talos-console-for-cp-03-show-many-eth0-renamed-from-tmprandom-kernel-messages)
@@ -91,6 +92,35 @@ Set all three levels (`enforce`, `warn`, `audit`) so that admission warnings and
 **This pattern applies to any privileged system workload** — Rook/Ceph OSDs, GPU driver DaemonSets, node-level agents, or any other chart that needs `privileged: true` or `SYS_ADMIN`. Always check whether the namespace has the PSA label when these components fail to start with no obvious error in their own logs.
 
 **Trigger in this cluster (2026-05-13):** The Kubernetes version revert from v1.34.7 → v1.33.11 (`e49c556`) appears to have left a stricter cluster-level PSA default active. The namespace label was never in Git (the Longhorn chart doesn't set it), and the deployment had worked previously — indicating PSA enforcement tightened during the v1.34 upgrade attempt.
+
+---
+
+### Why was routing Longhorn replica traffic onto the storage VLAN abandoned?
+
+**Short answer:** After 5 attempts, driving Longhorn engine↔replica traffic onto the `10.200.0.0/24`
+storage VLAN via Multus + whereabouts hit an **unsolvable same-host iSCSI** problem. The cluster pivoted
+to **Rook-Ceph** instead. Full attempt log preserved in
+[history/longhorn-storage-network.md](history/longhorn-storage-network.md).
+
+**The root cause (the part worth remembering):** Longhorn presents each volume to the consuming node via
+**iSCSI to a pod-local IP**. When the engine pod and the consuming node's `iscsiadm` are **co-located on
+the same host**, the host kernel needs a route to the pod's `lhnet1` (storage-VLAN) IP. With **ipvlan-L3**:
+
+- the ipvlan slave lives in the *pod* netns, so the host has **no `/32` route** back to that pod IP, and
+- ipvlan-L3 **suppresses ARP**, so the host can't resolve it on the L2 segment either.
+
+The per-node `/28` + static-route scheme only fixes **cross-node** traffic; it does nothing for the
+same-host path. `macvlan` and `ipvlan l2` were also tried and failed for related L2/host-isolation reasons.
+
+**Why Rook-Ceph sidesteps it:** Ceph OSDs run with `hostNetwork: true` and a native `cluster_network`,
+so replication rides the storage VLAN **directly from host network namespaces** — no CNI, no pod-IP
+routing, no same-host problem. See [HARDWARE-ARCHITECTURE.md](HARDWARE-ARCHITECTURE.md).
+
+**Bonus finding (whereabouts on Talos):** whereabouts crashes on Talos because the chroot has no
+`/etc/hostname`. The fix (backport of upstream [PR #703](https://github.com/k8snetworkplumbingwg/whereabouts/pull/703))
+is to write a `nodename` file + `configuration_path` into the on-host flatfile `whereabouts.conf` — the
+value must live in the **flatfile, not the NAD**, because `getNodeName` treats a NAD value as a directory
+while `GetFlatIPAM` treats it as a file. (Solved, but moot now that the whole approach is dropped.)
 
 ---
 

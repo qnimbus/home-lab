@@ -1,6 +1,13 @@
 # Potential Deployments
 
-Reference: [`home-ops-bykaj`](../tmp/home-ops-bykaj/kubernetes) — a community home-ops repo used as a pattern reference.
+> **Audience:** 👤 human planning · **Status:** candidate backlog (not a state record).
+> This is a *shortlist of apps to consider*, not the authoritative inventory. The source of truth for
+> **what is actually deployed** is [REPO-AUDIT.md → Resource Inventory](REPO-AUDIT.md#resource-inventory)
+> and [CLUSTER.md → Running Components](CLUSTER.md#running-components). The **✅ deployed** markers and
+> chart versions below are a convenience snapshot that *will* lag — verify against those two docs and the
+> live Renovate-tracked `helm/values.yaml` before acting on anything here.
+
+Reference: [`bykaj/home-ops`](https://github.com/bykaj/home-ops/tree/main/kubernetes) — a community home-ops repo used as a pattern source.
 
 Apps are grouped by functional area. Entries marked **✅ deployed** are already live in this cluster; all others are candidates to adopt.
 

@@ -7,7 +7,8 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 - [In Progress](#in-progress)
   - [CloudNativePG: Backup, PITR, and Per-App Provisioning](#cloudnative-pg-backup-pitr-and-per-app-provisioning)
   - [Postgres NFS Backup: Restore Drill](#postgres-nfs-backup-restore-drill)
-  - [Longhorn Storage Network (Multus + Storage VLAN)](#longhorn-storage-network-multus--storage-vlan)
+  - [~~Longhorn Storage Network (Multus + Storage VLAN)~~ — ABANDONED](#longhorn-storage-network-multus--storage-vlan--abandoned-superseded-by-rook-ceph)
+  - [Rook-Ceph Migration](#rook-ceph-migration)
   - [Future Storage Options](#future-storage-options)
   - [Grafana](#grafana)
   - [Alertmanager Receiver](#alertmanager-receiver)
@@ -142,202 +143,39 @@ The `postgres-backup-local` CronJob writes a daily `pg_dumpall` backup to TrueNA
 
 ---
 
-### Longhorn Storage Network (Multus + Storage VLAN)
+### ~~Longhorn Storage Network (Multus + Storage VLAN)~~ — ABANDONED, superseded by Rook-Ceph
 
-**Background — why this matters:**
-The incident on 2026-05-30 revealed that all Longhorn engine↔replica communication flows over the Cilium pod network (`10.42.x.x`). When cp-02 went down, Cilium's eBPF route convergence (~10 min) transiently broke the path from the Longhorn engine (running on cp-03) to cp-01's replica pod, causing a false fault with `connect: no route to host`. This created a scheduling deadlock that left the pgadmin volume on a single replica until cp-02 returned.
+> **Status: ABANDONED (2026-06-05).** After 5 attempts, routing Longhorn engine↔replica traffic onto
+> the storage VLAN via Multus + whereabouts (ipvlan-L3) was abandoned on an unsolvable **same-host iSCSI**
+> blocker. The full attempt log, root-cause analysis, and the whereabouts PR #703 finding are preserved in
+> [history/longhorn-storage-network.md](history/longhorn-storage-network.md); the distilled root cause is in
+> [QA.md](QA.md#why-was-routing-longhorn-replica-traffic-onto-the-storage-vlan-abandoned). The storage-VLAN
+> isolation goal now moves to **Rook-Ceph**, whose native `cluster_network` on `hostNetwork` OSDs sidesteps
+> the same-host problem — see [Rook-Ceph Migration](#rook-ceph-migration) below and
+> [HARDWARE-ARCHITECTURE.md](HARDWARE-ARCHITECTURE.md).
+>
+> All Multus/whereabouts/NAD scaffolding + the Cilium `cni.exclusive` override + cross-node `/28` Talos
+> routes were removed in the rollback (commit `299904e`). `bond-storage` + jumbo MTU are **kept** (Ceph
+> reuses the fabric).
 
-Moving Longhorn to the dedicated storage VLAN eliminates this class of failure entirely: storage VLAN IPs (`10.200.x.x`) are routed by the kernel's physical routing table — Cilium does not touch them, so no CNI convergence event can disrupt replica connectivity. As a bonus, all replica I/O, snapshots, and rebuilds move from the 1 GbE management link onto the 2× 10 GbE SFP+ LACP bond (`bond0` on cp-01/cp-02, `bond1` on cp-03).
+**Still-valid, CNI-independent tuning lifted from the abandoned plan** — worth doing regardless of the
+storage backend, to soften false replica faults during Cilium convergence:
 
----
-
-#### Quick win — raise `replica-replenishment-wait-interval` (implement now, independently)
-
-Increase the Longhorn setting from 600 s to 900 s. This delays the first rebuild-scheduling attempt after a node failure, giving Cilium more time to finish converging before Longhorn touches the replica graph. It does **not** prevent a false fault, but it reduces the chance of a second replica being caught mid-convergence and compounding the first.
-
-In `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml`:
-
-```yaml
-defaultSettings:
-  replicaReplenishmentWaitInterval: "900"
-```
-
-No cluster downtime required — the setting takes effect on next Longhorn manager reconcile.
-
----
-
-#### Phase 1 — Verify and standardise storage bond interface names
-
-The Multus `NetworkAttachmentDefinition` must reference the same interface name on every node. Current hardware layout uses different bond names:
-
-| Node | Storage bond | Driver | Speed |
-|------|-------------|--------|-------|
-| cp-01 | `bond0` | ixgbe (X520) | 2× 10 GbE SFP+ |
-| cp-02 | `bond0` | ixgbe (X520) | 2× 10 GbE SFP+ |
-| cp-03 | `bond1` | i40e (X710) | 2× 10 GbE SFP+ |
-
-A single NAD cannot reference two different interface names. Resolve this before deploying Multus — two options:
-
-**Option A (recommended) — use the Talos VLAN sub-interface name** (if Talos already creates a consistent named link for the storage VLAN on all nodes, e.g., `storage` or `bond0.200`):
-```bash
-talosctl --nodes 10.60.0.201,10.60.0.202,10.60.0.203 get links \
-  | grep -i "200\|storage\|bond"
-```
-If a consistent VLAN interface name exists across all three nodes, use that as `master` in the NAD.
-
-**Option B — rename cp-03's storage bond in `talconfig.yaml`** to `bond0` so all three nodes match. This requires a Talos config apply + controlled reboot of cp-03. Adjust the `bond1` reference in the storage VLAN patch to `bond0`, regenerate configs, apply.
-
-Deliverable: confirm or establish a single interface name (`<storage-iface>`) to use in the NAD.
+> Raise Longhorn `replicaReplenishmentWaitInterval` from `600` to `900` (s) in
+> `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml` → `defaultSettings`. Delays the first
+> rebuild-scheduling attempt after a node failure so Cilium can finish converging first. No downtime; takes
+> effect on next manager reconcile.
 
 ---
 
-#### Phase 2 — Deploy Multus CNI
+### Rook-Ceph Migration
 
-Multus is a meta-CNI plugin that allows pods to attach additional network interfaces. It does not replace Cilium — it wraps it, delegating the primary interface to Cilium and attaching extras via NADs.
-
-```
-kubernetes/apps/kube-system/multus/
-├── ks.yaml          # dependsOn: cilium (Multus wraps Cilium; Cilium must be healthy first)
-├── app/
-│   ├── kustomization.yaml
-│   ├── namespace.yaml       # kube-system already exists; omit if deploying there
-│   └── helmrelease.yaml
-```
-
-Source — check `ghcr.io/home-operations/charts-mirror/multus-cni` first; fall back to upstream:
-```yaml
-# kubernetes/flux/meta/repos/oci/multus.yaml
-apiVersion: source.toolkit.fluxcd.io/v1
-kind: OCIRepository
-metadata:
-  name: multus-cni
-  namespace: flux-system
-spec:
-  interval: 1h
-  layerSelector:
-    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
-    operation: copy
-  url: oci://ghcr.io/k8snetworkplumbingwg/multus-cni-chart
-  ref:
-    # renovate: datasource=docker depName=ghcr.io/k8snetworkplumbingwg/multus-cni-chart
-    tag: "<latest>"
-```
-
-Key HelmRelease values:
-```yaml
-cni:
-  confDir: /etc/cni/net.d
-  binDir: /opt/cni/bin    # verify against Talos CNI bin path
-multus:
-  defaultCniConfFile: ""  # let Cilium remain the default CNI
-```
-
-> **Talos note:** Verify that Talos exposes `/opt/cni/bin` (or the equivalent path) as writable for the Multus DaemonSet. Talos's immutable rootfs may require a specific `hostPath` mount or an extension. Check [factory.talos.dev](https://factory.talos.dev) for a `cni-plugins` extension if Multus cannot write its binary.
-
----
-
-#### Phase 3 — Deploy whereabouts IPAM
-
-Whereabouts provides cluster-wide IP address management for secondary interfaces — essential for assigning non-overlapping storage VLAN IPs to Longhorn pods across all three nodes.
-
-Deploy alongside Multus in the same Kustomization or as a companion DaemonSet. Source: `ghcr.io/k8snetworkplumbingwg/whereabouts`.
-
-Plan a dedicated IP range within `10.200.0.0/24` that does not conflict with existing allocations:
-
-| Range | Used by |
-|-------|---------|
-| `10.200.0.201–203` | Node storage VLAN IPs (talos-cp-01/02/03) |
-| `10.200.0.41` | TrueNAS NFS server |
-
-Suggested Longhorn pod range: **`10.200.0.64/26`** (`10.200.0.64–127`) — 64 addresses, comfortably clear of nodes and NAS. For a 3-node cluster, Longhorn needs at most ~6–9 instance-manager + engine pods on the storage network.
-
----
-
-#### Phase 4 — Create NetworkAttachmentDefinition
-
-Once Phase 1 has confirmed a consistent interface name, create the NAD in `longhorn-system`:
-
-```yaml
-# kubernetes/apps/longhorn-system/longhorn/app/storage-nad.yaml
-apiVersion: k8s.cni.cncf.io/v1
-kind: NetworkAttachmentDefinition
-metadata:
-  name: longhorn-storage
-  namespace: longhorn-system
-spec:
-  config: |
-    {
-      "cniVersion": "0.3.1",
-      "name": "longhorn-storage",
-      "type": "macvlan",
-      "master": "<storage-iface>",
-      "mode": "bridge",
-      "mtu": 9000,
-      "ipam": {
-        "type": "whereabouts",
-        "range": "10.200.0.64/26",
-        "exclude": []
-      }
-    }
-```
-
-> `mtu: 9000` matches the jumbo frames already configured on the storage VLAN bonds. If `macvlan bridge` mode does not work with the bonded interface (some drivers reject it), try `ipvlan` with `mode: l2` as an alternative.
-
-Add `storage-nad.yaml` to `app/kustomization.yaml`.
-
----
-
-#### Phase 5 — Configure Longhorn to use the storage network
-
-1. Ensure **all volumes are healthy** (no rebuilding, degraded, or detached) before proceeding.
-2. Set the `storage-network` Longhorn setting. In `helm/values.yaml`:
-   ```yaml
-   defaultSettings:
-     storageNetwork: "longhorn-system/longhorn-storage"
-   ```
-3. Commit and let Flux reconcile. Longhorn will:
-   - Detect the `storage-network` change
-   - Perform a **rolling restart of all instance-manager pods** — each pod receives an additional network interface from Multus on the storage VLAN
-   - Update replica communication to use `10.200.x.x` IPs
-
-**Schedule this during a maintenance window.** The rolling restart means all volumes briefly lose their engine connection as each node's instance-manager restarts. Longhorn handles this gracefully (volumes reattach automatically), but there will be a short I/O pause per node.
-
----
-
-#### Verification
-
-After Phase 5 completes, confirm:
-
-```bash
-# 1. Replica pods should now report storage VLAN IPs (10.200.0.x)
-kubectl -n longhorn-system get pods -l longhorn.io/component=instance-manager -o wide
-
-# 2. Longhorn Volume status should show storageIP in 10.200.0.x range
-kubectl -n longhorn-system get volumes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.currentNodeID}{"\n"}{end}'
-
-# 3. Check a replica object's storageIP field
-kubectl -n longhorn-system get replicas -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.storageIP}{"\n"}{end}'
-# Expected: all non-empty and in 10.200.0.64/26
-
-# 4. Simulate a node-down event: cordon cp-02, wait for Cilium convergence (10 min),
-#    confirm no replica faults on cp-01 or cp-03 — the definitive end-to-end test
-```
-
----
-
-#### Risks and caveats
-
-| Risk | Mitigation |
-|------|-----------|
-| Talos CNI bin path not writable by Multus DaemonSet | Check Talos docs / factory.talos.dev for CNI plugins extension before deploying |
-| `macvlan bridge` rejected by ixgbe/i40e driver | Fall back to `ipvlan l2` mode in the NAD |
-| Interface name inconsistency across nodes | Resolve in Phase 1 before any other phase |
-| Instance-manager rolling restart causes I/O pause | Schedule in a maintenance window; no data loss risk |
-| whereabouts IP range overlaps with future NAS expansion | Reserve `10.200.0.64/26` in network docs; leave `10.200.0.128–200` for infrastructure |
-
----
-
-**Dependencies:** Longhorn ✅, Cilium ✅ (Multus wraps it), storage VLAN jumbo frames ✅ (`jumbo-frames-storage-vlan` session). Independent of VolSync — implement this first to harden the storage layer that VolSync will back up.
+The committed replacement for both Longhorn (interim) and the abandoned storage-VLAN isolation effort.
+Target topology, drive placement, failure-domain design, and the 5-node expansion context are specified in
+**[HARDWARE-ARCHITECTURE.md](HARDWARE-ARCHITECTURE.md)** (Rook-Ceph `size=3`/`min_size=2`, `host` failure
+domain, OSDs on the `10.200.0.0/24` bond). Next step when approved: generate the GitOps artifacts
+(`CephCluster` + Talos `installDiskSelector`/node-role patches). Detail intentionally lives in the hardware
+doc — do not duplicate it here.
 
 ---
 
@@ -402,10 +240,10 @@ If the thermal paste reapplication does not stabilise temperatures, the BIOS fan
 
 ### Future Storage Options
 
-Both stages are optional — Longhorn covers all current workload needs. Implement only if requirements emerge.
+Replicated block storage is covered by the committed [Rook-Ceph Migration](#rook-ceph-migration) (Ceph also
+provides RWX block volumes and S3-compatible object storage natively). The remaining optional item:
 
-- **Stage 3 — Rook/Ceph**: S3-compatible object storage, `ReadWriteMany` block volumes, or more granular replication controls. The 3-disk hardware layout supports a 3-OSD Ceph cluster directly. Costs ~2–3 GB RAM per OSD node. Not required unless Longhorn's RWO-only model becomes a blocker.
-- **Stage 4 — NFS/SMB CSI**: Deploy `csi-driver-nfs` and/or `csi-driver-smb` for ReadWriteMany workloads (photo libraries, shared media) when a NAS is added. Wire credentials via ExternalSecret from 1Password (ESO + 1Password Connect already deployed — no blocker).
+- **NFS/SMB CSI**: Deploy `csi-driver-nfs` and/or `csi-driver-smb` for ReadWriteMany file workloads (photo libraries, shared media) backed by the NAS. Wire credentials via ExternalSecret from 1Password (ESO + 1Password Connect already deployed — no blocker). Optional even after Rook-Ceph, for NAS-backed RWX where Ceph capacity should be conserved.
 
 ---
 

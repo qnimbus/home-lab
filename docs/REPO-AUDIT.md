@@ -44,7 +44,7 @@
 
 **Applications**: cilium · coredns · cert-manager · external-secrets · onepassword-connect · longhorn · openebs · envoy-gateway · cloudflared · external-dns (cloudflare + unifi) · tailscale-operator · actions-runner-controller · kube-prometheus-stack · smartctl-exporter · spegel · metrics-server · reloader · tuppr · cloudnative-pg (+ pgadmin + postgres-backup-local) · waha · external-services (truenas + wan-failover) · flux-operator · flux-instance · flux-receiver · flux-alerts
 
-> **Removed in the 2026-06-05 storage-VLAN rollback** (commit `299904e`): the Multus stack (`kube-system/multus/`), the whereabouts OCI chart source + HelmRelease (incl. the PR #703 backport), and the Longhorn `longhorn-storage` NAD + its `longhorn-nad` Kustomization. Longhorn-on-storage-VLAN was abandoned after 5 attempts; the cluster is pivoting to Rook-Ceph. See [SESSIONS.md → `longhorn-storagevlan-rollback`](SESSIONS.md) and `docs/longhorn-storage-network.md`.
+> **Removed in the 2026-06-05 storage-VLAN rollback** (commit `299904e`): the Multus stack (`kube-system/multus/`), the whereabouts OCI chart source + HelmRelease (incl. the PR #703 backport), and the Longhorn `longhorn-storage` NAD + its `longhorn-nad` Kustomization. Longhorn-on-storage-VLAN was abandoned after 5 attempts; the cluster is pivoting to Rook-Ceph. See [SESSIONS.md → `longhorn-storagevlan-rollback`](SESSIONS.md) and `docs/history/longhorn-storage-network.md`.
 
 ---
 

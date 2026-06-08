@@ -1,8 +1,27 @@
 # Home Lab
 
-> **Note:** This README is a stub. A future update will add a proper project overview,
-> architecture summary, and full operational documentation. The sections below are
-> complete and accurate; everything else is yet to be written.
+A bare-metal **Talos Linux** Kubernetes cluster managed entirely by **GitOps (FluxCD)**.
+Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that aren't reflected in
+Git. Three control-plane nodes (scheduling enabled, no dedicated workers) run Cilium (kube-proxy
+replacement), CoreDNS, cert-manager, External Secrets + 1Password Connect, and an application stack
+deployed via Helm + Flux.
+
+- **Provisioning:** `talhelper` renders Talos machine configs from [`talos/talconfig.yaml`](talos/talconfig.yaml); `go-task` drives the workflow (`task` lists all targets).
+- **GitOps:** Flux reconciles [`kubernetes/`](kubernetes/) from this repo; bootstrap is via Helmfile.
+- **Secrets:** two-tier — SOPS+age for Talos secrets, External Secrets Operator + 1Password for app secrets.
+
+## Documentation
+
+Start at the **[documentation index](docs/README.md)** — it lists every doc by audience (👤 human /
+🤖 agent) and status, and includes a source-of-truth map. Quick links:
+
+| Doc | What it covers |
+|-----|----------------|
+| [docs/CLUSTER.md](docs/CLUSTER.md) | Current-state reference: hardware, networks, components, FluxCD layout, **bootstrap runbook** |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Backlog and in-progress work |
+| [docs/HARDWARE-ARCHITECTURE.md](docs/HARDWARE-ARCHITECTURE.md) | Planned 5-node + Rook-Ceph expansion |
+| [docs/QA.md](docs/QA.md) · [docs/BOOT-ISSUE-TROUBLESHOOTING.md](docs/BOOT-ISSUE-TROUBLESHOOTING.md) | Operational gotchas and recovery runbooks |
+| [CLAUDE.md](CLAUDE.md) | Agent operating rules and repo conventions |
 
 ---
 

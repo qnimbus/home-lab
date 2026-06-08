@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-08 | `docs-consolidation` | Doc audit + consolidation; fixed staleness; added docs/README.md index; archived longhorn doc; split SESSIONS.md |
 > | 2026-06-05 | `longhorn-storagevlan-rollback` | Removed Multus/whereabouts/NAD + Cilium override + Talos /28 routes (reboot-free); abandoned Longhorn storage-VLAN, pivoting to Rook-Ceph; cp-02 hard-down #2 recovered |
 > | 2026-06-02 | `longhorn-storagenetwork-attempt5` | Attempt 5: backported whereabouts PR #703; per-node IPAM validated; storageNetwork flip failed same-host iSCSI, reverted |
 > | 2026-06-02 | `longhorn-storagenetwork-attempt4` | storageNetwork attempt 4: multus-chroot /etc/hostname blocker, reverted; kept multus OOM fix; cp-02 hard-down recovered |
@@ -11,7 +12,6 @@
 > | 2026-05-31 | `multus-nad-talos-setup` | Multus CNI+whereabouts+macvlan NAD deployed; 3x image fix iterations (imageVolume pattern); bond-storage live on all nodes; Phase 4 storageNetwork pending push |
 > | 2026-05-30 | `hardware-monitoring` | Discovered all hwmon sensor drivers loaded (coretemp/k10temp/nvme/nct6686); deployed Grafana+smartctl-exporter DaemonSet+PrometheusRules for CPU/NVMe temps |
 > | 2026-05-30 | `jumbo-frames-storage-vlan` | iperf3 storage VLAN benchmarks; MTU 9000 jumbo frames Talos+Cilium; retransmits 181k→40k (-78%); cp-02 thermal event |
-> | 2026-05-29 | `postgres-nfs-backup` | pg_dumpall CronJob to TrueNAS storage VLAN (10.200.0.41); UID 4000; debugged NFS bind, glob-expand, pg_dumpall flag issues; restore drill roadmap added |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
@@ -84,16 +84,19 @@ Version bumps are handled by **Renovate** via the `# renovate: datasource=...` c
 ## Cluster Hardware
 
 Three bare-metal control-plane nodes; no dedicated workers (`allowSchedulingOnControlPlanes: true`).
+This table is a quick agent-reference for node identity and IPs. **Source of truth for current-state
+hardware, NIC topology, and disk inventory is [CLUSTER.md](docs/CLUSTER.md#cluster-overview)** — keep
+detail there, not here. For the *planned* 5-node expansion see [HARDWARE-ARCHITECTURE.md](docs/HARDWARE-ARCHITECTURE.md).
 
 | Hostname       | Hardware                              | Mgmt IP       | Storage IP     | Notes                        |
 |----------------|---------------------------------------|---------------|----------------|------------------------------|
 | talos-cp-01    | Lenovo M920Q #1 (i5-8500T, 64GB)     | 10.60.0.201   | 10.200.0.201   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
 | talos-cp-02    | Lenovo M920Q #2 (i5-8500T, 64GB)     | 10.60.0.202   | 10.200.0.202   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
-| talos-cp-03    | Minisforum MS-A2 (AMD, 32c, 92GB)    | 10.60.0.203   | 10.200.0.203   | bond0: 2x RTL8125+igc, bond1: 2x i40e (X710) |
+| talos-cp-03    | Minisforum MS-A2 (AMD, 32c, 96GB ECC)| 10.60.0.203   | 10.200.0.203   | bond0: 2x RTL8125+igc, bond1: 2x i40e (X710) |
 
 - **VIP**: `10.60.0.2` (kube-vip via ARP, all three CPs compete)
 - **Pod CIDR**: `10.42.0.0/16` | **Service CIDR**: `10.43.0.0/16`
-- **Storage network**: `10.200.0.0/24` (SFP+, LACP) — jumbo frames (9000 MTU) TODO
+- **Storage network**: `10.200.0.0/24` (SFP+, LACP) — jumbo frames (9000 MTU) live on all 3 nodes
 
 ---
 
@@ -266,7 +269,8 @@ See **[CLUSTER.md → Key Architectural Decisions](docs/CLUSTER.md#key-architect
 |-------------------------------|------------|-------------------------------------------------|
 | Core infrastructure           | ✅ Done    | Talos configs, bootstrap, SOPS, Cilium, CoreDNS, cert-manager, Flux — all operational |
 | OpenEBS LocalPV               | ✅ Done    | `openebs-hostpath` StorageClass live (non-default)           |
-| Longhorn (2-replica interim)  | 🔄 Running | Live in 2-replica mode; bump to 3-replica when cp-02 drive installed |
+| Longhorn (3-replica)          | 🔄 Running | Live in 3-replica mode on all 3 nodes (Cilium pod network). **Interim** — being superseded by Rook-Ceph (below) |
+| Rook-Ceph (storage pivot)     | 📐 Planned | Chosen replicated-storage target after Longhorn storage-VLAN was abandoned (same-host iSCSI blocker). Native `cluster_network` on the `10.200.0.0/24` bond. See [HARDWARE-ARCHITECTURE.md](docs/HARDWARE-ARCHITECTURE.md) + [history/longhorn-storage-network.md](docs/history/longhorn-storage-network.md) |
 | External Secrets + 1Password  | ✅ Done    | ESO + 1Password Connect deployed; `ClusterSecretStore` live |
 | Split DNS (ExternalDNS)       | ✅ Done    | `external-dns-cloudflare` (envoy-external, proxied) + `external-dns-unifi` (all gateways + services, webhook sidecar); chart v1.21.1 |
 | Renovate                      | ✅ Done    | `renovate.json5` + GitHub App; tracks Talos + K8s via `separateMinorPatch`; `talosctl` + `etcd` excluded (must match server version) |
@@ -307,6 +311,8 @@ Sessions are opened and closed via user-initiated skills — Claude cannot invok
 > If a session is interrupted mid-work, the open stub is still useful — complete it in the next session using `/session-close`.
 
 > **Never read `docs/SESSIONS.md` in full.** It is a large, ever-growing document that will fill the context window. Instead, grep or search for only what is needed — e.g. `grep -A 50 "slug-name" docs/SESSIONS.md` to extract a specific session block, or `grep -n "keyword" docs/SESSIONS.md` to locate relevant lines before reading a narrow range. The summary table in this file (`CLAUDE.md`) is the right starting point for recent session context.
+>
+> `SESSIONS.md` holds sessions from **2026-05-22 onward**; older bootstrap/setup-era sessions (**2026-05-06 → 2026-05-21**) live in `docs/SESSIONS-ARCHIVE.md` (grep it the same way). When `SESSIONS.md` grows unwieldy again, roll the oldest sessions into the archive. New sessions are always appended to `SESSIONS.md`, never the archive.
 
 ---
 
