@@ -7,7 +7,6 @@ resources:
   - ./external-secrets
   - ./flux-system
   - ./kube-system
-  - ./longhorn-system
   - ./network
   - ./tailscale
   - ./openebs

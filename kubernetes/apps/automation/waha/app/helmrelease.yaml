@@ -5,6 +5,10 @@ kind: HelmRelease
 metadata:
   name: &app waha
 spec:
+  # Suspended for the Longhorn→Rook-Ceph storage migration: Longhorn PVC backed
+  # up + deleted, no replicated storageClass exists yet. Phase 5 un-suspends this
+  # and switches persistence to ceph-block.
+  suspend: true
   interval: 1h
   chartRef:
     kind: OCIRepository

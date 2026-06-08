@@ -5,6 +5,5 @@ kind: Kustomization
 resources:
   - ./cilium.yaml
   - ./external-secrets.yaml
-  - ./longhorn.yaml
   - ./onepassword-connect.yaml
   - ./metrics-server.yaml
