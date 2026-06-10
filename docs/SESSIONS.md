@@ -4,6 +4,41 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-10 — `rook-ceph-phase5-consumers`
+
+### Goal
+Phase 5 of the Longhorn→Rook-Ceph migration: re-point all suspended consumers onto `ceph-block`, restore the waha + grafana data from NFS, and triage a recurring cp-02 hard-down that surfaced mid-migration.
+
+### What we did
+- **pgadmin (canary, `c4321f4`)** — `storageClass: longhorn`→`ceph-block`, removed `suspend: true`, added `rook-ceph-cluster` dependsOn (it had no storage dep). Verified fresh ceph-block PVC bound + pod Ready, 0 restarts. No data restore (disposable).
+- **Discovered the recorded migration state was wrong** — the suspended consumers' longhorn PVCs were *backed up but never deleted*. Found **4 zombie PVCs** (pgadmin, grafana, prometheus, alertmanager) still `Bound` to dead `driver.longhorn.io` PVs. Force-cleared all 4: `kubectl delete pvc` (0 pods) + **stripped PV finalizers** (`patch ... finalizers:null`) since the longhorn CSI controller is gone and reclaim=Delete would wedge them in Terminating.
+- **waha (`9eac476`)** — SC swap + un-suspend + dependsOn. Restored the WhatsApp `gows/` session from `waha-20260608.tgz` via the out-of-band dance (suspend HR → scale 0 → restore pod uid 65534 → scale 1). Session reconnected `WORKING`, **no QR re-scan** (`gows connected:true`).
+- **kube-prometheus-stack (`e339232`)** — 3× SC→ceph-block (grafana/prometheus/alertmanager), un-suspend, dependsOn. **Deleted the prometheus+alertmanager StatefulSets first** (immutable `volumeClaimTemplates`) so Helm recreated them on ceph-block. Restored full `/var/lib/grafana` (incl. 8.9 MB `grafana.db`) from `grafana-20260608.tgz` as uid 472 → `database:ok`, 28 dashboards, 2 datasources. Prometheus/alertmanager left fresh (disposable).
+- **cp-02 hard-down (mid-session)** — user rebooted it; it caused a Flux dependency cascade that self-cleared. Confirmed full recovery (etcd 3 members, Ceph HEALTH_OK after osd-0/mon-c bounce). Pulled diagnostics: reboot wiped dmesg, **pstore empty** (no capture armed) — root cause undeterminable post-hoc. **3rd recurrence**, cp-02-specific (cp-01 identical hw never fails).
+- **kube-state-metrics `exec format error`** — found crashlooping (49 restarts) **only on cp-02**; self-resolved when the kps reconcile rescheduled it to cp-03 (clean image, 0 restarts, `kube_pod_info`=154 series). On an all-amd64 cluster that means a **corrupted binary** → corroborating evidence for a cp-02 RAM fault.
+- **Docs/memory** — marked Rook-Ceph + Phase 5 complete in CLAUDE.md + ROADMAP.md; recorded the cp-02 recurrence, the non-ECC-RAM leading diagnosis, and a pre-crash capture plan (netconsole + off-node vitals + MemTest86+).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/database/pgadmin/app/helmrelease.yaml` | SC longhorn→ceph-block; removed `suspend: true` |
+| `kubernetes/apps/database/pgadmin/ks.yaml` | Added `rook-ceph-cluster` dependsOn |
+| `kubernetes/apps/automation/waha/app/helmrelease.yaml` | SC longhorn→ceph-block; removed `suspend: true` |
+| `kubernetes/apps/automation/waha/ks.yaml` | Added `rook-ceph-cluster` dependsOn |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/helm/values.yaml` | 3× SC longhorn→ceph-block (grafana/prometheus/alertmanager); refreshed stale Longhorn comments |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/helmrelease.yaml` | Removed `suspend: true` |
+| `kubernetes/apps/observability/kube-prometheus-stack/ks.yaml` | Added `rook-ceph-cluster` dependsOn |
+| `CLAUDE.md` | Complete-vs-Planned table: Longhorn→Removed, Rook-Ceph→Done (Phase 5) |
+| `docs/ROADMAP.md` | Rook-Ceph Migration marked complete (Phase 4+5); cp-02 recurring-hard-down update + leading diagnosis |
+
+### Key decisions
+- **Canary-first ordering** (pgadmin → waha → kube-prometheus-stack): proves the ceph-block provisioning path on a disposable workload before any real data is at risk.
+- **Delete-then-reprovision, not patch**: both PVC `storageClassName` and StatefulSet `volumeClaimTemplates` are immutable — the only way to switch SC is to delete the object and let Helm/CSI recreate it fresh.
+- **Restore out-of-band, not via Git**: restored data lives inside RBD images (node state), not GitOps-managed; `flux suspend` during the restore window stops drift-detection reverting the manual scale-to-0.
+- **Continued the migration despite the cp-02 crash** (user choice): Ceph `size=3` demonstrably survives a cp-02 loss with zero data impact, so the migration is safe to proceed while cp-02 stabilization is deferred.
+
+---
+
 ## 2026-06-10 — `ceph-dashboard-ingress`
 
 ### Goal

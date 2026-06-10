@@ -176,10 +176,16 @@ Target topology, drive placement, failure-domain design, and the 5-node expansio
 domain, OSDs on the `10.200.0.0/24` bond). Detail intentionally lives in the hardware doc — do not duplicate
 it here.
 
-**Phase 4 status (2026-06-10):** GitOps manifests scaffolded under `kubernetes/apps/rook-ceph/` (operator +
-cluster split, OCIRepository sources pinned to `v1.19.6`, host networking with `cluster_network` on the
-storage bond, OSDs pinned by `/dev/disk/by-id`). Not yet committed/applied. Benchmarked against the ByKaj
-reference (`tmp/home-ops-bykaj/kubernetes/apps/rook-ceph`).
+**✅ COMPLETE (2026-06-10).** Rook-Ceph v1.19.6 deployed via Flux under `kubernetes/apps/rook-ceph/`
+(operator + cluster split, host networking with `cluster_network` on the storage bond, OSDs pinned by
+`/dev/disk/by-id`); `HEALTH_OK` with 3 host-spread OSDs. `ceph-block` is the **default StorageClass**.
+
+- **Phase 4** — operator + cluster deployed; storage-fabric benchmarked (~19.3 Gbit/s aggregate, drive-bound).
+- **Phase 5** — all consumers re-pointed from longhorn → `ceph-block`: **pgadmin** (canary, disposable),
+  **waha** (WhatsApp `gows/` session restored from NFS, reconnected `WORKING` no QR re-scan), and
+  **kube-prometheus-stack** (grafana `grafana.db` restored from NFS; prometheus/alertmanager fresh). The
+  prometheus+alertmanager StatefulSets were deleted out-of-band first (immutable `volumeClaimTemplates`).
+  Stale longhorn PVC/PV zombies (never deleted, only backed up) were force-cleared. Longhorn fully gone.
 
 #### Toolbox deployment style (current: chart built-in)
 
@@ -222,6 +228,26 @@ Captured at 30 s resolution from `node_hwmon_temp_celsius`:
 - [ ] **Open the M920Q and blow out the fan/heatsink assembly** with compressed air — the M920Q accumulates dust between the fan blades and the heatsink fins; a single blocked fin halves effective airflow
 - [ ] **Reapply thermal paste** — the i5-8500T stock TIM on a 6–8-year-old machine has very likely dried and cracked; Noctua NT-H2 or similar recommended
 - [ ] **Verify the fan spins up under load** — listen or use `talosctl dmesg` to confirm no fan-stall events; the M920Q fan is audible when ramping
+
+#### Update — recurring *silent* hard-downs (distinct from the 06-01 thermal trip)
+
+cp-02 has since gone **hard-down at least 3 more times** (2026-06-02 ×2, 2026-06-10) with a *different*
+signature from the thermal incident above: **no thermal trip, 100% packet loss on BOTH NICs at once
+(mgmt e1000e + storage X520), apid unreachable, nothing in `dmesg`** — and current idle temps are normal
+(~28°C). cp-01 is **identical** hardware on **identical** config and has never done this, which rules out
+software and points to a **cp-02 unit-specific fault**.
+
+**Leading diagnosis: non-ECC RAM fault.** The M920Q has no ECC, and a bit-flip wedging the kernel fits the
+"silent, no logs, both NICs gone" signature. **New corroborating evidence (2026-06-10):** `kube-state-metrics`
+crashlooped with `exec format error` **only while scheduled on cp-02** — on an all-amd64 cluster with a
+correct multi-arch image, that means the **binary bytes were corrupted** (mangled ELF), exactly what a
+RAM/containerd-content-store bit-flip produces; it ran cleanly the moment it moved to cp-03.
+
+- [ ] **Run MemTest86+ on cp-02 (highest-value next step)** — directly tests the leading theory, cheap.
+- [ ] **Arm pre-crash capture** so the next hard-down is finally forensicable: **netconsole over the mgmt
+      NIC** (survives an X520/bond failure) + **off-node vitals** (node-exporter at tight interval, Prometheus
+      on `ceph-block` not cp-02-local — NIC/pkg temps, `node_network_*` errs/drops, PCIe AER, `MemAvailable`).
+- [ ] Reseat X520 + RAM; if it recurs after MemTest passes, swap the X520 card or the whole unit.
 
 #### Monitoring enhancement
 

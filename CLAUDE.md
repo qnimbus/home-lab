@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-10 | `rook-ceph-phase5-consumers` | Phase 5: all consumers on ceph-block; waha+grafana restored from NFS; cleared 4 zombie longhorn PVCs; cp-02 hard-down #3 |
 > | 2026-06-10 | `ceph-dashboard-ingress` | Added HTTPRoute exposing Ceph mgr dashboard at ceph.<domain> via envoy-internal; no extra TLS config needed |
 > | 2026-06-10 | `rook-ceph-deploy` | Phase 4: deployed Rook-Ceph (v1.19.6) via Flux; host-net cluster_network on storage bond; HEALTH_OK with 3 host-spread OSDs |
 > | 2026-06-10 | `rook-ceph-free-disks` | Phase 3: removed longhorn-storage userVolume from all 3 nodes, staggered reboot+wipe to raw; cp-03 NVMe enumeration flipped (mapped by serial) |
@@ -11,7 +12,6 @@
 > | 2026-06-08 | `docs-consolidation` | Doc audit + consolidation; fixed staleness; added docs/README.md index; archived longhorn doc; split SESSIONS.md |
 > | 2026-06-05 | `longhorn-storagevlan-rollback` | Removed Multus/whereabouts/NAD + Cilium override + Talos /28 routes (reboot-free); abandoned Longhorn storage-VLAN, pivoting to Rook-Ceph; cp-02 hard-down #2 recovered |
 > | 2026-06-02 | `longhorn-storagenetwork-attempt5` | Attempt 5: backported whereabouts PR #703; per-node IPAM validated; storageNetwork flip failed same-host iSCSI, reverted |
-> | 2026-06-02 | `longhorn-storagenetwork-attempt4` | storageNetwork attempt 4: multus-chroot /etc/hostname blocker, reverted; kept multus OOM fix; cp-02 hard-down recovered |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
@@ -269,8 +269,8 @@ See **[CLUSTER.md → Key Architectural Decisions](docs/CLUSTER.md#key-architect
 |-------------------------------|------------|-------------------------------------------------|
 | Core infrastructure           | ✅ Done    | Talos configs, bootstrap, SOPS, Cilium, CoreDNS, cert-manager, Flux — all operational |
 | OpenEBS LocalPV               | ✅ Done    | `openebs-hostpath` StorageClass live (non-default)           |
-| Longhorn (3-replica)          | 🔄 Running | Live in 3-replica mode on all 3 nodes (Cilium pod network). **Interim** — being superseded by Rook-Ceph (below) |
-| Rook-Ceph (storage pivot)     | 📐 Planned | Chosen replicated-storage target after Longhorn storage-VLAN was abandoned (same-host iSCSI blocker). Native `cluster_network` on the `10.200.0.0/24` bond. See [HARDWARE-ARCHITECTURE.md](docs/HARDWARE-ARCHITECTURE.md) + [history/longhorn-storage-network.md](docs/history/longhorn-storage-network.md) |
+| Longhorn (3-replica)          | ❌ Removed | Fully removed during the Rook-Ceph migration (big-bang, commit `8b27593`); all longhorn PVCs/PVs cleared. Superseded by Rook-Ceph |
+| Rook-Ceph (`ceph-block`)      | ✅ Done    | Replicated-storage target; v1.19.6, `size=3`/`min_size=2`, host-net `cluster_network` on the `10.200.0.0/24` bond, `HEALTH_OK` with 3 host-spread OSDs. **`ceph-block` is the default StorageClass.** All consumers migrated (Phase 5: pgadmin, waha, kube-prometheus-stack — grafana+waha data restored from NFS). See [HARDWARE-ARCHITECTURE.md](docs/HARDWARE-ARCHITECTURE.md) |
 | External Secrets + 1Password  | ✅ Done    | ESO + 1Password Connect deployed; `ClusterSecretStore` live |
 | Split DNS (ExternalDNS)       | ✅ Done    | `external-dns-cloudflare` (envoy-external, proxied) + `external-dns-unifi` (all gateways + services, webhook sidecar); chart v1.21.1 |
 | Renovate                      | ✅ Done    | `renovate.json5` + GitHub App; tracks Talos + K8s via `separateMinorPatch`; `talosctl` + `etcd` excluded (must match server version) |
