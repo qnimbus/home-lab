@@ -13,6 +13,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 **Networking**
 - [Why does cp-03 show many `eth0: renamed from tmp<random>` messages?](#why-does-the-talos-console-for-cp-03-show-many-eth0-renamed-from-tmprandom-kernel-messages)
 - [Why can't I reach the cluster nodes (both VLANs) while the internet works fine?](#why-cant-i-reach-the-cluster-nodes-both-vlans-while-the-internet-works-fine)
+- [A single iperf3 stream over the storage bond tops out at ~9.7 Gbit/s — is the LACP bond broken? (+ how to benchmark the storage fabric)](#a-single-iperf3-stream-over-the-storage-bond-tops-out-at-97-gbits--is-the-lacp-bond-broken)
 
 **Cluster Recovery / Unclean Shutdown**
 - [After a simultaneous power-off, the dashboard shows ~90 failed pods — but the cluster looks healthy. What happened?](#after-a-simultaneous-power-off-of-all-nodes-the-dashboard-shows-90-failed-pods-and-a-failed-deployment--but-the-cluster-looks-healthy-what-happened)
@@ -169,6 +170,112 @@ ip route get 10.60.0.2                                         # mtu 1280 → Ta
 **Prevention:** don't run `--accept-routes` on a client that is *also* on the lab LAN — it has a direct path and doesn't need the Tailscale subnet route. If a client must accept routes, scope what tailscale-operator advertises so the lab subnets a LAN-local machine already reaches aren't pulled into the tunnel.
 
 **Encountered 2026-06-09** during the Rook-Ceph migration: the cluster briefly went down, its subnet-router pod with it, and both the devcontainer and the Windows host lost the lab subnets for ~12h — chased as a "cluster outage" until the MTU-1280 route gave it away. (The nodes also needed reboots that day for an unrelated `READY: False` state, which muddied the diagnosis — but the *reachability* loss was purely this Tailscale route hijack.)
+
+---
+
+### A single iperf3 stream over the storage bond tops out at ~9.7 Gbit/s — is the LACP bond broken?
+
+**Short answer:** No. LACP (802.3ad) never splits a single TCP flow across both member links — it hashes
+each flow to *one* link for the life of that flow. ~9.7 Gbit/s is line-rate for one 10G member. To see
+the aggregate you must run **many parallel flows** so the hash spreads them across both links. Benchmarked
+2026-06-10, the `10.200.0.0/24` storage fabric reaches **~19.3 Gbit/s aggregate (~96% of 20G)** — both
+links saturate cleanly under load.
+
+**Why one stream can't go faster:** With `xmitHashPolicy: layer3+4` the bond hashes on
+`{src-IP, dst-IP, src-port, dst-port}`. Between a fixed host pair the two IPs are constant, so only the L4
+ports vary the hash — a single connection has one fixed tuple → one link → ~10G ceiling (jumbo frames get a
+single flow *close* to the 9.4–9.8 range; 1500-byte frames leave more on the table to per-packet overhead).
+Both directions hash independently (each host's bond governs its own TX), and the **switch re-hashes** when
+forwarding into the destination LAG — so a true 20G result requires the host hash *and* the switch hash to
+both spread.
+
+**Why an 8-stream run can still read low (the trap):** Source ports are *ephemeral* — the kernel picks fresh
+ones per connection, so the hash distribution is a **new random draw every run**. Collisions are not the issue
+(8 flows over 2 links *must* collide — pigeonhole); what varies is how *evenly* the flows split. The count of
+flows on a given link follows `Binomial(8, 0.5)`, and with only 8 flows the variance is high: a perfect 4/4
+split has only ~27% probability, while a **5/3-or-worse split occurs ~73% of the time**. When one member is
+oversubscribed its flows congest (heavy retransmits) and the under-loaded member lacks enough flows to ramp to
+10G in the test window — so the aggregate drops, e.g. 15.5 Gbit/s on one run and 19.x on the next with no
+config change. **Never trust a single multi-stream run.** The honest number is the *best of several* (shows the
+ceiling when the split is even) or a **16+ stream** run, where `Binomial(16, 0.5)` (mean 8, σ=2) clamps tightly
+around an even split. Re-running the same 8-stream test 3× confirmed this: 15.5 → then 19.2 / 19.6 / 19.6.
+
+**How Ceph actually uses the bond (researched against Squid 19.2.3):** Counter-intuitively, Ceph does **not**
+light up both links for traffic between a single node pair. Its messenger multiplexes all
+replication/recovery between two OSD daemons onto **one cluster-network TCP connection** (the other ~2–3
+connections per OSD-pair are tiny heartbeats), and there is **no Ceph option to open more** —
+`ms_async_op_threads` is a worker *thread pool* (CPU parallelism), not a per-peer connection count; the
+official Network Configuration Reference exposes no inter-OSD connection multiplier. So with **1 OSD per
+node** (our topology), heavy replication between two nodes is a single flow pinned to one link (~9.75 Gbit/s)
+— *worse* than this 16-stream benchmark, which was a best case for LACP spread. The only lever for more
+streams between two hosts is **more OSD daemons**: N OSDs/node → up to N² distinct OSD-pair connections, each
+hashable to either link (Rook `storage.config.osdsPerDevice`, or more physical drives/nodes). This is **moot
+for us** — 9.75 Gbit/s on a single link is still ~4× the ~2.5 Gbit/s drive ceiling, so Ceph stays disk-bound
+regardless of how the flows hash. (Aggregate *cluster* throughput across all node pairs does scale with OSD
+count; the single-pair limit is what one host-to-host transfer sees.)
+
+#### Benchmark method (reusable runbook)
+
+Talos is immutable and minimal — there is **no `iperf3` on the host** and no SSH. The storage bond is a
+*host* interface (not on the pod network), so push traffic over it from `hostNetwork: true` pods pinned to
+specific nodes. Run them in a **`privileged`-PSA namespace** (e.g. `rook-ceph`); `baseline`/`restricted`
+namespaces reject `hostNetwork`. Use an image with both `ping` and `iperf3` (`nicolaka/netshoot`).
+
+**1 — Verify the bond is actually a 2-link LAG (config-as-running, not just config-as-written):**
+```bash
+export TALOSCONFIG=$(pwd)/talos/clusterconfig/talosconfig
+talosctl -n 10.60.0.201 read /proc/net/bonding/bond-storage
+# Want: Transmit Hash Policy: layer3+4 | both slaves "MII Status: up" at 10000 Mbps
+#       Active Aggregator "Number of ports: 2" + a Partner Key (proves the SWITCH aggregated both)
+```
+A common silent failure is the switch *not* aggregating — you stay at 10G with both NICs "up". The
+`Number of ports: 2` + non-zero `Partner Key` is the proof the switch put both links in one LAG.
+
+**2 — Verify jumbo frames end-to-end before throughput** (a broken path-MTU silently fragments and tanks
+throughput). Run from inside a host-net pod over the *storage* IPs:
+```bash
+# 8972 payload + 28 ICMP/IP headers = 9000 on the wire; DF set → must not fragment
+kubectl -n rook-ceph exec iperf-client -- ping -c 3 -M do -s 8972 -I 10.200.0.201 10.200.0.202
+# success with 0% loss = full 9000 MTU clean, switch included
+```
+
+**3 — Throughput** (bind source to the storage IP so traffic can't leak onto the mgmt bond):
+```bash
+# single stream = per-link ceiling
+kubectl -n rook-ceph exec iperf-client -- iperf3 -c 10.200.0.202 -B 10.200.0.201 -t 15 -O 3
+# 16 streams = forces an even hash split → aggregate (run a few times; take the best)
+kubectl -n rook-ceph exec iperf-client -- iperf3 -c 10.200.0.202 -B 10.200.0.201 -P 16 -t 20 -O 3
+kubectl -n rook-ceph exec iperf-client -- iperf3 -c 10.200.0.202 -B 10.200.0.201 -P 16 -t 20 -O 3 -R  # reverse
+```
+`-O 3` omits TCP slow-start from the average. Reading: aggregate climbing past the single-link ceiling =
+both links carrying traffic; stuck at ~9.7 no matter how many streams = hash not spreading (host or switch).
+
+**4 — Real Ceph throughput (no new pods, uses the toolbox):**
+```bash
+kubectl -n rook-ceph exec deploy/rook-ceph-tools -- rados bench -p ceph-blockpool 30 write --no-cleanup -t 16
+kubectl -n rook-ceph exec deploy/rook-ceph-tools -- rados bench -p ceph-blockpool 15 seq -t 16
+kubectl -n rook-ceph exec deploy/rook-ceph-tools -- rados -p ceph-blockpool cleanup   # tidy up the objects
+```
+The host-net iperf pods are transient verification scaffolding — `kubectl delete pod iperf-server iperf-client`
+when done. They are **not** Flux-managed (this is the same throwaway pattern used for the CSI smoke-test PVC).
+
+#### Results (2026-06-10, cp-01 ↔ cp-02)
+
+| Test | Result | Reading |
+|------|--------|---------|
+| Jumbo ping (9000B, DF) | 0% loss, ~0.3 ms | Full 9000 MTU clean incl. switch |
+| iperf3 single stream | **9.75 Gbit/s** | One flow = one link, at line rate |
+| iperf3 8 streams (1st run) | 15.5 Gbit/s | Unlucky hash draw — *not* a fault |
+| iperf3 8 streams (re-runs) | 19.2 / 19.6 / 19.6 | Same test, balanced draws |
+| iperf3 16 streams | **19.2–19.3 Gbit/s** | ~96% of 20G — both links saturated |
+| rados bench write (3×repl) | 314 MB/s (~2.5 Gbit/s) | **Drive-bound**, not network-bound |
+| rados bench seq read | 314 MB/s (~2.5 Gbit/s) | Drive-bound |
+
+**The takeaway is the ratio:** real Ceph throughput (~2.5 Gbit/s, gated by consumer-NVMe write speed under
+3× sync-write replication) is ~1/8th of the network ceiling. The fabric has **~7–8× headroom** over what the
+disks can deliver — even a worst-case full-OSD rebuild won't bottleneck on the network; the NVMe will. If
+storage throughput ever needs to grow, the lever is disks (faster/enterprise NVMe, more OSDs per node), not
+the bond.
 
 ---
 

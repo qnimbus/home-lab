@@ -14,25 +14,21 @@ machine:
     # on the connection's measured bandwidth × RTT product — so setting a large
     # ceiling does not waste memory; each socket only consumes what it needs.
     #
-    # Why 128 MiB: Longhorn uses two distinct traffic paths with different
-    # protocols:
+    # Why 128 MiB: the storage bond (10.200.0.0/24; ixgbe on cp-01/cp-02, i40e
+    # on cp-03) carries Ceph's cluster-network traffic — OSD↔OSD replication,
+    # recovery, and backfill over the messenger's TCP connections. Those are the
+    # flows that benefit from a generous per-socket buffer ceiling.
     #
-    #   1. Volume attachment (iSCSI, node-local):
-    #      The longhorn-engine exposes each volume as a TGT iSCSI target;
-    #      the CSI node plugin connects via iscsiadm to create a block device.
-    #      This is loopback-only (127.0.0.1) — it never crosses the storage bond
-    #      and has sub-microsecond RTT. Buffer sizing does not help this path;
-    #      iscsi-tools is required purely to provide the iscsiadm binary.
+    # Note (verified against Ceph Squid 19.2.3): Ceph multiplexes all heavy data
+    # between two OSD daemons onto a SINGLE cluster-messenger TCP connection —
+    # there is no per-peer connection multiplier. So buffer headroom matters per
+    # OSD-pair, and a single host-to-host transfer rides one connection (one LACP
+    # link). More parallel streams between two nodes come only from more OSD
+    # daemons (Rook storage.config.osdsPerDevice / more drives), not from tuning.
     #
-    #   2. Volume replication (Longhorn gRPC/TCP, cross-node):
-    #      The engine fans writes out to replica processes on other nodes over
-    #      Longhorn's own gRPC replication protocol. This IS the traffic that
-    #      flows across the 10 GbE storage bonds (10.200.0.0/24; ixgbe on
-    #      cp-01/cp-02, i40e on cp-03) and benefits from buffer tuning.
-    #
-    # At 10 Gbps with an intra-cluster RTT of ~100 µs the bandwidth-delay
-    # product is ~125 KiB per flow, but the autotuner needs headroom above BDP
-    # to keep the pipe full during burst writes and parallel CSI operations.
+    # At 10 Gbps with an intra-cluster RTT of ~100–300 µs the bandwidth-delay
+    # product is only ~125 KiB per flow, but the autotuner needs headroom above
+    # BDP to keep the pipe full during burst writes and parallel recovery.
     # 128 MiB is the standard recommendation for 10 GbE storage replication.
     #
     # Management-interface connections (1 GbE e1000e on cp-01/cp-02) are
@@ -60,23 +56,23 @@ machine:
     # 300 000 matches the queue depth used in production 10/25 GbE storage nodes.
     net.core.netdev_max_backlog: "300000"
 
-    # ── Longhorn replication TCP tuning ───────────────────────────────────────
-    # The following two knobs target Longhorn's cross-node gRPC replication
-    # connections (longhorn-engine → remote replicas over the storage bonds).
+    # ── Ceph cluster-network TCP tuning ───────────────────────────────────────
+    # The following two knobs target Ceph's cross-node OSD↔OSD cluster-messenger
+    # connections (replication / recovery / backfill over the storage bonds).
     #
     # Slow-start after idle — default behaviour: TCP resets its congestion window
     # (cwnd) back to the initial value (~10 segments) whenever a connection has
-    # been idle for one RTO period (~200 ms). Longhorn replica connections are
-    # quiet between I/O bursts; each time a burst begins, TCP restarts the
-    # slow-start ramp and throttles throughput for the first 10–50 ms of every
-    # write. Setting this to 0 keeps the cwnd intact across idle gaps so bursts
-    # start at full speed.
+    # been idle for one RTO period (~200 ms). OSD cluster-messenger connections
+    # are persistent but quiet between I/O bursts; each time a burst begins, TCP
+    # restarts the slow-start ramp and throttles throughput for the first 10–50 ms
+    # of every write. Setting this to 0 keeps the cwnd intact across idle gaps so
+    # bursts start at full speed.
     net.ipv4.tcp_slow_start_after_idle: "0"   # 0 = disabled; preserve cwnd across idle
 
     # Metrics save — default behaviour: TCP caches the measured RTT, cwnd, and
     # SSTHRESH from a closed connection and reuses them when reconnecting to the
-    # same destination. After a Longhorn node event (pod restart, brief
-    # disruption), replica connections reconnect carrying pessimistic metrics from
+    # same destination. After an OSD event (daemon restart, brief disruption),
+    # cluster-messenger connections reconnect carrying pessimistic metrics from
     # the disrupted path, causing new connections to under-perform for several
     # seconds until metrics are re-measured. Setting this to 1 forces every
     # reconnect to start fresh.
