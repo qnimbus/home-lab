@@ -173,9 +173,27 @@ storage backend, to soften false replica faults during Cilium convergence:
 The committed replacement for both Longhorn (interim) and the abandoned storage-VLAN isolation effort.
 Target topology, drive placement, failure-domain design, and the 5-node expansion context are specified in
 **[HARDWARE-ARCHITECTURE.md](HARDWARE-ARCHITECTURE.md)** (Rook-Ceph `size=3`/`min_size=2`, `host` failure
-domain, OSDs on the `10.200.0.0/24` bond). Next step when approved: generate the GitOps artifacts
-(`CephCluster` + Talos `installDiskSelector`/node-role patches). Detail intentionally lives in the hardware
-doc — do not duplicate it here.
+domain, OSDs on the `10.200.0.0/24` bond). Detail intentionally lives in the hardware doc — do not duplicate
+it here.
+
+**Phase 4 status (2026-06-10):** GitOps manifests scaffolded under `kubernetes/apps/rook-ceph/` (operator +
+cluster split, OCIRepository sources pinned to `v1.19.6`, host networking with `cluster_network` on the
+storage bond, OSDs pinned by `/dev/disk/by-id`). Not yet committed/applied. Benchmarked against the ByKaj
+reference (`tmp/home-ops-bykaj/kubernetes/apps/rook-ceph`).
+
+#### Toolbox deployment style (current: chart built-in)
+
+Phase 4 enables the **chart-supplied** toolbox (`toolbox.enabled: true` in the `rook-ceph-cluster`
+HelmRelease) — a single `rook/ceph` Deployment giving the `ceph` CLI in-cluster
+(`kubectl -n rook-ceph exec -it deploy/rook-ceph-tools -- ceph status`). Lowest-maintenance option;
+sufficient for status/debugging.
+
+**Possible future switch — standalone `app-template` toolbox** (ByKaj pattern,
+`tmp/home-ops-bykaj/.../rook-ceph-tools/`): a separate `bjw-s/app-template` HelmRelease with the chart's
+built-in toolbox turned off. Worth adopting only for extras the built-in lacks — an NFS `Transfer` mount for
+exporting/importing RBD images or `ceph` dumps to the NAS, explicit resource limits + Reloader annotations,
+or a toolbox image pinned by digest independent of the chart. Cost: one more HelmRelease + OCIRepository to
+maintain. Defer until a concrete need (e.g. offline image export) appears.
 
 ---
 
