@@ -247,6 +247,13 @@ RAM/containerd-content-store bit-flip produces; it ran cleanly the moment it mov
 - [x] **Off-node vitals armed** (2026-06-10, commit `bca4cee`): node-exporter scrape tightened to 10s,
       Prometheus durable on `ceph-block` (already was), board/VRM (`platform_nct6683_2592/temp2`) +
       fixed CPU-temp alerts added. This is the primary pre-crash record — see [observability commit].
+      Reusable tooling: `scripts/cp02-watch.sh` (live board/CPU/up alerter — run via the Monitor tool in a
+      session), `scripts/cp-thermal-compare.sh` + [`docs/cp02-thermal-measurements.md`](cp02-thermal-measurements.md)
+      (cp-01-vs-cp-02 board delta — re-run at fans-100% and post-repaste).
+- [x] **Thermal-path fault CONFIRMED cp-02-specific** (2026-06-10): under a Ceph benchmark at standard
+      cooling cp-02's board hit 70°C vs cp-01's 62°C under identical load (Δ +8°C peak) while cp-02's CPU
+      ran *cooler* and lighter — degraded VRM airflow, not extra heat. Distinct from the silent idle
+      hard-downs. → physical fix below (clean + repaste); target post-fix Δ within ~1–2°C of cp-01.
 - [ ] ~~netconsole over the mgmt NIC~~ **NOT VIABLE**: cp-02 boots systemd-boot + UKI
       (`bootedWithUKI: true`), and Talos ignores `machine.install.extraKernelArgs` under UKI
       (breaking change since v1.10 — siderolabs/talos#11145). Would require baking `netconsole=` into a

@@ -25,7 +25,7 @@ Five bare-metal nodes across three capability tiers. Strength order: **MS-A2 ≫
 
 | Node | Tier | CPU | RAM | 10 GbE | Tier rationale |
 |------|------|-----|-----|--------|----------------|
-| **MS-A2** (Minisforum) | Premium | Ryzen 9 9955HX, 16C/32T | 96 GB **ECC** DDR5 (fixed) | SFP+ | Fastest CPU, ECC, most M.2 slots → control plane anchor + premium workloads + OSD |
+| **MS-A2** (Minisforum) | Premium | Ryzen 9 9955HX, 16C/32T | 96 GB **ECC** DDR5 (fixed) |  X710 dual SFP+ | Fastest CPU, ECC, most M.2 slots → control plane anchor + premium workloads + OSD |
 | **M90q #1** (Lenovo) | Workhorse | i5-10500T, 6C/12T | 64 GB | X520 dual SFP+ | HT + 2 fast M.2 slots → storage + general compute |
 | **M90q #2** (Lenovo) | Workhorse | i5-10500T, 6C/12T | 64 GB | X520 dual SFP+ | As above |
 | **M920q #1** (Lenovo) | Light | i5-8500T, 6C/6T | 64 GB | X520 dual SFP+ | Oldest, no HT, single fast slot → OSD host (no etcd) |
