@@ -4,6 +4,48 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-10 — `rook-ceph-deploy`
+
+### Goal
+Phase 4 of the Rook-Ceph migration: scaffold and deploy the operator + `CephCluster` via Flux with host-networking `cluster_network` on the storage bond, reaching HEALTH_OK with three host-spread OSDs on the raw spares freed in Phase 3.
+
+### What we did
+- **Research + design benchmark:** verified the Rook v1.20 chart defaults and the CephCluster network/storage CRD syntax against the official docs (host networking + `addressRanges`, by-id device selection), then diff'd our intended design against the **ByKaj reference** (`tmp/home-ops-bykaj/kubernetes/apps/rook-ceph`). Adopted ByKaj's OCI source + health-gating + monitoring/resource patterns; **deliberately diverged** on two points (by-id OSD pinning, host networking — see decisions).
+- **Chart-tag pinning:** anonymously HEAD-checked the GHCR OCI tags — confirmed `v1.19.4/.5/.6` and `v1.20.0` all exist (the `tags/list` page was just truncated). Pinned **`v1.19.6`** (ByKaj-proven on near-identical Talos hardware) over the 8-day-old `v1.20.0`.
+- **Live disk re-confirmation:** `talosctl get disks` on all 3 nodes to lock the exact `by-id` strings + re-confirm the cp-03 enumeration flip before baking them into the OSD list.
+- **Scaffolded the GitOps tree** under `kubernetes/apps/rook-ceph/` following this repo's operator/CRD-instance split (mirrors `cloudnative-pg`): two OCIRepository sources in `flux/meta/repos/oci/`, a multi-doc `ks.yaml` (operator `wait:true` + cluster `dependsOn` with CEL `healthCheckExprs`), operator + cluster HelmReleases, namespace with PSA `enforce: privileged`. All paths `kubectl kustomize`-build clean.
+- **Network decision** surfaced via `AskUserQuestion` (ByKaj runs pod-net; we had scar tissue from the Longhorn storage-VLAN saga) → user chose **host networking with `cluster_network` on the storage bond**.
+- **Namespace reasoning:** kept `rook-ceph` (not a generic `storage`) — argued from the existing `openebs` precedent and Rook's canonical-namespace assumption.
+- **Committed `4e51a01`**, user pushed, then **watched the reconcile** with a background poller: operator `InstallSucceeded` → 3 mons quorum → 3 OSD-prepare jobs → 3 OSDs up/in → **HEALTH_OK in ~2.5 min**.
+- **Verified end-to-end:** `ceph -s` HEALTH_OK (3 mon / 2 mgr / 3 osd, PGs active+clean); `ceph osd tree` shows `failureDomain: host` with one OSD per host (cp-03's 2TB at CRUSH weight 1.82); **`ceph osd dump` confirms each OSD's `cluster_addr` on `10.200.0.20X` (storage bond) + `public_addr` on `10.60.0.20X`** — the bond-storage design goal achieved. CSI smoke test: a throwaway `ceph-block` PVC bound <1s, created an RBD image, and reclaimed it on delete.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/rook-ceph/namespace.yaml` | New — `rook-ceph` namespace, PSA `enforce: privileged` |
+| `kubernetes/apps/rook-ceph/kustomization.yaml` | New — namespace-level kustomize (namespace + `./rook-ceph`) |
+| `kubernetes/apps/rook-ceph/rook-ceph/kustomization.yaml` | New — wraps `./ks.yaml` |
+| `kubernetes/apps/rook-ceph/rook-ceph/ks.yaml` | New — operator + cluster Flux Kustomizations (CEL health gate) |
+| `kubernetes/apps/rook-ceph/rook-ceph/operator/app/{kustomization,helmrelease}.yaml` | New — operator HelmRelease (RBD-only, monitoring on) |
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/{kustomization,helmrelease}.yaml` | New — CephCluster: host-net, by-id OSDs, `ceph-block` SC |
+| `kubernetes/flux/meta/repos/oci/rook-ceph.yaml` | New — operator chart OCIRepository (`v1.19.6`) |
+| `kubernetes/flux/meta/repos/oci/rook-ceph-cluster.yaml` | New — cluster chart OCIRepository (`v1.19.6`) |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Registered the two rook OCI sources |
+| `kubernetes/apps/kustomization.yaml` | Registered the `./rook-ceph` namespace |
+| `docs/ROADMAP.md` | Phase 4 status + toolbox-deployment-style note |
+
+### Key decisions
+- **Host networking at greenfield** (`public=10.60.0.0/24`, `cluster=10.200.0.0/24`): puts OSD replication on the 10G jumbo bond. Done at cluster creation specifically to avoid Rook's mon-failover dance that converting a live cluster would require. ByKaj leaves this commented out (runs pod-net) — our deliberate divergence, justifying the whole bond-storage fabric.
+- **OSD devices pinned by `/dev/disk/by-id/…`, not kernel names:** cp-03's enumeration is flipped (system=`nvme0n1`, spare=`nvme1n1`) vs cp-01/02, so a `/dev/sdb`-style selector (ByKaj's) would be a data-loss footgun here.
+- **Chart pinned `v1.19.6`** (proven) over `v1.20.0` (released 8 days prior) — proven-on-similar-hardware beats newest for a first-light storage migration; Renovate can PR the bump later.
+- **Namespace `rook-ceph`, not `storage`:** consistent with the existing implementation-named `openebs` storage namespace and Rook's canonical convention; isolates a uniquely-privileged (host-net, raw-device) subsystem with its own RBAC/PSA.
+- **Built-in chart toolbox** (`toolbox.enabled: true`) over ByKaj's standalone app-template toolbox — lowest maintenance; switch documented in ROADMAP if NAS export/pinned-digest features are ever needed.
+- **`cephBlockPoolsVolumeSnapshotClass.enabled: false`** — no external-snapshotter CRDs deployed yet; leaving it on would fail the Flux dry-run.
+- **`ceph-block` set as the default StorageClass** — no default existed (openebs-hostpath was non-default); unqualified PVCs now land on redundant storage.
+- **CEL `healthCheckExprs` treating `HEALTH_WARN` as healthy** — a fresh cluster legitimately sits in WARN during PG/OSD bring-up; without this Flux would mark the Kustomization failed.
+
+---
+
 ## 2026-06-10 — `rook-ceph-free-disks`
 
 ### Goal

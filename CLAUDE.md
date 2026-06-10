@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-10 | `rook-ceph-deploy` | Phase 4: deployed Rook-Ceph (v1.19.6) via Flux; host-net cluster_network on storage bond; HEALTH_OK with 3 host-spread OSDs |
 > | 2026-06-10 | `rook-ceph-free-disks` | Phase 3: removed longhorn-storage userVolume from all 3 nodes, staggered reboot+wipe to raw; cp-03 NVMe enumeration flipped (mapped by serial) |
 > | 2026-06-08 | `rook-ceph-migration` | Removed Longhorn big-bang (8b27593), consumers backed-up+suspended; recovered Tailscale route-hijack outage + debris |
 > | 2026-06-08 | `docs-consolidation` | Doc audit + consolidation; fixed staleness; added docs/README.md index; archived longhorn doc; split SESSIONS.md |
@@ -11,7 +12,6 @@
 > | 2026-06-02 | `longhorn-storagenetwork-attempt5` | Attempt 5: backported whereabouts PR #703; per-node IPAM validated; storageNetwork flip failed same-host iSCSI, reverted |
 > | 2026-06-02 | `longhorn-storagenetwork-attempt4` | storageNetwork attempt 4: multus-chroot /etc/hostname blocker, reverted; kept multus OOM fix; cp-02 hard-down recovered |
 > | 2026-06-02 | `postgres-backup-monitoring` | Added liveness probe (2h delay) and PrometheusRules (dead-man's switch + failed-job alert) to postgres-backup-local |
-> | 2026-05-31 | `multus-nad-talos-setup` | Multus CNI+whereabouts+macvlan NAD deployed; 3x image fix iterations (imageVolume pattern); bond-storage live on all nodes; Phase 4 storageNetwork pending push |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
