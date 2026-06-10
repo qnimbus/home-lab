@@ -4,6 +4,71 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-10 — `rook-ceph-free-disks`
+
+### Goal
+Phase 3 of the Rook-Ceph migration: free the three per-node spare disks at the Talos layer (remove the `/var/mnt/longhorn-storage` userVolume) and wipe each to raw so they are eligible as Ceph OSDs.
+
+### What we did
+- **Pre-flight:** confirmed cp-02 had passed a 23h stability soak (the gating condition from last session); verified 3/3 nodes Ready, etcd 3 members healthy on all, and talosctl skew safe (client `v1.13.0` vs server `v1.13.2`, same minor). Inspected `talosctl get disks` / `get discoveredvolumes`: each spare carried a leftover GPT + full-disk `xfs` partition from Longhorn.
+- **Config edit:** removed the `machine.disks` userVolume patch (mountpoint `/var/mnt/longhorn-storage`) from all 3 nodes in `talconfig.yaml`; **kept** cp-02's separate `machine.install.wipe: true` patch (system-disk concern, out of scope). `task talos:genconfig` + verified the generated machineconfigs no longer carry any `disks:` stanza and that install disks/bond-storage are unchanged.
+- **Staggered apply (one node at a time):** each `task talos:apply IP=…` returned *"can't be applied in immediate mode"* and **rebooted** — userVolume mounts are early-boot static volume topology. Each node rejoined `Ready` + etcd `OK` in **43–77s**; the kube-vip VIP failed over via ARP so `kubectl` (→ VIP) never dropped. Verified etcd quorum (3 members) held between every step.
+- **Wipe to raw:** `talosctl wipe disk <dev>` (FAST) per node after confirming the userVolume was unmounted (`mountstatus` showed no longhorn mount). Each spare collapsed from `gpt`+`xfs` to a bare `disk` row — the state `ceph-volume` requires to adopt a device.
+- **Enumeration near-miss:** mapped **serial→device** on every node rather than assuming `nvme0n1`. cp-01/cp-02 spare = `nvme0n1`, but **cp-03 is flipped** — `nvme0n1` is the system disk (AirDisk 128GB), spare = `nvme1n1` (Crucial 2TB). A blind `nvme0n1` wipe on cp-03 would have destroyed the OS.
+- **Housekeeping:** reaped 4 stale `Error`/`Completed` tombstone pods left from the 2026-06-09 outage (cilium-operator, kube-state-metrics, reloader, onepassword-connect) — node-reboot orphans; deployments self-healed, KSM respawned. Final state: 3/3 Ready, etcd 3/3 OK, **0** non-Running pods, **3 raw spares**.
+- **Not done (next session):** Phase 4 (deploy Rook-Ceph operator + `CephCluster`, 3 OSDs, `cluster_network` on the storage bond, size=3/failureDomain host) and Phase 5 (re-point apps to `ceph-block`, un-suspend, restore from NFS). The `talconfig.yaml` change remains **uncommitted** in the working tree.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | Removed the `/var/mnt/longhorn-storage` userVolume patch from cp-01/cp-02/cp-03 (kept cp-02 `install.wipe:true`) |
+
+### Key decisions
+- **Map serial→device per node, never assume the name.** cp-03's NVMe enumeration is reversed vs cp-01/cp-02; matching the WWID/serial to the device removed from config is the only safe way to pick the wipe target.
+- **FAST wipe is sufficient** — it zeroes only the GPT + filesystem superblocks (disk head/tail), which is exactly what `ceph-volume` inspects; no need to zero the full 1–2 TB.
+- **Kept cp-02's `machine.install.wipe: true`** — a system-disk/reinstall concern orthogonal to freeing the spare; removing it would have widened the change surface for no Phase-3 benefit.
+- **Reaped the outage tombstones** even though they predate Phase 3 — they surfaced during health verification, were safely terminated, and three owning deployments already had healthy replicas.
+
+---
+
+## 2026-06-08 — `rook-ceph-migration`
+
+### Goal
+Migrate cluster replicated storage from Longhorn to Rook-Ceph via a big-bang cutover: quiesce and remove the 5 Longhorn-backed PVCs (OpenEBS hostpath PVCs out of scope), remove Longhorn, free the per-node spare disks at the Talos layer, and stand up a size=3 Rook-Ceph cluster on the existing disks with cluster_network on the storage VLAN.
+
+### What we did
+- **Phase 0 (plan):** established the migration strategy. Confirmed via `talosctl get discoveredvolumes` that there is **no free raw disk** — each node's spare (cp-01/cp-02 Kingston NV3 1TB, cp-03 Crucial P310 2TB) is a Talos `userVolume` at `/var/mnt/longhorn-storage`, so big-bang (remove Longhorn to free OSD devices) is forced. Decided initial OSDs = the 3 existing DRAM-less spares (size=3 / failureDomain=host = redundancy today); **hold** the lone Crucial T500 until the 2 M90q nodes arrive (1 OSD on 1 host adds no redundancy). Mapped consumers→PVCs→Kustomizations and the `dependsOn: longhorn` edges (waha, kube-prometheus-stack; pgAdmin was missing a storage dep entirely).
+- **Backups:** only grafana (22 MB, incl. `grafana.db`) + waha (242 KB, WhatsApp `gows/` session) needed keeping; prometheus/alertmanager/pgadmin data accepted as disposable; postgres is on openebs (untouched). User created a dedicated rw NFS dataset `10.200.0.41:/mnt/tank/Cluster/migration`. Backup pods ran as **uid 4000 (NFS owner) + `supplementalGroups: [app-gid]`** to bridge read(app-owned data)/write(NFS) ownership; both tarballs `gzip -t`-verified.
+- **Phase 1 (quiesce + delete):** suspended the 3 consumer HRs + scaled to 0; Prometheus/Alertmanager via CR `replicas: 0` (operator, not STS); deleted all 5 Longhorn PVCs → every volume drained (reclaimPolicy Delete).
+- **Phase 2 (remove Longhorn, commit `8b27593`, pushed):** did a **controlled manual uninstall** — set `deleting-confirmation-flag=true` first (else the chart pre-delete hook hangs), then `kubectl delete helmrelease longhorn` with the namespace alive (avoids the Flux-prune namespace-race). Git: deleted `apps/longhorn-system/` + the helm repo source, removed the two `dependsOn: longhorn` edges, added `suspend: true` to the 3 consumer HRs (durable quiesce).
+- **Mid-session outage (~12h):** chased as a cluster-down event; root cause was **two stacked faults, neither from the migration** — (1) a **Tailscale subnet-route hijack** on the Windows/WSL host (lab subnets routed via a dead tailscale-operator subnet router; tell = the devcontainer route showing **MTU 1280**), and (2) **cp-02 left cordoned** after a drain-for-reboot. Recovered: closed Tailscale + `wsl --shutdown`; uncordoned cp-02. Cluster verified healthy (3/3 Ready, etcd 3 members, all static pods True).
+- **Resurrection debris cleanup:** Longhorn briefly reinstalled itself at 19:53 (the imperative `suspend` on the Flux Kustomization was reverted by `cluster-apps` re-applying it before the push pruned it), leaving orphan CRDs + ~150 CRs + both admission webhooks and a stuck-`Terminating` namespace. Cleaned in order: delete webhook configs → strip all finalizers → delete CRDs → delete orphan `longhorn`/`longhorn-static` SCs → namespace drained. Re-parked the suspended apps at 0 replicas.
+- **Docs/memory:** added a `docs/QA.md` Networking entry for the Tailscale route-hijack (MTU-1280 signature + `wsl --shutdown` fix); checkpointed full progress to the `project_rook_ceph_migration.md` memory.
+- **Not done (next session):** Phase 3 (free disks via talconfig + staggered Talos reboots), Phase 4 (deploy Rook-Ceph), Phase 5 (re-point apps to `ceph-block`, un-suspend, restore from NFS). Recommended a stability soak before Phase 3's reboots.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/longhorn-system/**` | Deleted entire Longhorn app (13 files) |
+| `kubernetes/apps/kustomization.yaml` | Removed `./longhorn-system` include |
+| `kubernetes/flux/meta/repos/helm/longhorn.yaml` | Deleted HelmRepository source |
+| `kubernetes/flux/meta/repos/helm/kustomization.yaml` | Removed longhorn repo reference |
+| `kubernetes/apps/automation/waha/ks.yaml` | Removed `dependsOn: longhorn` |
+| `kubernetes/apps/observability/kube-prometheus-stack/ks.yaml` | Removed `dependsOn: longhorn` |
+| `kubernetes/apps/automation/waha/app/helmrelease.yaml` | Added `suspend: true` (migration quiesce) |
+| `kubernetes/apps/database/pgadmin/app/helmrelease.yaml` | Added `suspend: true` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/helmrelease.yaml` | Added `suspend: true` |
+| `docs/QA.md` | New Networking entry: Tailscale subnet-route hijack (unstaged) |
+
+### Key decisions
+- **Big-bang over coexist** — there is no free disk; each node's spare is a Longhorn userVolume, so Longhorn must go to free OSD devices. Freeing all 3 at once still yields size=3 across 3 hosts (not a downgrade).
+- **Hold the lone T500** — redundancy is gated on host count, not disk count; a single OSD on one host adds nothing. Add all 3 T500s as a matched set when the M90q nodes land.
+- **Controlled manual Longhorn uninstall, not plain Flux prune** — pruning deletes the namespace and HelmRelease together, and a Terminating namespace rejects the helm pre-delete hook job → wedged uninstall. Uninstall with the namespace alive first.
+- **`suspend: true` in Git for the quiesce** — an imperative scale/suspend gets reverted by Flux reconcile; durable parking must live in source. **Lesson learned the hard way:** the same applies to a Kustomization — the imperative `suspend` on the `longhorn` Kustomization was reverted and let Longhorn briefly reinstall (the resurrection debris). Push the Git removal first, don't rely on an imperative suspend surviving.
+- **Tailscale + accept-routes on a LAN-local client is a footgun** — when the cluster/subnet-router is down, the advertised lab-subnet routes blackhole and masquerade as a total cluster outage. Documented in QA.md.
+
+---
+
 ## 2026-06-08 — `docs-consolidation`
 
 ### Goal

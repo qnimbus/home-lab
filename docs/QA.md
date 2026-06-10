@@ -12,6 +12,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 
 **Networking**
 - [Why does cp-03 show many `eth0: renamed from tmp<random>` messages?](#why-does-the-talos-console-for-cp-03-show-many-eth0-renamed-from-tmprandom-kernel-messages)
+- [Why can't I reach the cluster nodes (both VLANs) while the internet works fine?](#why-cant-i-reach-the-cluster-nodes-both-vlans-while-the-internet-works-fine)
 
 **Cluster Recovery / Unclean Shutdown**
 - [After a simultaneous power-off, the dashboard shows ~90 failed pods — but the cluster looks healthy. What happened?](#after-a-simultaneous-power-off-of-all-nodes-the-dashboard-shows-90-failed-pods-and-a-failed-deployment--but-the-cluster-looks-healthy-what-happened)
@@ -135,6 +136,39 @@ while `GetFlatIPAM` treats it as a file. (Solved, but moot now that the whole ap
 Bursts of these messages (e.g. many within a second) indicate pods being created or rescheduled in rapid succession — common after a DaemonSet rollout, Longhorn stabilising after initial deployment, or a deployment restart. cp-03 (32c, 92 GB) attracts the most pods due to scheduler resource-fit, so it generates these more frequently than the M920Q nodes.
 
 **Actionable only if:** the same burst pattern repeats continuously over minutes, which would suggest a pod CrashLoopBackOff cycling through restarts. In that case, check `kubectl get pods -A | grep -v Running`.
+
+---
+
+### Why can't I reach the cluster nodes (both VLANs) while the internet works fine?
+
+**Short answer:** A client running **Tailscale with `--accept-routes`** is preferring the cluster's tailscale-operator **subnet routes** for `10.60.0.0/24` and `10.200.0.0/24` over the direct LAN. When the cluster (or the subnet-router pod) is down, those advertised routes **blackhole** — so everything to the lab subnets is shovelled into Tailscale and dropped, even though the nodes are perfectly reachable on the local LAN. Internet is unaffected. Fix: stop Tailscale (or `--accept-routes=false`) on the client; on WSL2 also `wsl --shutdown` to flush the cached route.
+
+**The diagnostic signature:** *both* lab subnets unreachable *simultaneously* (every node + the API VIP, all ports) while the internet is fine. Three independent machines don't lose two NICs each at once — a whole-subnet loss across two VLANs points at a single upstream route/tunnel, not the cluster. This is the trap: every symptom (kubectl timeout, talosctl timeout, can't ping nodes, can't reach NFS) *looks* like a dead cluster, but the cluster is healthy — it's a client-side routing artifact.
+
+**The smoking gun — MTU 1280:**
+```bash
+ip route get 10.60.0.201
+# 10.60.0.201 via 172.17.0.1 dev eth0 ... mtu 1280   ← 1280 is Tailscale's MTU
+```
+A direct LAN route is **MTU 1500**. Seeing **1280** on a route to the lab means the path is going through Tailscale, not the local network. (Internet still works because its route is separate and 1500.)
+
+**Why it bites WSL2 / the devcontainer too:** the devcontainer has no Tailscale itself — it routes everything via the WSL2 host (`172.17.0.1`), which inherits Windows' routing. If Tailscale on **Windows** captured the lab subnets, the container sees it as the dead 1280 route. Closing Tailscale on Windows is not enough on its own: WSL2 **caches** the route, so you must `wsl --shutdown` (from Windows) and reopen, or wait for the cache to expire (~10 min).
+
+**Confirm:**
+```bash
+curl -m5 -o /dev/null -w '%{http_code}\n' https://github.com   # 200 → internet fine
+curl -m5 -k https://10.60.0.2:6443/healthz                     # timeout → lab unreachable
+ip route get 10.60.0.2                                         # mtu 1280 → Tailscale is the cause
+```
+
+**Fix:**
+1. On the client running Tailscale: `tailscale set --accept-routes=false` (or `tailscale down`, or quit the app).
+2. On WSL2/devcontainer: `wsl --shutdown` from a Windows terminal, then reopen the devcontainer.
+3. Verify: `ip route get 10.60.0.2` now shows **mtu 1500** via the LAN gateway, and `kubectl get nodes` responds.
+
+**Prevention:** don't run `--accept-routes` on a client that is *also* on the lab LAN — it has a direct path and doesn't need the Tailscale subnet route. If a client must accept routes, scope what tailscale-operator advertises so the lab subnets a LAN-local machine already reaches aren't pulled into the tunnel.
+
+**Encountered 2026-06-09** during the Rook-Ceph migration: the cluster briefly went down, its subnet-router pod with it, and both the devcontainer and the Windows host lost the lab subnets for ~12h — chased as a "cluster outage" until the MTU-1280 route gave it away. (The nodes also needed reboots that day for an unrelated `READY: False` state, which muddied the diagnosis — but the *reachability* loss was purely this Tailscale route hijack.)
 
 ---
 

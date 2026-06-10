@@ -32,13 +32,6 @@ nodes:
     nodeLabels:
       topology.kubernetes.io/region: &region homelab
       topology.kubernetes.io/zone: homelab-cp-01
-    patches:
-      - |-
-        machine:
-          disks:
-            - device: /dev/disk/by-id/nvme-KINGSTON_SNV3S1000G_50026B7686F8B787
-              partitions:
-                - mountpoint: /var/mnt/longhorn-storage
     networkInterfaces:
       # Management — single Intel I219-LM RJ45 (driver: e1000e)
       - deviceSelector:
@@ -92,12 +85,6 @@ nodes:
         machine:
           install:
             wipe: true
-      - |-
-        machine:
-          disks:
-            - device: /dev/disk/by-id/nvme-KINGSTON_SNV3S1000G_50026B7383B9D0CC
-              partitions:
-                - mountpoint: /var/mnt/longhorn-storage
     networkInterfaces:
       - deviceSelector:
           driver: e1000e
@@ -142,13 +129,6 @@ nodes:
     nodeLabels:
       topology.kubernetes.io/region: *region
       topology.kubernetes.io/zone: homelab-cp-03
-    patches:
-      - |-
-        machine:
-          disks:
-            - device: /dev/disk/by-id/nvme-CT2000P310SSD8_252450B1A33B
-              partitions:
-                - mountpoint: /var/mnt/longhorn-storage
     networkInterfaces:
       # Management — LACP bond of 2x RJ45 NICs (enp3s0: RTL8125/r8169, enp4s0: Intel I225/igc)
       # See cp-01 comment above re: hardwareAddr selector rationale.
