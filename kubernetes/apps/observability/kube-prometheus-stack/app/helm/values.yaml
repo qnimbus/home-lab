@@ -18,8 +18,8 @@ alertmanager:
     storage:
       volumeClaimTemplate:
         spec:
-          # Longhorn provides replicated storage (survives a node loss); openebs-hostpath would not.
-          storageClassName: longhorn
+          # Rook-Ceph (ceph-block) provides replicated storage (survives a node loss); openebs-hostpath would not.
+          storageClassName: ceph-block
           accessModes: [ReadWriteOnce]
           resources:
             requests:
@@ -28,14 +28,14 @@ alertmanager:
 
 grafana:
   enabled: true
-  # Deploy pre-built dashboards for kube-prometheus-stack, node-exporter, and Longhorn
+  # Deploy pre-built dashboards for kube-prometheus-stack and node-exporter
   # even if Grafana were deployed separately; with Grafana enabled these are picked up automatically.
   forceDeployDashboards: true
   admin:
     existingSecret: grafana-admin-secret
     userKey: admin-user
     passwordKey: admin-password
-  # Recreate required: the Longhorn PVC is RWO and cannot be simultaneously attached to two pods
+  # Recreate required: the ceph-block PVC is RWO and cannot be simultaneously attached to two pods
   # during a rolling update. Recreate terminates the old pod before the new one starts.
   deploymentStrategy:
     type: Recreate
@@ -45,14 +45,13 @@ grafana:
       effect: NoSchedule
   persistence:
     enabled: true
-    storageClassName: longhorn
+    storageClassName: ceph-block
     accessModes: [ReadWriteOnce]
     size: 5Gi
   sidecar:
     dashboards:
       enabled: true
       # Search all namespaces for ConfigMaps labelled grafana_dashboard: "1"
-      # (Longhorn deploys dashboards into longhorn-system)
       searchNamespace: ALL
     datasources:
       enabled: true
@@ -113,8 +112,8 @@ prometheus:
     storageSpec:
       volumeClaimTemplate:
         spec:
-          # Longhorn provides replicated storage (survives a node loss); openebs-hostpath would not.
-          storageClassName: longhorn
+          # Rook-Ceph (ceph-block) provides replicated storage (survives a node loss); openebs-hostpath would not.
+          storageClassName: ceph-block
           accessModes: [ReadWriteOnce]
           resources:
             requests:
