@@ -244,9 +244,15 @@ correct multi-arch image, that means the **binary bytes were corrupted** (mangle
 RAM/containerd-content-store bit-flip produces; it ran cleanly the moment it moved to cp-03.
 
 - [ ] **Run MemTest86+ on cp-02 (highest-value next step)** — directly tests the leading theory, cheap.
-- [ ] **Arm pre-crash capture** so the next hard-down is finally forensicable: **netconsole over the mgmt
-      NIC** (survives an X520/bond failure) + **off-node vitals** (node-exporter at tight interval, Prometheus
-      on `ceph-block` not cp-02-local — NIC/pkg temps, `node_network_*` errs/drops, PCIe AER, `MemAvailable`).
+- [x] **Off-node vitals armed** (2026-06-10, commit `bca4cee`): node-exporter scrape tightened to 10s,
+      Prometheus durable on `ceph-block` (already was), board/VRM (`platform_nct6683_2592/temp2`) +
+      fixed CPU-temp alerts added. This is the primary pre-crash record — see [observability commit].
+- [ ] ~~netconsole over the mgmt NIC~~ **NOT VIABLE**: cp-02 boots systemd-boot + UKI
+      (`bootedWithUKI: true`), and Talos ignores `machine.install.extraKernelArgs` under UKI
+      (breaking change since v1.10 — siderolabs/talos#11145). Would require baking `netconsole=` into a
+      cp-02-specific UKI via an Image Factory schematic + a UKI-reinstall upgrade on the flaky node, for
+      low yield against a *silent* hang (no `dmesg` output ⇒ kernel too wedged to emit over UDP anyway).
+      Deprioritized in favour of the off-node vitals above. Revisit only if vitals + MemTest don't crack it.
 - [ ] Reseat X520 + RAM; if it recurs after MemTest passes, swap the X520 card or the whole unit.
 
 #### Monitoring enhancement

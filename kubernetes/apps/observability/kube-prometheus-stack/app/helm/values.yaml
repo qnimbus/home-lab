@@ -135,7 +135,9 @@ prometheus-node-exporter:
       # Prometheus storage off the dying node. Scoped to node-exporter only — not the
       # cluster-wide interval — to keep the extra series churn contained.
       # DIAGNOSTIC (2026-06-10): this 3x sample density is the costly knob — REVERT to
-      # 30s (delete this line) once the cp-02 hard-down is root-caused. The 15s rule
+      # 30s (delete this line) once the cp-02 hard-down is root-caused. With no kernel-log
+      # capture possible on these UKI nodes (netconsole arg is ignored under systemd-boot,
+      # Talos #11145), these dense vitals are the primary pre-crash record. The 15s rule
       # eval interval and the temperature alerts themselves are permanent and stay.
       interval: 10s
       metricRelabelings:
