@@ -129,12 +129,23 @@ prometheusOperator:
 prometheus-node-exporter:
   prometheus:
     monitor:
+      # 10s scrape (overrides the 30s default) for pre-crash forensics on the M920Q
+      # nodes: cp-02 has gone hard-down several times leaving no post-reboot evidence,
+      # so the last samples before a hang must be dense and land on durable (ceph-block)
+      # Prometheus storage off the dying node. Scoped to node-exporter only — not the
+      # cluster-wide interval — to keep the extra series churn contained.
+      # DIAGNOSTIC (2026-06-10): this 3x sample density is the costly knob — REVERT to
+      # 30s (delete this line) once the cp-02 hard-down is root-caused. The 15s rule
+      # eval interval and the temperature alerts themselves are permanent and stay.
+      interval: 10s
       metricRelabelings:
-        # Drop the nct6686 super-I/O chip's unconnected thermistor inputs on the M920Q nodes.
-        # Thermistor 7 (temp5) nct6686 sensors reads ~127-128°C when the
-        # thermistor pin is floating — a hardware artefact, not a real temperature.
-        # Drops at the scrape level so the phantom value never enters the time-series database.
-        # Valid nct6686 sensors (temp1-temp4: PECI 0.0, PCH CHIP, Diode 0, Diode 1) are retained.
+        # Drop the super-I/O chip's unconnected thermistor input on the M920Q nodes.
+        # "Thermistor 7" (sensor temp5) reads ~127-128°C when the thermistor pin is
+        # floating — a hardware artefact, not a real temperature. Dropped at scrape
+        # time so the phantom never enters the TSDB. NOTE: node-exporter labels this
+        # chip "platform_nct6683_2592" (from the device path), NOT "nct6686" (the
+        # kernel name file) — the earlier "nct6686.*" regex matched nothing and the
+        # phantom was never actually dropped; corrected 2026-06-10.
         - sourceLabels: [chip, sensor]
-          regex: "nct6686.*;temp[5]"
+          regex: "platform_nct6683.*;temp5"
           action: drop
