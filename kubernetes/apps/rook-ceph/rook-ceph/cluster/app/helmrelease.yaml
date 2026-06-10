@@ -31,6 +31,10 @@ spec:
           bdev_async_discard_threads: "1"
           # Warn earlier on low mon-store space (percent free).
           mon_data_avail_warn: "10"
+        osd:
+          # Default is 3; bump to 5 for NVMe workloads where the disk is not
+          # the bottleneck and messenger threads can otherwise become the ceiling.
+          ms_async_op_threads: "5"
       crashCollector:
         disable: false
       csi:
@@ -89,7 +93,10 @@ spec:
         useAllNodes: false
         useAllDevices: false
         config:
-          osdsPerDevice: "1"
+          # 2 OSDs per NVMe creates independent TCP flows between node pairs,
+          # allowing the LACP bond to distribute replication traffic across
+          # both 10GbE links instead of pinning to one.
+          osdsPerDevice: "2"
         # Devices are pinned by /dev/disk/by-id (stable across reboots). This
         # matters because NVMe kernel enumeration is NOT consistent: on cp-03
         # the system disk is nvme0n1 and the OSD spare is nvme1n1 — the reverse
