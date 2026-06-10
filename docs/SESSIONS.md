@@ -4,6 +4,25 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-10 — `ceph-dashboard-ingress`
+
+### Goal
+Expose the Rook-Ceph mgr dashboard through the cluster's `envoy-internal` Gateway by adding an HTTPRoute to the existing `rook-ceph-cluster` Kustomization.
+
+### What we did
+- **Confirmed dashboard is live but internal-only:** queried `rook-ceph` Services (after renewing expired MCP token) — `rook-ceph-mgr-dashboard` ClusterIP `10.43.117.254:7000` exists, no Ingress or HTTPRoute present.
+- **Studied existing HTTPRoute pattern** across the cluster (`pgadmin`, `kube-prometheus-stack`, `waha`) — all use `envoy-internal / https / ${DOMAIN_CLUSTER}` with no per-route TLS or ExternalDNS annotations.
+- **Created `httproute.yaml`** in the cluster app directory: routes `ceph.${DOMAIN_CLUSTER}` → `rook-ceph-mgr-dashboard:7000` via the `envoy-internal` gateway `https` section.
+- **Registered the route** in `cluster/app/kustomization.yaml` resources list.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/httproute.yaml` | New — HTTPRoute: `ceph.${DOMAIN_CLUSTER}` → `rook-ceph-mgr-dashboard:7000` |
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/kustomization.yaml` | Added `httproute.yaml` to resources |
+
+---
+
 ## 2026-06-10 — `rook-ceph-deploy`
 
 ### Goal
