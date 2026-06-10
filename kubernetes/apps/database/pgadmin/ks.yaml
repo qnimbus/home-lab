@@ -21,3 +21,4 @@ spec:
   dependsOn:
     - name: cloudnative-pg-cluster
     - name: onepassword-store
+    - name: rook-ceph-cluster
