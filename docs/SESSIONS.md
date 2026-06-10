@@ -4,6 +4,33 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-10 — `ceph-osd-lacp-tuning`
+
+### Goal
+Tune Rook-Ceph for LACP bond utilization by identifying the `osdsPerDevice: 2` lever, committing the config change, working through the raw-mode BlueStore complication, and validating the improvement with a live benchmark after the user completed the staggered OSD migration.
+
+### What we did
+- **Research** — reviewed community findings on LACP + Ceph: RADOS opens one TCP connection per OSD peer pair, so a single OSD per node pins all replication traffic to one bond link. Primary lever: `osdsPerDevice: 2` creates independent TCP flows per peer and allows both 10GbE members to carry traffic.
+- **Decided on 2 OSDs per device** (not 3 or 4): QLC NAND on cp-03 (Crucial CT2000P310) has limited write endurance (~300 TBW); 2 OSDs per NVMe is the Ceph-recommended sweet spot and provides sufficient flow diversity for a 2-member LACP bond. 3+ gives no additional LACP benefit and adds wear + daemon overhead.
+- **Config changes committed (`3e23baf`)** — `osdsPerDevice: "1"→"2"` and added `cephConfig.osd.ms_async_op_threads: "5"` (default 3; bumped for NVMe messenger parallelism) in `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml`.
+- **Raw-mode BlueStore complication discovered** — after Flux reconcile, OSD prepare jobs ran but produced 0 new OSDs. Analysed prepare job logs: existing OSDs occupy the full device in raw BlueStore mode (no GPT partitions); `osdsPerDevice: 2` is not additive on raw devices — it requires OSD purge + device wipe + reprovision. Initial claim that the change was "additive" was wrong and was corrected.
+- **Staggered migration procedure** documented: mark OSD out → wait active+clean → purge → delete deployment → wipe device (privileged pod, `sgdisk --zap-all`) → delete stale prepare job → Rook reprovisions 2 OSDs. One node at a time, min_size=2 maintained throughout.
+- **cp-02 risk flag** — cp-02 has had 3 unexplained hard-downs (non-ECC RAM suspected); advised holding the migration until cp-02 is stable. User proceeded with the migration independently.
+- **Validation benchmark** — after user confirmed 6 OSDs live: ran `rados bench -p ceph-blockpool 60 write` (4MB objects, 16 concurrent); measured per-bond-member interface counters pre/post via `/proc/net/dev` on an OSD pod (host-networked). Results: **324 MB/s sustained write**, both `enp1s0f0` (0.67 Gbps RX) and `enp1s0f1` (0.52 Gbps RX + 1.18 Gbps TX) active — confirms LACP is distributing across both 10GbE members.
+- **Future 2nd NVMe guidance** — when adding a 2nd physical NVMe per node, revert `osdsPerDevice` to `"1"`: 1 OSD per device = 2 OSDs per node naturally, no device splitting needed, each OSD owns a full drive.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` | `osdsPerDevice: "1"→"2"`; added `cephConfig.osd.ms_async_op_threads: "5"` |
+
+### Key decisions
+- **`osdsPerDevice: 2` not 3 or 4** — beyond 2 the LACP gain is negligible (still only 2 physical links), and the Crucial CT2000P310 QLC drive on cp-03 would see accelerated wear from the additional BlueStore metadata writes of extra OSD daemons.
+- **`ms_async_op_threads` is startup-only** — the config-store value was confirmed written (`ceph config get osd ms_async_op_threads` → 5), but existing OSD daemons keep 3 threads until next restart; the 3 new OSDs provisioned during migration start with 5.
+- **Held migration until cp-02 stable** — the degraded-redundancy window during per-node OSD reprovisioning is unacceptably risky while cp-02 is exhibiting unexplained hard-downs.
+
+---
+
 ## 2026-06-10 — `rook-ceph-phase5-consumers`
 
 ### Goal
