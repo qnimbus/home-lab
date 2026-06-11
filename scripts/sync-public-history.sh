@@ -10,8 +10,20 @@ PUBLIC_FETCH_REF="refs/remotes/filtered-public/${ALT_BRANCH}"
 OLD_PRIVATE_SHA="${1:?Usage: sync-public-history.sh <old-private-sha> <new-private-sha>}"
 NEW_PRIVATE_SHA="${2:?Usage: sync-public-history.sh <old-private-sha> <new-private-sha>}"
 
-# Edit these to match what must NOT go to the public/sanitized repo.
-EXCLUDE_PATHS=(
+# Filter rules — gitignore-style two-pass sanitisation:
+#
+#   Lines WITHOUT a leading !  → removed from the sanitised tree (git rm --cached).
+#     Bare paths:   .archive, talos/clusterconfig
+#     Glob magic:   :(glob)**/*.key, :(glob)docs/ROADMAP.md
+#
+#   Lines WITH a leading !  → re-added after removal (bare paths only, no globs).
+#     Useful for "strip an entire directory, keep a handful of safe files":
+#       docs          ← removes everything under docs/
+#       !docs/CLUSTER.md  ← restores just this file
+#
+# Add new exclusions here; use ! exceptions instead of carving out sub-paths.
+FILTER_RULES=(
+  # ── whole directories / paths ──────────────────────────────────────────────
   ".archive"
   ".claude"
   ".devcontainer"
@@ -24,17 +36,17 @@ EXCLUDE_PATHS=(
   "secrets"
   "private"
   "talos/clusterconfig"
-)
 
-EXCLUDE_GLOBS=(
-  ":(glob)docs/CONVENTIONS.md"
-  ":(glob)docs/ROADMAP.md"
-  ":(glob)docs/SESSIONS.md"
-  ":(glob)docs/REPO-AUDIT.md"
-  ":(glob)docs/BOOT-ISSUE-TROUBLESHOOTING.md"
-  ":(glob)docs/POTENTIAL-DEPLOYMENTS.md"
-  ":(glob)scripts/mcp.sh"
-  ":(glob)scripts/sync-public-history.sh"
+  "scripts"
+  "!scripts/age-key.sh"
+  "!scripts/purge-failed-pods.sh"
+
+  # Strip all docs, then selectively restore public-safe files.
+  "docs"
+  "!docs/CLUSTER.md"
+  "!docs/HARDWARE-ARCHITECTURE.md"
+
+  # ── specific files by glob pattern (! re-includes not supported for globs) ─
   ":(glob)**/CLAUDE.md"
   ":(glob)**/*-key"
   ":(glob)**/*.key"
@@ -43,6 +55,17 @@ EXCLUDE_GLOBS=(
   ":(glob)**/*secret*"
   ":(glob)**/*secrets*"
 )
+
+# Pre-split once; rules are constant across commits.
+declare -a exc_rules=()
+declare -a inc_rules=()
+for rule in "${FILTER_RULES[@]}"; do
+  if [[ "$rule" == "!"* ]]; then
+    inc_rules+=("${rule#!}")
+  else
+    exc_rules+=("$rule")
+  fi
+done
 
 echo "Fetching current sanitized public branch, if it exists..."
 
@@ -113,13 +136,22 @@ for src_commit in "${commits[@]}"; do
 
   git read-tree "$src_commit"
 
-  if [[ "${#EXCLUDE_PATHS[@]}" -gt 0 ]]; then
-    git rm -r --cached --ignore-unmatch -- "${EXCLUDE_PATHS[@]}" >/dev/null 2>&1 || true
+  # Pass 1: strip excluded paths/globs.
+  if [[ "${#exc_rules[@]}" -gt 0 ]]; then
+    git rm -r --cached --ignore-unmatch -- "${exc_rules[@]}" >/dev/null 2>&1 || true
   fi
 
-  if [[ "${#EXCLUDE_GLOBS[@]}" -gt 0 ]]; then
-    git rm -r --cached --ignore-unmatch -- "${EXCLUDE_GLOBS[@]}" >/dev/null 2>&1 || true
-  fi
+  # Pass 2: restore ! exceptions directly from the source commit's tree.
+  for inc_path in "${inc_rules[@]}"; do
+    obj_info="$(git ls-tree "$src_commit" -- "$inc_path" 2>/dev/null || true)"
+    if [[ -n "$obj_info" ]]; then
+      # ls-tree output: "<mode> <type> <sha>\t<path>"
+      obj_mode="$(awk '{print $1}' <<< "$obj_info")"
+      obj_sha="$(awk '{print $3}' <<< "$obj_info")"
+      git update-index --add --cacheinfo "${obj_mode},${obj_sha},${inc_path}"
+    fi
+    # File absent from this commit (added later) — silently skip.
+  done
 
   sanitized_tree="$(git write-tree)"
 

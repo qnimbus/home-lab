@@ -52,7 +52,7 @@
     "OP_SERVICE_ACCOUNT_TOKEN": "${localEnv:OP_SERVICE_ACCOUNT_TOKEN}",
     "GH_TOKEN": "${localEnv:GH_TOKEN}"
   },
-  "forwardPorts": [],
+  "forwardPorts": [3000],
   "mounts": [
     "source=claude-home,target=/home/vscode/.claude,type=volume",
     "source=home-local,target=/home/vscode/.local,type=volume",

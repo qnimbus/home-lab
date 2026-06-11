@@ -61,3 +61,6 @@ fi
 # Install helm plugins (helm-diff is required by helmfile)
 helm plugin list | awk '{print $1}' | grep -qx diff \
   || helm plugin install https://github.com/databus23/helm-diff --verify=false
+
+# Install MeshCommander for Intel AMT out-of-band management (KVM, IDE-r, power control)
+npm install -g meshcommander
