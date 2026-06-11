@@ -4,6 +4,31 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-11 — `rook-ceph-dashboard-secret`
+
+### Goal
+Wire the Rook-Ceph dashboard password via ESO (1Password → `rook-ceph-dashboard-password` Secret), placed for correct re-bootstrap ordering and compliant with CONVENTIONS.md ExternalSecret rules.
+
+### What we did
+- **Created `operator/app/externalsecret.yaml`** — ExternalSecret pulling from the `rook-ceph` 1Password item; rewrite `ROOK_CEPH_$1`; template maps `ROOK_CEPH_DASHBOARD_PASSWORD` → `password` key. Target Secret name `rook-ceph-dashboard-password` is auto-discovered by the Rook operator (hardcoded convention, no HelmRelease changes needed).
+- **Initial placement in `cluster/app/`** was corrected after discussing re-bootstrap safety: with the ExternalSecret in `cluster/app/`, the CephCluster could start before ESO creates the Secret (race condition). Moving it to `operator/app/` (which has `wait: true`) means Flux blocks the cluster Kustomization until the Secret is confirmed Ready.
+- **Rewrite corrected** from no-op `$1` → `ROOK_CEPH_$1` after checking CONVENTIONS.md; template variable updated to `{{ .ROOK_CEPH_DASHBOARD_PASSWORD }}`.
+- **Added bootstrap ordering principle to CLAUDE.md** under GitOps Conventions — generalised rule: async-produced prerequisites (ExternalSecrets, Certificates, etc.) belong in the earlier Kustomization so `wait: true` enforces the ordering guarantee.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/rook-ceph/rook-ceph/operator/app/externalsecret.yaml` | Created — ExternalSecret for dashboard password |
+| `kubernetes/apps/rook-ceph/rook-ceph/operator/app/kustomization.yaml` | Added `externalsecret.yaml` to resources |
+| `CLAUDE.md` | Added "Bootstrap ordering" subsection under GitOps Conventions |
+
+### Key decisions
+- **ExternalSecret in `operator/app/` not `cluster/app/`** — the operator Kustomization has `wait: true`; ESO must create the Secret (ExternalSecret Ready) before Flux starts the cluster Kustomization. Without this, fresh bootstraps race; live clusters mask the problem because ESO is already warm.
+- **No HelmRelease changes** — Rook auto-discovers the `rook-ceph-dashboard-password` Secret by name in the same namespace; no `spec.dashboard.passwordSecret` or similar chart value exists.
+- **`ROOK_CEPH_$1` prefix** over ByKaj's passthrough `$1` — CONVENTIONS.md mandates a prefix rewrite to namespace intermediate keys and prevent field collisions across multiple `dataFrom.extract` entries.
+
+---
+
 ## 2026-06-10 — `ceph-osd-lacp-tuning`
 
 ### Goal

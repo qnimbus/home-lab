@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-11 | `rook-ceph-dashboard-secret` | ExternalSecret for Rook-Ceph dashboard password; bootstrap-safe placement in operator Kustomization; CONVENTIONS.md rewrite compliance |
 > | 2026-06-10 | `ceph-osd-lacp-tuning` | osdsPerDevice 1→2 + ms_async_op_threads 5; raw-mode reprovision complication; benchmark confirmed both bond members active (324 MB/s) |
 > | 2026-06-10 | `rook-ceph-phase5-consumers` | Phase 5: all consumers on ceph-block; waha+grafana restored from NFS; cleared 4 zombie longhorn PVCs; cp-02 hard-down #3 |
 > | 2026-06-10 | `ceph-dashboard-ingress` | Added HTTPRoute exposing Ceph mgr dashboard at ceph.<domain> via envoy-internal; no extra TLS config needed |
@@ -11,7 +12,6 @@
 > | 2026-06-10 | `rook-ceph-free-disks` | Phase 3: removed longhorn-storage userVolume from all 3 nodes, staggered reboot+wipe to raw; cp-03 NVMe enumeration flipped (mapped by serial) |
 > | 2026-06-08 | `rook-ceph-migration` | Removed Longhorn big-bang (8b27593), consumers backed-up+suspended; recovered Tailscale route-hijack outage + debris |
 > | 2026-06-08 | `docs-consolidation` | Doc audit + consolidation; fixed staleness; added docs/README.md index; archived longhorn doc; split SESSIONS.md |
-> | 2026-06-05 | `longhorn-storagevlan-rollback` | Removed Multus/whereabouts/NAD + Cilium override + Talos /28 routes (reboot-free); abandoned Longhorn storage-VLAN, pivoting to Rook-Ceph; cp-02 hard-down #2 recovered |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
@@ -201,6 +201,38 @@ don't exist yet. `dependsOn` + `healthChecks` ensures the operator is fully inst
 instance Kustomization's dry-run runs.
 
 Single file keeps the dependency relationship visible in one place (archive convention).
+
+### Bootstrap ordering — place async prerequisites in the earlier Kustomization
+
+The cluster must be fully bootstrapable from scratch, not just operational when already running.
+A live cluster tolerates race conditions (controllers are already up, async resources resolve
+quickly); a fresh bootstrap does not.
+
+**Rule:** when a later Kustomization consumes a resource that is created *asynchronously* by a
+controller — an `ExternalSecret` that causes ESO to create a `Secret`, a `Certificate` that causes
+cert-manager to issue a TLS secret, etc. — place that resource in the **earlier** Kustomization's
+path, not in the consuming Kustomization.
+
+Why this works: `wait: true` on a Flux Kustomization blocks the dependent Kustomization until
+every resource in the earlier one is **Ready**. An `ExternalSecret` is only Ready after ESO has
+successfully created the target `Secret`. This turns an operator-level sequencing concern into a
+Flux-enforced guarantee:
+
+```
+Kustomization A  (wait: true)
+  └── ExternalSecret → ESO creates Secret → Ready ✓
+        ↓  Flux will not start B until A is fully Ready
+Kustomization B
+  └── workload that reads the Secret — guaranteed present
+```
+
+Without this placement, Kustomizations A and B start simultaneously (or B begins before the async
+resource in A completes), and the workload in B may start before its Secret exists — silent on a
+live cluster, broken on a fresh bootstrap.
+
+**Example:** `rook-ceph-dashboard-password` ExternalSecret lives in `operator/app/` (the operator
+Kustomization, which has `wait: true`) rather than `cluster/app/` (the cluster Kustomization),
+so the Secret is guaranteed present before the CephCluster is configured.
 
 ### HelmRelease cluster-wide defaults (via `cluster-apps` patch)
 
