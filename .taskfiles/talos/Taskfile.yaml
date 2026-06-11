@@ -168,11 +168,39 @@ tasks:
       - {msg: "kubectl not found", sh: "which kubectl"}
       - {msg: "yq not found", sh: "which yq"}
 
+  wipe-ceph-osds:
+    desc: Wipe Ceph OSD partition tables via talosctl (nodes must already be in maintenance mode — called by reset)
+    cmds:
+      - |
+        # Identify each OSD disk by model name at runtime — avoids hardcoding nvme0/1
+        # which is not stable across reboots (cp-03 enumeration order is known to flip).
+        for SPEC in \
+          "10.60.0.201:CT2000P310SSD8" \
+          "10.60.0.202:CT2000T500SSD8" \
+          "10.60.0.204:KINGSTON SNV3S1000G" \
+          "10.60.0.205:KINGSTON SNV3S1000G"; do
+          IP="${SPEC%%:*}"
+          MODEL="${SPEC##*:}"
+          DEV=$(talosctl get disks --nodes "${IP}" --insecure -o json 2>/dev/null \
+            | jq -r --arg m "${MODEL}" 'select(.spec.model | startswith($m)) | .metadata.id')
+          if [ -z "${DEV}" ]; then
+            echo "ERROR: no disk matching '${MODEL}' found on ${IP}" >&2; exit 1
+          fi
+          echo "Wiping ${DEV} (${MODEL}) on ${IP}..."
+          talosctl wipe disk --nodes "${IP}" --insecure "${DEV}"
+        done
+    preconditions:
+      - {msg: "talosctl not found", sh: "which talosctl"}
+      - {msg: "jq not found",       sh: "which jq"}
+
   reset:
-    desc: Reset all nodes back to maintenance mode (DESTRUCTIVE)
+    desc: Reset all nodes back to maintenance mode (DESTRUCTIVE — wipes Ceph OSD partitions after nodes come up in maintenance)
     dir: '{{.TALOS_DIR}}'
-    prompt: This will destroy your cluster and reset all nodes to maintenance mode... continue?
-    cmd: talhelper gencommand reset --extra-flags="--reboot {{- if eq .CLI_FORCE false }} --system-labels-to-wipe STATE --system-labels-to-wipe EPHEMERAL{{ end }} --graceful=false --wait=false" | bash
+    prompt: This will destroy your cluster and wipe all Ceph OSD data, resetting all nodes to maintenance mode... continue?
+    cmds:
+      - talhelper gencommand reset --extra-flags="--reboot {{- if eq .CLI_FORCE false }} --system-labels-to-wipe STATE --system-labels-to-wipe EPHEMERAL{{ end }} --graceful=false --wait=false" | bash
+      - task: wait-maintenance
+      - task: wipe-ceph-osds
     preconditions:
       - {msg: "talhelper not found", sh: "which talhelper"}
       - {msg: "talosconfig not found", sh: "test -f {{.TALOSCONFIG}}"}

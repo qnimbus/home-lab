@@ -98,19 +98,22 @@ spec:
           # both 10GbE links instead of pinning to one.
           osdsPerDevice: "2"
         # Devices are pinned by /dev/disk/by-id (stable across reboots). This
-        # matters because NVMe kernel enumeration is NOT consistent: on cp-03
-        # the system disk is nvme0n1 and the OSD spare is nvme1n1 — the reverse
-        # of cp-01/cp-02. A kernel-name selector would be a data-loss footgun.
+        # matters because NVMe kernel enumeration is NOT consistent: on cp-01
+        # (MS-A2) the system disk is nvme0n1 and the OSD spare is nvme1n1 — the
+        # reverse of worker-01/worker-02. A kernel-name selector would be a data-loss footgun.
         nodes:
-          - name: talos-cp-01
-            devices:
-              - name: /dev/disk/by-id/nvme-KINGSTON_SNV3S1000G_50026B7686F8B787
-          - name: talos-cp-02
-            devices:
-              - name: /dev/disk/by-id/nvme-KINGSTON_SNV3S1000G_50026B7383B9D0CC
-          - name: talos-cp-03
+          - name: talos-cp-01                          # MS-A2 — Crucial P310 2TB
             devices:
               - name: /dev/disk/by-id/nvme-CT2000P310SSD8_252450B1A33B
+          - name: talos-cp-02                          # M90q #1 — Crucial T500 2TB
+            devices:
+              - name: /dev/disk/by-id/nvme-CT2000T500SSD8_25405348D601
+          - name: talos-worker-01                      # M920q #1 — Kingston NV3 1TB
+            devices:
+              - name: /dev/disk/by-id/nvme-KINGSTON_SNV3S1000G_50026B7686F8B787
+          - name: talos-worker-02                      # M920q #2 — Kingston NV3 1TB
+            devices:
+              - name: /dev/disk/by-id/nvme-KINGSTON_SNV3S1000G_50026B7383B9D0CC
     # Replicated RBD pool + its StorageClass. size=3 / failureDomain=host means
     # one replica per node — full host-level redundancy (usable capacity is
     # gated by the smallest host, ~1TB, until the cluster grows).

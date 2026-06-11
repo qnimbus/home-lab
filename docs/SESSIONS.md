@@ -29,6 +29,37 @@ Wire the Rook-Ceph dashboard password via ESO (1Password → `rook-ceph-dashboar
 
 ---
 
+## 2026-06-11 — `node-reshape-rebootstrap-prep`
+
+### Goal
+Promote M90q #1 to control plane, demote M920q #2 to worker, rename all nodes to their final-target identities (Option B), expand Ceph to 4 OSD hosts, and add a `wipe-ceph-osds` task — preparing the cluster for a clean rebootstrap.
+
+### What we did
+- **Promoted M90q #1 (formerly `talos-worker-01`) to control plane** as `talos-cp-04` — configured VLAN 60 (`10.60.0.202/24`, MTU 1500, VIP) and VLAN 200 (`10.200.0.202/24`, MTU 9000) on its single 1GbE NIC using the patch approach to avoid the talhelper VLANConfig doc conflict. Applied via direct `talosctl apply-config` targeting old IP `10.60.0.206` (talhelper lookup fails when the IP in talconfig has already changed).
+- **Demoted M920q #2 (`talos-cp-02`) to worker** — flipped `controlPlane: false`, removed VIP, and removed the stale `machine.install.wipe: true` patch (one-time migration artifact from the Ceph disk wipe; dangerous to leave in persistent config as it triggers ephemeral wipe on every future upgrade). Confirmed cp-04 was in etcd before applying. Applied via `task talos:apply IP=10.60.0.205`.
+- **Reviewed hardware architecture** against M920q #2 instability (3 hard-downs, suspected thermal/PSU root cause) and corrected prior mis-claim that etcd and OSD co-tenant on a single device on M920q #1 (two separate NVMe drives). Final CP set: MS-A2 + M90q #1 + M920q #1.
+- **Renamed all nodes to Option B final-target scheme**: `talos-cp-03` (MS-A2) → `talos-cp-01`; `talos-cp-04` (M90q #1) → `talos-cp-02`; `talos-cp-01` (M920q #1) → `talos-worker-01` (temporary CP until M90q #2 joins); `talos-cp-02` (M920q #2) → `talos-worker-02`. IPs unchanged.
+- **Updated Ceph OSD topology** — renamed node entries to new names and added `talos-cp-02` (M90q #1, T500 2TB, device ID `nvme-CT2000T500SSD8_25405348D601` discovered live before reset via `talosctl get disks`). Cluster now configured for 4 OSD hosts, enabling self-heal under `size=3`.
+- **Added `wipe-ceph-osds` task** — uses `talosctl get disks --insecure -o json | jq` to find each OSD disk by model prefix at runtime (avoids nvme0/1 enumeration instability), then `talosctl wipe disk --insecure`. Chained into `reset` task after `wait-maintenance`. All 4 OSD nodes covered (10.60.0.201, .202, .204, .205).
+- **Updated CLAUDE.md, tuppr comment** to reflect 4-node cluster and new node names.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | Four node renames + zone labels; VLAN 60+200 patch for M90q #1; wipe patch removed from M920q #2 |
+| `CLAUDE.md` | Hardware table updated (4 nodes, Option B names), AMT list, VIP note |
+| `.taskfiles/talos/Taskfile.yaml` | Added `wipe-ceph-osds` task; `reset` now sequences reset→wait-maintenance→wipe; M90q #1 added to wipe list |
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` | OSD nodes renamed to Option B names; M90q #1 T500 2TB added as 4th OSD host |
+| `kubernetes/apps/system-upgrade/tuppr/upgrade/talosupgrade.yaml` | Comment corrected to 4-node cluster |
+
+### Key decisions
+- **VLAN 200 MTU 9000 on single 1GbE NIC**: Linux auto-lifts the parent interface MTU to match the highest child VLAN; VLAN 60 stays 1500. Switch port must be a trunk carrying VLANs 60, 200, native 100.
+- **Option B naming (final-target state)**: names reflect the intended final role when M90q #2 arrives and M920q #1 is eventually demoted; avoids another rename cycle at that point. `talos-worker-01` is temporarily a CP — the zone label and name accurately predict its future role, not its current one.
+- **M920q #2 permanently a worker**: 3 hard-downs with suspected thermal/PSU root cause overrides the HARDWARE-ARCHITECTURE.md disk-budget argument for putting it in etcd. M920q #1 temporarily anchors the third CP slot despite OSD co-tenancy — two separate NVMe drives, no shared device.
+- **Wipe in maintenance mode, not on live cluster**: Rook-Ceph holds exclusive raw block device ownership; wiping an OSD disk while Ceph is running destroys BlueStore metadata live. The `wipe-ceph-osds` task runs after `wait-maintenance` ensures nodes are in Talos maintenance (Ceph not running) before any disk wipe.
+
+---
+
 ## 2026-06-10 — `ceph-osd-lacp-tuning`
 
 ### Goal

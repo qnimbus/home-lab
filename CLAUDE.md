@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-11 | `node-reshape-rebootstrap-prep` | Promoted M90q #1 to CP (talos-cp-02), demoted M920q #2 to worker, renamed all nodes to Option B final-state scheme; 4th Ceph OSD host added; wipe-ceph-osds task |
 > | 2026-06-11 | `rook-ceph-dashboard-secret` | ExternalSecret for Rook-Ceph dashboard password; bootstrap-safe placement in operator Kustomization; CONVENTIONS.md rewrite compliance |
 > | 2026-06-10 | `ceph-osd-lacp-tuning` | osdsPerDevice 1→2 + ms_async_op_threads 5; raw-mode reprovision complication; benchmark confirmed both bond members active (324 MB/s) |
 > | 2026-06-10 | `rook-ceph-phase5-consumers` | Phase 5: all consumers on ceph-block; waha+grafana restored from NFS; cleared 4 zombie longhorn PVCs; cp-02 hard-down #3 |
@@ -11,7 +12,6 @@
 > | 2026-06-10 | `rook-ceph-deploy` | Phase 4: deployed Rook-Ceph (v1.19.6) via Flux; host-net cluster_network on storage bond; HEALTH_OK with 3 host-spread OSDs |
 > | 2026-06-10 | `rook-ceph-free-disks` | Phase 3: removed longhorn-storage userVolume from all 3 nodes, staggered reboot+wipe to raw; cp-03 NVMe enumeration flipped (mapped by serial) |
 > | 2026-06-08 | `rook-ceph-migration` | Removed Longhorn big-bang (8b27593), consumers backed-up+suspended; recovered Tailscale route-hijack outage + debris |
-> | 2026-06-08 | `docs-consolidation` | Doc audit + consolidation; fixed staleness; added docs/README.md index; archived longhorn doc; split SESSIONS.md |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
@@ -77,7 +77,7 @@ All tools are pinned in `.mise.toml` and installed via `mise install`. Never ins
 
 To activate: `eval "$(~/.local/bin/mise activate bash)"` (done automatically in devcontainer).
 
-**MeshCommander** (Intel AMT web UI) is installed globally via npm and auto-started by `postStartCommand.sh` on every devcontainer start. It listens on port 3000, which VS Code forwards automatically. Open `http://localhost:3000` to access KVM, IDE-r (ISO boot), and power control for any node with Intel AMT configured. AMT nodes (`cp-01`, `cp-02`, `worker-01`) use native/untagged VLAN 100 (`10.100.0.0/24`) for AMT; Talos management rides tagged VLAN 60 on the same NIC. Logs: `/tmp/meshcommander.log`.
+**MeshCommander** (Intel AMT web UI) is installed globally via npm and auto-started by `postStartCommand.sh` on every devcontainer start. It listens on port 3000, which VS Code forwards automatically. Open `http://localhost:3000` to access KVM, IDE-r (ISO boot), and power control for any node with Intel AMT configured. AMT nodes (`worker-01`, `worker-02`, `cp-02`) use native/untagged VLAN 100 (`10.100.0.0/24`) for AMT; Talos management rides tagged VLAN 60 on the same NIC. Logs: `/tmp/meshcommander.log`.
 
 Version bumps are handled by **Renovate** via the `# renovate: datasource=...` comments in `talenv.yaml` and Helmfile lock files.
 
@@ -92,11 +92,12 @@ detail there, not here. For the *planned* 5-node expansion see [HARDWARE-ARCHITE
 
 | Hostname       | Hardware                              | Mgmt IP       | Storage IP     | Notes                        |
 |----------------|---------------------------------------|---------------|----------------|------------------------------|
-| talos-cp-01    | Lenovo M920Q #1 (i5-8500T, 64GB)     | 10.60.0.201   | 10.200.0.201   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
-| talos-cp-02    | Lenovo M920Q #2 (i5-8500T, 64GB)     | 10.60.0.202   | 10.200.0.202   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
-| talos-cp-03    | Minisforum MS-A2 (AMD, 32c, 96GB ECC)| 10.60.0.203   | 10.200.0.203   | bond0: 2x RTL8125+igc, bond1: 2x i40e (X710) |
+| talos-cp-01    | Minisforum MS-A2 (AMD, 32c, 96GB ECC)| 10.60.0.201   | 10.200.0.201   | bond0: 2x RTL8125+igc, bond1: 2x i40e (X710) |
+| talos-cp-02    | Lenovo M90q #1 (i5-10500T, 64GB)     | 10.60.0.202   | 10.200.0.202   | mgmt: eno1 1GbE (VLAN 60+200 on single port) |
+| talos-worker-01| Lenovo M920Q #1 (i5-8500T, 64GB)     | 10.60.0.204   | 10.200.0.204   | mgmt: e1000e, bond0: 2x ixgbe (X520); temp CP |
+| talos-worker-02| Lenovo M920Q #2 (i5-8600T, 64GB)     | 10.60.0.205   | 10.200.0.205   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
 
-- **VIP**: `10.60.0.2` (kube-vip via ARP, all three CPs compete)
+- **VIP**: `10.60.0.2` (kube-vip via ARP; cp-01, cp-02, worker-01 compete — worker-01 is temporary CP)
 - **Pod CIDR**: `10.42.0.0/16` | **Service CIDR**: `10.43.0.0/16`
 - **Storage network**: `10.200.0.0/24` (SFP+, LACP) — jumbo frames (9000 MTU) live on all 3 nodes
 
