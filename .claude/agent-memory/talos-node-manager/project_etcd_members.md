@@ -9,9 +9,9 @@ As of 2026-05-28 (verified via `talosctl etcd members --nodes 10.60.0.201`):
 
 | Member ID          | Hostname     | Peer URL                      | Learner |
 |--------------------|--------------|-------------------------------|---------|
-| 654effef1e8c668d   | talos-cp-03  | https://10.60.0.203:2380      | false   |
-| 77310cfc912f87ab   | talos-cp-02  | https://10.60.0.202:2380      | false   |
-| a5a07a9260dd4f06   | talos-cp-01  | https://10.60.0.201:2380      | false   |
+| 654effef1e8c668d   | talos-cp-03  | https://10.60.0.201:2380      | false   |
+| 77310cfc912f87ab   | talos-cp-02  | https://10.60.0.205:2380      | false   |
+| a5a07a9260dd4f06   | talos-cp-01  | https://10.60.0.204:2380      | false   |
 
 All three members are full voters. No learner state. Peer URLs use the management subnet (10.60.0.x), not the storage subnet.
 

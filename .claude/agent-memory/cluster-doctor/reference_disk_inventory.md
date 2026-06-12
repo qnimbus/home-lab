@@ -10,7 +10,7 @@ Verified via `talosctl get disks` + `talosctl get mounts` on 2026-05-13.
 The system disk is always identifiable as the device whose p4 partition is mounted as EPHEMERAL (/var).
 The Longhorn storage disk has p1 mounted at /var/mnt/longhorn-storage.
 
-## cp-01 (10.60.0.201, Lenovo M920Q #1)
+## cp-01 (10.60.0.204, Lenovo M920Q #1)
 
 | Device   | Model                    | Size  | Role                                    |
 |----------|--------------------------|-------|-----------------------------------------|
@@ -19,7 +19,7 @@ The Longhorn storage disk has p1 mounted at /var/mnt/longhorn-storage.
 
 Note: physical slot order is reversed from user's expectation — the Kingston (nvme1n1) is the system disk, the GoodRam IRDM PRO NANO (nvme0n1) is the Longhorn disk.
 
-## cp-02 (10.60.0.202, Lenovo M920Q #2)
+## cp-02 (10.60.0.205, Lenovo M920Q #2)
 
 | Device   | Model               | Size  | Role                                   |
 |----------|---------------------|-------|----------------------------------------|
@@ -27,7 +27,7 @@ Note: physical slot order is reversed from user's expectation — the Kingston (
 
 Only one NVMe present. No Longhorn storage disk installed yet. Roadmap: install second drive to enable 3-replica Longhorn.
 
-## cp-03 (10.60.0.203, Minisforum MS-A2)
+## cp-03 (10.60.0.201, Minisforum MS-A2)
 
 | Device   | Model              | Size  | Role                                    |
 |----------|--------------------|-------|-----------------------------------------|

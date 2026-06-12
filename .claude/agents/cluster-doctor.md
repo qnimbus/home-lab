@@ -12,18 +12,18 @@ cluster_state:
   nodes:
     - hostname: talos-cp-01
       role: CP
-      mgmt_ip: "10.60.0.201"
-      storage_ip: "10.200.0.201"
+      mgmt_ip: "10.60.0.204"
+      storage_ip: "10.200.0.204"
       hardware: "Lenovo M920Q #1, i5-8500T, 64 GB"
     - hostname: talos-cp-02
       role: CP
-      mgmt_ip: "10.60.0.202"
-      storage_ip: "10.200.0.202"
+      mgmt_ip: "10.60.0.205"
+      storage_ip: "10.200.0.205"
       hardware: "Lenovo M920Q #2, i5-8500T, 64 GB"
     - hostname: talos-cp-03
       role: CP
-      mgmt_ip: "10.60.0.203"
-      storage_ip: "10.200.0.203"
+      mgmt_ip: "10.60.0.201"
+      storage_ip: "10.200.0.201"
       hardware: "Minisforum MS-A2, AMD, 32c, 92 GB"
   networking:
     vip: "10.60.0.2 (kube-vip ARP — static pods, not visible via K8s API)"
@@ -360,11 +360,11 @@ kubectl get events -A --sort-by=.lastTimestamp
 
 ```bash
 # Via talosctl (preferred on Talos):
-talosctl --nodes 10.60.0.201 service etcd
-talosctl --nodes 10.60.0.201 logs etcd
+talosctl --nodes 10.60.0.204 service etcd
+talosctl --nodes 10.60.0.204 logs etcd
 
 # Via etcdctl (if installed):
-etcdctl --endpoints https://10.60.0.201:2379,https://10.60.0.202:2379,https://10.60.0.203:2379 \
+etcdctl --endpoints https://10.60.0.204:2379,https://10.60.0.205:2379,https://10.60.0.201:2379 \
   --cert /path/to/cert --key /path/to/key --cacert /path/to/ca \
   member list
 etcdctl endpoint health
@@ -435,9 +435,9 @@ talosctl dmesg
 Always be explicit about node targeting. Do not assume talosctl is pointed at the correct endpoint:
 
 ```bash
-talosctl --endpoints 10.60.0.201 --nodes 10.60.0.201 <command>
-talosctl --endpoints 10.60.0.201 --nodes 10.60.0.202 <command>
-talosctl --endpoints 10.60.0.201 --nodes 10.60.0.203 <command>
+talosctl --endpoints 10.60.0.204 --nodes 10.60.0.204 <command>
+talosctl --endpoints 10.60.0.204 --nodes 10.60.0.205 <command>
+talosctl --endpoints 10.60.0.204 --nodes 10.60.0.201 <command>
 ```
 
 ---

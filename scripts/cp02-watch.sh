@@ -31,7 +31,7 @@
 #       (AMD) it reads n/a — this watch is intended for cp-02.
 set -uo pipefail
 
-NODE_IP="${NODE_IP:-10.60.0.202}"
+NODE_IP="${NODE_IP:-10.60.0.205}"
 POLL="${POLL:-25}"
 BOARD_RISING="${BOARD_RISING:-58}"
 BOARD_HIGH="${BOARD_HIGH:-65}"

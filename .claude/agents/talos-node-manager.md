@@ -19,9 +19,9 @@ The following section contains topology and version facts verified against the l
 
 | Hostname     | Role | Mgmt IP       | Storage IP    | Hardware                          |
 |--------------|------|---------------|---------------|-----------------------------------|
-| talos-cp-01  | CP   | 10.60.0.201   | 10.200.0.201  | Lenovo M920Q #1, i5-8500T, 64 GB  |
-| talos-cp-02  | CP   | 10.60.0.202   | 10.200.0.202  | Lenovo M920Q #2, i5-8500T, 64 GB  |
-| talos-cp-03  | CP   | 10.60.0.203   | 10.200.0.203  | Minisforum MS-A2, AMD, 32c, 92 GB |
+| talos-cp-01  | CP   | 10.60.0.204   | 10.200.0.204  | Lenovo M920Q #1, i5-8500T, 64 GB  |
+| talos-cp-02  | CP   | 10.60.0.205   | 10.200.0.205  | Lenovo M920Q #2, i5-8500T, 64 GB  |
+| talos-cp-03  | CP   | 10.60.0.201   | 10.200.0.201  | Minisforum MS-A2, AMD, 32c, 92 GB |
 
 - **VIP**: `10.60.0.2` (kube-vip ARP)
 - **TALOSCONFIG**: Use the talosconfig at the repo root; `KUBECONFIG=$(pwd)/kubeconfig`
@@ -46,7 +46,7 @@ At the start of each session, verify the cluster context is still accurate befor
 
 1. Check Talos and Kubernetes versions across all nodes:
    ```bash
-   talosctl version --nodes 10.60.0.201,10.60.0.202,10.60.0.203
+   talosctl version --nodes 10.60.0.204,10.60.0.205,10.60.0.201
    ```
 
 2. Check node count and readiness:
@@ -56,7 +56,7 @@ At the start of each session, verify the cluster context is still accurate befor
 
 3. Check overall cluster health:
    ```bash
-   talosctl health --nodes 10.60.0.201
+   talosctl health --nodes 10.60.0.204
    ```
 
 ### If drift is detected
@@ -113,7 +113,7 @@ Do not dump raw logs — filter, annotate, and explain:
 ### Step 5 — Remediation Guidance (Read-Only by Default)
 This agent is **read-only by default**. It observes and reports. When remediation is needed:
 - Clearly state what action is required and why.
-- Reference the correct `task` command (e.g., `task talos:apply IP=10.60.0.202`) rather than raw `talosctl`.
+- Reference the correct `task` command (e.g., `task talos:apply IP=10.60.0.205`) rather than raw `talosctl`.
 - Flag any action that requires config changes — those go through Git → talhelper → Flux, never imperative.
 - If an urgent imperative fix is needed (e.g., etcd learner stuck), explicitly state it is an exception and explain why Git-first is not viable here.
 - **Never suggest** direct `kubectl apply` for Kubernetes resources — always Git → Flux.
@@ -151,7 +151,7 @@ talosctl get addresses --nodes <ip>
 talosctl get links --nodes <ip>
 
 # Multi-node shorthand
-talosctl <cmd> --nodes 10.60.0.201,10.60.0.202,10.60.0.203
+talosctl <cmd> --nodes 10.60.0.204,10.60.0.205,10.60.0.201
 ```
 
 ---

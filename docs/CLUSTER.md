@@ -4,9 +4,9 @@ Three-node bare-metal Talos Linux cluster (all control-plane, scheduling allowed
 
 | Node | Hardware | Mgmt IP |
 |------|----------|---------|
-| talos-cp-01 | Lenovo M920Q (i5-8500T, 64GB) | 10.60.0.201 |
-| talos-cp-02 | Lenovo M920Q (i5-8500T, 64GB) | 10.60.0.202 |
-| talos-cp-03 | Minisforum MS-A2 (32c, 92GB) | 10.60.0.203 |
+| talos-cp-01 | Lenovo M920Q (i5-8500T, 64GB) | 10.60.0.204 |
+| talos-cp-02 | Lenovo M920Q (i5-8500T, 64GB) | 10.60.0.205 |
+| talos-cp-03 | Minisforum MS-A2 (32c, 92GB) | 10.60.0.201 |
 
 **VIP**: `10.60.0.2` (kube-vip) | **CNI**: Cilium (kube-proxy replacement) | **DNS**: CoreDNS via HelmRelease
 
@@ -27,9 +27,9 @@ Each node has a dedicated 10 GbE storage bond on the `10.200.0.0/24` subnet. Tod
 
 | Node | Management | Storage bond |
 |------|------------|-------------|
-| talos-cp-01 | `eno1` — single Intel I219-LM (e1000e), `10.60.0.201/24` | `bond0` — 2× Intel X520-DA2 SFP+ (ixgbe), `10.200.0.201/24` |
-| talos-cp-02 | `eno1` — single Intel I219-LM (e1000e), `10.60.0.202/24` | `bond0` — 2× Intel X520-DA2 SFP+ (ixgbe), `10.200.0.202/24` |
-| talos-cp-03 | `bond0` — 2× NIC (RTL8125 r8169 + Intel I225 igc), `10.60.0.203/24` | `bond1` — 2× Intel X710 SFP+ (i40e), `10.200.0.203/24` |
+| talos-cp-01 | `eno1` — single Intel I219-LM (e1000e), `10.60.0.204/24` | `bond0` — 2× Intel X520-DA2 SFP+ (ixgbe), `10.200.0.204/24` |
+| talos-cp-02 | `eno1` — single Intel I219-LM (e1000e), `10.60.0.205/24` | `bond0` — 2× Intel X520-DA2 SFP+ (ixgbe), `10.200.0.205/24` |
+| talos-cp-03 | `bond0` — 2× NIC (RTL8125 r8169 + Intel I225 igc), `10.60.0.201/24` | `bond1` — 2× Intel X710 SFP+ (i40e), `10.200.0.201/24` |
 
 All bonds run **802.3ad LACP** (fast rate, `layer3+4` hash policy). The management interfaces (`eno1` and cp-03's mgmt `bond0`) run at MTU 1500; the storage bonds (`bond-storage`) run at **MTU 9000 (jumbo frames)** on all three nodes — verified live via `talosctl get links`, configured during the `jumbo-frames-storage-vlan` session.
 
@@ -783,12 +783,12 @@ Use this when modifying `talconfig.yaml` on a running cluster (patch changes, no
 task talos:genconfig
 
 # 2a. Push to all running nodes (repeat per node):
+task talos:apply IP=10.60.0.204
+task talos:apply IP=10.60.0.205
 task talos:apply IP=10.60.0.201
-task talos:apply IP=10.60.0.202
-task talos:apply IP=10.60.0.203
 
 # 2b. Or push to a single running node:
-task talos:apply IP=10.60.0.201
+task talos:apply IP=10.60.0.204
 ```
 
 > `talos:apply` defaults to authenticated mode (mutual TLS via talosconfig) for **running** nodes.

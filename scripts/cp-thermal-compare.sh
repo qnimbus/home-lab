@@ -28,8 +28,8 @@ set -uo pipefail
 
 WINDOW="${WINDOW:-30m}"
 LABEL="${1:-${LABEL:-adhoc}}"
-CP01="${CP01:-10.60.0.201}"
-CP02="${CP02:-10.60.0.202}"
+CP01="${CP01:-10.60.0.204}"
+CP02="${CP02:-10.60.0.205}"
 : "${KUBECONFIG:=$(git -C "$(dirname "$0")/.." rev-parse --show-toplevel 2>/dev/null)/kubeconfig}"
 export KUBECONFIG
 
