@@ -232,12 +232,16 @@ helmDefaults:
 The bootstrap task invokes it as:
 
 ```sh
-helmfile -f helmfile.d/00-crds.yaml template --quiet | kubectl apply --server-side -f -
+helmfile -f helmfile.d/00-crds.yaml template --quiet \
+  | yq ea 'select(.kind == "CustomResourceDefinition")' \
+  | kubectl apply --server-side -f -
 ```
 
 `helmfile template` (not `sync`) renders the charts without writing Helm release
-Secrets — so no namespace needs to exist yet.  `--server-side` ensures the apply is
-idempotent across re-bootstraps.  By the time Flux first reconciles,
+Secrets — so no namespace needs to exist yet.  The `yq` filter is applied in the
+shell pipeline rather than as a Helm post-renderer (Helm 4 requires post-renderers
+to be registered plugins, not arbitrary executables).  `--server-side` ensures the
+apply is idempotent across re-bootstraps.  By the time Flux first reconciles,
 `monitoring.coreos.com/v1` and `gateway.networking.k8s.io/v1` CRDs are already
 registered — dry-run passes everywhere.
 

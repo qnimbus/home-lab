@@ -282,18 +282,18 @@ tasks:
         SUMMARY=""
         for IP in $(nmap -p 50000 --open -T4 10.60.0.0/24 -oG - 2>/dev/null \
           | awk '/50000\/open/{print $2}'); do
-          DISKS_JSON=$(talosctl get disks --nodes "${IP}" --insecure -o json 2>/dev/null)
+          DISKS_JSON=$(talosctl get disks --nodes "${IP}" --insecure -o json 2>/dev/null) || true
           [ -z "${DISKS_JSON}" ] && continue
           # Fingerprint = sorted disk serials — unique per physical machine.
           # Two IPs on the same host (e.g. multi-NIC MS-A2) produce identical fingerprints.
           FP=$(printf '%s' "${DISKS_JSON}" \
-            | jq -r 'select(.spec.serial != null) | .spec.serial' | sort | tr '\n' ',')
+            | jq -r 'select(.spec.serial != null) | .spec.serial' | sort | tr '\n' ',') || true
           [ -z "${FP}" ] && continue
           if ! echo "${FINGERPRINTS}" | grep -qF "${FP}"; then
             FINGERPRINTS="${FINGERPRINTS}|${FP}"
             MODELS=$(printf '%s' "${DISKS_JSON}" \
               | jq -r 'select(.spec.model != null) | .spec.model' \
-              | sort -u | tr '\n' '|' | sed 's/|$//; s/|/ | /g')
+              | sort -u | tr '\n' '|' | sed 's/|$//; s/|/ | /g') || true
             if [ -z "${SUMMARY}" ]; then
               SUMMARY=$(printf '    %-18s  %s' "${IP}" "${MODELS}")
             else

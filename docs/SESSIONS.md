@@ -4,6 +4,36 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-12 — `bootstrap-retest-helm4-fixes`
+
+### Goal
+Validate the CRD pre-bootstrap workflow by resetting and re-bootstrapping the cluster from scratch, fixing all bugs discovered during the live run.
+
+### What we did
+- **Reset cluster to maintenance mode** — ran `task talos:reset --yes`; the `wait-maintenance` task failed immediately due to a jq exit-code bug (mid-reboot nodes return partial/garbage output causing jq to exit non-zero, which killed the `while true` loop). Diagnosed from the timing of the failure (after printing "Waiting…" but before any `sleep 15` retry).
+- **Fixed `wait-maintenance` robustness** — added `|| true` after `talosctl get disks`, the FP `jq` pipeline, and the MODELS `jq` pipeline so transient failures from mid-reboot nodes don't kill the loop.
+- **Confirmed all 4 nodes in maintenance** — `nmap` showed 5 IPs on port 50000 (cp-01 has two NICs, appears as `.15` and `.16`); fingerprint deduplication handled it correctly. Mapped each IP to hostname via `talosctl get disks`.
+- **Fixed `bootstrap:cluster` cross-namespace task references** — `bootstrap:cluster` calls `task: talos:genconfig` etc., but Taskfile resolves these relative to the `bootstrap` namespace as `bootstrap:talos:genconfig` (not found). Fixed by using absolute refs: `task: :talos:genconfig`.
+- **Fixed `bootstrap:secrets` namespace ordering** — `sops-age` runs first and needs `flux-system` to exist, but only `flux-github-app` (runs last) creates it. Added `kubectl create namespace flux-system` to `sops-age`.
+- **Fixed Helm 4 `--post-renderer` incompatibility** — `00-crds.yaml` used `postRenderer: bash` with `postRendererArgs: [-c, "yq ea ..."]`, which worked in Helm 3 but Helm 4 requires post-renderers to be registered plugins (`postrenderer/v1`). Removed `postRenderer`/`postRendererArgs` from helmDefaults; moved the `yq ea 'select(.kind == "CustomResourceDefinition")'` filter into the task pipeline. Updated `CONVENTIONS.md` to document the change and rationale.
+- **Successfully bootstrapped**: Phase 0 applied 30 CRDs (10 `monitoring.coreos.com/v1`, 20 `gateway.networking.k8s.io/v1`+envoy). Phase 1 installed Cilium → CoreDNS → Spegel → cert-manager → flux-operator → flux-instance. Flux reconciled from `badd5ed`.
+- **Diagnosed cloudflared bootstrap race** — cluster-doctor confirmed cloudflared self-healed (2-minute retry) after a `DNSEndpoint` (`externaldns.k8s.io/v1alpha1`) CRD race: cloudflared's dry-run ran 1 second before external-dns installed its CRD. Fixed by adding `dependsOn: external-dns-cloudflare` to `cloudflared/ks.yaml`.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.taskfiles/talos/Taskfile.yaml` | Fixed `wait-maintenance`: added `|| true` guards to `talosctl` and `jq` commands |
+| `.taskfiles/bootstrap/Taskfile.yaml` | Fixed absolute task refs (`:talos:`); added namespace pre-creation to `sops-age`; moved yq CRD filter to task pipeline |
+| `kubernetes/bootstrap/helmfile.d/00-crds.yaml` | Removed `postRenderer`/`postRendererArgs` (Helm 4 incompatible); updated pipeline comment |
+| `docs/CONVENTIONS.md` | Updated CRD bootstrap pipeline docs: yq filter now in shell pipeline, not Helm post-renderer |
+| `kubernetes/apps/network/cloudflared/ks.yaml` | Added `dependsOn: external-dns-cloudflare` to fix DNSEndpoint CRD race |
+
+### Key decisions
+- **Moved yq filter to shell pipeline instead of Helm post-renderer**: Helm 4 broke the `postRenderer: bash` approach without a clean migration path. Shell pipeline is simpler, more portable, and doesn't require Helm plugin infrastructure.
+- **`dependsOn` for DNSEndpoint, not `00-crds.yaml`**: The `00-crds.yaml` pre-bootstrap pattern is for CRDs used by many unrelated apps (Prometheus, Gateway API). `DNSEndpoint` is only used by apps that embed it directly; those apps have a clear provider (external-dns) they can depend on, making per-app `dependsOn` the right tool.
+
+---
+
 ## 2026-06-12 — `crd-prebootstrap-helmfile-split`
 
 ### Goal

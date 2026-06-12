@@ -44,17 +44,18 @@
 # is piped directly to kubectl — no Helm release Secret is written, no namespace is
 # required to exist beforehand.
 #
-# Full pipeline per release:
+# Full pipeline (see bootstrap:apps task):
 #
-#   helm template <chart> --include-crds --no-hooks \
-#   | bash -c "yq ea --exit-status 'select(.kind == \"CustomResourceDefinition\")' -" \
+#   helmfile template --quiet \
+#   | yq ea 'select(.kind == "CustomResourceDefinition")' \
 #   | kubectl apply --server-side -f -
 #
 # `--include-crds`   — Helm normally omits CRDs from `template` output; this forces
-#                      them in so the post-renderer has something to filter.
+#                      them in so the yq filter has something to select.
 # `--no-hooks`       — skip hook manifests (Jobs, etc.) — not needed for CRD extract.
-# `--exit-status`    — yq exits non-zero if no CRDs are found, surfacing a broken
-#                      chart entry immediately rather than silently applying nothing.
+# `yq ea 'select'`   — filters the combined output to CRDs only (moved to the task
+#                      pipeline — Helm 4 post-renderers require a registered plugin,
+#                      not an arbitrary executable).
 # `--server-side`    — uses server-side apply, which is idempotent and handles CRD
 #                      schema updates (e.g. re-bootstrap after a chart upgrade) safely.
 #
@@ -83,10 +84,6 @@ helmDefaults:
   args:
     - --include-crds
     - --no-hooks
-  postRenderer: bash
-  postRendererArgs:
-    - -c
-    - yq ea --exit-status 'select(.kind == "CustomResourceDefinition")' -
 
 releases:
   # Installs: ServiceMonitor, PodMonitor, PrometheusRule, Alertmanager, and related

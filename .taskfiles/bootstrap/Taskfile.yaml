@@ -8,10 +8,10 @@ tasks:
     desc: Full cluster bootstrap sequence (gensecret, genconfig, apply-all, bootstrap, kubeconfig)
     cmds:
       - '[ -f {{.TALOS_DIR}}/talsecret.sops.yaml ] || talhelper gensecret -c {{.TALOS_DIR}}/talconfig.yaml | sops --filename-override {{.TALOS_DIR}}/talsecret.sops.yaml --encrypt /dev/stdin > {{.TALOS_DIR}}/talsecret.sops.yaml'
-      - task: talos:genconfig
-      - task: talos:apply-all
-      - task: talos:bootstrap
-      - task: talos:kubeconfig
+      - task: :talos:genconfig
+      - task: :talos:apply-all
+      - task: :talos:bootstrap
+      - task: :talos:kubeconfig
     preconditions:
       - test -f {{.ROOT_DIR}}/.sops.yaml
       - test -f {{.SOPS_AGE_KEY_FILE}}
@@ -90,6 +90,7 @@ tasks:
   sops-age:
     internal: true
     cmds:
+      - kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply --server-side -f -
       - |
         kubectl create secret generic sops-age \
           --namespace=flux-system \
@@ -109,7 +110,7 @@ tasks:
       # Uses `helmfile template | kubectl apply --server-side` — no Helm release
       # Secret is written, no namespace needs to exist yet.
       # See kubernetes/bootstrap/helmfile.d/00-crds.yaml for full explanation.
-      - helmfile -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.d/00-crds.yaml template --quiet | kubectl apply --server-side -f -
+      - helmfile -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.d/00-crds.yaml template --quiet | yq ea 'select(.kind == "CustomResourceDefinition")' | kubectl apply --server-side -f -
       # Phase 1: install the minimal controllers Flux needs to start reconciling.
       - helmfile sync -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.d/01-apps.yaml
     preconditions:

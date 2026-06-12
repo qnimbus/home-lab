@@ -21,6 +21,7 @@ spec:
   dependsOn:
     - name: envoy-gateway-config
     - name: onepassword-store
+    - name: external-dns-cloudflare
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
