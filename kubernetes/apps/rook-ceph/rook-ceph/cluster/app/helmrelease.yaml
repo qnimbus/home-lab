@@ -102,9 +102,9 @@ spec:
         # (MS-A2) the system disk is nvme0n1 and the OSD spare is nvme1n1 — the
         # reverse of worker-01/worker-02. A kernel-name selector would be a data-loss footgun.
         nodes:
-          - name: talos-cp-01                          # MS-A2 — Crucial P310 2TB
+          - name: talos-cp-01                          # MS-A2 — Crucial T500 2TB
             devices:
-              - name: /dev/disk/by-id/nvme-CT2000P310SSD8_252450B1A33B
+              - name: /dev/disk/by-id/nvme-CT2000T500SSD8_2545543A2190
           - name: talos-cp-02                          # M90q #1 — Crucial T500 2TB
             devices:
               - name: /dev/disk/by-id/nvme-CT2000T500SSD8_25405348D601

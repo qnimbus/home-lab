@@ -4,6 +4,29 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-12 — `servicemonitor-bootstrap-deadlock`
+
+### Goal
+Fix circular Flux bootstrap deadlock where `rook-ceph-operator` failed to install (missing `ServiceMonitor` CRD) and `kube-prometheus-stack` was blocked waiting on `rook-ceph-cluster`, which was blocked waiting on the operator.
+
+### What we did
+- **Diagnosed `metrics-server` reconciliation failure** — `serviceMonitor.enabled: true` in Helm values caused the HelmRelease to fail with `no matches for kind "ServiceMonitor" in version "monitoring.coreos.com/v1"` because the `kube-prometheus-stack` CRDs weren't installed yet. Fixed by adding `dependsOn: kube-prometheus-stack` to `metrics-server/ks.yaml`, matching the existing `smartctl-exporter` pattern.
+- **Diagnosed `rook-ceph-operator` bootstrap deadlock** — cluster-doctor confirmed a three-way cycle: operator HelmRelease failing (ServiceMonitor CRD absent) → `kube-prometheus-stack` blocked on `dependsOn: rook-ceph-cluster` → `rook-ceph-cluster` blocked on `dependsOn: rook-ceph-operator`. Zero pods running in `rook-ceph` namespace after 6 install attempts.
+- **Resolved cycle with `dependsOn` restructure** — removed `rook-ceph-cluster` from `kube-prometheus-stack`'s `dependsOn` (leaving only `onepassword-store`); re-enabled `monitoring.enabled: true` and `csi.serviceMonitor.enabled: true` in the operator HelmRelease. Bootstrap chain is now: `onepassword-store` → `kube-prometheus-stack` (CRDs land) → `rook-ceph-operator` (monitoring flags safe) → `rook-ceph-cluster` (Ceph up, ceph-block binds Prometheus PVCs).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/kube-system/metrics-server/ks.yaml` | Added `dependsOn: kube-prometheus-stack` |
+| `kubernetes/apps/observability/kube-prometheus-stack/ks.yaml` | Removed `dependsOn: rook-ceph-cluster` |
+| `kubernetes/apps/rook-ceph/rook-ceph/operator/app/helmrelease.yaml` | Re-enabled `monitoring.enabled` and `csi.serviceMonitor.enabled` (both `true`) |
+
+### Key decisions
+- **Remove `rook-ceph-cluster` dep from kube-prometheus-stack rather than adding kube-prometheus-stack dep to rook-ceph-operator** — adding the dep to the operator would have just relocated the cycle: kube-prometheus-stack still waits on rook-ceph-cluster (PVC binding) which still waits on the operator. Breaking at the kube-prometheus-stack end is the only non-circular cut. Helm install succeeds with pending PVCs; pods bind once ceph-block comes up.
+- **Re-enable monitoring permanently, not as a two-commit disable→re-enable** — disabling was a temporary workaround discussed but not committed. The correct fix is structural so monitoring stays enabled in Git and works on every fresh bootstrap.
+
+---
+
 ## 2026-06-12 — `vlan-detagging-bootstrap-recovery`
 
 ### Goal

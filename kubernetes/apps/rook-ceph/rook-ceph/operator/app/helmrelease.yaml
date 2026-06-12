@@ -24,12 +24,12 @@ spec:
       enableCephfsDriver: false
       enableCephfsSnapshotter: false
       enableLiveness: true
-      # Scrape the CSI liveness/grpc metrics (kube-prometheus-stack is present).
+      # kube-prometheus-stack installs before rook-ceph-operator (see dependsOn
+      # chain), so the ServiceMonitor CRD is guaranteed present at install time.
       serviceMonitor:
         enabled: true
     # Fail Ceph CLI calls fast rather than hanging the operator reconcile.
     cephCommandsTimeoutSeconds: "20"
-    # Create the operator ServiceMonitor + monitoring RBAC.
     monitoring:
       enabled: true
     resources:
