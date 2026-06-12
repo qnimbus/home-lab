@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-12 | `ceph-osd-wipe-prometheus-deps` | Fixed Ceph HEALTH_WARN (stale LVM on worker OSDs wiped via privileged pods); fixed kube-prometheus-stack CSI race; hardened bootstrap |
 > | 2026-06-12 | `bootstrap-retest-helm4-fixes` | Reset+rebootstrap to validate CRD pre-bootstrap; fixed 4 task bugs (wait-maintenance jq, task refs, namespace ordering, Helm 4 post-renderer); cloudflared DNSEndpoint race |
 > | 2026-06-12 | `crd-prebootstrap-helmfile-split` | Replaced dependsOn:kube-prometheus-stack workaround with helmfile.d/00-crds.yaml CRD pre-bootstrap phase; validated against bykaj pattern |
 > | 2026-06-12 | `servicemonitor-bootstrap-deadlock` | Fixed circular Flux bootstrap deadlock: metrics-server missing dependsOn; rook-ceph-operator/kube-prometheus-stack cycle broken via dependsOn restructure |
@@ -11,7 +12,6 @@
 > | 2026-06-12 | `cluster-reset-task-overhaul` | Post-rename OSD wipes; rewrote wait-maintenance+wipe-ceph-osds with nmap discovery, disk-fingerprint dedup, helmrelease-sourced OSD list; fixed T500 serial |
 > | 2026-06-11 | `node-reshape-rebootstrap-prep` | Promoted M90q #1 to CP (talos-cp-02), demoted M920q #2 to worker, renamed all nodes to Option B final-state scheme; 4th Ceph OSD host added; wipe-ceph-osds task |
 > | 2026-06-11 | `rook-ceph-dashboard-secret` | ExternalSecret for Rook-Ceph dashboard password; bootstrap-safe placement in operator Kustomization; CONVENTIONS.md rewrite compliance |
-> | 2026-06-10 | `ceph-osd-lacp-tuning` | osdsPerDevice 1→2 + ms_async_op_threads 5; raw-mode reprovision complication; benchmark confirmed both bond members active (324 MB/s) |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

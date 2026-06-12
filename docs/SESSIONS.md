@@ -4,6 +4,34 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-12 — `ceph-osd-wipe-prometheus-deps`
+
+### Goal
+Diagnose and fix Ceph HEALTH_WARN (stale LVM on worker OSDs) and kube-prometheus-stack deploy failure (CSI infeasible race), then harden bootstrap against both issues recurring.
+
+### What we did
+- **Diagnosed kube-prometheus-stack not deploying** — cluster-doctor confirmed Kustomization was timing out at health-check phase; three PVCs (grafana, prometheus-db, alertmanager-db) stuck `Pending` due to CSI `InvalidArgument` error classified as `infeasible`, triggering exponential backoff (30+ minute retry delay). Root cause: no `dependsOn: rook-ceph-cluster`, so kube-prometheus-stack raced Ceph on bootstrap.
+- **Diagnosed Ceph HEALTH_WARN** — `ceph osd tree` showed only 2 host buckets (talos-cp-01, talos-cp-02); worker-01 and worker-02 were absent. OSD prepare logs showed `skipping: running on a different ceph cluster "78887373-..."` — the Kingston NVMe drives still carried LVM VG metadata from the prior cluster (current FSID `19a578da-...`). 33% degraded PGs, 33 `active+undersized+degraded`.
+- **Wiped stale LVM via privileged pods** — `talosctl wipe disk dm-0 dm-1` cleared LV data but kernel DM remained active; raw nvme wipe blocked with "in use by dm-0". Deployed privileged alpine pods with host `/dev` mount to each worker; ran `vgchange -an` + `wipefs -a /dev/nvme0n1` inside. VGs `ceph-2a7da365-...` (worker-01) and `ceph-3f01d6cc-...` (worker-02) removed cleanly.
+- **Reprovisioned OSDs** — restarted `rook-ceph-operator`; new prepare jobs ran on all 4 nodes; OSDs 4–7 joined the cluster. Waited for all 8 OSDs to report `up`. Cluster reached `HEALTH_OK`, all 33 PGs `active+clean`, 5.5 TiB usable.
+- **kube-prometheus-stack self-healed** — HelmRelease remediation (from `remediateLastFailure: true`) had already uninstalled and reinstalled the release; by the time Ceph was healthy the PVCs rebound and all pods came up Running.
+- **Added `dependsOn: rook-ceph-cluster`** — patched `kube-prometheus-stack/ks.yaml` so Flux waits for the CephCluster Kustomization before starting observability stack on future bootstraps.
+- **Added `wipe-ceph-osds` to `bootstrap:cluster`** — inserted `task: :talos:wipe-ceph-osds` between `genconfig` and `apply-all` so OSD disks are always wiped while nodes are in maintenance mode; no-ops cleanly on fresh installs with no prior LVM.
+- **Confirmed postgres-v17 unrelated** — `postgres-v17-3` pod absent because CNPG join job was actively streaming base backup from primary; uses `openebs-hostpath` not `ceph-block`, so Ceph degradation had no effect.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.taskfiles/bootstrap/Taskfile.yaml` | Added `wipe-ceph-osds` step between `genconfig` and `apply-all` in `bootstrap:cluster` |
+| `kubernetes/apps/observability/kube-prometheus-stack/ks.yaml` | Added `dependsOn: rook-ceph-cluster` to prevent CSI race on bootstrap |
+
+### Key decisions
+- **Privileged pod + host /dev mount over `talosctl wipe disk`** — `talosctl wipe disk` zeroed LV data but didn't remove the kernel DM mappings; the only way to call `dmsetup`/`vgchange` on a running Talos node is a privileged container with the host's `/dev` explicitly mounted, since Talos has no root shell.
+- **Wipe via `vgchange -an` + `wipefs -a` rather than `pvremove`** — deactivating the VG first (`vgchange -an`) cleanly removes the DM devices; `wipefs -a` then erases the LVM PV signature from the raw device. This is safer than `pvremove --force` which errors if the VG is still active.
+- **`dependsOn: rook-ceph-cluster` qualifies under repo's strict policy** — kube-prometheus-stack genuinely cannot bind `ceph-block` PVCs without the StorageClass existing; this is a hard functional dependency, not an optional "wait for monitoring" coupling.
+
+---
+
 ## 2026-06-12 — `bootstrap-retest-helm4-fixes`
 
 ### Goal

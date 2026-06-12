@@ -9,6 +9,10 @@ tasks:
     cmds:
       - '[ -f {{.TALOS_DIR}}/talsecret.sops.yaml ] || talhelper gensecret -c {{.TALOS_DIR}}/talconfig.yaml | sops --filename-override {{.TALOS_DIR}}/talsecret.sops.yaml --encrypt /dev/stdin > {{.TALOS_DIR}}/talsecret.sops.yaml'
       - task: :talos:genconfig
+      # Wipe OSD disks before applying config — nodes are in maintenance mode here.
+      # Clears stale LVM metadata from a prior cluster so Rook can claim the disks.
+      # No-ops gracefully when disks are already clean or no nodes are in maintenance.
+      - task: :talos:wipe-ceph-osds
       - task: :talos:apply-all
       - task: :talos:bootstrap
       - task: :talos:kubeconfig
