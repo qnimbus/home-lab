@@ -19,6 +19,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
   - [Migrate Remaining HelmRepositories to `home-operations/charts-mirror`](#migrate-remaining-helmrepositories-to-home-operationscharts-mirror)
   - [FluxInstance: Migrate Sync to GitHub App Authentication](#fluxinstance-migrate-sync-to-github-app-authentication)
   - [Tailscale kubectl Authentication (RBAC)](#tailscale-kubectl-authentication-rbac)
+  - [CSI Snapshots (external-snapshotter + Ceph VolumeSnapshotClass)](#csi-snapshots-external-snapshotter--ceph-volumesnapshotclass)
   - [VolSync (PVC Backup)](#volsync-pvc-backup)
   - [Researched Patterns (bykaj/home-ops)](#researched-patterns-bykajhome-ops)
 - [Completed](#completed)
@@ -158,13 +159,11 @@ The `postgres-backup-local` CronJob writes a daily `pg_dumpall` backup to TrueNA
 > routes were removed in the rollback (commit `299904e`). `bond-storage` + jumbo MTU are **kept** (Ceph
 > reuses the fabric).
 
-**Still-valid, CNI-independent tuning lifted from the abandoned plan** — worth doing regardless of the
-storage backend, to soften false replica faults during Cilium convergence:
-
-> Raise Longhorn `replicaReplenishmentWaitInterval` from `600` to `900` (s) in
-> `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml` → `defaultSettings`. Delays the first
-> rebuild-scheduling attempt after a node failure so Cilium can finish converging first. No downtime; takes
-> effect on next manager reconcile.
+**~~Still-valid tuning lifted from the abandoned plan~~ — VOID (Longhorn removed):** the carried-over
+suggestion to raise Longhorn's `replicaReplenishmentWaitInterval` (`600`→`900` s) no longer applies —
+the `kubernetes/apps/longhorn-system/` tree was deleted in the Rook-Ceph migration. Ceph's analogous
+behaviour (delaying recovery after a node loss so the network can converge) is governed by the OSD's
+`mon_osd_down_out_interval` (default 600 s), which is already conservative; no change needed.
 
 ---
 
@@ -374,16 +373,14 @@ Bond member devices: cp-01/02 bond0 → `enp1s0f0` / `enp1s0f1`; cp-03 bond1 →
 
 ### Grafana
 
-Deploy Grafana as a follow-up to kube-prometheus-stack. Grafana is currently disabled in the kube-prometheus-stack HelmRelease (`grafana.enabled: false`) to keep the initial deployment scope small.
+**✅ Done.** Deployed via kube-prometheus-stack (`grafana.enabled: true`). Persistence on a `ceph-block` PVC
+(`strategy: Recreate`, RWO); `grafana.db` was restored from the NFS backup during the Phase 5 storage
+migration. `sidecar.dashboards`/`sidecar.datasources` enabled (auto-discovers ConfigMaps labelled
+`grafana_dashboard: "1"` cluster-wide); served at `https://grafana.${DOMAIN_CLUSTER}` via an
+`envoy-internal` HTTPRoute; admin password from 1Password via ExternalSecret.
 
-**Deployment notes:**
-- Enable via `grafana.enabled: true` in `kubernetes/apps/observability/kube-prometheus-stack/app/helm/values.yaml`, or deploy as a standalone chart with Prometheus as a data source
-- Add a Longhorn PVC for dashboard persistence
-- Wire the admin password via ExternalSecret from 1Password
-- HTTPRoute on `envoy-internal` (LAN-only)
-- Pre-built dashboards exist for Longhorn, Flux, and node-exporter in the kube-prometheus-stack chart (`forceDeployDashboards: true` once Grafana is enabled)
-
-**Dependencies:** kube-prometheus-stack ✅
+> Remaining polish (optional, not blocking): confirm `forceDeployDashboards` coverage and prune the
+> bundled **Longhorn** dashboards (dead — Longhorn removed) to reduce dashboard clutter.
 
 ---
 
@@ -395,7 +392,8 @@ Wire an Alertmanager notification receiver so cluster alerts reach a human. Aler
 - `kube_pod_status_phase{phase=~"Failed|Unknown"} > 0` — stale pod accumulation
 - `kube_helmrelease_ready == 0` — Flux HelmRelease degraded
 - `node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.15` — disk pressure
-- `longhorn_volume_robustness == 2` — degraded Longhorn volume
+- `ceph_health_status != 0` — Ceph not `HEALTH_OK` (warn on `1`/`HEALTH_WARN`, page on `2`/`HEALTH_ERR`)
+- `ceph_osd_up < ceph_osd_in` — a Ceph OSD is `in` the CRUSH map but `down` (degraded redundancy)
 
 **Deployment notes:**
 - Receiver options: Discord webhook, SMTP, or Pushover (archive precedent)
@@ -715,17 +713,74 @@ kubectl get nodes   # authenticated via Tailscale identity
 
 ---
 
+### CSI Snapshots (external-snapshotter + Ceph VolumeSnapshotClass)
+
+**Prerequisite for VolSync and for any point-in-time rollback.** The cluster currently has **no
+snapshot capability at all** — there is no snapshot-controller and the `snapshot.storage.k8s.io`
+CRDs are not installed. Rook's `cephBlockPoolsVolumeSnapshotClass` is therefore explicitly
+**disabled** in `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` (enabling it
+with no CRDs present would fail the Flux dry-run). Until this is fixed, *not a single CSI snapshot
+can be taken*, and VolSync's `copyMethod: Snapshot` (the only viable method for live Prometheus /
+Postgres volumes) cannot work.
+
+> **Why this is a separate item from VolSync:** the snapshot-controller + CRDs are *cluster-singleton
+> infrastructure* — deployed once, like a CSI driver, not per-app. Kubernetes upstream ships the
+> controller + CRDs; Rook ships only the `VolumeSnapshotClass` that *consumes* them. Talos bundles
+> neither. Longhorn used to pull its own VolumeSnapshotClass — that left with the Rook-Ceph migration,
+> so the gap is new.
+
+**What "backup" buys that `ceph-block` replication does not:** `size=3`/`min_size=2` keeps three
+*live, synchronously-updated* copies — it survives a **node/disk hardware failure** but a
+`kubectl delete pvc`, a corrupt write, or an `rbd rm` propagates to all three replicas instantly.
+Snapshots give local point-in-time rollback; VolSync (below) gives off-cluster, portable recovery.
+This closes the 3-2-1 gap that replication alone leaves open.
+
+**Steps to implement:**
+
+1. Deploy the **external-snapshotter** as a cluster-singleton. Two common paths:
+   - `piraeusdatastore/snapshot-controller` (or the `kubernetes-csi/external-snapshotter`
+     manifests) via a Helm chart + OCIRepository — installs the snapshot-controller Deployment
+     **and** the three CRDs (`VolumeSnapshot`, `VolumeSnapshotContent`, `VolumeSnapshotClass`).
+   - Place in its own namespace (e.g. `volume-snapshotter` or alongside `rook-ceph`). Most
+     home-ops repos use a dedicated `kubernetes/apps/storage/snapshot-controller/`.
+   - Verify against [kubesearch.dev](https://kubesearch.dev) for the prevailing community chart
+     before writing the Kustomization (per CONVENTIONS — community research first).
+2. Once the CRDs exist, flip `cephBlockPoolsVolumeSnapshotClass.enabled: true` in the Rook cluster
+   HelmRelease (`rook-ceph/cluster/app/helmrelease.yaml:146`) and drop the explanatory `enabled:
+   false` comment. This produces a `csi-rbdplugin-snapclass` VolumeSnapshotClass backed by
+   `rook-ceph.rbd.csi.ceph.com`. Optionally set it as the default snapshot class.
+3. Smoke-test: create a `VolumeSnapshot` of a small live PVC, confirm a `VolumeSnapshotContent`
+   binds and `readyToUse: true`, then restore it into a new PVC and verify the data.
+
+**Dependencies:** Rook-Ceph ✅. Independent of external-secrets. **Blocks:** VolSync (below).
+
+---
+
 ### VolSync (PVC Backup)
 
-Deploy VolSync to back up Longhorn PVCs to an off-cluster Restic repository. VolSync takes a CSI snapshot of a running volume and transfers it to a remote Restic backend — producing crash-consistent, encrypted, deduplicated point-in-time backups that are restorable on *any* Kubernetes cluster or locally via the `restic` CLI.
+Deploy VolSync to back up **Ceph RBD (`ceph-block`)** PVCs to an off-cluster Restic repository.
+VolSync takes a CSI snapshot of a running volume and transfers it to a remote Restic backend —
+producing crash-consistent, encrypted, deduplicated point-in-time backups that are restorable on
+*any* Kubernetes cluster or locally via the `restic` CLI.
 
-**Why VolSync over Longhorn's built-in backup:**
-Longhorn's backup feature produces Longhorn-native volume snapshots that can only be restored into another Longhorn cluster. VolSync produces standard Restic repositories — portable, inspectable with `restic snapshots`, restorable anywhere, and verifiable offline without a running cluster.
+**Why VolSync (Restic) over a storage-native snapshot export:**
+Ceph's own `rbd export` / mirror produces Ceph-native images that only restore into another Ceph
+cluster. VolSync produces standard Restic repositories — portable, inspectable with `restic
+snapshots`, restorable anywhere, and verifiable offline without a running cluster. It is also
+storage-backend-agnostic: the same `ReplicationSource` works regardless of whether the source PVC
+is on Ceph, NFS-CSI, or a future backend.
 
-**Recommended backup target — Backblaze B2:**
-Restic supports any S3-compatible backend. B2 is the cost-effective choice: ~$0.006/GB/month storage, no per-request fees above the free tier, and Cloudflare-peered so egress from cluster → B2 is free. Self-hosted MinIO is the alternative if no egress cost or offline access is preferred — but adds another stateful workload to maintain.
+**Recommended backup target — Backblaze B2 (or Cloudflare R2):**
+Restic supports any S3-compatible backend. B2 is the cost-effective choice: ~$0.006/GB/month
+storage, no per-request fees above the free tier, and Cloudflare-peered so egress from cluster → B2
+is free. **R2 is worth considering for consistency** — the CloudNativePG PITR item already targets
+R2/B2 for WAL archiving, so sharing one provider/credential surface reduces moving parts.
+Self-hosted MinIO is the alternative if no egress cost or offline access is preferred — but adds
+another stateful workload to maintain.
 
-**Dependencies:** Longhorn ✅ (provides `longhorn-snapshot-vsc` VolumeSnapshotClass), external-secrets ✅, onepassword-connect ✅.
+**Dependencies:** **[CSI Snapshots](#csi-snapshots-external-snapshotter--ceph-volumesnapshotclass)** ⛔
+(must land first — provides the `csi-rbdplugin-snapclass` VolumeSnapshotClass that `copyMethod:
+Snapshot` requires), external-secrets ✅, onepassword-connect ✅.
 
 ---
 
@@ -755,7 +810,7 @@ Restic supports any S3-compatible backend. B2 is the cost-effective choice: ~$0.
    - `app/helmrelease.yaml` — `chartRef: kind: OCIRepository, name: volsync`; no special values needed beyond metrics
    - `app/helm/values.yaml` — `metrics.enabled: true` so Prometheus auto-discovers the VolSync metrics endpoint
    - `app/kustomization.yaml`
-   - `ks.yaml` — `dependsOn: [longhorn]` (the `longhorn-snapshot-vsc` VolumeSnapshotClass must exist before any `ReplicationSource` is created)
+   - `ks.yaml` — `dependsOn: [snapshot-controller]` (the `csi-rbdplugin-snapclass` VolumeSnapshotClass must exist before any `ReplicationSource` is created)
 
 3. Add `volsync` to `kubernetes/apps/kustomization.yaml`.
 
@@ -802,9 +857,12 @@ Steps:
 
 ---
 
-#### Phase 3 — Wire first workload: Prometheus PVC
+#### Phase 3 — Wire first workload
 
-Prometheus has a 20 Gi Longhorn PVC (`prometheus-db`) — the obvious first backup target since it's already deployed. Add to `kubernetes/apps/observability/kube-prometheus-stack/app/`:
+Pick a **small, stateful, annoying-to-rebuild** canary first (e.g. waha's session volume or pgadmin)
+to validate the snapshot→restic→prune loop end-to-end before pointing it at Prometheus's 20 Gi
+`prometheus-db` (the larger, but already-deployed, eventual target). Add a `volsync.yaml` to the
+app's `app/` directory:
 
 - `volsync.yaml` — the `ReplicationSource`:
   ```yaml
@@ -819,19 +877,22 @@ Prometheus has a 20 Gi Longhorn PVC (`prometheus-db`) — the obvious first back
       schedule: "0 2 * * *"          # daily at 02:00 UTC
     restic:
       repository: volsync-secret
-      copyMethod: Snapshot            # take a Longhorn CSI snapshot first; read from snapshot PVC
-      volumeSnapshotClassName: longhorn-snapshot-vsc
-      storageClassName: longhorn
+      copyMethod: Snapshot            # take a Ceph RBD CSI snapshot first; read from snapshot PVC
+      volumeSnapshotClassName: csi-rbdplugin-snapclass
+      storageClassName: ceph-block
       retain:
         daily: 7
         weekly: 4
         monthly: 12
       pruneIntervalDays: 7
   ```
-- The `ExternalSecret` for `volsync-secret` in the `observability` namespace (see Phase 2).
+- The `ExternalSecret` for `volsync-secret` in the target namespace (see Phase 2).
 - Reference both files in `app/kustomization.yaml`.
 
-**`copyMethod: Snapshot` is the key choice:** VolSync takes a Longhorn CSI snapshot, creates a temporary PVC from it, and backs up from *that* — the live Prometheus volume stays mounted and continues writing without interruption. Direct copy (`copyMethod: Direct`) would require the volume to be unmounted, which is not viable for a running Prometheus.
+**`copyMethod: Snapshot` is the key choice:** VolSync takes a Ceph RBD CSI snapshot, creates a
+temporary PVC from it, and backs up from *that* — the live volume stays mounted and continues
+writing without interruption. Direct copy (`copyMethod: Direct`) would require the volume to be
+unmounted, which is not viable for a running Prometheus or database.
 
 ---
 
@@ -1002,7 +1063,7 @@ A third Gateway alongside `envoy-external` and `envoy-internal`, purpose-built f
 
 | Area                          | Notes                                           |
 |-------------------------------|-------------------------------------------------|
-| Persistent Storage (OpenEBS + Longhorn 3-replica) | OpenEBS LocalPV live; Longhorn 3-replica active since 2026-05-23; all 3 nodes have dedicated storage disks (cp-01/cp-02: Kingston SNV3S1000G, cp-03: Crucial CT2000P310SSD8); cp-02 Crucial P310 installed via M.2 A/E adapter |
+| Persistent Storage (OpenEBS + Rook-Ceph) | OpenEBS LocalPV live; **Longhorn removed**, superseded by Rook-Ceph v1.19.6 (`ceph-block` default SC, `size=3`/`min_size=2`); the per-node dedicated disks (cp-01/cp-02: Kingston SNV3S1000G, cp-03: Crucial CT2000P310SSD8) are now wiped-to-raw Ceph OSDs on the `10.200.0.0/24` storage bond. Longhorn 3-replica ran 2026-05-23 → 2026-06-08 |
 | Pod Topology: scheduling concentration on cp-03   | Fixed imbalance; CoreDNS + Envoy proxies spread to 3 replicas 1/node (`DoNotSchedule`); Flux/cert-manager/ESO at 2 replicas + topology spread; stateful workloads (Prometheus/Alertmanager) accepted on cp-03 |
 | Talos machine configs         | 3 CP nodes, patches, schematic registered       |
 | Bootstrap go-task Taskfile    | Replaces scripts/bootstrap.sh                   |
@@ -1023,9 +1084,9 @@ A third Gateway alongside `envoy-external` and `envoy-internal`, purpose-built f
 | Cloudflare Tunnel (cloudflared)        | 2-replica HA deployment in `network` namespace; `*.vwn.io` + `vwn.io` → `envoy-external`; token via ExternalSecret from 1Password |
 | Flux GitHub Webhook Receiver           | `flux-receiver` Kustomization in `flux-system`; ExternalSecret token from 1Password; HTTPRoute on `envoy-external`; GitHub webhook configured — reconcile latency ~5 min → seconds |
 | ExternalDNS (Split-DNS)                | `external-dns-cloudflare` (watches `envoy-external`, `--cloudflare-proxied`, `txtOwnerId: k8s`) + `external-dns-unifi` (webhook sidecar, watches all gateways + services, `txtOwnerId: k8s-internal`); shared OCIRepository `ghcr.io/home-operations/charts-mirror/external-dns` v1.21.1; CF token mapped from `API_TOKEN` → `CF_API_TOKEN` via ESO `data[]` |
-| kube-prometheus-stack                  | Prometheus + Alertmanager in `observability` namespace; 20 Gi + 1 Gi Longhorn PVCs; node-exporter on all 3 nodes; full-cluster scraping (`*SelectorNilUsesHelmValues: false`); HTTPRoutes on `envoy-internal`; Grafana + receiver deferred |
+| kube-prometheus-stack                  | Prometheus + Alertmanager in `observability` namespace; 20 Gi + 1 Gi `ceph-block` PVCs (migrated off Longhorn in Phase 5; grafana `grafana.db` restored from NFS); node-exporter on all 3 nodes; full-cluster scraping (`*SelectorNilUsesHelmValues: false`); HTTPRoutes on `envoy-internal`; receiver deferred |
 | metrics-server                         | `kube-system`; HelmRelease `v3.13.0` (HelmRepository `https://kubernetes-sigs.github.io/metrics-server`); `kubectl top` and HPA resource metrics enabled; `--kubelet-insecure-tls` flag set; migration to `home-operations/charts-mirror` OCIRepository tracked in roadmap |
 | GitHub Actions Self-Hosted Runners (ARC + Claude PR Review) | ARC `gha-runner-scale-set-controller@0.14.1` + `home-lab` scale set deployed in `actions-runner-system`; Flux HelmReleases Ready; listener pod active; Renovate PR auto-review via `claude-code-action` wired |
 | ExternalSecrets `dataFrom` + `rewrite` migration | All 9 ExternalSecrets migrated to `dataFrom.extract` + `rewrite.regexp` pattern; 1Password field renames completed; all 12 cluster ExternalSecrets `SecretSynced: True` |
 
-> **[Monitor — cp-03 storage disk]** At boot, `nvme1` (the Crucial CT2000P310SSD8 Longhorn disk) logs `nvme nvme1: using unchecked data buffer`. This is a one-time boot message — the Crucial P310 does not advertise the NVMe "metadata-in-data-buffer" feature; the driver falls back to a simpler DMA path silently. Confirmed count of 1, no I/O errors, XFS mount clean. Watch for additional occurrences or any `I/O error` / `nvme reset` lines: `talosctl dmesg --nodes 10.60.0.203 | grep -i nvme`. Also watch for Longhorn replica faults on cp-03 specifically: `kubectl -n longhorn-system get replicas -o wide | grep cp-03`.
+> **[Monitor — cp-03 storage disk]** At boot, `nvme1` (the Crucial CT2000P310SSD8, now a Ceph OSD disk) logs `nvme nvme1: using unchecked data buffer`. This is a one-time boot message — the Crucial P310 does not advertise the NVMe "metadata-in-data-buffer" feature; the driver falls back to a simpler DMA path silently. Confirmed count of 1, no I/O errors. Watch for additional occurrences or any `I/O error` / `nvme reset` lines: `talosctl dmesg --nodes 10.60.0.201 | grep -i nvme`. Also watch for OSD faults on cp-03 specifically: `kubectl -n rook-ceph get pods -l app=rook-ceph-osd -o wide | grep cp-03` (and `ceph osd tree` in the toolbox).
