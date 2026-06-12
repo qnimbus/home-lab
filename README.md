@@ -70,7 +70,7 @@ helm plugin install https://github.com/databus23/helm-diff --verify=false
 **3. Export required environment variables** in your `~/.bashrc` (or `~/.profile`):
 
 ```sh
-# 1Password service account — used by bootstrap:flux-secret and bootstrap:age-key tasks
+# 1Password service account — used by bootstrap:age-key and bootstrap:flux-github-app tasks
 # See: https://developer.1password.com/docs/service-accounts/get-started/
 export OP_SERVICE_ACCOUNT_TOKEN="<your-service-account-token>"
 ```

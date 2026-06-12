@@ -23,24 +23,23 @@ includes:
 tasks:
 
   default:
-    desc: List available tasks
-    cmd: task --list
     silent: true
+    cmd: task --list
 
   reconcile:
     desc: Force Flux to pull in changes from your Git repository
     cmd: flux --namespace flux-system reconcile kustomization flux-system --with-source
     preconditions:
-      - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
-      - {msg: "flux not found", sh: "which flux"}
+      - test -f {{.KUBECONFIG}}
+      - which flux
 
   validate:
     desc: Validate Kubernetes manifests and kustomize overlays
     cmd: bash {{.ROOT_DIR}}/scripts/validate.sh -d kubernetes -e kubernetes/bootstrap
     preconditions:
-      - {msg: "yq not found", sh: "which yq"}
-      - {msg: "kustomize not found", sh: "which kustomize"}
-      - {msg: "kubeconform not found", sh: "which kubeconform"}
+      - which yq
+      - which kustomize
+      - which kubeconform
 
   validate:update:
     desc: Refresh scripts/validate.sh and schemas from the installed gitops-repo-audit skill
@@ -50,15 +49,11 @@ tasks:
     cmds:
       - cp {{.SKILL_DIR}}/scripts/validate.sh {{.SCRIPT}}
       - cp {{.SKILL_DIR}}/assets/schemas/*.json {{.ROOT_DIR}}/scripts/schemas/
-      # Patch the header: replace the upstream "assets directory" description
       - |
-        sed -i 's|# overlays using kubeconform against the Flux OpenAPI schemas bundled$|# overlays using kubeconform against the Flux OpenAPI schemas bundled|' {{.SCRIPT}}
         sed -i 's|# in the assets directory\.$|# in scripts/schemas/.\n#\n# SOURCE: fluxcd/agent-skills gitops-repo-audit skill (scripts/validate.sh + assets/schemas/)\n# UPDATE: run `task validate:update` after `claude skills update` to refresh this file and schemas.|' {{.SCRIPT}}
-      # Patch the schema path: resolve relative to script dir, not skill dir
       - sed -i 's|assets_schemas_dir="\$skill_dir/assets/schemas"|assets_schemas_dir="$script_dir/schemas"|' {{.SCRIPT}}
       - |
-        echo "Updated scripts/validate.sh and $(ls {{.ROOT_DIR}}/scripts/schemas/ | wc -l | tr -d ' ') schemas."
-        echo "Review the diff, then commit: /git-commit"
+        echo "Updated scripts/validate.sh and $(ls {{.ROOT_DIR}}/scripts/schemas/ | wc -l | tr -d ' ') schemas. Review the diff, then run /git-commit"
     preconditions:
       - msg: "gitops-repo-audit skill not found at {{.SKILL_DIR}} — run 'claude skills update' first"
         sh: "test -d {{.SKILL_DIR}}/assets/schemas"
@@ -69,6 +64,6 @@ tasks:
       DELETE: '{{.DELETE | default "false"}}'
     cmd: bash {{.ROOT_DIR}}/scripts/purge-failed-pods.sh{{if eq .DELETE "true"}} --delete{{end}}
     preconditions:
-      - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
-      - {msg: "kubectl not found", sh: "which kubectl"}
-      - {msg: "jq not found", sh: "which jq"}
+      - test -f {{.KUBECONFIG}}
+      - which kubectl
+      - which jq
