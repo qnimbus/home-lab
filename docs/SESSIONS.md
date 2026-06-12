@@ -4,6 +4,38 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-12 — `crd-prebootstrap-helmfile-split`
+
+### Goal
+Replace the flawed `dependsOn: kube-prometheus-stack` workaround with a proper CRD pre-bootstrap phase that pre-installs monitoring and Gateway API CRDs before Flux reconciles anything, eliminating all bootstrap-ordering dry-run failures.
+
+### What we did
+- **Diagnosed cascade of further CRD failures** — `envoy-gateway` Kustomization failing (`ServiceMonitor`/`PodMonitor` in `observability.yaml`), `flux-instance` failing (`PodMonitor` in app path), `flux-receiver` failing (`HTTPRoute` — Gateway API CRDs absent because `envoy-gateway` never reconciled). All stem from the same root: CRDs not present at Flux first-reconcile.
+- **Identified the architectural flaw** — adding `dependsOn: kube-prometheus-stack` to every affected Kustomization is wrong: a cluster without Prometheus would permanently block `envoy-gateway`, `flux-instance`, and `metrics-server`. Researched bykaj/home-ops to confirm the community pattern.
+- **Discovered and implemented the `00-crds.yaml` pattern** — bykaj uses `helmfile template --quiet | kubectl apply --server-side` with a `yq` post-renderer that filters all chart output to `kind: CustomResourceDefinition` only. The pipeline installs zero controllers; just schema registrations. Split `kubernetes/bootstrap/helmfile.yaml` into `helmfile.d/00-crds.yaml` (CRD-only) and `helmfile.d/01-apps.yaml` (apps, unchanged content).
+- **Validated against bykaj's source** — diff review found three bugs in the initial implementation: (1) used `helmfile sync` instead of `helmfile template` (would write Helm release Secrets, require namespaces to exist); (2) missing `--exit-status` on yq (silent success if chart has no CRDs); (3) wrong namespace `monitoring` instead of `observability` for kube-prometheus-stack release. All fixed.
+- **Reverted all `dependsOn: kube-prometheus-stack` additions** — `metrics-server` (from previous session), `flux-instance`, `envoy-gateway` (added and reverted this session). These deps are now unnecessary with CRD pre-bootstrap.
+- **Added `dependsOn: envoy-gateway-config`** to `flux-receiver/ks.yaml` — receiver needs both the Gateway API CRDs (from envoy-gateway chart) AND the `envoy-external` Gateway object (created by envoy-gateway-config). Depending on the config Kustomization (which itself depends on envoy-gateway) covers both.
+- **Documented the pattern** in `docs/CONVENTIONS.md` — full section covering the pipeline mechanics, which charts to add, version pinning, and what NOT to add.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/bootstrap/helmfile.d/00-crds.yaml` | Created — CRD-only pre-bootstrap phase with yq post-renderer |
+| `kubernetes/bootstrap/helmfile.d/01-apps.yaml` | Created — moved from `helmfile.yaml`; updated relative values paths |
+| `kubernetes/bootstrap/helmfile.yaml` | Deleted — superseded by `helmfile.d/` |
+| `.taskfiles/bootstrap/Taskfile.yaml` | Updated `apps` task: two-phase bootstrap; `helmfile template \| kubectl apply --server-side` for CRDs |
+| `kubernetes/apps/kube-system/metrics-server/ks.yaml` | Reverted: removed `dependsOn: kube-prometheus-stack` (no longer needed) |
+| `kubernetes/apps/flux-system/flux-receiver/ks.yaml` | Added `dependsOn: envoy-gateway-config` |
+| `docs/CONVENTIONS.md` | New section: CRD bootstrap pattern with mechanics, rules, version-pinning guidance |
+
+### Key decisions
+- **`helmfile template | kubectl apply --server-side` not `helmfile sync`** — `template` produces raw manifests piped to kubectl: no Helm release Secret written, no namespace required to exist, fully idempotent on re-bootstrap. `sync` would track a release and require the namespace first.
+- **`--exit-status` on yq** — makes yq exit non-zero if a chart produces no CRDs, surfacing a misconfigured entry immediately rather than silently applying nothing.
+- **Only two charts in `00-crds.yaml`** — `kube-prometheus-stack` (monitoring CRDs) and `envoy-gateway` (Gateway API CRDs). Other chart CRDs are already correctly ordered via `dependsOn` chains (rook-ceph, external-secrets, cloudnative-pg) and don't need pre-bootstrap.
+
+---
+
 ## 2026-06-12 — `servicemonitor-bootstrap-deadlock`
 
 ### Goal

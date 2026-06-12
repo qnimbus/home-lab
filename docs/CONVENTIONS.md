@@ -196,6 +196,79 @@ named `myapp`:
 
 ---
 
+## CRD bootstrap pattern — raw monitoring and gateway manifests
+
+Flux's kustomize-controller performs a **server-side dry-run** against every resource
+in a Kustomization path before applying any of them.  If a resource uses a CRD that
+does not yet exist on the API server, the entire Kustomization fails:
+
+```
+no matches for kind "ServiceMonitor" in version "monitoring.coreos.com/v1"
+ensure CRDs are installed first
+```
+
+### The wrong fix — `dependsOn: kube-prometheus-stack`
+
+Adding `dependsOn: kube-prometheus-stack` to every app that contains a `ServiceMonitor`
+is wrong for two reasons:
+1. It means the app cannot deploy on a vanilla cluster without Prometheus.
+2. It creates circular dependency risks (e.g. `kube-prometheus-stack` depends on
+   `rook-ceph-cluster` for PVC storage; if Ceph's operator also depends on Prometheus,
+   nothing starts).
+
+### The correct fix — CRD pre-bootstrap phase
+
+`kubernetes/bootstrap/helmfile.d/00-crds.yaml` runs **before** Flux reconciles anything.
+It renders each chart with `--include-crds` and filters the output to CRDs only via a
+`yq` post-renderer, installing zero controllers:
+
+```yaml
+helmDefaults:
+  args: [--include-crds, --no-hooks]
+  postRenderer: bash
+  postRendererArgs: [-c, "yq ea --exit-status 'select(.kind == \"CustomResourceDefinition\")' -"]
+```
+
+The bootstrap task invokes it as:
+
+```sh
+helmfile -f helmfile.d/00-crds.yaml template --quiet | kubectl apply --server-side -f -
+```
+
+`helmfile template` (not `sync`) renders the charts without writing Helm release
+Secrets — so no namespace needs to exist yet.  `--server-side` ensures the apply is
+idempotent across re-bootstraps.  By the time Flux first reconciles,
+`monitoring.coreos.com/v1` and `gateway.networking.k8s.io/v1` CRDs are already
+registered — dry-run passes everywhere.
+
+### Which charts belong in `00-crds.yaml`
+
+Add a chart when **all three** conditions hold:
+1. The chart is **managed by Flux** (not in `01-apps.yaml`).
+2. The chart installs CRDs.
+3. A Kustomization path that runs **before** this chart is deployed contains a **raw
+   manifest** of that CRD kind (a `ServiceMonitor.yaml`, `HTTPRoute.yaml`, etc.).
+
+Do **not** add charts whose CRDs are consumed only by Kustomizations that already
+`dependsOn` the chart's own Kustomization (e.g. `rook-ceph-cluster` depends on
+`rook-ceph-operator` — the sequencing is already correct without a CRD pre-install).
+
+### Version pinning
+
+The version in `00-crds.yaml` **must match** the corresponding
+`kubernetes/flux/meta/repos/oci/<chart>.yaml` OCIRepository tag.  Both carry identical
+`# renovate: datasource=docker` comments so Renovate bumps them in the same PR.
+
+### Kustomizations with Helm-rendered ServiceMonitors
+
+Some HelmReleases (e.g. `metrics-server`, `rook-ceph-operator`) emit `ServiceMonitor`
+resources via chart values (`serviceMonitor.enabled: true`).  Helm validates CRDs at
+install time — if the CRD is missing the HelmRelease fails.  With `00-crds.yaml` in
+place, the CRD is always present at bootstrap time so `serviceMonitor.enabled: true`
+is safe in any HelmRelease without adding `dependsOn: kube-prometheus-stack`.
+
+---
+
 ## Community research before new deployments
 
 Before planning any new application deployment or writing a new Kustomization, search **[kubesearch.dev](https://kubesearch.dev/)** for the chart or app name. This indexes public home-lab GitOps repos and surfaces real-world `HelmRelease`, `values.yaml`, and `ExternalSecret` patterns used by other home labbers running the same stack (Talos + Flux + Cilium).

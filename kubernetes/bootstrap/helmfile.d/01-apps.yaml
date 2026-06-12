@@ -1,6 +1,19 @@
 ---
 # yaml-language-server: $schema=https://json.schemastore.org/helmfile
 
+# ## App Bootstrap Phase
+#
+# Runs AFTER 00-crds.yaml (helmfile.d files are applied in alphabetical order).
+# Installs the minimal set of controllers required before Flux can take over GitOps
+# reconciliation.  Everything else is managed by Flux via the kubernetes/apps/ tree.
+#
+# Bootstrap order (each `needs:` entry enforces sequencing):
+#   cilium → coredns → spegel → cert-manager → flux-operator → flux-instance
+#
+# Day-2 upgrades for all charts here are handled by Flux (via Renovate PRs updating
+# the corresponding OCIRepository/HelmRelease), NOT by re-running this file.  Only
+# re-run this file when rebuilding a cluster from scratch.
+
 helmDefaults:
   cleanupOnFail: true
   wait: true
@@ -16,14 +29,14 @@ releases:
     atomic: true
     chart: cilium/cilium
     version: 1.19.4
-    values: ['../apps/kube-system/cilium/app/helm/values.yaml']
+    values: ['../../apps/kube-system/cilium/app/helm/values.yaml']
 
   - name: coredns
     namespace: kube-system
     atomic: true
     chart: oci://ghcr.io/coredns/charts/coredns
     version: 1.45.2
-    values: ['../apps/kube-system/coredns/app/helm/values.yaml']
+    values: ['../../apps/kube-system/coredns/app/helm/values.yaml']
     needs: ['kube-system/cilium']
 
   - name: spegel
@@ -31,7 +44,7 @@ releases:
     atomic: true
     chart: oci://ghcr.io/spegel-org/helm-charts/spegel
     version: 0.7.1
-    values: ['../apps/kube-system/spegel/app/helm/values.yaml']
+    values: ['../../apps/kube-system/spegel/app/helm/values.yaml']
     needs: ['kube-system/coredns']
 
   - name: cert-manager
@@ -40,7 +53,7 @@ releases:
     createNamespace: true
     chart: oci://quay.io/jetstack/charts/cert-manager
     version: v1.20.2
-    values: ['../apps/cert-manager/cert-manager/app/helm/values.yaml']
+    values: ['../../apps/cert-manager/cert-manager/app/helm/values.yaml']
     needs: ['kube-system/spegel']
 
   - name: flux-operator
@@ -49,7 +62,7 @@ releases:
     createNamespace: true
     chart: oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator
     version: 0.50.0
-    values: ['../apps/flux-system/flux-operator/app/helm/values.yaml']
+    values: ['../../apps/flux-system/flux-operator/app/helm/values.yaml']
     needs: ['cert-manager/cert-manager']
 
   - name: flux-instance
@@ -57,5 +70,5 @@ releases:
     atomic: true
     chart: oci://ghcr.io/controlplaneio-fluxcd/charts/flux-instance
     version: 0.50.0
-    values: ['../apps/flux-system/flux-instance/app/helm/values.yaml']
+    values: ['../../apps/flux-system/flux-instance/app/helm/values.yaml']
     needs: ['flux-system/flux-operator']

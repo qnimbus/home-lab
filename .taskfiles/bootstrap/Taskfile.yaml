@@ -101,11 +101,21 @@ tasks:
       - which kubectl
 
   apps:
-    desc: Bootstrap apps into the cluster via helmfile (Cilium → CoreDNS → Spegel → cert-manager → Flux) — FIRST BOOT ONLY; day-2 upgrades are handled by Flux via Renovate PRs
-    cmd: helmfile sync -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.yaml
+    desc: Bootstrap apps into the cluster via helmfile (CRDs → Cilium → CoreDNS → Spegel → cert-manager → Flux) — FIRST BOOT ONLY; day-2 upgrades are handled by Flux via Renovate PRs
+    cmds:
+      # Phase 0: pre-install CRDs from charts managed by Flux (not the bootstrap
+      # apps) so that Flux Kustomizations containing raw ServiceMonitor/HTTPRoute
+      # manifests can pass dry-run validation immediately on first reconcile.
+      # Uses `helmfile template | kubectl apply --server-side` — no Helm release
+      # Secret is written, no namespace needs to exist yet.
+      # See kubernetes/bootstrap/helmfile.d/00-crds.yaml for full explanation.
+      - helmfile -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.d/00-crds.yaml template --quiet | kubectl apply --server-side -f -
+      # Phase 1: install the minimal controllers Flux needs to start reconciling.
+      - helmfile sync -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.d/01-apps.yaml
     preconditions:
       - test -f {{.KUBECONFIG}}
-      - test -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.yaml
+      - test -d {{.KUBERNETES_DIR}}/bootstrap/helmfile.d
       - test -f {{.ROOT_DIR}}/.sops.yaml
       - test -f {{.SOPS_AGE_KEY_FILE}}
       - which helmfile
+      - which yq
