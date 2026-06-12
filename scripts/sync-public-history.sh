@@ -38,7 +38,6 @@ FILTER_RULES=(
   "talos/clusterconfig"
 
   "scripts"
-  "!scripts/age-key.sh"
   "!scripts/purge-failed-pods.sh"
 
   # Strip all docs, then selectively restore public-safe files.
