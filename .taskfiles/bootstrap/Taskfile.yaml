@@ -21,8 +21,15 @@ tasks:
       - which talosctl
       - which sops
 
+  secrets:
+    desc: Seed all Flux bootstrap secrets (SOPS age key, 1Password Connect creds, GitHub App) — idempotent
+    cmds:
+      - task: sops-age
+      - task: onepassword-connect-secret
+      - task: flux-github-app
+
   flux-github-app:
-    desc: Create flux-github-app Secret in flux-system from 1Password GitHub App credentials (idempotent) [VAULT=homelab ITEM="GitHub App"]
+    internal: true
     vars:
       VAULT: '{{.VAULT | default "homelab"}}'
       ITEM:  '{{.ITEM  | default "GitHub App"}}'
@@ -62,7 +69,7 @@ tasks:
         msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer"
 
   onepassword-connect-secret:
-    desc: Create 1Password Connect bootstrap secret in external-secrets namespace via op read (idempotent) [VAULT=homelab]
+    internal: true
     vars:
       VAULT: '{{.VAULT | default "homelab"}}'
     cmds:
@@ -81,7 +88,7 @@ tasks:
       - which kubectl
 
   sops-age:
-    desc: Create sops-age Secret in flux-system from local age.key — required for SOPS decryption in Flux (idempotent)
+    internal: true
     cmds:
       - |
         kubectl create secret generic sops-age \
