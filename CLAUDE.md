@@ -4,14 +4,14 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-12 | `vlan-detagging-bootstrap-recovery` | Removed VLAN 60 tags from all nodes; fixed apply-all set -e bug, etcd wrong-IP race, cp-02 duplicate VLAN/Cilium BPF overflow; cluster bootstrapped to Flux-reconciling state |
+> | 2026-06-12 | `cluster-reset-task-overhaul` | Post-rename OSD wipes; rewrote wait-maintenance+wipe-ceph-osds with nmap discovery, disk-fingerprint dedup, helmrelease-sourced OSD list; fixed T500 serial |
 > | 2026-06-11 | `node-reshape-rebootstrap-prep` | Promoted M90q #1 to CP (talos-cp-02), demoted M920q #2 to worker, renamed all nodes to Option B final-state scheme; 4th Ceph OSD host added; wipe-ceph-osds task |
 > | 2026-06-11 | `rook-ceph-dashboard-secret` | ExternalSecret for Rook-Ceph dashboard password; bootstrap-safe placement in operator Kustomization; CONVENTIONS.md rewrite compliance |
 > | 2026-06-10 | `ceph-osd-lacp-tuning` | osdsPerDevice 1→2 + ms_async_op_threads 5; raw-mode reprovision complication; benchmark confirmed both bond members active (324 MB/s) |
 > | 2026-06-10 | `rook-ceph-phase5-consumers` | Phase 5: all consumers on ceph-block; waha+grafana restored from NFS; cleared 4 zombie longhorn PVCs; cp-02 hard-down #3 |
 > | 2026-06-10 | `ceph-dashboard-ingress` | Added HTTPRoute exposing Ceph mgr dashboard at ceph.<domain> via envoy-internal; no extra TLS config needed |
 > | 2026-06-10 | `rook-ceph-deploy` | Phase 4: deployed Rook-Ceph (v1.19.6) via Flux; host-net cluster_network on storage bond; HEALTH_OK with 3 host-spread OSDs |
-> | 2026-06-10 | `rook-ceph-free-disks` | Phase 3: removed longhorn-storage userVolume from all 3 nodes, staggered reboot+wipe to raw; cp-03 NVMe enumeration flipped (mapped by serial) |
-> | 2026-06-08 | `rook-ceph-migration` | Removed Longhorn big-bang (8b27593), consumers backed-up+suspended; recovered Tailscale route-hijack outage + debris |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

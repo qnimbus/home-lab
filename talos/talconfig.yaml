@@ -30,36 +30,22 @@ nodes:
     nodeLabels:
       topology.kubernetes.io/region: &region homelab
       topology.kubernetes.io/zone: homelab-worker-01
-    patches:
-      # talhelper generates both a VLANConfig doc AND processes inline machine.network vlans[],
-      # causing "file exists" when both try to create ethSel0.60. Fix: omit vlans: from
-      # networkInterfaces (no VLANConfig generated) and own the full VLAN 60 config here.
-      - |-
-        machine:
-          network:
-            interfaces:
-              - deviceSelector:
-                  driver: e1000e
-                vlans:
-                  - vlanId: 60
-                    dhcp: false
-                    addresses:
-                      - "10.60.0.204/24"
-                    routes:
-                      - network: "0.0.0.0/0"
-                        gateway: "10.60.0.1"
-                    mtu: 1500
-                    vip:
-                      ip: "${clusterEndpoint}"
     networkInterfaces:
       # Management — single Intel I219-LM RJ45 (driver: e1000e)
-      # Native/untagged VLAN 100 (10.100.0.0/24) is reserved for Intel AMT.
-      # Talos management traffic rides tagged VLAN 60 on the same physical port.
-      # VLAN 60 config lives entirely in the inline patch above — no vlans: here to
-      # avoid dual-controller conflict (VLANConfig doc vs inline machine.network).
+      # VLAN 60 (management) is native/untagged on the switch port; address configured
+      # directly on the physical interface. Native VLAN 100 for Intel AMT is handled
+      # by the ME firmware before frames reach Talos.
       - deviceSelector:
           driver: e1000e
         dhcp: false
+        addresses:
+          - "10.60.0.204/24"
+        routes:
+          - network: "0.0.0.0/0"
+            gateway: "10.60.0.1"
+        mtu: 1500
+        vip:
+          ip: "${clusterEndpoint}"
       # Storage — LACP bond of 2x SFP+ ports (Intel X520-DA2, enp1s0f0 + enp1s0f1)
       # hardwareAddr selectors are used rather than name: because talhelper only generates
       # LinkAliasConfig documents (required for bond member enslavement) for hardwareAddr/driver
@@ -95,35 +81,21 @@ nodes:
     nodeLabels:
       topology.kubernetes.io/region: *region
       topology.kubernetes.io/zone: homelab-worker-02
-    patches:
-      # talhelper generates both a VLANConfig doc AND processes inline machine.network vlans[],
-      # causing "file exists" when both try to create ethSel0.60. Fix: omit vlans: from
-      # networkInterfaces (no VLANConfig generated) and own the full VLAN 60 config here.
-      - |-
-        machine:
-          network:
-            interfaces:
-              - deviceSelector:
-                  driver: e1000e
-                vlans:
-                  - vlanId: 60
-                    dhcp: false
-                    addresses:
-                      - "10.60.0.205/24"
-                    routes:
-                      - network: "0.0.0.0/0"
-                        gateway: "10.60.0.1"
-                    mtu: 1500
-                    # No VIP — worker nodes do not participate in kube-vip ARP election
     networkInterfaces:
       # Management — single Intel I219-LM RJ45 (driver: e1000e)
-      # Native/untagged VLAN 100 (10.100.0.0/24) is reserved for Intel AMT.
-      # Talos management traffic rides tagged VLAN 60 on the same physical port.
-      # VLAN 60 config lives entirely in the inline patch above — no vlans: here to
-      # avoid dual-controller conflict (VLANConfig doc vs inline machine.network).
+      # VLAN 60 (management) is native/untagged on the switch port; address configured
+      # directly on the physical interface.
+      # Native/untagged VLAN 100 (10.100.0.0/24) for Intel AMT is handled by the ME firmware.
       - deviceSelector:
           driver: e1000e
         dhcp: false
+        addresses:
+          - "10.60.0.205/24"
+        routes:
+          - network: "0.0.0.0/0"
+            gateway: "10.60.0.1"
+        mtu: 1500
+        # No VIP — worker nodes do not participate in kube-vip ARP election
       # Storage — LACP bond of 2x SFP+ ports (Intel X520-DA2, enp1s0f0 + enp1s0f1)
       # See cp-01 comment above re: hardwareAddr selector rationale.
       # bond-storage: consistent name across all 3 nodes — retained as the storage-VLAN fabric
@@ -157,33 +129,10 @@ nodes:
     nodeLabels:
       topology.kubernetes.io/region: *region
       topology.kubernetes.io/zone: homelab-cp-01
-    patches:
-      # Same dual-controller conflict as worker-01/worker-02: vlans: in networkInterfaces generates a
-      # VLANConfig doc that races with inline machine.network vlans[], causing "file exists".
-      # Fix: no vlans: in networkInterfaces; full VLAN 60 config lives here only.
-      # cp-01 (MS-A2) has no Intel AMT — native VLAN 100 carries no traffic on this node but is kept
-      # consistent with worker-01/worker-02 switch config for a uniform management VLAN topology.
-      - |-
-        machine:
-          network:
-            interfaces:
-              - interface: bond0
-                vlans:
-                  - vlanId: 60
-                    dhcp: false
-                    addresses:
-                      - "10.60.0.201/24"
-                    routes:
-                      - network: "0.0.0.0/0"
-                        gateway: "10.60.0.1"
-                    mtu: 1500
-                    vip:
-                      ip: "${clusterEndpoint}"
     networkInterfaces:
       # Management — LACP bond of 2x RJ45 NICs (enp3s0: RTL8125/r8169, enp4s0: Intel I225/igc)
-      # Native/untagged VLAN 100 (10.100.0.0/24) carries no Talos traffic (no AMT on MS-A2).
-      # Talos management traffic rides tagged VLAN 60 on bond0. VLAN 60 config lives entirely
-      # in the inline patch above — no vlans: here to avoid dual-controller conflict.
+      # VLAN 60 (management) is native/untagged on the switch port; address configured directly
+      # on bond0. No Intel AMT on MS-A2.
       # See cp-01 comment above re: hardwareAddr selector rationale.
       - interface: bond0
         bond:
@@ -197,6 +146,14 @@ nodes:
             - hardwareAddr: "38:05:25:33:c9:73"   # enp3s0 — Realtek RTL8125 (r8169)
             - hardwareAddr: "38:05:25:33:c9:74"   # enp4s0 — Intel I225/I226 (igc)
         dhcp: false
+        addresses:
+          - "10.60.0.201/24"
+        routes:
+          - network: "0.0.0.0/0"
+            gateway: "10.60.0.1"
+        mtu: 1500
+        vip:
+          ip: "${clusterEndpoint}"
       # Storage — LACP bond of 2x SFP+ ports (Intel X710/i40e, enp5s0f0np0 + enp5s0f1np1)
       # NOTE: driver: i40e matched both ports simultaneously; Talos skipped the alias and bond1
       # never formed. hardwareAddr selectors give unique per-port matches. See cp-01 comment
@@ -220,7 +177,7 @@ nodes:
           - "10.200.0.201/24"
         mtu: 9000
 
-  - hostname: "talos-cp-02"                       # Lenovo M90q #1 (i5-10500T, 6C/12T, 64GB) — permanent CP; single 1GbE RJ45; VLAN 60 (mgmt) + VLAN 200 (storage) on same port
+  - hostname: "talos-cp-02"                       # Lenovo M90q #1 (i5-10500T, 6C/12T, 64GB) — permanent CP; single 1GbE RJ45; VLAN 60 native/untagged (mgmt), VLAN 200 tagged (storage)
     ipAddress: "10.60.0.202"
     installDiskSelector:
       model: "KINGSTON SNV3S1000G"               # Kingston NV3 1TB — boot disk; CT2000T500SSD8 (T500 2TB) is Ceph OSD
@@ -232,40 +189,43 @@ nodes:
       topology.kubernetes.io/region: *region
       topology.kubernetes.io/zone: homelab-cp-02
     patches:
-      # Same dual-controller conflict as cp-01/02/03: vlans: in networkInterfaces generates a
-      # VLANConfig doc that races with inline machine.network vlans[], causing "file exists".
-      # Fix: no vlans: in networkInterfaces; full VLAN config lives here only.
-      # Both VLAN 60 (management) and VLAN 200 (storage) ride tagged on the single 1GbE port.
+      # talhelper generates both a VLANConfig doc AND processes inline machine.network vlans[],
+      # causing "file exists" when both try to create the VLAN subinterface. Fix: omit vlans:
+      # from networkInterfaces and own the full VLAN config here.
+      # Use interface: eno1 (explicit kernel name) rather than deviceSelector in the patch —
+      # a deviceSelector in the patch creates a second alias for the same NIC, cascading into
+      # duplicate VLAN subinterfaces (7+) that overflow Cilium's BPF VLAN filter limit.
+      # VLAN 60 (management) is native/untagged on the switch port — address lives directly on
+      # the physical interface in networkInterfaces below. Only VLAN 200 (storage) is tagged.
       # Native/untagged VLAN 100 (10.100.0.0/24) is reserved for Intel AMT on the same NIC.
       - |-
         machine:
           network:
             interfaces:
-              - deviceSelector:
-                  hardwareAddr: "6c:24:08:4b:3f:e1"
+              - interface: eno1
                 vlans:
-                  - vlanId: 60
-                    dhcp: false
-                    addresses:
-                      - "10.60.0.202/24"
-                    routes:
-                      - network: "0.0.0.0/0"
-                        gateway: "10.60.0.1"
-                    mtu: 1500
-                    vip:
-                      ip: "${clusterEndpoint}"
                   - vlanId: 200
                     dhcp: false
                     addresses:
                       - "10.200.0.202/24"
-                    mtu: 9000
+                    mtu: 1500
     networkInterfaces:
-      # Single 1GbE RJ45 (eno1) — native/untagged VLAN 100 (10.100.0.0/24) is reserved for Intel AMT.
-      # VLAN 60 (management) and VLAN 200 (storage) ride tagged on this port.
-      # VLAN config lives entirely in the inline patch above — no vlans: here to avoid dual-controller conflict.
+      # Single 1GbE RJ45 (eno1) — VLAN 60 (management) is native/untagged on the switch port;
+      # address configured directly on the physical interface.
+      # Native/untagged VLAN 100 (10.100.0.0/24) for Intel AMT is handled by the ME firmware.
+      # VLAN 200 (storage) rides tagged — config lives in the inline patch above to avoid the
+      # VLANConfig doc vs inline machine.network dual-controller conflict.
       - deviceSelector:
           hardwareAddr: "6c:24:08:4b:3f:e1"      # eno1 — onboard Intel NIC
         dhcp: false
+        addresses:
+          - "10.60.0.202/24"
+        routes:
+          - network: "0.0.0.0/0"
+            gateway: "10.60.0.1"
+        mtu: 1500
+        vip:
+          ip: "${clusterEndpoint}"
 
 patches:
   - "@./patches/global/machine-features.yaml"

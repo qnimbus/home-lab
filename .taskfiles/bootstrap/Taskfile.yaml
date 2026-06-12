@@ -13,13 +13,13 @@ tasks:
       - task: talos:bootstrap
       - task: talos:kubeconfig
     preconditions:
-      - {msg: ".sops.yaml not found", sh: "test -f {{.ROOT_DIR}}/.sops.yaml"}
-      - {msg: "age key not found", sh: "test -f {{.SOPS_AGE_KEY_FILE}}"}
-      - {msg: "talconfig.yaml not found", sh: "test -f {{.TALOS_DIR}}/talconfig.yaml"}
-      - {msg: "talenv.yaml not found", sh: "test -f {{.TALOS_DIR}}/talenv.yaml"}
-      - {msg: "talhelper not found", sh: "which talhelper"}
-      - {msg: "talosctl not found", sh: "which talosctl"}
-      - {msg: "sops not found", sh: "which sops"}
+      - test -f {{.ROOT_DIR}}/.sops.yaml
+      - test -f {{.SOPS_AGE_KEY_FILE}}
+      - test -f {{.TALOS_DIR}}/talconfig.yaml
+      - test -f {{.TALOS_DIR}}/talenv.yaml
+      - which talhelper
+      - which talosctl
+      - which sops
 
   flux-github-app:
     desc: Create flux-github-app Secret in flux-system from 1Password GitHub App credentials (idempotent) [VAULT=homelab ITEM="GitHub App"]
@@ -36,28 +36,11 @@ tasks:
           --from-literal="githubAppPrivateKey=$(op read 'op://{{.VAULT}}/{{.ITEM}}/githubAppPrivateKey')" \
           --dry-run=client -o yaml | kubectl apply -f -
     preconditions:
-      - {msg: "kubeconfig not found",                                                                               sh: "test -f {{.KUBECONFIG}}"}
-      - {msg: "op not found — install 1Password CLI",                                                              sh: "which op"}
-      - {msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer", sh: "test -n \"$OP_SERVICE_ACCOUNT_TOKEN\""}
-      - {msg: "kubectl not found",                                                                                  sh: "which kubectl"}
-
-  flux-secret:
-    desc: "[DEPRECATED — use flux-github-app] Fetch SSH deploy key from 1Password, create flux-system secret"
-    vars:
-      VAULT: '{{.VAULT | default "homelab"}}'
-      ITEM:  '{{.ITEM  | default "flux-deploy-key"}}'
-    env:
-      OP_VAULT: '{{.VAULT}}'
-      OP_ITEM:  '{{.ITEM}}'
-    cmds:
-      - '{{.ROOT_DIR}}/scripts/flux-secret.sh setup'
-      - flux reconcile source git flux-system -n flux-system --timeout=2m
-    preconditions:
-      - {msg: "kubeconfig not found",                                                                              sh: "test -f {{.KUBECONFIG}}"}
-      - {msg: "op not found — install 1Password CLI",                                                             sh: "which op"}
-      - {msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer", sh: "test -n \"$OP_SERVICE_ACCOUNT_TOKEN\""}
-      - {msg: "kubectl not found",                                                                                 sh: "which kubectl"}
-      - {msg: "flux not found",                                                                                    sh: "which flux"}
+      - test -f {{.KUBECONFIG}}
+      - which op
+      - sh: test -n "$OP_SERVICE_ACCOUNT_TOKEN"
+        msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer"
+      - which kubectl
 
   age-key:
     desc: Fetch SOPS age private key from 1Password and write to age.key [VAULT=homelab ITEM="SOPS age key" FIELD=text]
@@ -65,15 +48,18 @@ tasks:
       VAULT: '{{.VAULT | default "homelab"}}'
       ITEM:  '{{.ITEM  | default "SOPS age key"}}'
       FIELD: '{{.FIELD | default "text"}}'
-    env:
-      OP_VAULT: '{{.VAULT}}'
-      OP_ITEM:  '{{.ITEM}}'
-      OP_FIELD: '{{.FIELD}}'
     cmds:
-      - '{{.ROOT_DIR}}/scripts/age-key.sh fetch'
+      - |
+        KEY=$(op read "op://{{.VAULT}}/{{.ITEM}}/{{.FIELD}}")
+        [[ -n "${KEY}" ]] || { echo "ERROR: 1Password returned empty value" >&2; exit 1; }
+        [[ "${KEY}" == AGE-SECRET-KEY-1* ]] || { echo "ERROR: value does not look like an age private key" >&2; exit 1; }
+        printf '%s\n' "${KEY}" > "${SOPS_AGE_KEY_FILE}"
+        chmod 600 "${SOPS_AGE_KEY_FILE}"
+        echo "Age key written to ${SOPS_AGE_KEY_FILE}"
     preconditions:
-      - {msg: "op not found — install 1Password CLI",                                                              sh: "which op"}
-      - {msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer", sh: "test -n \"$OP_SERVICE_ACCOUNT_TOKEN\""}
+      - which op
+      - sh: test -n "$OP_SERVICE_ACCOUNT_TOKEN"
+        msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer"
 
   onepassword-connect-secret:
     desc: Create 1Password Connect bootstrap secret in external-secrets namespace via op read (idempotent) [VAULT=homelab]
@@ -88,10 +74,11 @@ tasks:
           --from-literal="token=$(op read 'op://{{.VAULT}}/HomeLab Access Token/credential')" \
           --dry-run=client -o yaml | kubectl apply -f -
     preconditions:
-      - {msg: "kubeconfig not found",                                                                               sh: "test -f {{.KUBECONFIG}}"}
-      - {msg: "op not found — install 1Password CLI",                                                              sh: "which op"}
-      - {msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer", sh: "test -n \"$OP_SERVICE_ACCOUNT_TOKEN\""}
-      - {msg: "kubectl not found",                                                                                  sh: "which kubectl"}
+      - test -f {{.KUBECONFIG}}
+      - which op
+      - sh: test -n "$OP_SERVICE_ACCOUNT_TOKEN"
+        msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer"
+      - which kubectl
 
   sops-age:
     desc: Create sops-age Secret in flux-system from local age.key — required for SOPS decryption in Flux (idempotent)
@@ -102,16 +89,16 @@ tasks:
           --from-file=age.agekey=$SOPS_AGE_KEY_FILE \
           --dry-run=client -o yaml | kubectl apply -f -
     preconditions:
-      - {msg: "kubeconfig not found", sh: "test -f $KUBECONFIG"}
-      - {msg: "age key not found — expected at $SOPS_AGE_KEY_FILE", sh: "test -f $SOPS_AGE_KEY_FILE"}
-      - {msg: "kubectl not found", sh: "which kubectl"}
+      - test -f $KUBECONFIG
+      - test -f $SOPS_AGE_KEY_FILE
+      - which kubectl
 
   apps:
     desc: Bootstrap apps into the cluster via helmfile (Cilium → CoreDNS → Spegel → cert-manager → Flux) — FIRST BOOT ONLY; day-2 upgrades are handled by Flux via Renovate PRs
     cmd: helmfile sync -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.yaml
     preconditions:
-      - {msg: "kubeconfig not found", sh: "test -f {{.KUBECONFIG}}"}
-      - {msg: "helmfile.yaml not found", sh: "test -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.yaml"}
-      - {msg: ".sops.yaml not found", sh: "test -f {{.ROOT_DIR}}/.sops.yaml"}
-      - {msg: "age key not found", sh: "test -f {{.SOPS_AGE_KEY_FILE}}"}
-      - {msg: "helmfile not found", sh: "which helmfile"}
+      - test -f {{.KUBECONFIG}}
+      - test -f {{.KUBERNETES_DIR}}/bootstrap/helmfile.yaml
+      - test -f {{.ROOT_DIR}}/.sops.yaml
+      - test -f {{.SOPS_AGE_KEY_FILE}}
+      - which helmfile

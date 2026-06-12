@@ -26,10 +26,11 @@ tasks:
         msg: "Template not found: {{.FILE}}"
       - sh: 'case "{{.FILE}}" in *.sops.yaml.tpl) true;; *) false;; esac'
         msg: "FILE must end in .sops.yaml.tpl, got: {{.FILE}}"
-      - {msg: "op not found — install 1Password CLI",                                                                  sh: "which op"}
-      - {msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer",    sh: "test -n \"$OP_SERVICE_ACCOUNT_TOKEN\""}
-      - {msg: "sops not found", sh: "which sops"}
-      - {msg: "age key not found at {{.SOPS_AGE_KEY_FILE}}", sh: "test -f '{{.SOPS_AGE_KEY_FILE}}'"}
+      - which op
+      - sh: test -n "$OP_SERVICE_ACCOUNT_TOKEN"
+        msg: "OP_SERVICE_ACCOUNT_TOKEN not set — export it in your WSL2 host shell before starting devcontainer"
+      - which sops
+      - test -f '{{.SOPS_AGE_KEY_FILE}}'
     cmds:
       - op inject -i "{{.FILE}}" | sops --filename-override "{{.OUT}}" --encrypt /dev/stdin > "{{.OUT}}"
       - echo "Encrypted → {{.OUT}}"

@@ -4,6 +4,61 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-12 — `vlan-detagging-bootstrap-recovery`
+
+### Goal
+Remove VLAN 60 tags from all node management interfaces (switch now sends VLAN 60 native/untagged), then diagnose and fix a chain of bugs uncovered during the apply/bootstrap sequence to bring the cluster back to a fully reconciling Flux state.
+
+### What we did
+- **Removed VLAN 60 from all 4 nodes in `talos/talconfig.yaml`** — switch now sends VLAN 60 as native/untagged; management IPs/routes/VIPs moved directly onto physical interfaces (`e1000e` for M920q nodes, `bond0` for MS-A2, `eno1` for M90q). All per-node `patches:` blocks that configured VLAN 60 subinterfaces were removed. Only VLAN 200 (storage) remains tagged on cp-02; other nodes use dedicated `bond-storage` SFP+ interfaces for storage.
+- **Fixed `Taskfile.yaml` YAML parse error** — `echo "...then: /git-commit"` in the `validate:update` task was parsed as a YAML key-value pair (colon-space). Wrapped in a `- |` block scalar to make it a shell string.
+- **Fixed `apply-all` `set -e` truncation bug** — go-task v3.51.1's `set: [pipefail]` adds `set -e` to all tasks; `VAR=$(talosctl get disks --insecure ...)` exits the task when a just-rebooted node is transiently unreachable. Added `|| true` to the two affected command substitutions so the loop continues to the next node.
+- **Added `talos:etcd-validate` task** — reads expected CP IPs from `talconfig.yaml`, queries `talosctl etcd members`, and removes any member whose peer URL contains a transient/wrong IP. Documents the recommended post-bootstrap safety step.
+- **Diagnosed and fixed etcd crash loop on cp-01** — after `talos:bootstrap`, cp-01 was registered as a learner with peer URL `https://10.60.0.15:2380` (transient maintenance-mode DHCP IP captured before bond0 settled on static `10.60.0.201`). Used `talosctl etcd remove-member` to remove the bad learner and rebooted cp-01; it rejoined cleanly and was promoted to full voting member within ~2 minutes.
+- **Diagnosed and fixed cp-02 Cilium failure** — Cilium on cp-02 logged `vlan filter macros: allowed VLAN list is too big — 7 entries`. Root cause: the inline patch used `deviceSelector: hardwareAddr` to configure VLAN 200, which creates a *second* `LinkAliasConfig` alongside the one talhelper generates from `networkInterfaces`. Each network controller retry with a different alias name produced a new VLAN subinterface (`eno1054d39.200`, `eno10edb8b.200`, etc.), accumulating 7+ stale interfaces that survived reboots. Fixed by switching patch to `interface: eno1` (explicit kernel name, no alias creation) and reducing VLAN 200 MTU from 9000 to 1500 (1GbE parent cannot exceed 1500).
+- **Completed cluster bootstrap** — ran `task bootstrap:apps` (Cilium 1.19.4 → CoreDNS 1.45.2 → Spegel 0.7.1 → cert-manager v1.20.2 → flux-operator 0.50.0 → flux-instance 0.50.0); pushed `sops-age` secret; all 4 nodes Ready, Flux reconciling ~40 kustomizations.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | Removed VLAN 60 from all 4 nodes; cp-02 VLAN 200 MTU 9000→1500; cp-02 patch switched to `interface: eno1`; updated comments |
+| `Taskfile.yaml` | Fixed YAML parse error in `validate:update` echo command |
+| `.taskfiles/talos/Taskfile.yaml` | Added `|| true` to `apply-all` command substitutions; added new `etcd-validate` task |
+
+### Key decisions
+- **VLAN 200 MTU 1500 on cp-02** — cp-02 has a single 1GbE RJ45 shared by management (VLAN 60 native) and storage (VLAN 200 tagged); Linux forbids a VLAN subinterface MTU exceeding the parent's 1500. The 9000 MTU only applies to the dedicated 10GbE `bond-storage` SFP+ interfaces on the other three nodes.
+- **`interface: eno1` over `deviceSelector` in patch** — `deviceSelector: hardwareAddr` in `machine.network.interfaces` creates a new `LinkAliasConfig` alongside the one talhelper already generates from `networkInterfaces`, causing duplicate VLAN subinterfaces per controller retry. Explicit `interface: eno1` avoids alias creation entirely.
+- **`etcd-validate` as post-bootstrap safety net** — the race between Talos's etcd controller and bond interface formation (controller fires before bond0 has the static IP, capturing a transient DHCP address as the peer URL) is hard to prevent architecturally. The task provides an explicit check-and-repair step without requiring DHCP reservations or config changes.
+
+---
+
+## 2026-06-12 — `cluster-reset-task-overhaul`
+
+### Goal
+Execute post-rename OSD wipes across all 4 nodes and overhaul `wait-maintenance` + `wipe-ceph-osds` tasks with dynamic IP discovery, hardware deduplication, and helmrelease-sourced OSD targeting.
+
+### What we did
+- **Node reset to maintenance mode** — `task talos:reset` failed with i/o timeout on M90q (10.60.0.202, never had a working config applied) and MS-A2 (10.60.0.201, LACP bond dropped when maintenance mode sent no PDUs). Worked around by running targeted `talosctl reset` on the three reachable nodes; M90q manually booted into maintenance mode. User reconfigured switch to remove LACP from MS-A2's ports; both NICs came up as DHCP on 10.100.0.x. Final maintenance IPs: M90q 10.100.0.211, MS-A2 10.100.0.215+216, M920q #1 10.100.0.231, M920q #2 10.100.0.237.
+- **Rewrote `wait-maintenance`** — replaced fixed-IP polling with nmap subnet scan (10.60.0.0/24 + 10.100.0.0/24); deduplicated by disk serial fingerprint so multi-NIC hosts (MS-A2 with 2 IPs) count as one; added per-node display showing IP + disk models (`|`-joined).
+- **Rewrote `wipe-ceph-osds`** — sources the authoritative OSD list from the Rook HelmRelease YAML (no hardcoded model strings); identifies each target disk by constructing the udev by-id basename (`nvme-<MODEL_underscored>_<SERIAL>`) and matching against talosctl disk output; deduplicates by OSD by-id so duplicate IPs for the same host are skipped cleanly.
+- **Fixed MS-A2 OSD device in Rook helmrelease** — was `nvme-CT2000P310SSD8_252450B1A33B` (never installed); user clarified 3× new Crucial T500 2TB SSDs were installed (one per node replacing spares). Corrected to `nvme-CT2000T500SSD8_2545543A2190`. P310 will be added to a future node TBD.
+- **OSD wipes executed**: cp-01 T500 `2545543A2190` ✅ wiped; cp-02 T500 `25405348D601` ✅ wiped; M920q #1 + #2 Kingston NV3 OSD NVMes ⚠️ blocked by LVM (`dm-0`/`dm-1` auto-assembled from prior Ceph PV metadata in maintenance mode). Confirmed Rook `ceph-volume lvm zap --destroy` handles these on first OSD provisioning.
+- **Bug fixes**: (a) `wait-maintenance` `vars.NODE_COUNT` ran `yq` from repo root, not `dir:`; fixed to use `{{.TALOS_DIR}}/talconfig.yaml` full path. (b) Embedded literal newline in YAML block scalar broke YAML parse at `SUMMARY=...` assignment; replaced with `printf '%s\n...'` to keep the newline in the shell layer.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.taskfiles/talos/Taskfile.yaml` | Rewrote `wait-maintenance` (nmap scan, disk-fingerprint deduplication, informative output) and `wipe-ceph-osds` (helmrelease-sourced OSD list, serial matching, by-id deduplication) |
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` | Fixed MS-A2 OSD device: P310 → T500 serial `2545543A2190` |
+
+### Key decisions
+- **Disk serial fingerprint for deduplication** — Talos maintenance mode API surface is limited to `Disks`, `Version`, `ApplyConfiguration`, `Reset`, `Upgrade`; no machine UUID endpoint available. Sorted disk serials are a reliable hardware identity proxy for multi-NIC hosts.
+- **OSD list sourced from Rook helmrelease** — eliminates hardcoded model strings as technical debt; `by-id` basename matching (model + serial → udev symlink format) is stable across NVMe enumeration instability (MS-A2 NVMe kernel names flip between reboots).
+- **LVM-blocked wipe accepted as non-issue** — Talos maintenance kernel auto-assembles Ceph LVM VGs from PV metadata; the Talos API intentionally blocks writes to dm-slave devices and cannot be bypassed in maintenance mode. Rook's `ceph-volume lvm zap --destroy` is the designed path for reclaiming prior-Ceph devices on first OSD provisioning.
+- **nmap over fixed-IP polling** — maintenance mode nodes may boot on DHCP IPs (VLAN 100 native, 10.100.0.0/24) if their management VLAN config was never applied (M90q) or if switch-side LACP forces a different port mode (MS-A2).
+
+---
+
 ## 2026-06-11 — `rook-ceph-dashboard-secret`
 
 ### Goal
