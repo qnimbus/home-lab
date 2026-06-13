@@ -1,6 +1,8 @@
 {
   "name": "Python 3 Development Container",
-  "image": "mcr.microsoft.com/devcontainers/python:latest",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "devcontainer",
+  "workspaceFolder": "/workspaces/home-lab",
 
   "containerUser": "vscode",
 
@@ -52,10 +54,5 @@
     "OP_SERVICE_ACCOUNT_TOKEN": "${localEnv:OP_SERVICE_ACCOUNT_TOKEN}",
     "GH_TOKEN": "${localEnv:GH_TOKEN}"
   },
-  "forwardPorts": [3000],
-  "mounts": [
-    "source=claude-home,target=/home/vscode/.claude,type=volume",
-    "source=home-local,target=/home/vscode/.local,type=volume",
-    "source=home-kub,target=/home/vscode/.kube,type=volume"
-  ]
+  "forwardPorts": ["meshcommander:3000"]
 }

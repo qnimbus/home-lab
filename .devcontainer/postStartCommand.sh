@@ -10,9 +10,3 @@ eval "$(~/.local/bin/mise activate bash)"
 disown
 (task validate:update) &
 disown
-
-# Start MeshCommander in a new session (setsid) so it survives when this postStartCommand shell
-# exits. nohup+disown alone is insufficient when VS Code runs this inside a terminal session —
-# the process group receives signals when the session leader (VS Code terminal) exits.
-setsid nohup meshcommander >> /tmp/meshcommander.log 2>&1 &
-disown

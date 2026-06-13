@@ -1,0 +1,5 @@
+FROM node:lts-alpine
+# renovate: datasource=npm depName=meshcommander
+RUN npm install -g meshcommander@0.9.5-a
+EXPOSE 3000
+CMD ["meshcommander"]
