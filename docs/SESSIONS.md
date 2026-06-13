@@ -4,6 +4,56 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-13 — `just-bootstrap-talos-config-improvements`
+
+### Goal
+Migrate the bootstrap phase from go-task to a `just` module pipeline, add a `talos/mod.just` for day-2 operations, and improve Talos machine config patches with security and reliability features identified by comparing against the bykaj reference implementation.
+
+### What we did
+- **Compared home-lab vs bykaj bootstrap workflows** — bykaj uses `just` modules throughout (`bootstrap/mod.just`, `talos/mod.just`) with `gum` logging and `minijinja-cli` templating; our repo used go-task for everything including bootstrap orchestration. Identified that bykaj doesn't use talhelper (uses Jinja2 + `talosctl machineconfig patch`); kept talhelper for our hardware complexity and Renovate version tracking.
+- **Created `bootstrap/mod.just`** — 11-stage pipeline: `gensecret → genconfig → wipe-osds → apply-talos → bootstrap-k8s → kubeconfig → wait → namespaces → resources → crds → apps`. Delegates complex Talos bash to `task talos:*` rather than rewriting 400+ lines of nmap/disk-fingerprint logic. Added `|| { just log fatal ... }` error handling to `resources`, `crds`, and `apps` stages.
+- **Created `bootstrap/resources.yaml.j2`** — single declarative secret template for all 3 bootstrap secrets (sops-age, onepassword-connect-secrets, flux-github-app) rendered via `minijinja-cli | op inject`. Secrets never touch disk; `op://` references resolved in the pipe.
+- **Created `.justfile`** — root module loader: `mod bootstrap "bootstrap"`, `mod talos "talos"`, plus private `log` (gum) and `template` (minijinja-cli + op inject) helpers.
+- **Created `.minijinja.toml`** — minijinja-cli config (autoescape none, env vars enabled, trim/lstrip blocks).
+- **Updated `.mise.toml`** — added `just = "1.52.0"`, `gum = "0.17.0"`, `"aqua:mitsuhiko/minijinja" = "2.20.0"` (aqua backend required — not in mise native registry); added `[env]` block for `JUST_UNSTABLE = "1"` and `MINIJINJA_CONFIG_FILE`.
+- **Deleted `.taskfiles/bootstrap/Taskfile.yaml`** and removed its include from `Taskfile.yaml`; bootstrap orchestration fully replaced by `bootstrap/mod.just`.
+- **Rewrote `docs/CLUSTER.md` bootstrap runbook** — Phase 0-4 condensed to Phase 0-2; all `task bootstrap:*` references replaced with `just bootstrap *`; stages table added.
+- **Created `talos/mod.just`** — day-2 operations surfaced under `just talos *`: `reset-cluster` (delegates to `task talos:reset` which chains wait+wipe), `reset-node`, `reboot-node`, `shutdown-node`, `upgrade-node`, `health`. Wired into `.justfile` as `mod talos "talos"`.
+- **Fixed two bugs in `gensecret` stage** — (1) `talhelper gensecret -c talos/talconfig.yaml` failed: `-c` is not a valid flag for `gensecret` (only for `genconfig`). (2) `talos/talsecret.sops.yaml` path failed because module recipes run with CWD = module directory (`bootstrap/`), not repo root — fixed by using `justfile_dir()` for all cross-directory paths.
+- **Diagnosed `just bootstrap *` shell glob error** — `*` expands to all files in CWD before `just` runs; `age.key` in repo root caused `just` to receive `age.key` as a recipe name. Always use `just bootstrap age-key` explicitly.
+- **Added Talos machine config improvements** — compared `machineconfig.yaml.j2` (bykaj) against our patch files; added missing features to `machine-features.yaml` (`apidCheckExtKeyUsage`, `diskQuotaSupport`, `kubePrism`, `rbac`) and `machine-kubelet.yaml` (`defaultRuntimeSeccompProfileEnabled`, `disableManifestsDirectory`, `featureGates: { ImageVolume, ResourceHealthStatus }`); added `KubeSchedulerConfiguration` to `controller/cluster.yaml` with `PodTopologySpread` defaults and `ImageLocality` score disabled.
+- **Wrote full inline documentation** for all new patch entries — explains the mechanism, the failure mode avoided, and cluster-specific rationale (same style as existing sysctls docs).
+- **Validated all changes** with `talhelper genconfig --dry-run` — no errors; dry-run diff confirms all new fields apply correctly across all 4 nodes.
+- **Added `VolumeConfig` + `UserVolumeConfig` to 1 TB nodes** — created `talos/patches/node/machine-volumes-1tb.yaml` with two Talos document kinds: `VolumeConfig` caps `EPHEMERAL` at 120 GiB (prevents container layer cache from consuming the full system disk); `UserVolumeConfig` creates a `local-hostpath` partition with `minSize: 100GiB` + `grow: true` (fills remaining ~810 GiB on 1 TB drives). Applied to worker-01, worker-02, and cp-02 via per-node `patches:` in `talconfig.yaml`. cp-01 (128 GB AirDisk) excluded with an inline comment showing exactly what to add when the 1 TB disk arrives. Re-validated with dry-run.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.justfile` | Created — root module loader with `mod bootstrap`, `mod talos`, `log`, `template` helpers |
+| `.minijinja.toml` | Created — minijinja-cli configuration |
+| `.mise.toml` | Added `just`, `gum`, `aqua:mitsuhiko/minijinja`; added `[env]` block for `JUST_UNSTABLE`, `MINIJINJA_CONFIG_FILE` |
+| `bootstrap/mod.just` | Created — 11-stage bootstrap pipeline + `age-key` recipe; error handling on `resources`, `crds`, `apps`; CWD-safe paths via `justfile_dir()` |
+| `bootstrap/resources.yaml.j2` | Created — declarative secret template (sops-age, 1password-connect, flux-github-app) |
+| `talos/mod.just` | Created — day-2 ops: `reset-cluster`, `reset-node`, `reboot-node`, `shutdown-node`, `upgrade-node`, `health` |
+| `.taskfiles/bootstrap/Taskfile.yaml` | Deleted — superseded by `bootstrap/mod.just` |
+| `Taskfile.yaml` | Removed `bootstrap:` include |
+| `docs/CLUSTER.md` | Rewrote bootstrap runbook (Phase 0–4 → Phase 0–2); `task bootstrap:*` → `just bootstrap *` throughout |
+| `CLAUDE.md` | Updated bootstrap workflow section and phase references |
+| `talos/patches/global/machine-features.yaml` | Added `apidCheckExtKeyUsage`, `diskQuotaSupport`, `kubePrism`, `rbac` with full inline documentation |
+| `talos/patches/global/machine-kubelet.yaml` | Added `defaultRuntimeSeccompProfileEnabled`, `disableManifestsDirectory`, `featureGates: { ImageVolume, ResourceHealthStatus }` with full inline documentation |
+| `talos/patches/controller/cluster.yaml` | Added `KubeSchedulerConfiguration`: `PodTopologySpread` defaults, `ImageLocality` score disabled |
+| `talos/patches/node/machine-volumes-1tb.yaml` | Created — `VolumeConfig` (EPHEMERAL ≤ 120 GiB) + `UserVolumeConfig` (local-hostpath, minSize 100 GiB, grow to fill) |
+| `talos/talconfig.yaml` | Added `machine-volumes-1tb` patch to worker-01, worker-02, cp-02; added 1 TB upgrade comment to cp-01 |
+
+### Key decisions
+- **`just` + `task` coexist by design**: `bootstrap/mod.just` delegates to `task talos:*` rather than rewriting nmap discovery, disk-fingerprint deduplication, and OSD wipe logic; `just` owns orchestration, go-task owns the heavy bash.
+- **`aqua:mitsuhiko/minijinja` not `minijinja-cli`**: mise's native registry has no entry for `minijinja-cli`; the aqua backend (`aqua:mitsuhiko/minijinja`) is the correct installation path.
+- **`justfile_dir()` required for all cross-directory paths in modules**: module CWD is the module file's directory, not the root justfile directory — bare relative paths silently resolve to wrong locations.
+- **`stableHostname` not added**: talhelper errors with "already set in v1alpha1 config" — it's a Talos v1.13 default that cannot be explicitly set again via a patch.
+- **Talhelper approach unchanged vs bykaj Jinja2**: bykaj's `machineconfig.yaml.j2` approach requires `talosctl machineconfig patch` and loses Renovate version tracking; our talhelper + SOPS setup handles the LACP bond/VLAN topology correctly and keeps `# renovate:` annotations in `talenv.yaml`.
+
+---
+
 ## 2026-06-12 — `ceph-osd-wipe-prometheus-deps`
 
 ### Goal

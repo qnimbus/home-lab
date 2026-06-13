@@ -1,4 +1,11 @@
+[env]
+JUST_UNSTABLE = "1"
+MINIJINJA_CONFIG_FILE = "{{config_root}}/.minijinja.toml"
+
 [tools]
+just = "1.52.0"
+gum = "0.17.0"
+"aqua:mitsuhiko/minijinja" = "2.20.0"
 kubectl = "1.36.2"
 talosctl = "1.13.0"
 # etcd version must match the etcd bundled with the running Talos version — check with: talosctl etcd status

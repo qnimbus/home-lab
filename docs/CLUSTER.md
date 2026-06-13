@@ -647,7 +647,7 @@ This works because `cluster-apps` only directly renders the child `Kustomization
 
 ```
 Helmfile: cilium → coredns → spegel → cert-manager → flux-operator → flux-instance
-          (then create flux-github-app secret via task bootstrap:flux-github-app)
+          (bootstrap secrets — sops-age, 1password-connect, flux-github-app — applied before apps stage)
 GitOps:   cluster-meta → cluster-vars → cluster-apps → <individual app Kustomizations>
 ```
 
@@ -683,79 +683,68 @@ task talos:wait-maintenance
 
 Exits automatically once all three nodes return their Talos version.
 
-> **Important**: `talsecret.sops.yaml` must **not** be regenerated on a running or previously-bootstrapped cluster. The CA certificates and bootstrap tokens it contains are baked into every node's machine config. The `bootstrap:cluster` task guards against accidental regeneration — it only generates the file if it does not already exist.
+> **Important**: `talsecret.sops.yaml` must **not** be regenerated on a running or previously-bootstrapped cluster. The CA certificates and bootstrap tokens it contains are baked into every node's machine config. The `gensecret` stage guards against accidental regeneration — it only generates the file if it does not already exist.
 
-### Phase 1 — Bootstrap the cluster
+### Phase 1 — Bootstrap everything
 
-```bash
-task bootstrap:cluster
-```
-
-Runs these steps in sequence, with retries on the network-sensitive ones:
-
-| Step | Command | Notes |
-|------|---------|-------|
-| 1 | `gensecret` guard | Skipped if `talsecret.sops.yaml` already exists |
-| 2 | `task talos:genconfig` | Renders `talconfig.yaml` → machine configs in `clusterconfig/` |
-| 3 | `task talos:apply-all` | Pushes configs to all nodes (`--insecure`, maintenance mode only) |
-| 4 | `task talos:bootstrap` | Bootstraps etcd on the first control-plane node (retries until ready) |
-| 5 | `task talos:kubeconfig` | Fetches `kubeconfig` to repo root (retries until API server responds) |
-
-**Expected duration**: ~5–10 minutes
-
-Verify the API server is reachable and all nodes are registered (they will be `NotReady` at this point — no CNI yet):
+First-time setup: fetch the SOPS age key from 1Password (needed to decrypt `talsecret.sops.yaml` during `genconfig`):
 
 ```bash
-kubectl get nodes
+just bootstrap age-key
 ```
 
-> **Why `NotReady` here?** Kubernetes requires a CNI plugin before the kubelet will report a node as `Ready`. Without one, the node's `NetworkPluginNotReady` condition is set and it stays in `NotReady` indefinitely. Cilium is this cluster's CNI and is installed in Phase 2 — so nodes only become `Ready` after `bootstrap:apps` completes, not after `bootstrap:cluster`. This is expected behaviour, not a failure.
-
-### Phase 2 — Bootstrap apps (Helmfile)
+Then run the full bootstrap pipeline:
 
 ```bash
-task bootstrap:apps
+just bootstrap
 ```
 
-Installs charts in strict dependency order via `helmfile sync`:
+Runs these stages in sequence:
 
-| # | Chart | Namespace | Purpose |
-|---|-------|-----------|---------|
-| 1 | `cilium` | `kube-system` | CNI + kube-proxy replacement |
-| 2 | `coredns` | `kube-system` | Cluster DNS |
-| 3 | `spegel` | `kube-system` | P2P container image mirror |
-| 4 | `cert-manager` | `cert-manager` | Certificate management |
-| 5 | `flux-operator` | `flux-system` | Flux controller lifecycle manager |
-| 6 | `flux-instance` | `flux-system` | `FluxInstance` CR — wires Flux to this repo |
+| Stage | What it does |
+|-------|-------------|
+| `gensecret` | Generates `talsecret.sops.yaml` (skipped if it already exists) |
+| `genconfig` | Renders `talconfig.yaml` → machine configs in `clusterconfig/` |
+| `wipe-osds` | Wipes stale LVM/Ceph metadata from OSD disks (no-op if already clean) |
+| `apply-talos` | Pushes configs to all nodes (`--insecure`, maintenance mode only) |
+| `bootstrap-k8s` | Bootstraps etcd on the first control-plane node |
+| `kubeconfig` | Fetches `kubeconfig` to repo root |
+| `wait` | Polls until all nodes reach `NotReady` (k8s API up, CNI not yet running) |
+| `namespaces` | Pre-creates all app namespaces from `kubernetes/apps/` |
+| `resources` | Creates bootstrap secrets from 1Password (sops-age, 1password-connect, flux-github-app) |
+| `crds` | Pre-installs CRDs from Flux-managed charts so Kustomization dry-runs pass |
+| `apps` | Installs Cilium → CoreDNS → Spegel → cert-manager → flux-operator → flux-instance |
 
-> **Note**: the task uses `helmfile sync`, not `helmfile apply`. The `apply` subcommand pre-diffs all releases in parallel and fails on `flux-instance` because the `FluxInstance` CRD does not exist until `flux-operator` finishes installing.
+> **Note**: `apps` uses `helmfile sync`, not `helmfile apply`. The `apply` subcommand pre-diffs all releases in parallel and fails on `flux-instance` because the `FluxInstance` CRD does not exist until `flux-operator` finishes installing.
 
-**Expected duration**: ~5–10 minutes
+> **Why `NotReady` before `apps`?** Kubernetes requires a CNI plugin before the kubelet will report a node as `Ready`. Without one, the node's `NetworkPluginNotReady` condition is set and it stays in `NotReady` indefinitely. Cilium is this cluster's CNI — nodes only become `Ready` after the `apps` stage completes. This is expected behaviour.
 
-Once helmfile completes, Cilium is running and nodes will transition to `Ready`. Poll until all three nodes are `Ready` (prints `kubectl get nodes -o wide` on exit):
+**Expected duration**: ~15–20 minutes for the full pipeline.
+
+Individual stages are callable independently (useful for re-running after a failure):
+
+```bash
+just bootstrap resources   # re-seed secrets only
+just bootstrap crds        # re-apply CRD pre-bootstrap only
+just bootstrap apps        # re-run helmfile sync only
+```
+
+Once `apps` completes, Cilium is running and nodes will transition to `Ready`. Poll until all three nodes are `Ready`:
 
 ```bash
 task talos:wait-bootstrap
 ```
 
-### Phase 3 — Flux GitHub App secret
+The `flux-github-app` secret is created during the `resources` stage (before Flux starts), so Flux can pull from the repo immediately on first reconcile. The companion ExternalSecret in `kubernetes/apps/flux-system/flux-instance/app/externalsecret.yaml` keeps this secret in sync with 1Password day-2.
 
-This is the only imperative step post-bootstrap. The secret cannot come from Git because Flux needs it to pull from Git in the first place.
-
-```bash
-task bootstrap:flux-github-app
-```
-
-Fetches the GitHub App credentials from 1Password (`homelab` vault → `GitHub App` item) and creates the `flux-github-app` secret in the `flux-system` namespace with keys `githubAppID`, `githubAppInstallationID`, and `githubAppPrivateKey`. Once Flux is running, the companion ExternalSecret in `kubernetes/apps/flux-system/flux-instance/app/externalsecret.yaml` keeps this secret in sync with 1Password automatically.
-
-To verify the secret exists after bootstrap:
+To verify the secret exists:
 
 ```bash
 kubectl get secret flux-github-app -n flux-system \
   -o jsonpath='{.data.githubAppID}' | base64 -d
 ```
 
-### Phase 4 — Hand off to GitOps
+### Phase 2 — Hand off to GitOps
 
 ```bash
 git push    # push any uncommitted changes first
@@ -794,7 +783,7 @@ task talos:apply IP=10.60.0.204
 > `talos:apply` defaults to authenticated mode (mutual TLS via talosconfig) for **running** nodes.
 > Pass `INSECURE=true` only during **bootstrap/maintenance mode**: `task talos:apply IP=x INSECURE=true`.
 > `talos:apply-all` always uses `--insecure` and is for **bootstrap only**.
-> `talos:genconfig` is run automatically inside `bootstrap:cluster` (Phase 1, Step 2). For day-2 edits you call it directly — `bootstrap:cluster` is for first-boot only.
+> `talos:genconfig` is run automatically by the `genconfig` stage of `just bootstrap`. For day-2 edits you call it directly — `just bootstrap` is for first-boot only.
 
 ---
 
@@ -804,9 +793,9 @@ task talos:apply IP=10.60.0.204
 |---------|-------------|-----|
 | `talosctl version --insecure` times out | Node still rebooting | Wait and retry |
 | `apply-all` fails with `connection refused` | Node not yet in maintenance mode | Wait and retry |
-| `bootstrap:apps` fails on `flux-instance` | Running `helmfile apply` instead of `sync` | Always use `task bootstrap:apps` |
-| Flux shows `Secret not found` | `flux-github-app` secret missing | Run `task bootstrap:flux-github-app` |
-| Flux shows `unable to clone` or `401 Unauthorized` | GitHub App not installed on repo, or credentials rotated | Verify app is installed at github.com/settings/installations; re-run `task bootstrap:flux-github-app` to refresh the secret |
+| `apps` stage fails on `flux-instance` | Running `helmfile apply` instead of `sync` | Always use `just bootstrap apps` |
+| Flux shows `Secret not found` | `flux-github-app` secret missing | Run `just bootstrap resources` |
+| Flux shows `unable to clone` or `401 Unauthorized` | GitHub App not installed on repo, or credentials rotated | Verify app is installed at github.com/settings/installations; re-run `just bootstrap resources` to refresh secrets |
 | `talosctl upgrade` installs to wrong disk | `upgrade` always targets the current system disk — `installDiskSelector` is ignored | Boot from Talos ISO → `task talos:apply IP=x INSECURE=true` |
 | Installer refuses to touch disk with existing partitions | `wipe: false` (default) — installer skips non-Talos disks | Add temporary `machine: install: wipe: true` node patch; remove after migration |
 | `talosctl upgrade` fails with `too_many_pings` / `ENHANCE_YOUR_CALM` | Client version newer than server — gRPC keepalive rate-limited | `mise install talosctl@<server-version>` then `mise exec talosctl@<version> -- talosctl upgrade ...` |
@@ -818,7 +807,7 @@ task talos:apply IP=10.60.0.204
 | HelmRelease shows `Stalled: MissingRollbackTarget` | `cleanupOnFail: true` removed resources from a failed first install, leaving no revision for `rollback` remediation | Seed revision 1: `helm install --no-hooks`; then `flux reconcile helmrelease`; see QA.md *"A HelmRelease is Stalled with MissingRollbackTarget"* |
 | Longhorn namespace stuck `Terminating`; `kubectl patch` returns `Internal error: failed calling webhook` | `ValidatingWebhookConfiguration/longhorn-webhook-validator` (cluster-scoped) survives namespace deletion and blocks all Longhorn CRD mutations | Delete both webhook configs: `kubectl delete validatingwebhookconfiguration longhorn-webhook-validator && kubectl delete mutatingwebhookconfiguration longhorn-webhook-mutator`; then patch finalizers on all 9 Longhorn CRD types; see QA.md *"Longhorn finalizer patches fail..."* |
 | OCIRepository status shows `DENIED: requested access to the resource is denied` | Chart does not publish OCI artifacts; `OCIRepository` used instead of `HelmRepository` | Delete the `OCIRepository`; create a `HelmRepository` with the chart's `https://` URL; update `HelmRelease` to use `chart.spec.sourceRef` (not `chartRef`); see QA.md *"How do I choose between HelmRepository and OCIRepository?"* |
-| ESO / ExternalSecrets failing after cluster recovery; `onepassword-connect` Secret not found | Bootstrap secret `onepassword-connect-secrets` in `external-secrets` was deleted during a cascade; it is NOT managed by ExternalSecrets | `task bootstrap:onepassword-connect-secret` — recreates the 1Password Connect credential secret imperatively; must be run before any ExternalSecret in the cluster can resolve |
+| ESO / ExternalSecrets failing after cluster recovery; `onepassword-connect` Secret not found | Bootstrap secret `onepassword-connect-secrets` in `external-secrets` was deleted during a cascade; it is NOT managed by ExternalSecrets | `just bootstrap resources` — recreates all bootstrap secrets (sops-age, 1password-connect, flux-github-app) imperatively; must be run before any ExternalSecret in the cluster can resolve |
 
 ---
 
@@ -828,10 +817,10 @@ task talos:apply IP=10.60.0.204
 |-------------|-----------|----------|
 | Talos secrets | SOPS + age | `talos/talsecret.sops.yaml` |
 | Flux GitHub App credentials | Kubernetes secret (imperative at bootstrap, then ESO-managed) | `flux-system/flux-github-app` |
-| 1Password Connect bootstrap credential | Kubernetes secret (imperative, via `task bootstrap:onepassword-connect-secret`) | `external-secrets/onepassword-connect-secrets` — **NOT** managed by ExternalSecrets; it is the credential for the secret manager itself; must be recreated manually after any cluster recovery |
+| 1Password Connect bootstrap credential | Kubernetes secret (imperative, via `just bootstrap resources`) | `external-secrets/onepassword-connect-secrets` — **NOT** managed by ExternalSecrets; it is the credential for the secret manager itself; must be recreated manually after any cluster recovery |
 | Application secrets | External Secrets Operator + 1Password Connect | `kubernetes/apps/` |
 
-**Talos secret generation (`talsecret.sops.yaml`)** — generated once via `talhelper gensecret` and encrypted in-flight through `sops` before touching disk. This file must never be regenerated on a running cluster: the CA certificates and bootstrap tokens it contains are baked into every node's machine config. Regenerating invalidates all nodes and requires re-applying configs. The `bootstrap:cluster` task guards against accidental regeneration with `[ -f talsecret.sops.yaml ] || ...`. To intentionally start fresh, `rm talos/talsecret.sops.yaml` explicitly first.
+**Talos secret generation (`talsecret.sops.yaml`)** — generated once via `talhelper gensecret` and encrypted in-flight through `sops` before touching disk. This file must never be regenerated on a running cluster: the CA certificates and bootstrap tokens it contains are baked into every node's machine config. Regenerating invalidates all nodes and requires re-applying configs. The `gensecret` stage guards against accidental regeneration with `[ -f talsecret.sops.yaml ] || ...`. To intentionally start fresh, `rm talos/talsecret.sops.yaml` explicitly first.
 
 See `CLAUDE.md` for full secrets management detail and SOPS rules.
 

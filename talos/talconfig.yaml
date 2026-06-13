@@ -26,7 +26,9 @@ nodes:
     machineSpec:
       secureboot: false
     talosImageURL: "${talosImageURL}"
-    controlPlane: true
+    controlPlane: false
+    patches:
+      - "@./patches/node/machine-volumes-1tb.yaml"
     nodeLabels:
       topology.kubernetes.io/region: &region homelab
       topology.kubernetes.io/zone: homelab-worker-01
@@ -44,8 +46,7 @@ nodes:
           - network: "0.0.0.0/0"
             gateway: "10.60.0.1"
         mtu: 1500
-        vip:
-          ip: "${clusterEndpoint}"
+        # No VIP — worker nodes do not participate in kube-vip ARP election
       # Storage — LACP bond of 2x SFP+ ports (Intel X520-DA2, enp1s0f0 + enp1s0f1)
       # hardwareAddr selectors are used rather than name: because talhelper only generates
       # LinkAliasConfig documents (required for bond member enslavement) for hardwareAddr/driver
@@ -78,6 +79,8 @@ nodes:
       secureboot: false
     talosImageURL: "${talosImageURL}"
     controlPlane: false
+    patches:
+      - "@./patches/node/machine-volumes-1tb.yaml"
     nodeLabels:
       topology.kubernetes.io/region: *region
       topology.kubernetes.io/zone: homelab-worker-02
@@ -122,6 +125,12 @@ nodes:
     ipAddress: "10.60.0.201"
     installDiskSelector:
       model: "AirDisk 128GB SSD"                      # stable selector — device path not reliable with 2 NVMe drives
+    # machine-volumes-1tb patch intentionally omitted: system disk is a 128 GB AirDisk with
+    # insufficient space to cap EPHEMERAL at 120 GiB and still carve out a useful local-hostpath
+    # partition. When the AirDisk is replaced with the planned 1 TB upgrade, add:
+    #   patches:
+    #     - "@./patches/node/machine-volumes-1tb.yaml"
+    # and update installDiskSelector.model to match the new disk.
     machineSpec:
       secureboot: false
     talosImageURL: "${talosImageURL}"
@@ -189,6 +198,7 @@ nodes:
       topology.kubernetes.io/region: *region
       topology.kubernetes.io/zone: homelab-cp-02
     patches:
+      - "@./patches/node/machine-volumes-1tb.yaml"
       # talhelper generates both a VLANConfig doc AND processes inline machine.network vlans[],
       # causing "file exists" when both try to create the VLAN subinterface. Fix: omit vlans:
       # from networkInterfaces and own the full VLAN config here.
@@ -220,6 +230,57 @@ nodes:
         dhcp: false
         addresses:
           - "10.60.0.202/24"
+        routes:
+          - network: "0.0.0.0/0"
+            gateway: "10.60.0.1"
+        mtu: 1500
+        vip:
+          ip: "${clusterEndpoint}"
+
+  - hostname: "talos-cp-03"                       # Lenovo M90q #2 (i5-10500T, 6C/12T, 64GB) — permanent CP; single 1GbE RJ45; VLAN 60 native/untagged (mgmt), VLAN 200 tagged (storage)
+    ipAddress: "10.60.0.203"
+    installDiskSelector:
+      model: "KINGSTON SNV3S1000G"               # !!! Please verify: Kingston NV3 1TB — boot disk; CT2000T500SSD8 (T500 2TB) is Ceph OSD (see 'docs/IntelAmtHardware-m90q-02-2026-06-13-14-35.json' for the actual disk models)
+    machineSpec:
+      secureboot: false
+    talosImageURL: "${talosImageURL}"
+    controlPlane: true
+    nodeLabels:
+      topology.kubernetes.io/region: *region
+      topology.kubernetes.io/zone: homelab-cp-03
+    patches:
+      - "@./patches/node/machine-volumes-1tb.yaml"
+      # talhelper generates both a VLANConfig doc AND processes inline machine.network vlans[],
+      # causing "file exists" when both try to create the VLAN subinterface. Fix: omit vlans:
+      # from networkInterfaces and own the full VLAN config here.
+      # Use interface: eno1 (explicit kernel name) rather than deviceSelector in the patch —
+      # a deviceSelector in the patch creates a second alias for the same NIC, cascading into
+      # duplicate VLAN subinterfaces (7+) that overflow Cilium's BPF VLAN filter limit.
+      # VLAN 60 (management) is native/untagged on the switch port — address lives directly on
+      # the physical interface in networkInterfaces below. Only VLAN 200 (storage) is tagged.
+      # Native/untagged VLAN 100 (10.100.0.0/24) is reserved for Intel AMT on the same NIC.
+      - |-
+        machine:
+          network:
+            interfaces:
+              - interface: eno1
+                vlans:
+                  - vlanId: 200
+                    dhcp: false
+                    addresses:
+                      - "10.200.0.203/24"
+                    mtu: 1500
+    networkInterfaces:
+      # Single 1GbE RJ45 (eno1) — VLAN 60 (management) is native/untagged on the switch port;
+      # address configured directly on the physical interface.
+      # Native/untagged VLAN 100 (10.100.0.0/24) for Intel AMT is handled by the ME firmware.
+      # VLAN 200 (storage) rides tagged — config lives in the inline patch above to avoid the
+      # VLANConfig doc vs inline machine.network dual-controller conflict.
+      - deviceSelector:
+          hardwareAddr: ""      # !!! Please verify:  eno1 — onboard Intel NIC
+        dhcp: false
+        addresses:
+          - "10.60.0.203/24"
         routes:
           - network: "0.0.0.0/0"
             gateway: "10.60.0.1"
