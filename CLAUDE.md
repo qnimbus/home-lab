@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-13 | `five-node-bootstrap-completion` | Fixed cp-01 serial + cp-03 MAC/disk; corrected Rook OSD assignments; bootstrapped 5-node cluster; fixed resources/helmfile pipeline; adopted gotmpl values pattern |
 > | 2026-06-13 | `just-bootstrap-talos-config-improvements` | Migrated bootstrap to `just` pipeline; added `talos/mod.just` day-2 ops; added Talos feature/kubelet/scheduler patches from bykaj comparison |
 > | 2026-06-12 | `ceph-osd-wipe-prometheus-deps` | Fixed Ceph HEALTH_WARN (stale LVM on worker OSDs wiped via privileged pods); fixed kube-prometheus-stack CSI race; hardened bootstrap |
 > | 2026-06-12 | `bootstrap-retest-helm4-fixes` | Reset+rebootstrap to validate CRD pre-bootstrap; fixed 4 task bugs (wait-maintenance jq, task refs, namespace ordering, Helm 4 post-renderer); cloudflared DNSEndpoint race |
@@ -11,7 +12,6 @@
 > | 2026-06-12 | `servicemonitor-bootstrap-deadlock` | Fixed circular Flux bootstrap deadlock: metrics-server missing dependsOn; rook-ceph-operator/kube-prometheus-stack cycle broken via dependsOn restructure |
 > | 2026-06-12 | `vlan-detagging-bootstrap-recovery` | Removed VLAN 60 tags from all nodes; fixed apply-all set -e bug, etcd wrong-IP race, cp-02 duplicate VLAN/Cilium BPF overflow; cluster bootstrapped to Flux-reconciling state |
 > | 2026-06-12 | `cluster-reset-task-overhaul` | Post-rename OSD wipes; rewrote wait-maintenance+wipe-ceph-osds with nmap discovery, disk-fingerprint dedup, helmrelease-sourced OSD list; fixed T500 serial |
-> | 2026-06-11 | `node-reshape-rebootstrap-prep` | Promoted M90q #1 to CP (talos-cp-02), demoted M920q #2 to worker, renamed all nodes to Option B final-state scheme; 4th Ceph OSD host added; wipe-ceph-osds task |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

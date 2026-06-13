@@ -4,6 +4,45 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-13 — `five-node-bootstrap-completion`
+
+### Goal
+Complete the 5-node cluster bootstrap by fixing talconfig.yaml for cp-01/cp-03, correcting Rook OSD assignments, and resolving bootstrap pipeline issues encountered during the first full `just bootstrap` run.
+
+### What we did
+- **Fixed `talos/talconfig.yaml` for cp-01 and cp-03** — added `serial: "50026B7686F8B787"` to cp-01's installDiskSelector to prevent collision with cp-02 (both have Kingston NV3 1TB as boot disk); filled in `hardwareAddr: "88:a4:c2:cc:ce:ac"` and `model: "WD PC SN740 SDDQNQD-256G-1001"` for cp-03 via maintenance-mode `talosctl get LinkStatus` and disk enumeration; confirmed WD SN740 SDDQNQD is 2230 form factor in WLAN slot, proving M90q WLAN slot is PCIe/NVMe-capable.
+- **Fixed `talos/mod.just` default recipe** — `just talos` ran the module's default recipe which called `just --list`, but that spawned a child process that walked up to the root justfile and listed its recipes instead of the module's. Fixed with `--justfile {{ source_file() }}` so the module lists its own recipes.
+- **Corrected Rook-Ceph OSD assignments in helmrelease** — removed stale `talos-worker-02` entry (M920q #2's Kingston NV3 1TB is its boot disk, not an OSD); corrected `talos-worker-01` from `nvme-KINGSTON_SNV3S1000G_50026B7686F8B787` (MS-A2's boot disk serial — wrong) to `nvme-CT2000P310SSD8_252450B1A33B` (M920q #1's actual P310 2TB OSD); added `talos-cp-03` with T500 2TB `254053487747`.
+- **Updated `docs/HARDWARE-ARCHITECTURE.md`** — confirmed cp-03 WD SN740 2230 form factor in WLAN slot; updated MS-A2 drive inventory (AirDisk physically removed, Phison E15T model string `YSR256GHLCA1-E5C-2` confirmed); marked open decisions as done.
+- **Bootstrapped 5-node cluster** — etcd reached 3-member quorum (cp-01 leader, cp-02/cp-03 joined as learners then graduated); all 5 nodes joined Kubernetes; kube-apiserver/scheduler/controller-manager running on all 3 CPs.
+- **Ran remaining bootstrap stages manually** — cluster was past `check-maintenance` so `just bootstrap` would abort; ran `just bootstrap namespaces → resources → crds → apps` individually.
+- **Fixed bootstrap `resources` stage (two separate issues)** — (1) `op inject` placed the multi-line age key inline in YAML; `# created:` comment after `: ` became a YAML comment making the value null. Fixed by updating 1Password to store bare `AGE-SECRET-KEY-1…` at new path `op://homelab/sops/SOPS_PRIVATE_KEY`. (2) `op inject`'s "secret provisioning" API reported the 1Password credentials item as deleted/archived despite `op read` succeeding — a known `op inject` quirk for Document-type items. Rewrote `resources` recipe to use `kubectl create secret --from-literal + op read` directly; bypasses `op inject` entirely and handles multi-line/JSON values correctly.
+- **Moved `helmfile.d/` from `kubernetes/bootstrap/` to `bootstrap/`** — aligns with bykaj's repo structure where all bootstrap tooling lives at repo root under `bootstrap/`; updated values paths from `../../apps/` to `../../kubernetes/apps/`.
+- **Adopted bykaj's `values.yaml.gotmpl` pattern** — created `bootstrap/helmfile.d/templates/values.yaml.gotmpl` that uses `readFile (printf "../../../kubernetes/apps/%s/%s/app/helm/values.yaml" .Release.Namespace .Release.Name)` to derive the values path from release context; updated `01-apps.yaml` so all releases use `./templates/values.yaml.gotmpl` instead of hard-coded per-release paths. Validated with `helmfile template --quiet` — all 6 charts rendered correctly.
+- **Flux fully reconciling** — 30+ Kustomizations `True` at `refs/heads/main@sha1:6ed5461`; `kube-prometheus-stack` in progress (large chart, normal).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | Added serial to cp-01 installDiskSelector; filled cp-03 MAC address and disk model |
+| `talos/mod.just` | Fixed default recipe: `just --list --justfile {{ source_file() }}` |
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` | Corrected OSD nodes: added cp-03 T500 2TB, fixed worker-01 to P310 2TB, removed worker-02 |
+| `docs/HARDWARE-ARCHITECTURE.md` | cp-03 WD SN740 WLAN slot confirmed; AirDisk removed from inventory; Phison model string added; open decisions closed |
+| `bootstrap/mod.just` | `resources` recipe replaced `op inject` template with `kubectl create secret + op read`; fixed helmfile path |
+| `bootstrap/resources.yaml.j2` | Updated sops op:// path to `op://homelab/sops/SOPS_PRIVATE_KEY`; added `\|` block scalars |
+| `bootstrap/helmfile.d/00-crds.yaml` | Moved from `kubernetes/bootstrap/helmfile.d/` |
+| `bootstrap/helmfile.d/01-apps.yaml` | Moved + `../../kubernetes/apps/` paths + all releases use `./templates/values.yaml.gotmpl` |
+| `bootstrap/helmfile.d/templates/values.yaml.gotmpl` | Created: derives `helm/values.yaml` path from `.Release.Namespace/.Release.Name` |
+| `kubernetes/bootstrap/helmfile.d/00-crds.yaml` | Deleted (moved to `bootstrap/helmfile.d/`) |
+| `kubernetes/bootstrap/helmfile.d/01-apps.yaml` | Deleted (moved to `bootstrap/helmfile.d/`) |
+
+### Key decisions
+- **`op read` over `op inject` for bootstrap secrets** — `op inject`'s secret provisioning API reported the 1Password credentials item as deleted/archived while `op read` succeeded (known quirk for Document-type items). `kubectl create secret --from-literal` with `op read` is more robust and handles multi-line/JSON values without YAML injection hazards.
+- **`readFile`-based gotmpl over bykaj's `spec.values`-based gotmpl** — our HelmReleases use `valuesFrom: ConfigMap` rather than inline `spec.values`; reading `helm/values.yaml` directly preserves our existing structure while providing the same "single template for all releases" ergonomic benefit.
+- **Moved helmfile.d to `bootstrap/` not `kubernetes/bootstrap/`** — aligns with bykaj's structure; bootstrap tooling (mod.just, resources.yaml.j2, helmfile.d) lives under `bootstrap/` at repo root, separate from the GitOps-managed `kubernetes/` tree.
+
+---
+
 ## 2026-06-13 — `just-bootstrap-talos-config-improvements`
 
 ### Goal

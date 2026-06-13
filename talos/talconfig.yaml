@@ -124,13 +124,8 @@ nodes:
   - hostname: "talos-cp-01"                         # Minisforum MS-A2 (AMD Ryzen 9 9955HX, 32c, 96GB ECC, X710) — permanent CP anchor
     ipAddress: "10.60.0.201"
     installDiskSelector:
-      model: "AirDisk 128GB SSD"                      # stable selector — device path not reliable with 2 NVMe drives
-    # machine-volumes-1tb patch intentionally omitted: system disk is a 128 GB AirDisk with
-    # insufficient space to cap EPHEMERAL at 120 GiB and still carve out a useful local-hostpath
-    # partition. When the AirDisk is replaced with the planned 1 TB upgrade, add:
-    #   patches:
-    #     - "@./patches/node/machine-volumes-1tb.yaml"
-    # and update installDiskSelector.model to match the new disk.
+      model: "KINGSTON SNV3S1000G"                    # NV3 1TB — boot+etcd; serial pins this to MS-A2 (cp-02 M90q also has NV3 1TB)
+      serial: "50026B7686F8B787"                      # required: NV3 1TB S/N unique to MS-A2; both cp-01 and cp-02 use KINGSTON SNV3S1000G
     machineSpec:
       secureboot: false
     talosImageURL: "${talosImageURL}"
@@ -138,22 +133,14 @@ nodes:
     nodeLabels:
       topology.kubernetes.io/region: *region
       topology.kubernetes.io/zone: homelab-cp-01
+    patches:
+      - "@./patches/node/machine-volumes-1tb.yaml"
     networkInterfaces:
-      # Management — LACP bond of 2x RJ45 NICs (enp3s0: RTL8125/r8169, enp4s0: Intel I225/igc)
+      # Management — single Intel I225/I226 RJ45 (enp4s0, driver: igc)
       # VLAN 60 (management) is native/untagged on the switch port; address configured directly
-      # on bond0. No Intel AMT on MS-A2.
-      # See cp-01 comment above re: hardwareAddr selector rationale.
-      - interface: bond0
-        bond:
-          mode: 802.3ad
-          lacpRate: fast
-          miimon: 100
-          updelay: 200
-          downdelay: 200
-          xmitHashPolicy: layer3+4
-          deviceSelectors:
-            - hardwareAddr: "38:05:25:33:c9:73"   # enp3s0 — Realtek RTL8125 (r8169)
-            - hardwareAddr: "38:05:25:33:c9:74"   # enp4s0 — Intel I225/I226 (igc)
+      # on the physical interface. No Intel AMT on MS-A2.
+      - deviceSelector:
+          hardwareAddr: "38:05:25:33:c9:74"      # enp4s0 — Intel I225/I226 (igc)
         dhcp: false
         addresses:
           - "10.60.0.201/24"
@@ -240,7 +227,7 @@ nodes:
   - hostname: "talos-cp-03"                       # Lenovo M90q #2 (i5-10500T, 6C/12T, 64GB) — permanent CP; single 1GbE RJ45; VLAN 60 native/untagged (mgmt), VLAN 200 tagged (storage)
     ipAddress: "10.60.0.203"
     installDiskSelector:
-      model: "KINGSTON SNV3S1000G"               # !!! Please verify: Kingston NV3 1TB — boot disk; CT2000T500SSD8 (T500 2TB) is Ceph OSD (see 'docs/IntelAmtHardware-m90q-02-2026-06-13-14-35.json' for the actual disk models)
+      model: "WD PC SN740 SDDQNQD-256G-1001"    # WD SN740 256GB (2230, WLAN slot) — boot disk; CT2000T500SSD8 (T500 2TB) is Ceph OSD
     machineSpec:
       secureboot: false
     talosImageURL: "${talosImageURL}"
@@ -277,7 +264,7 @@ nodes:
       # VLAN 200 (storage) rides tagged — config lives in the inline patch above to avoid the
       # VLANConfig doc vs inline machine.network dual-controller conflict.
       - deviceSelector:
-          hardwareAddr: ""      # !!! Please verify:  eno1 — onboard Intel NIC
+          hardwareAddr: "88:a4:c2:cc:ce:ac"      # eno1 — onboard Intel NIC
         dhcp: false
         addresses:
           - "10.60.0.203/24"

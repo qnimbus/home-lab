@@ -1,13 +1,16 @@
 # Proposed Hardware Architecture — 5-Node Expansion
 
-> **Status:** PROPOSED (2026-06-06). Not yet implemented. This document captures the target
-> hardware distribution, node-role assignment, and Rook-Ceph topology for the planned expansion
-> from the current 3-node cluster to **5 nodes**. It supersedes the abandoned Longhorn storage-VLAN
-> effort (see [history/longhorn-storage-network.md](history/longhorn-storage-network.md)) — the storage tier is
+> **Status:** HARDWARE COMPLETE (updated 2026-06-13). All 5 nodes have drives and RAM installed.
+> MS-A2 system disk migrated to Kingston NV3 1TB (AirDisk retired). All 5 nodes in maintenance
+> mode — bootstrap in progress. All 4 Ceph OSD drives physically installed. This document reflects
+> confirmed hardware state. It supersedes the abandoned Longhorn storage-VLAN effort
+> (see [history/longhorn-storage-network.md](history/longhorn-storage-network.md)) — the storage tier is
 > **Rook-Ceph** on the existing `10.200.0.0/24` bond fabric.
 >
-> Two physical items must be **verified on real hardware** before this is committed (flagged inline
-> as ⚠️ **VERIFY**): MS-A2 slot count, and whether the Lenovo "WLAN" M.2 slots carry PCIe (NVMe-capable).
+> ⚠️ **VERIFY** items from the original proposal — current status:
+> - **MS-A2 slot count**: ✅ **CONFIRMED 3×** — all three slots now populated (T500 2TB + NV3 1TB + Phison E15T 256GB).
+> - **M920q WLAN/2230 slot PCIe capability**: ✅ **CONFIRMED** — both M920q nodes enumerate 2 NVMe drives via AMT; since each M920q has only 1 native M.2 slot, the 2nd drive proves the WLAN slot carries PCIe/NVMe.
+> - **M90q WLAN/2230 slot PCIe capability**: ✅ **CONFIRMED** — M90q #2 enumerates WD PC SN740 SDDQNQD-256G-1001 (a 2230-form-factor drive) as nvme0n1 in addition to the T500 2TB. Since M90q has only 2 native full-size slots and the WD SN740 is a 2230 drive, it must be in the WLAN/2230 slot — proving the slot carries PCIe/NVMe on M90q.
 
 ---
 
@@ -26,18 +29,18 @@ Five bare-metal nodes across three capability tiers. Strength order: **MS-A2 ≫
 | Node | Tier | CPU | RAM | 10 GbE | Tier rationale |
 |------|------|-----|-----|--------|----------------|
 | **MS-A2** (Minisforum) | Premium | Ryzen 9 9955HX, 16C/32T | 96 GB **ECC** DDR5 (fixed) |  X710 dual SFP+ | Fastest CPU, ECC, most M.2 slots → control plane anchor + premium workloads + OSD |
-| **M90q #1** (Lenovo) | Workhorse | i5-10500T, 6C/12T | 64 GB | X520 dual SFP+ | HT + 2 fast M.2 slots → storage + general compute |
-| **M90q #2** (Lenovo) | Workhorse | i5-10500T, 6C/12T | 64 GB | X520 dual SFP+ | As above |
-| **M920q #1** (Lenovo) | Light | i5-8500T, 6C/6T | 64 GB | X520 dual SFP+ | Oldest, no HT, single fast slot → OSD host (no etcd) |
-| **M920q #2** (Lenovo) | Light | i5-8500T, 6C/6T | stock (16–32 GB) | X520 dual SFP+ | As above → control plane + light worker |
+| **M90q #1** (Lenovo) | Workhorse | i5-10500T, 6C/12T | 64 GB | X520 dual SFP+ | HT + 2 native M.2 slots → storage + general compute |
+| **M90q #2** (Lenovo) | Workhorse | i5-10500T, 6C/12T | 64 GB *(drives installed; not yet provisioned)* | X520 dual SFP+ | As above |
+| **M920q #1** (Lenovo) | Light | i5-8500T, 6C/6T | **32 GB** (2×16 GB SODIMMs) | X520 dual SFP+ | Oldest, no HT, single fast slot → OSD host (no etcd) |
+| **M920q #2** (Lenovo) | Light | **i5-8600T**, 6C/6T | **64 GB** | X520 dual SFP+ | As above → control plane + light worker |
 
-**RAM distribution:** the interchangeable pool is **6× 32 GB Kingston Fury Impact DDR4-3200**
-SO-DIMMs. These populate **M90q #1, M90q #2, and M920q #1 at 64 GB** (2×32 each = all 6 modules).
-**M920q #2** runs whatever stock RAM arrives (16–32 GB) — adequate for a light control-plane node
-(etcd + apiserver want ~2–4 GB). MS-A2's 96 GB ECC is fixed and never reassigned.
+**RAM distribution (confirmed 2026-06-13):** the **6× 32 GB Kingston Fury Impact DDR4-3200**
+SO-DIMMs (KF3200C20S4/32GX) are distributed across **M90q #1, M90q #2, and M920q #2 at 64 GB**
+(2×32 each = all 6 modules). **M920q #1** runs 2×16 GB SODIMMs (32 GB total) — adequate for its
+OSD + light worker role (no etcd). MS-A2's 96 GB ECC is fixed and never reassigned.
 
-> This allocation **de-risks the unknown M90q stock RAM**: the Fury modules are placed deterministically
-> on the nodes that need the headroom, so the build does not depend on what the M90q ship with.
+> The Fury modules are confirmed in M90q #1 and M920q #2 via Intel AMT. M90q #2 received the
+> 2×32 GB modules that were initially shipped in M920q #1 — M920q #1 now runs 2×16 GB.
 
 ---
 
@@ -46,11 +49,11 @@ SO-DIMMs. These populate **M90q #1, M90q #2, and M920q #1 at 64 GB** (2×32 each
 This architecture is shaped less by CPU/RAM than by **how many full-speed NVMe slots each chassis
 exposes**. The slot inventory:
 
-| Node | Full-speed slots (2280, x4) | Boot-only slot | OSD-grade homes |
-|------|------------------------------|----------------|-----------------|
+| Node | Full-speed slots (2280, x4) | Optional extra slot | OSD-grade homes |
+|------|------------------------------|---------------------|-----------------|
 | **MS-A2** | **3×** 2280 PCIe **4.0** x4 (slots 2/3 also take **22110** PLP) | — | 3 |
-| **M90q #1 / #2** | **2×** 2280 PCIe **3.0** x4 | 2230 WLAN slot (PCIe x1, see note) | 2 each |
-| **M920q #1 / #2** | **1×** 2280 PCIe x4 | 1× slow 2230/short (boot-class) | 1 each |
+| **M90q #1 / #2** | **2×** 2280 PCIe **3.0** x4 *(native, bottom of mainboard)* | 3rd slot: repurposed M.2 PCIe **x1** WiFi module slot *(WLAN trick — unconfirmed PCIe on M90q, see note)* | 2 each *(3 with trick)* |
+| **M920q #1 / #2** | **1×** 2280 PCIe x4 *(native, bottom of mainboard)* | 2nd slot: repurposed M.2 PCIe **x1** WiFi module slot *(✅ confirmed PCIe/NVMe — both M920q nodes run 2 NVMe drives)* | 1 each *(2 with trick)* |
 
 Design rules derived from the slot budget:
 
@@ -61,28 +64,27 @@ Design rules derived from the slot budget:
 2. **MS-A2's three slots dissolve the OSD-vs-local-scratch trade-off** — it runs boot+etcd, an OSD,
    **and** a local NVMe scratch on three separate devices.
 3. **A Talos boot disk does not need bandwidth** (read-mostly at startup, never on the etcd/Ceph hot
-   path), so it is the right tenant for any slow/short slot. The M920q's second slot already runs a
-   2280 at reduced lanes on the live cluster (cp-01/cp-02 each show two `nvmeXn1`), which is exactly
-   how boot is parked there.
+   path), so it is the right tenant for any slow/short slot. The M920q's WLAN slot is confirmed
+   PCIe-capable on the live cluster (worker-01/worker-02 each enumerate two `nvmeXn1`), which is
+   exactly how their boot SSDs are parked there.
 
-> ⚠️ **VERIFY — MS-A2 slot count:** assumed 3× M.2. Confirm on the physical unit.
+> ✅ **CONFIRMED — MS-A2 slot count:** 3× M.2 confirmed — all three slots now populated (T500 2TB + Kingston NV3 1TB + Phison E15T 256GB).
 >
-> ⚠️ **VERIFY — Lenovo WLAN/2230 slots are PCIe (Key-M), not Key-E/CNVio:** many Tiny WLAN slots carry
-> only Wi-Fi/BT signalling and **will not enumerate an NVMe SSD**. The analogous M920q slot works on
-> the live cluster, so the M90q slot probably carries PCIe too — but confirm it appears as `nvmeXn1`
-> before relying on it. Repurposing it also disables onboard Wi-Fi/BT (irrelevant for wired nodes).
+> ✅ **CONFIRMED — M920q WLAN/2230 slots are PCIe/NVMe-capable:** both M920q #1 and M920q #2 enumerate 2 NVMe drives via Intel AMT. Since each M920q has only 1 native M.2 slot, the second drive in each node proves the WLAN slot carries PCIe and successfully hosts NVMe. Repurposing disables onboard Wi-Fi/BT (irrelevant for wired nodes).
+>
+> ✅ **CONFIRMED — M90q WLAN/2230 slot PCIe capability:** M90q #2 has a WD PC SN740 SDDQNQD-256G-1001 (2230 form factor) in its WLAN/M.2 PCIe x1 slot, enumerated as `nvme0n1` alongside the native-slot T500 2TB. The WLAN slot is confirmed PCIe/NVMe-capable on M90q — the growth path (extra OSD per M90q via WLAN slot) is viable.
 
 ---
 
 ## Final Node Roles & Disk Placement
 
-| Node | K8s roles | etcd | Slot 1 (OSD/data) | Slot 2 | Slot 3 |
-|------|-----------|:----:|-------------------|--------|--------|
-| **MS-A2** | CP + OSD + **premium worker** | ✅ | **Crucial T500 2 TB** — OSD | **Goodram P44N 1 TB** — boot + etcd | **1 TB NVMe** — local scratch (AI / build / Plex) |
-| **M90q #1** | CP + OSD + worker | ✅ | **Crucial T500 2 TB** — OSD | **Kingston NV3 1 TB** — boot + etcd | *(boot → 2230 if trick applied; see Growth Path)* |
-| **M90q #2** | OSD + worker | — | **Crucial T500 2 TB** — OSD | NV3 / Phison — boot | *(reserved OSD bay if trick applied)* |
-| **M920q #1** | OSD + light worker | — | **Crucial P310 2 TB** — OSD #4 *(its one fast slot)* | 1 TB 2280 — boot *(slow slot)* | — |
-| **M920q #2** | CP + light worker | ✅ | **1 TB NVMe** — boot + etcd *(its one fast slot)* | slow slot — spare/scratch | — |
+| Node | K8s roles | etcd | Slot 1 (native, fast) | Slot 2 (native/WLAN) | Slot 3 (WLAN trick) |
+|------|-----------|:----:|-----------------------|----------------------|---------------------|
+| **MS-A2** | CP + OSD + **premium worker** | ✅ | **Crucial T500 2 TB** (CT2000T500SSD8) — OSD ✅ | **Kingston NV3 1 TB** (SNV3S1000G) — boot + etcd ✅ | **Phison E15T 256 GB** (YSR256GHLCA1-E5C-2) — local scratch ✅ |
+| **M90q #1** | CP + OSD + worker | ✅ | **Crucial T500 2 TB** (CT2000T500SSD8) — OSD ✅ | **Kingston NV3 1 TB** (SNV3S1000G) — boot + etcd ✅ | *(vacant — now confirmed viable via M90q #2; see Growth Path)* |
+| **M90q #2** | CP + OSD + worker | ✅ | **Crucial T500 2 TB** — OSD ✅ | **WD SN740 256 GB** (SDDQNQD-256G-1001) — boot ✅ *(WLAN slot, 2230 form factor)* | *(vacant — reserved OSD bay)* |
+| **M920q #1** | OSD + light worker | — | **Crucial P310 2 TB** — OSD #4 ✅ *(installed 2026-06-13)* | **Goodram P44N 1 TB** — boot (WLAN slot) ✅ | — |
+| **M920q #2** | CP + light worker | ✅ | **Kingston NV3 1 TB** (SNV3S1000G) — boot + etcd ✅ | **Crucial P310 1 TB** (CT1000P310SSD2) — spare/scratch ✅ | — |
 
 **Control plane / etcd: MS-A2 + M90q #1 + M920q #2** (3 members — kept at 3, not 5, for etcd write
 latency). Placement rationale:
@@ -109,7 +111,7 @@ latency). Placement rationale:
 | Replication | `size=3`, `min_size=2` | Standard safe replicated config; avoid `size=2/min_size=1` (single-failure data loss) |
 | Failure domain | `host` | One OSD per host → clean host-level domain |
 | Raw / usable | 8 TB raw → **~2.67 TB usable** (~2.2 TB at 85 % nearfull) | 8 TB ÷ 3 replicas |
-| Device classing | P310 2 TB stays in the main pool, with **`ceph osd primary-affinity <p310-osd> 0`** | Keeps the one DRAM-less OSD holding replicas (for the 4th failure domain) but off the read hot path |
+| Device classing | P310 2 TB stays in the main pool, with **`ceph osd primary-affinity <p310-osd> 0`** | P310 holds replicas and takes write load like any OSD (~1/4 of PGs), but is never elected primary → never serves client reads under normal operation |
 
 ### Why these specific drives
 
@@ -121,6 +123,24 @@ latency). Placement rationale:
   and faster wear. The **one** exception is the P310 2 TB as the 4th OSD — accepted purely to buy the
   4th failure domain, and neutralised on reads via `primary-affinity 0`.
 
+### P310 2 TB role during normal vs. degraded operation
+
+`primary-affinity 0` only suppresses the P310 from being elected **primary OSD** (the OSD that
+serves client reads). It does **not** remove it from the write path. CRUSH still assigns the P310
+as a non-primary replica for roughly 1 in 4 PGs, so every write to those PGs is committed to the
+P310 as well as two T500s. The P310 is not a standby — it always participates in writes.
+
+The practical consequence: the P310's DRAM-less HMB design can be the slow leg on writes for those
+PGs. This is a constant background cost, not a failure-only concern. In practice BlueStore's
+sequential-write pattern is friendly to HMB drives, so the impact is modest, but it is always
+present.
+
+In a degraded state (one T500 host down), the P310 host becomes the recovery target for the
+orphaned replicas. Once recovery completes, `primary-affinity 0` ensures the P310 still does not
+serve client reads even for those freshly re-replicated PGs. If the P310 host itself becomes the
+*only* surviving replica holder for a PG (two hosts down simultaneously), Ceph will override
+`primary-affinity` and elect it as primary — this is the data-loss-risk scenario to avoid.
+
 ### Self-heal behaviour & residual risk
 
 With `size=3` over **4** hosts, losing one host leaves a legal home for the orphaned third replica on
@@ -128,9 +148,8 @@ the surviving 4th host → Ceph **self-heals back to full redundancy** while the
 down. (A 3-host `size=3` cluster cannot do this — it sits degraded until the host returns, and a disk
 failure in that window means data loss. The 4th host is what removes that risk.)
 
-**Residual risk:** the normal homelab one — do not run **two** hosts down simultaneously, and watch for
-`HEALTH_WARN`. Capacity is gated by the smallest host and CRUSH weighting; keep pool utilisation
-conservative.
+**Residual risk:** do not run **two** hosts down simultaneously, and watch for `HEALTH_WARN`.
+Capacity is gated by the smallest host and CRUSH weighting; keep pool utilisation conservative.
 
 ---
 
@@ -191,27 +210,25 @@ Reuses the existing `10.200.0.0/24` storage fabric and policy (see [CLUSTER.md](
 
 ## Open Decisions / Action Items
 
-1. ⚠️ **VERIFY** MS-A2 slot count (assumed 3×) and the Lenovo 2230 slots' PCIe/NVMe capability.
-2. Confirm the cheap boot drives' form factor against the target slots (2280 at reduced lanes is fine).
-3. **Future capacity:** a small **22110 PLP** SSD in an MS-A2 slot 2/3 would be an ideal upgraded etcd
-   home (safe, low-latency fsync) and/or Ceph `block.db`/WAL device — earmark as the one high-value
-   purchase.
-4. **Future capacity-first scaling:** buy a 4th/5th T500 2 TB and drop into the banked M90q OSD bays
-   (raises usable capacity without adding chassis).
-5. Next step when approved: generate the GitOps artifacts — Rook `CephCluster` (4 OSD hosts,
-   `size=3/min_size=2`, host domain, P310 `primary-affinity 0`, `storage` `nodeAffinity`) + Talos
-   `talconfig` `installDiskSelector` and node-label/role patches.
+1. ✅ **DONE** — MS-A2 slot count confirmed 3×; all slots now populated.
+2. ✅ **DONE** — M920q WLAN slot confirmed PCIe/NVMe (both nodes); M920q #1 P310 2TB OSD installed 2026-06-13.
+3. ✅ **DONE** — MS-A2 system disk migrated to Kingston NV3 1TB; AirDisk removed. `machine-volumes-1tb` patch added to cp-01 in talconfig.yaml.
+4. **Provision M90q #2** — talconfig.yaml complete (WD SN740 boot disk, T500 OSD, MAC confirmed); apply Talos config and join cluster.
+5. **Add M920q #1 P310 2TB as Ceph OSD** — drive is physically installed; Rook-Ceph operator needs to discover it and add it as OSD #4 to complete the 4-host failure-domain topology.
+6. ✅ **DONE** — M90q WLAN slot confirmed PCIe/NVMe via M90q #2 WD SN740 2230 in WLAN slot.
+7. **Future capacity-first scaling:** buy additional T500 2TB drives and drop into banked M90q OSD bays (WLAN slot confirmed viable).
 
 ---
 
 ## Drive Inventory Reference
 
-| Drive | Class | Role in this design |
-|-------|-------|---------------------|
-| 3× Crucial T500 2 TB (DRAM, TLC) | Primary OSD | Ceph OSDs (MS-A2, M90q #1, M90q #2) |
-| Crucial P310 2 TB (DRAM-less) | Secondary OSD | Ceph OSD #4 (M920q #1), `primary-affinity 0` |
-| Goodram IRDM Pro P44N 1 TB (DRAM-less, Gen4) | Boot/etcd | MS-A2 boot + etcd |
-| 2–3× Kingston NV3 1 TB (DRAM-less/HMB) | Boot/etcd/scratch | M90q boot+etcd, M920q #2 boot+etcd, MS-A2 local scratch |
-| Crucial P310 1 TB (DRAM-less) | Boot/etcd | spare boot/etcd |
-| Phison E15T 256 GB (OEM, boot-class) | Boot | non-etcd boot (M90q #2) |
-| AirDisk 128 GB (budget boot-class) | Boot | non-etcd boot / 2230 trick |
+| Drive | Class | Current location / role |
+|-------|-------|-------------------------|
+| 3× Crucial T500 2 TB (DRAM, TLC) | Primary OSD | ✅ MS-A2 OSD (nvme0n1, CT2000T500SSD8); ✅ M90q #1 OSD (S/N 25405348D601); ✅ M90q #2 OSD |
+| Crucial P310 2 TB (DRAM-less) | Secondary OSD | ✅ **M920q #1** fast slot — OSD #4 (installed 2026-06-13), `primary-affinity 0` |
+| Goodram IRDM Pro P44N 1 TB (DRAM-less, Gen4) | Boot | ✅ **M920q #1** WLAN slot — boot SSD |
+| Kingston NV3 1 TB (DRAM-less/HMB) | Boot/etcd | ✅ **MS-A2** slot 2 — boot + etcd (S/N 50026B7686F8B787); ✅ M90q #1 slot 2 — boot + etcd (S/N 50026B7383B9B35C); ✅ M920q #2 slot 1 — boot + etcd (S/N 50026B7383B9D0CC) |
+| Crucial P310 1 TB (DRAM-less) | Boot/scratch | ✅ **M920q #2** WLAN slot — spare/scratch (CT1000P310SSD2, S/N 25174FD70E4D) |
+| WD PC SN740 256 GB (2230, PCIe 4.0) | Boot | ✅ **M90q #2** WLAN slot — boot (SDDQNQD-256G-1001, S/N 22176G805106) |
+| Phison E15T OEM 256 GB (PCIe 4.0, HMB) | Scratch | ✅ **MS-A2** slot 3 — local scratch (YSR256GHLCA1-E5C-2, S/N 511240117089012580) |
+| AirDisk 128 GB (MAXIO MAP1202, budget) | — | ❌ **Removed** from MS-A2 — physically replaced by NV3 1TB; retired or spare |

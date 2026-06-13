@@ -87,10 +87,28 @@ namespaces:
 
 [doc('Apply bootstrap secrets from 1Password (sops-age, 1password-connect, flux-github-app)')]
 resources:
+    #!/usr/bin/env bash
+    set -euo pipefail
     just log info "Running stage..." "stage" "resources"
-    just template "{{ bootstrap_dir }}/resources.yaml.j2" \
-        | kubectl apply --server-side -f - \
-        || { just log fatal "Failed to apply bootstrap secrets" "stage" "resources"; exit 1; }
+    # op inject uses a different "secret provisioning" API that can fail for Document
+    # items; op read is more permissive. Use kubectl create secret + op read so that
+    # multi-line values (PEM keys, JSON blobs) are base64-encoded by kubectl directly
+    # without going through YAML serialisation.
+    kubectl create secret generic sops-age \
+        --namespace flux-system \
+        --from-literal="age.agekey=$(op read 'op://homelab/sops/SOPS_PRIVATE_KEY')" \
+        --dry-run=client -o yaml | kubectl apply --server-side -f -
+    kubectl create secret generic onepassword-connect-secrets \
+        --namespace external-secrets \
+        "--from-literal=1password-credentials.json=$(op read 'op://homelab/HomeLab Credentials File/1password-credentials.json')" \
+        "--from-literal=token=$(op read 'op://homelab/HomeLab Access Token/credential')" \
+        --dry-run=client -o yaml | kubectl apply --server-side -f -
+    kubectl create secret generic flux-github-app \
+        --namespace flux-system \
+        "--from-literal=githubAppID=$(op read 'op://homelab/GitHub App/githubAppID')" \
+        "--from-literal=githubAppInstallationID=$(op read 'op://homelab/GitHub App/githubAppInstallationID')" \
+        "--from-literal=githubAppPrivateKey=$(op read 'op://homelab/GitHub App/githubAppPrivateKey')" \
+        --dry-run=client -o yaml | kubectl apply --server-side -f -
 
 [doc('Pre-install CRDs from Flux-managed charts so Kustomization dry-runs pass immediately')]
 crds:
