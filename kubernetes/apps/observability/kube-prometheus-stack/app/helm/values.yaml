@@ -42,11 +42,11 @@ grafana:
       operator: Exists
       effect: NoSchedule
   persistence:
-    enabled: true
-    # TEMP (phase-1): switch back to ceph-block once rook-ceph-cluster is HEALTH_OK.
-    storageClassName: openebs-hostpath
-    accessModes: [ReadWriteOnce]
-    size: 5Gi
+    # TEMP (phase-1): emptyDir — grafana.db is ephemeral until phase-2 restores
+    # ceph-block storage. Switch back in phase-2:
+    #   enabled: true, storageClassName: ceph-block, accessModes: [ReadWriteOnce], size: 5Gi
+    # Delete stale PVC kube-prometheus-stack-grafana before re-enabling.
+    enabled: false
   sidecar:
     dashboards:
       enabled: true
