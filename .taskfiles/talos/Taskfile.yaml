@@ -420,7 +420,7 @@ tasks:
             WIPED=$((WIPED + 1))
             WIPED_BYIDS="${WIPED_BYIDS}|${OSD_BYID}"
           else
-            echo "  WARNING: ${IP} wipe blocked (LVM dm-* still active) — Rook OSD prepare will zap on first deploy"
+            echo "  WARNING: ${IP} wipe blocked (LVM dm-* still active) — run 'task talos:wipe-ceph-osds-live' after bootstrap to finish cleanup"
             WIPED_BYIDS="${WIPED_BYIDS}|${OSD_BYID}"
           fi
         done
@@ -431,6 +431,97 @@ tasks:
       - which jq
       - which yq
       - test -f {{.ROOT_DIR}}/kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml
+
+  wipe-ceph-osds-live:
+    desc: Wipe stale Ceph LVM via privileged pods on running OSD nodes (handles cases where maintenance-mode wipe was blocked by active dm-*)
+    silent: true
+    vars:
+      ROOK_HELMRELEASE: '{{.ROOT_DIR}}/kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml'
+      WIPE_SCRIPT: '{{.ROOT_DIR}}/scripts/wipe-osd-lvm.sh'
+    cmds:
+      - |
+        NODE_COUNT=$(yq '.spec.values.cephClusterSpec.storage.nodes | length' "{{.ROOK_HELMRELEASE}}")
+        echo "Applying LVM wipe pods to ${NODE_COUNT} OSD node(s)..."
+
+        # Read the wipe script once; jq --arg handles all newline/quote escaping when
+        # embedding it into the JSON pod manifest, so no heredoc or inline quoting needed.
+        SCRIPT=$(cat "{{.WIPE_SCRIPT}}")
+
+        for i in $(seq 0 $((NODE_COUNT - 1))); do
+          NODE=$(yq ".spec.values.cephClusterSpec.storage.nodes[${i}].name" "{{.ROOK_HELMRELEASE}}")
+          DISK_BYID=$(yq ".spec.values.cephClusterSpec.storage.nodes[${i}].devices[0].name" "{{.ROOK_HELMRELEASE}}")
+          SHORT=$(echo "${NODE}" | sed 's/talos-//')
+          echo "  ${NODE}: ${DISK_BYID}"
+
+          # jq builds valid JSON from the shell variables (handles any embedded quotes/newlines).
+          # DISK_BYID is passed as a pod env var so the script doesn't need to be re-generated per node.
+          jq -n \
+            --arg name      "wipe-osd-lvm-${SHORT}" \
+            --arg node      "${NODE}" \
+            --arg image     "quay.io/ceph/ceph:v19.2.3" \
+            --arg script    "${SCRIPT}" \
+            --arg disk_byid "${DISK_BYID}" \
+            '{
+              apiVersion: "v1", kind: "Pod",
+              metadata: {name: $name, namespace: "rook-ceph", labels: {app: "osd-lvm-wiper"}},
+              spec: {
+                restartPolicy: "Never", nodeName: $node, hostPID: true,
+                tolerations: [{operator: "Exists"}],
+                containers: [{
+                  name: "wipe", image: $image,
+                  command: ["bash", "-c", $script],
+                  env: [{name: "DISK_BYID", value: $disk_byid}],
+                  securityContext: {privileged: true},
+                  volumeMounts: [
+                    {name: "dev", mountPath: "/dev"},
+                    {name: "run", mountPath: "/run"}
+                  ]
+                }],
+                volumes: [
+                  {name: "dev", hostPath: {path: "/dev"}},
+                  {name: "run", hostPath: {path: "/run"}}
+                ]
+              }
+            }' | kubectl apply -f -
+        done
+
+        echo "Waiting for wipe pods to complete (up to 3m)..."
+        DEADLINE=$(($(date +%s) + 180))
+        while true; do
+          ACTIVE=$(kubectl get pods -n rook-ceph -l app=osd-lvm-wiper \
+            --no-headers 2>/dev/null \
+            | grep -cE 'Running|Pending|ContainerCreating' || true)
+          [ "${ACTIVE}" = "0" ] && break
+          [ "$(date +%s)" -gt "${DEADLINE}" ] && { echo "WARNING: timeout waiting for wipe pods"; break; }
+          sleep 5
+        done
+
+        echo "Results:"
+        FAILED=0
+        for i in $(seq 0 $((NODE_COUNT - 1))); do
+          NODE=$(yq ".spec.values.cephClusterSpec.storage.nodes[${i}].name" "{{.ROOK_HELMRELEASE}}")
+          SHORT=$(echo "${NODE}" | sed 's/talos-//')
+          PHASE=$(kubectl get pod -n rook-ceph "wipe-osd-lvm-${SHORT}" \
+            -o jsonpath='{.status.phase}' 2>/dev/null || echo "not-found")
+          if [ "${PHASE}" = "Succeeded" ]; then
+            echo "  ✓ ${NODE}"
+          else
+            echo "  ✗ ${NODE} (${PHASE})"
+            kubectl logs -n rook-ceph "wipe-osd-lvm-${SHORT}" 2>/dev/null | tail -5 || true
+            FAILED=$((FAILED + 1))
+          fi
+        done
+
+        kubectl delete pod -n rook-ceph -l app=osd-lvm-wiper --ignore-not-found
+        [ "${FAILED}" -gt 0 ] && \
+          echo "WARNING: ${FAILED} node(s) failed LVM cleanup — OSDs may not provision on those nodes" >&2
+        echo "Done: live OSD LVM wipe complete."
+    preconditions:
+      - which kubectl
+      - which jq
+      - which yq
+      - test -f {{.ROOT_DIR}}/kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml
+      - test -f {{.ROOT_DIR}}/scripts/wipe-osd-lvm.sh
 
   reset:
     desc: Reset all nodes back to maintenance mode (DESTRUCTIVE — wipes Ceph OSD partitions after nodes come up in maintenance)

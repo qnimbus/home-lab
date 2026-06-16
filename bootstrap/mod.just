@@ -6,7 +6,7 @@ kubernetes_dir := justfile_dir() + '/kubernetes'
 talos_dir := justfile_dir() + '/talos'
 
 [private]
-default: gensecret genconfig check-maintenance talos-install kubeconfig wait namespaces resources crds apps
+default: gensecret genconfig check-maintenance talos-install kubeconfig wait namespaces resources live-osd-cleanup crds apps
 
 [doc('Generate Talos cluster secrets (no-op if talsecret.sops.yaml already exists)')]
 gensecret:
@@ -109,6 +109,11 @@ resources:
         "--from-literal=githubAppInstallationID=$(op read 'op://homelab/GitHub App/githubAppInstallationID')" \
         "--from-literal=githubAppPrivateKey=$(op read 'op://homelab/GitHub App/githubAppPrivateKey')" \
         --dry-run=client -o yaml | kubectl apply --server-side -f -
+
+[doc('Wipe any remaining stale Ceph LVM that the maintenance-mode wipe could not reach (dm-* blocked). Safe no-op on clean disks.')]
+live-osd-cleanup:
+    just log info "Running stage..." "stage" "live-osd-cleanup"
+    task talos:wipe-ceph-osds-live || just log warn "Live OSD LVM wipe failed or partially failed — check pod logs if OSDs do not provision" "stage" "live-osd-cleanup"
 
 [doc('Pre-install CRDs from Flux-managed charts so Kustomization dry-runs pass immediately')]
 crds:
