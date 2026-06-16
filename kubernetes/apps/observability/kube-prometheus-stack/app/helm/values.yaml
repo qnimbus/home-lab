@@ -18,8 +18,10 @@ alertmanager:
     storage:
       volumeClaimTemplate:
         spec:
-          # Rook-Ceph (ceph-block) provides replicated storage (survives a node loss); openebs-hostpath would not.
-          storageClassName: ceph-block
+          # TEMP (phase-1): openebs-hostpath until rook-ceph is deployed.
+          # Switch back to ceph-block once rook-ceph-cluster is HEALTH_OK — ceph-block
+          # is replicated (survives a node loss); openebs-hostpath is node-local only.
+          storageClassName: openebs-hostpath
           accessModes: [ReadWriteOnce]
           resources:
             requests:
@@ -35,8 +37,8 @@ grafana:
     existingSecret: grafana-admin-secret
     userKey: admin-user
     passwordKey: admin-password
-  # Recreate required: the ceph-block PVC is RWO and cannot be simultaneously attached to two pods
-  # during a rolling update. Recreate terminates the old pod before the new one starts.
+  # Recreate required: the PVC is RWO. With openebs-hostpath (node-local) this is especially
+  # critical — the pod must terminate before the new one starts so the PVC stays on the same node.
   deploymentStrategy:
     type: Recreate
   tolerations:
@@ -45,7 +47,8 @@ grafana:
       effect: NoSchedule
   persistence:
     enabled: true
-    storageClassName: ceph-block
+    # TEMP (phase-1): switch back to ceph-block once rook-ceph-cluster is HEALTH_OK.
+    storageClassName: openebs-hostpath
     accessModes: [ReadWriteOnce]
     size: 5Gi
   sidecar:
@@ -112,8 +115,10 @@ prometheus:
     storageSpec:
       volumeClaimTemplate:
         spec:
-          # Rook-Ceph (ceph-block) provides replicated storage (survives a node loss); openebs-hostpath would not.
-          storageClassName: ceph-block
+          # TEMP (phase-1): openebs-hostpath until rook-ceph is deployed.
+          # Switch back to ceph-block once rook-ceph-cluster is HEALTH_OK — ceph-block
+          # is replicated (survives a node loss); openebs-hostpath is node-local only.
+          storageClassName: openebs-hostpath
           accessModes: [ReadWriteOnce]
           resources:
             requests:
