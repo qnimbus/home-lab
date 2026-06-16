@@ -105,4 +105,4 @@ releases:
     namespace: network
     chart: oci://docker.io/envoyproxy/gateway-helm
     # renovate: datasource=docker depName=docker.io/envoyproxy/gateway-helm extractVersion=^v(?<version>.*)$
-    version: "v1.8.0"
+    version: "1.8.1"
