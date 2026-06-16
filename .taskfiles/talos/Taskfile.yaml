@@ -455,6 +455,8 @@ tasks:
 
           # jq builds valid JSON from the shell variables (handles any embedded quotes/newlines).
           # DISK_BYID is passed as a pod env var so the script doesn't need to be re-generated per node.
+          # hostNetwork: true is required so the kubelet skips the CNI call — without it pods stay
+          # Pending when this stage runs before Cilium is installed (nodes NotReady for networking).
           jq -n \
             --arg name      "wipe-osd-lvm-${SHORT}" \
             --arg node      "${NODE}" \
@@ -466,6 +468,7 @@ tasks:
               metadata: {name: $name, namespace: "rook-ceph", labels: {app: "osd-lvm-wiper"}},
               spec: {
                 restartPolicy: "Never", nodeName: $node, hostPID: true,
+                hostNetwork: true,
                 tolerations: [{operator: "Exists"}],
                 containers: [{
                   name: "wipe", image: $image,
