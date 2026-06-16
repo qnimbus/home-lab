@@ -15,18 +15,14 @@ alertmanager:
       - key: node-role.kubernetes.io/control-plane
         operator: Exists
         effect: NoSchedule
+    # TEMP (phase-1): emptyDir — openebs-hostpath is incompatible with the subPath
+    # mount the prometheus-operator injects for StatefulSet volumes on Talos (the
+    # openebs.io/local provisioner creates spec.local.path PVs; Talos kubelet fails
+    # to create subPath directories for that PV type). Alertmanager state (silences,
+    # notification history) is ephemeral until phase-2 restores ceph-block storage.
+    # Switch back to volumeClaimTemplate + storageClassName: ceph-block in phase-2.
     storage:
-      volumeClaimTemplate:
-        spec:
-          # TEMP (phase-1): openebs-hostpath until rook-ceph is deployed.
-          # Switch back to ceph-block once rook-ceph-cluster is HEALTH_OK — ceph-block
-          # is replicated (survives a node loss); openebs-hostpath is node-local only.
-          storageClassName: openebs-hostpath
-          accessModes: [ReadWriteOnce]
-          resources:
-            requests:
-              # Alertmanager stores only silences + notification state — 1 Gi is ample.
-              storage: 1Gi
+      emptyDir: {}
 
 grafana:
   enabled: true
@@ -97,9 +93,9 @@ prometheus:
     scrapeConfigSelectorNilUsesHelmValues: false
     serviceMonitorSelectorNilUsesHelmValues: false
     retention: 14d
-    # Hard cap below the 20 Gi PVC size so Prometheus deletes old blocks before the disk fills,
-    # rather than running out of space and crashing.
-    retentionSize: 18GB
+    # TEMP (phase-1): cap below a reasonable emptyDir budget (node ephemeral-storage).
+    # In phase-2 with a ceph-block PVC this should be reset to ~18GB to stay under the 20Gi claim.
+    retentionSize: 10GB
     # All nodes are control-plane only — no workers.
     tolerations:
       - key: node-role.kubernetes.io/control-plane
@@ -113,16 +109,13 @@ prometheus:
         # No CPU limit intentionally — avoids throttling during scrape fan-out bursts.
         memory: 2Gi
     storageSpec:
-      volumeClaimTemplate:
-        spec:
-          # TEMP (phase-1): openebs-hostpath until rook-ceph is deployed.
-          # Switch back to ceph-block once rook-ceph-cluster is HEALTH_OK — ceph-block
-          # is replicated (survives a node loss); openebs-hostpath is node-local only.
-          storageClassName: openebs-hostpath
-          accessModes: [ReadWriteOnce]
-          resources:
-            requests:
-              storage: 20Gi
+      # TEMP (phase-1): emptyDir — openebs-hostpath is incompatible with the subPath
+      # mount the prometheus-operator injects for StatefulSet volumes on Talos (the
+      # openebs.io/local provisioner creates spec.local.path PVs; Talos kubelet fails
+      # to create subPath directories for that PV type). Metrics history is ephemeral
+      # until phase-2. Switch to volumeClaimTemplate + storageClassName: ceph-block
+      # in phase-2 and reset retentionSize to 18GB to stay under the 20Gi claim.
+      emptyDir: {}
 
 prometheusOperator:
   # All nodes are control-plane only — no workers.
@@ -136,8 +129,8 @@ prometheus-node-exporter:
     monitor:
       # 10s scrape (overrides the 30s default) for pre-crash forensics on the M920Q
       # nodes: cp-02 has gone hard-down several times leaving no post-reboot evidence,
-      # so the last samples before a hang must be dense and land on durable (ceph-block)
-      # Prometheus storage off the dying node. Scoped to node-exporter only — not the
+      # so the last samples before a hang must be dense (Prometheus uses emptyDir in
+      # phase-1, but the dense pre-crash window is still valuable). Scoped to node-exporter only — not the
       # cluster-wide interval — to keep the extra series churn contained.
       # DIAGNOSTIC (2026-06-10): this 3x sample density is the costly knob — REVERT to
       # 30s (delete this line) once the cp-02 hard-down is root-caused. With no kernel-log
