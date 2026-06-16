@@ -53,6 +53,5 @@
     "TALOSCONFIG": "${containerWorkspaceFolder}/talos/clusterconfig/talosconfig",
     "OP_SERVICE_ACCOUNT_TOKEN": "${localEnv:OP_SERVICE_ACCOUNT_TOKEN}",
     "GH_TOKEN": "${localEnv:GH_TOKEN}"
-  },
-  "forwardPorts": ["meshcommander:3000"]
+  }
 }

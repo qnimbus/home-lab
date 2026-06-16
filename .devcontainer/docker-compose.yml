@@ -1,6 +1,8 @@
 services:
   devcontainer:
     image: mcr.microsoft.com/devcontainers/python:latest
+    stdin_open: true
+    tty: true
     volumes:
       - type: bind
         source: ..
@@ -15,6 +17,8 @@ services:
       context: .
       dockerfile: Dockerfile.meshcommander
     restart: unless-stopped
+    ports:
+      - "3000:3000"
 
 volumes:
   claude-home:
