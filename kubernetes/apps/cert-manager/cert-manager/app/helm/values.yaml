@@ -1,6 +1,11 @@
 ---
 crds:
   enabled: true
+# Disabled during bootstrap: the webhook's self-signed TLS cert isn't issued yet
+# when this post-install Job runs, causing it to fail and triggering atomic rollback.
+# Flux verifies cert-manager health via healthChecks after bootstrap completes.
+startupapicheck:
+  enabled: false
 # 2 replicas + topology spread: pre-places one pod per two nodes so a cp-03 failure triggers
 # leader-election failover (~60 s lease duration) instead of pod rescheduling (~5-6 min).
 # All three components share app.kubernetes.io/instance: cert-manager — the scheduler counts
