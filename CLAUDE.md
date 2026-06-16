@@ -77,7 +77,7 @@ All tools are pinned in `.mise.toml` and installed via `mise install`. Never ins
 
 To activate: `eval "$(~/.local/bin/mise activate bash)"` (done automatically in devcontainer).
 
-**MeshCommander** (Intel AMT web UI) is installed globally via npm and auto-started by `postStartCommand.sh` on every devcontainer start. It listens on port 3000, which VS Code forwards automatically. Open `http://localhost:3000` to access KVM, IDE-r (ISO boot), and power control for any node with Intel AMT configured. AMT nodes (`worker-01`, `worker-02`, `cp-02`) use native/untagged VLAN 100 (`10.100.0.0/24`) for AMT; Talos management rides tagged VLAN 60 on the same NIC. Logs: `/tmp/meshcommander.log`.
+**MeshCommander** (Intel AMT web UI) runs as a docker-compose sidecar (`meshcommander` service, built from `.devcontainer/Dockerfile.meshcommander`). Port 3000 is bound directly to the host via `ports: "3000:3000"`, so it is accessible at `http://localhost:3000` as soon as the devcontainer stack starts — no VS Code forwarding needed. Open `http://localhost:3000` to access KVM, IDE-r (ISO boot), and power control for any node with Intel AMT configured. AMT nodes (`worker-01`, `worker-02`, `cp-02`) use native/untagged VLAN 100 (`10.100.0.0/24`) for AMT; Talos management rides tagged VLAN 60 on the same NIC.
 
 Version bumps are handled by **Renovate** via the `# renovate: datasource=...` comments in `talenv.yaml` and Helmfile lock files.
 
