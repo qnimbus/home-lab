@@ -1,12 +1,14 @@
 # Cluster Overview
 
-Three-node bare-metal Talos Linux cluster (all control-plane, scheduling allowed). All state is declared in Git; nothing is applied imperatively post-bootstrap.
+Five-node bare-metal Talos Linux cluster (3 control-plane + 2 workers, scheduling allowed on all nodes). All state is declared in Git; nothing is applied imperatively post-bootstrap.
 
-| Node | Hardware | Mgmt IP |
-|------|----------|---------|
-| talos-cp-01 | Lenovo M920Q (i5-8500T, 64GB) | 10.60.0.204 |
-| talos-cp-02 | Lenovo M920Q (i5-8500T, 64GB) | 10.60.0.205 |
-| talos-cp-03 | Minisforum MS-A2 (32c, 92GB) | 10.60.0.201 |
+| Node | Hardware | Mgmt IP | Storage IP |
+|------|----------|---------|-----------|
+| talos-cp-01 | Minisforum MS-A2 (AMD Ryzen 9 9955HX, 16c/32t, 96GB ECC) | 10.60.0.201 | 10.200.0.201 |
+| talos-cp-02 | Lenovo M90q Gen 1 (i5-10500T, 6c/12t, 64GB) | 10.60.0.202 | 10.200.0.202 |
+| talos-cp-03 | Lenovo M90q Gen 1 (i5-10500T, 6c/12t, 64GB) | 10.60.0.203 | 10.200.0.203 |
+| talos-worker-01 | Lenovo M920Q (i5-8500T, 6c, 32GB) | 10.60.0.204 | 10.200.0.204 |
+| talos-worker-02 | Lenovo M920Q (i5-8600T, 6c, 64GB) | 10.60.0.205 | 10.200.0.205 |
 
 **VIP**: `10.60.0.2` (kube-vip) | **CNI**: Cilium (kube-proxy replacement) | **DNS**: CoreDNS via HelmRelease
 
@@ -17,21 +19,23 @@ Three-node bare-metal Talos Linux cluster (all control-plane, scheduling allowed
 | Subnet | Purpose |
 |--------|---------|
 | `10.60.0.0/24` | Management / Kubernetes API |
-| `10.200.0.0/24` | Storage bond — NFS traffic now; reserved for future Rook-Ceph replication |
+| `10.200.0.0/24` | Storage bond — Rook-Ceph cluster replication traffic |
 | `10.42.0.0/16` | Pod network (Cilium) |
 | `10.43.0.0/16` | Service network |
 
 ### Node NIC topology
 
-Each node has a dedicated 10 GbE storage bond on the `10.200.0.0/24` subnet. Today this bond carries **NFS traffic only** (Postgres backups to TrueNAS at `10.200.0.41`). Longhorn replication does **not** use it — the Longhorn `storageNetwork` setting is disabled (`""`), so replication and CSI I/O traverse the Cilium pod network (`10.42.0.0/16`). Routing Longhorn onto this VLAN was abandoned after 5 attempts (see [SESSIONS.md → `longhorn-storagevlan-rollback`](SESSIONS.md)); the bond is now reserved for a future **Rook-Ceph** deployment, whose native `cluster_network` on `hostNetwork` OSDs will put replication here without a CNI.
+All CP nodes and workers with 10 GbE cards use a dedicated storage bond on the `10.200.0.0/24` subnet. This bond carries **Rook-Ceph cluster replication traffic** via `hostNetwork` OSDs (`cluster_network: 10.200.0.0/24`). cp-02 and cp-03 are single-port 1GbE nodes that trunk storage over a VLAN on the same NIC.
 
-| Node | Management | Storage bond |
-|------|------------|-------------|
-| talos-cp-01 | `eno1` — single Intel I219-LM (e1000e), `10.60.0.204/24` | `bond0` — 2× Intel X520-DA2 SFP+ (ixgbe), `10.200.0.204/24` |
-| talos-cp-02 | `eno1` — single Intel I219-LM (e1000e), `10.60.0.205/24` | `bond0` — 2× Intel X520-DA2 SFP+ (ixgbe), `10.200.0.205/24` |
-| talos-cp-03 | `bond0` — 2× NIC (RTL8125 r8169 + Intel I225 igc), `10.60.0.201/24` | `bond1` — 2× Intel X710 SFP+ (i40e), `10.200.0.201/24` |
+| Node | Management | Storage |
+|------|------------|---------|
+| talos-cp-01 | `enp4s0` — Intel I225-V (igc), `10.60.0.201/24` (+ kube-vip `10.60.0.2`) | `bond-storage` — 2× Intel X710 SFP+ (i40e) `enp5s0f0np0`+`enp5s0f1np1`, `10.200.0.201/24` |
+| talos-cp-02 | `eno1` — Intel I219-LM (e1000e), `10.60.0.202/24` | `eno1.200` — VLAN 200 sub-interface, `10.200.0.202/24` |
+| talos-cp-03 | `eno1` — Intel I219-LM (e1000e), `10.60.0.203/24` | `eno1.200` — VLAN 200 sub-interface, `10.200.0.203/24` |
+| talos-worker-01 | `eno1` — Intel I219-LM (e1000e), `10.60.0.204/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp1s0f0`+`enp1s0f1`, `10.200.0.204/24` |
+| talos-worker-02 | `eno1` — Intel I219-LM (e1000e), `10.60.0.205/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp1s0f0`+`enp1s0f1`, `10.200.0.205/24` |
 
-All bonds run **802.3ad LACP** (fast rate, `layer3+4` hash policy). The management interfaces (`eno1` and cp-03's mgmt `bond0`) run at MTU 1500; the storage bonds (`bond-storage`) run at **MTU 9000 (jumbo frames)** on all three nodes — verified live via `talosctl get links`, configured during the `jumbo-frames-storage-vlan` session.
+Storage bonds (cp-01, worker-01, worker-02) run **802.3ad LACP** (fast rate, `layer3+4` hash policy) at **MTU 9000 (jumbo frames)**. Management interfaces run at MTU 1500. cp-01 also has an unused `enp3s0` (RTL8125B, r8169) that is down.
 
 > etcd peer traffic is restricted to the management subnet (`advertisedSubnets: ["10.60.0.0/24"]`) — it never crosses the storage VLAN.
 
@@ -47,10 +51,10 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 
 | Component | Version | Replicas | Role |
 |-----------|---------|----------|------|
-| `kube-apiserver` | v1.36.1 | 3 (one/node) | REST gateway for all cluster operations; the authoritative source of cluster state |
-| `kube-controller-manager` | v1.36.1 | 3 (one/node) | Runs built-in reconciliation loops — Deployments, ReplicaSets, node lifecycle, service accounts |
-| `kube-scheduler` | v1.36.1 | 3 (one/node) | Assigns pending Pods to nodes based on resources, affinity rules, and taints |
-| `etcd` | v3.6.11 (Talos-managed) | 3 (one/node) | Distributed key-value store holding all cluster state; runs as a Talos service, not a pod |
+| `kube-apiserver` | v1.36.1 | 3 (one/CP node) | REST gateway for all cluster operations; the authoritative source of cluster state |
+| `kube-controller-manager` | v1.36.1 | 3 (one/CP node) | Runs built-in reconciliation loops — Deployments, ReplicaSets, node lifecycle, service accounts |
+| `kube-scheduler` | v1.36.1 | 3 (one/CP node) | Assigns pending Pods to nodes based on resources, affinity rules, and taints |
+| `etcd` | v3.6.11 (Talos-managed) | 3 (one/CP node) | Distributed key-value store holding all cluster state; runs as a Talos service, not a pod |
 
 > **kube-proxy is not running.** Cilium replaces it entirely (`kubeProxyReplacement: true`).
 
@@ -62,8 +66,8 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 
 | Pod | Type | Replicas | Role |
 |-----|------|----------|------|
-| `cilium` | DaemonSet | 3 (one/node) | Per-node agent that programs eBPF maps for pod networking, kube-proxy replacement, and network policy enforcement |
-| `cilium-envoy` | DaemonSet | 3 (one/node) | Envoy proxy sidecar used by Cilium for L7-aware network policies and observability |
+| `cilium` | DaemonSet | 5 (one/node) | Per-node agent that programs eBPF maps for pod networking, kube-proxy replacement, and network policy enforcement |
+| `cilium-envoy` | DaemonSet | 5 (one/node) | Envoy proxy sidecar used by Cilium for L7-aware network policies and observability |
 | `cilium-operator` | Deployment | 1 | Cluster-wide control-plane for Cilium — manages IP allocation (IPAM), CiliumNode objects, and Helm lifecycle |
 | `cilium-secrets` namespace | — | — | Holds TLS material for Cilium's mutual-auth features; created and owned by the Cilium Helm chart |
 
@@ -84,7 +88,7 @@ Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` anno
 
 | Pod | Type | Replicas | Role |
 |-----|------|----------|------|
-| `coredns` | Deployment | 3 (1/node) | DNS server; handles in-cluster service discovery and forwards external queries upstream |
+| `coredns` | Deployment | 5 (1/node) | DNS server; handles in-cluster service discovery and forwards external queries upstream |
 
 > **Topology spread**: 1 CoreDNS pod per node (`DoNotSchedule`). A single-node failure does not degrade cluster DNS.
 
@@ -96,7 +100,7 @@ Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` anno
 
 | Pod | Type | Replicas | Role |
 |-----|------|----------|------|
-| `spegel` | DaemonSet | 3 (one/node) | Per-node OCI registry mirror; participates in P2P layer distribution |
+| `spegel` | DaemonSet | 5 (one/node) | Per-node OCI registry mirror; participates in P2P layer distribution |
 
 ---
 
@@ -120,7 +124,7 @@ Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` anno
 | `cert-manager-cainjector` | 2 | Injects CA bundles into `MutatingWebhookConfiguration` and `ValidatingWebhookConfiguration` objects so Kubernetes trusts cert-manager's own webhooks |
 | `cert-manager-webhook` | 2 | Admission webhook that validates and mutates cert-manager CRD objects at creation time |
 
-> **Topology spread**: all three components share the `app.kubernetes.io/instance: cert-manager` label. 6 pods / 3 nodes = 2/2/2 split enforced via `DoNotSchedule`. A node failure causes leader-election failover (~60 s for controller/cainjector); the webhook has zero downtime (both replicas always serve).
+> **Topology spread**: all three components share the `app.kubernetes.io/instance: cert-manager` label. 6 pods spread across 5 nodes via `DoNotSchedule`. A node failure causes leader-election failover (~60 s for controller/cainjector); the webhook has zero downtime (both replicas always serve).
 
 > **Live wildcard certificate.** A `Certificate` named `wildcard-production` in the `network` namespace covers `${CLUSTER_DOMAIN}` and `*.${CLUSTER_DOMAIN}`. Issued by `letsencrypt-production` (Let's Encrypt R13); valid May–August 2026, auto-renewing via DNS-01. Secret: `network/wildcard-production-tls`.
 
@@ -364,7 +368,7 @@ Group all LAN services under `kubernetes/apps/network/external-services/` — on
 | `onepassword-connect` | 1 | Local 1Password Connect server running in-cluster; proxies secret requests to the 1Password cloud API |
 | `onepassword-store` (`ClusterSecretStore`) | — | ESO store resource named `onepassword` — the reference apps use in `ExternalSecret.spec.secretStoreRef` |
 
-> **Topology spread**: all three ESO pods share `app.kubernetes.io/instance: external-secrets`. 6 pods / 3 nodes = 2/2/2 split enforced via `DoNotSchedule`. ESO runs in **concurrent mode** (no leader election) — both controller replicas are always active simultaneously; a node failure causes zero-delay failover.
+> **Topology spread**: all three ESO pods share `app.kubernetes.io/instance: external-secrets`. 6 pods spread across 5 nodes via `DoNotSchedule`. ESO runs in **concurrent mode** (no leader election) — both controller replicas are always active simultaneously; a node failure causes zero-delay failover.
 
 Apps define an `ExternalSecret` object pointing at the `onepassword` store and a specific item/field path. ESO resolves the value at reconcile time and writes it into a Kubernetes `Secret` in the app's namespace. Secret values never touch Git.
 
@@ -384,24 +388,26 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 | `helm-controller` | 2 | Reconciles `HelmRelease` objects — installs/upgrades Helm charts from sources |
 | `notification-controller` | 2 | Handles `Alert` and `Receiver` objects for event-driven reconciliation triggers and outbound notifications |
 
-> **Topology spread**: helm-controller, kustomize-controller, and notification-controller share the pod label `app.kubernetes.io/part-of: flux` (injected via kustomize patch). 6 pods / 3 nodes = 2/2/2 split enforced via `DoNotSchedule`. A node failure causes leader-election failover within ~35 s (Flux lease duration). source-controller and flux-operator are intentionally excluded: source-controller's artifact HTTP server only starts on the leader so non-leader replicas are permanently NotReady; flux-operator manages the FluxInstance CR only and has no HA value.
+> **Topology spread**: helm-controller, kustomize-controller, and notification-controller share the pod label `app.kubernetes.io/part-of: flux` (injected via kustomize patch). 6 pods spread across 5 nodes via `DoNotSchedule`. A node failure causes leader-election failover within ~35 s (Flux lease duration). source-controller and flux-operator are intentionally excluded: source-controller's artifact HTTP server only starts on the leader so non-leader replicas are permanently NotReady; flux-operator manages the FluxInstance CR only and has no HA value.
 
 > **Reconciliation alerting (`flux-alerts`).** A Flux `Provider` (`alertmanager`, pointing at the in-cluster `kube-prometheus-stack-alertmanager` service) and an `Alert` (`flux-errors`, `eventSeverity: error` across all Kustomizations + HelmReleases) live in `flux-system` — see `kubernetes/apps/flux-system/flux-alerts/`. This forwards reconciliation failures into Alertmanager. ⚠️ **Outbound delivery is not yet wired**: Alertmanager has no receiver/route configured, so alerts currently terminate at its default `null` receiver and do not reach a human. See [REPO-AUDIT.md](REPO-AUDIT.md) finding **W1** and [ROADMAP.md → Alertmanager Receiver](ROADMAP.md#alertmanager-receiver).
 
 ---
 
-### Longhorn · `v1.11.2` · `longhorn-system`
+### Rook-Ceph · `v1.19.6` (operator chart) · `rook-ceph`
 
-**Distributed block storage.** Provides replicated `ReadWriteOnce` PVCs across nodes using dedicated storage drives. Managed by Flux HelmRelease; values in `kubernetes/apps/longhorn-system/longhorn/app/helm/values.yaml`.
+**Distributed block storage.** Provides the `ceph-block` StorageClass (default cluster StorageClass) for replicated `ReadWriteOnce` PVCs across nodes using dedicated NVMe drives. Managed by Flux HelmRelease; values in `kubernetes/apps/rook-ceph/`. Longhorn was removed during the Rook-Ceph migration (commit `8b27593`).
 
 | Pod | Type | Role |
 |-----|------|------|
-| `longhorn-manager` | DaemonSet | Core Longhorn agent on every node — manages volumes, replicas, and node health |
-| `longhorn-driver-deployer` | Deployment | Deploys and manages the CSI driver components |
-| `longhorn-ui` | Deployment | Web UI for volume and backup management |
-| CSI components (`attacher`, `provisioner`, `resizer`, `snapshotter`) | Deployments | Standard CSI sidecar controllers that bind the Longhorn driver to the Kubernetes CSI framework |
+| `rook-ceph-operator` | Deployment | Watches `CephCluster`, `CephBlockPool`, etc. and manages the full Ceph lifecycle |
+| `rook-ceph-mon-{a,b,c}` | Deployment (3) | Ceph monitor daemons — provide quorum and cluster map; `hostNetwork` on the management subnet (`10.60.0.0/24`) |
+| `rook-ceph-osd-{0..4}` | Deployment (5) | One OSD per node storage disk; `hostNetwork` with `cluster_network: 10.200.0.0/24` for replication traffic |
+| `rook-ceph-mgr-{a,b}` | Deployment (2) | Ceph manager — Prometheus metrics, dashboard, orchestration modules |
+| `rook-ceph-dashboard` | Service | Ceph dashboard UI (admin password from 1Password via ExternalSecret) |
+| CSI components | DaemonSets/Deployments | RBD CSI driver (`csi-rbdplugin`) + provisioner sidecars |
 
-> **Replica count**: 3 — all three nodes have dedicated storage disks live and contributing. New volumes default to 3 replicas; existing volumes created at 2 replicas must be bumped manually via the Longhorn UI (Update Replica Count) or by enabling `Replicas Auto Balance` in Longhorn Settings.
+> **Pool settings**: `size=3`, `min_size=2`, `deviceClass: nvme`. Five OSDs spread across five nodes. The `ceph-block` StorageClass is the cluster default — all new PVCs use it unless otherwise specified.
 
 ---
 
@@ -413,11 +419,13 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 |-----|------|------|
 | `openebs-localpv-provisioner` | Deployment | Dynamically provisions hostpath PVs on the local node |
 
+> **Per-node capacity is uneven.** Each node's `local-hostpath` UserVolume (`talos/patches/node/machine-volumes-1tb.yaml`) fills the system disk after a 120GiB `EPHEMERAL` cap. cp-01, cp-02, worker-01, and worker-02 have ~1TB system disks → ~870-890 GiB available each. **cp-03's system disk is only 256GB → ~125 GiB available** — the patch is applied uniformly across all 5 nodes despite the size mismatch. `openebs-hostpath` (`WaitForFirstConsumer`, `openebs.io/local`) has no node-capacity awareness — the provisioner follows wherever the pod scheduled, with no fallback if that node is low on space. Avoid scheduling large `openebs-hostpath` PVCs (e.g. >50 GiB) without node anti-affinity away from cp-03; prefer `ceph-block` for anything sizeable.
+
 ---
 
 ### kube-prometheus-stack · `v86.1.0` (chart) · `observability`
 
-**Cluster monitoring stack.** Deploys Prometheus, Alertmanager, Grafana, kube-state-metrics, and node-exporter as a unified stack. Full-cluster scraping is configured via `ServiceMonitor` and `PodMonitor` CRDs. Longhorn volumes provide persistence for Prometheus (20 GiB) and Alertmanager (1 GiB), both scheduled on cp-01. Grafana is **enabled** and runs in-stack (admin credentials sourced from 1Password via `ExternalSecret`).
+**Cluster monitoring stack.** Deploys Prometheus, Alertmanager, Grafana, kube-state-metrics, and node-exporter as a unified stack. Full-cluster scraping is configured via `ServiceMonitor` and `PodMonitor` CRDs. `ceph-block` PVCs provide persistence for Prometheus (20 GiB) and Alertmanager (1 GiB). Grafana is **enabled** and runs in-stack (admin credentials sourced from 1Password via `ExternalSecret`).
 
 | Component | Type | Replicas | Role |
 |-----------|------|----------|------|
@@ -425,7 +433,7 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 | `prometheus-kube-prometheus-stack-prometheus` | StatefulSet | 1 | Time-series metrics store; scrapes all targets defined by monitors |
 | `alertmanager-kube-prometheus-stack-alertmanager` | StatefulSet | 1 | Deduplicates, groups, and routes alerts from Prometheus rules |
 | `kube-prometheus-stack-kube-state-metrics` | Deployment | 1 | Exposes Kubernetes object state as Prometheus metrics |
-| `kube-prometheus-stack-prometheus-node-exporter` | DaemonSet | 3 (one/node) | Exposes per-node hardware and OS metrics |
+| `kube-prometheus-stack-prometheus-node-exporter` | DaemonSet | 5 (one/node) | Exposes per-node hardware and OS metrics |
 | `kube-prometheus-stack-grafana` | Deployment | 1 | Visualisation/dashboards over Prometheus; admin password from 1Password via `ExternalSecret` |
 
 ---
@@ -436,7 +444,7 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 
 | Pod | Type | Replicas | Role |
 |-----|------|----------|------|
-| `smartctl-exporter` | DaemonSet | 3 (one/node) | Scrapes NVMe SMART data on each node; privileged access to block devices |
+| `smartctl-exporter` | DaemonSet | 5 (one/node) | Scrapes NVMe SMART data on each node; privileged access to block devices |
 
 ---
 
@@ -490,7 +498,7 @@ Sourced via OCIRepository: `ghcr.io/bjw-s-labs/helm/app-template` (defined in `k
 
 **Synchronous replication**: `method: any`, `number: 1` — at least one standby must confirm a WAL record before the primary acknowledges the write. Prevents data loss on primary crash at the cost of one network round-trip per write.
 
-**pgAdmin**: Deployed via `app-template`; uses a Longhorn PVC (2 Gi) for persistent storage. An `initContainer` seeds `.pgpass` (from a 1Password ExternalSecret) into the user storage folder before the main container starts — pgAdmin evaluates `.pgpass` at login time and the path must exist before the first request.
+**pgAdmin**: Deployed via `app-template`; uses a `ceph-block` PVC (2 Gi) for persistent storage. An `initContainer` seeds `.pgpass` (from a 1Password ExternalSecret) into the user storage folder before the main container starts — pgAdmin evaluates `.pgpass` at login time and the path must exist before the first request.
 
 #### Backup strategy
 
@@ -531,26 +539,31 @@ The logical backup runs as UID 4000, writes gzip-compressed SQL, and keeps a `la
 
 ## Node Disk Inventory
 
-| Node | Device | Size | Model | Role |
-|------|--------|------|-------|------|
-| talos-cp-01 | nvme1n1 | 1.0 TB | GoodRam IRDM PRO NANO (IRP-SSDPR-P44N-01T-30) via M.2 A/E adapter | Talos system disk |
-| talos-cp-01 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G (`nvme-KINGSTON_SNV3S1000G_50026B7686F8B787`) | Longhorn storage (`/var/mnt/longhorn-storage`) |
-| talos-cp-02 | nvme1n1 | 1.0 TB | Crucial CT1000P310SSD2 (serial `25174FD70E4D`) via M.2 A/E adapter | Talos system disk |
-| talos-cp-02 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G (`nvme-KINGSTON_SNV3S1000G_50026B7383B9D0CC`) | Longhorn storage (`/var/mnt/longhorn-storage`) |
-| talos-cp-03 | nvme0n1 | 128 GB | AirDisk 128GB SSD | Talos system disk |
-| talos-cp-03 | nvme1n1 | 2.0 TB | Crucial CT2000P310SSD8 (`nvme-CT2000P310SSD8_252450B1A33B`) | Longhorn storage (`/var/mnt/longhorn-storage`) |
+| Node | Device | Size | Model | Serial | Role |
+|------|--------|------|-------|--------|------|
+| talos-cp-01 | nvme2n1 | 1.0 TB | Kingston SNV3S1000G | 50026B7686F8B787 | Talos system disk (EPHEMERAL on nvme2n1p4) |
+| talos-cp-01 | nvme1n1 | 2.0 TB | Crucial CT2000T500SSD8 | 2545543A2190 | Rook-Ceph OSD |
+| talos-cp-01 | nvme0n1 | 256 GB | YSR256GHLCA1-E5C-2 | 511240117089012580 | Spare / unused |
+| talos-cp-02 | nvme1n1 | 1.0 TB | Kingston SNV3S1000G | 50026B7383B9B35C | Talos system disk (EPHEMERAL on nvme1n1p4) |
+| talos-cp-02 | nvme0n1 | 2.0 TB | Crucial CT2000T500SSD8 | 25405348D601 | Rook-Ceph OSD |
+| talos-cp-03 | nvme1n1 | 256 GB | WD PC SN740 SDDQNQD-256G-1001 | 22176G805106 | Talos system disk (EPHEMERAL on nvme1n1p4) |
+| talos-cp-03 | nvme0n1 | 2.0 TB | Crucial CT2000T500SSD8 | 254053487747 | Rook-Ceph OSD |
+| talos-worker-01 | nvme1n1 | 1.0 TB | GoodRam IRDM PRO NANO (IRP-SSDPR-P44N-01T-30) | G4E004578 | Talos system disk (EPHEMERAL on nvme1n1p4) |
+| talos-worker-01 | nvme0n1 | 2.0 TB | Crucial CT2000P310SSD8 | 252450B1A33B | Rook-Ceph OSD |
+| talos-worker-02 | nvme1n1 | 1.0 TB | Crucial CT1000P310SSD2 | 25174FD70E4D | Talos system disk (EPHEMERAL on nvme1n1p4) |
+| talos-worker-02 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G | 50026B7383B9D0CC | Rook-Ceph OSD |
 
-All three nodes are fully configured — storage disks live, mounted, and contributing to Longhorn 3-replica mode.
+All five nodes have Rook-Ceph OSD disks live and contributing to the `ceph-block` storage pool. The `ceph-block` StorageClass is the cluster default (3-replica, `min_size=2`).
 
-> **M920Q A/E slot boot note (cp-01, cp-02)**: The M920Q's A/E WiFi slot NVMe does not appear as a selectable boot entry in BIOS. Talos boots from it via the UEFI fallback path (`\EFI\BOOT\BOOTX64.EFI`) when no higher-priority UEFI entries exist. If cp-01 or cp-02 falls back to maintenance mode after a power cycle, check for competing UEFI boot entries (e.g. JetKVM virtual media). See **[BOOT-ISSUE-TROUBLESHOOTING.md](BOOT-ISSUE-TROUBLESHOOTING.md)** for the full diagnosis and fix procedure.
+> **worker-01 A/E slot boot note**: The M920Q's A/E WiFi slot NVMe (GoodRam IRP-SSDPR-P44N-01T-30) does not appear as a selectable boot entry in BIOS. Talos boots from it via the UEFI fallback path (`\EFI\BOOT\BOOTX64.EFI`) when no higher-priority UEFI entries exist. If worker-01 falls back to maintenance mode after a power cycle, check for competing UEFI boot entries (e.g. JetKVM virtual media). See **[BOOT-ISSUE-TROUBLESHOOTING.md](BOOT-ISSUE-TROUBLESHOOTING.md)** for the full diagnosis and fix procedure.
 
-#### System-disk swap migration procedure (cp-01 / cp-02)
+#### System-disk swap migration procedure
 
 > Use this when the `installDiskSelector` has been changed to a different physical disk than the currently running system disk.
 
-1. **Longhorn safety check** — confirm all volumes are `Healthy` before touching the node:
+1. **Rook-Ceph safety check** — confirm all PGs are active+clean before touching the node:
    ```bash
-   kubectl -n longhorn-system get volumes
+   kubectl -n rook-ceph exec -it deploy/rook-ceph-tools -- ceph status
    ```
 2. **Temporarily add wipe patch** — the old storage disk has non-Talos partitions; the installer will refuse to overwrite them without this. Add to the node's inline patch in `talconfig.yaml`:
    ```yaml
@@ -569,7 +582,7 @@ All three nodes are fully configured — storage disks live, mounted, and contri
    ```bash
    task talos:apply IP=10.60.0.20x
    ```
-6. **Kingston cleanup** — on first boot Talos will partition the old system disk (Kingston) for Longhorn via `machine.disks`. If it fails because old Talos partitions are present, add a temporary `wipeDisk: true` to the `machine.disks` entry and re-apply.
+6. **Old system disk cleanup** — on first boot Talos will attempt to use the old system disk as a Rook-Ceph OSD via `machine.disks`. If it fails because old Talos partitions are present, add a temporary `wipeDisk: true` to the `machine.disks` entry and re-apply. Remove `wipeDisk` after the disk is clean.
 
 ---
 
@@ -772,12 +785,14 @@ Use this when modifying `talconfig.yaml` on a running cluster (patch changes, no
 task talos:genconfig
 
 # 2a. Push to all running nodes (repeat per node):
+task talos:apply IP=10.60.0.201
+task talos:apply IP=10.60.0.202
+task talos:apply IP=10.60.0.203
 task talos:apply IP=10.60.0.204
 task talos:apply IP=10.60.0.205
-task talos:apply IP=10.60.0.201
 
 # 2b. Or push to a single running node:
-task talos:apply IP=10.60.0.204
+task talos:apply IP=10.60.0.201
 ```
 
 > `talos:apply` defaults to authenticated mode (mutual TLS via talosconfig) for **running** nodes.
