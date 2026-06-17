@@ -19,6 +19,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
   - [Migrate Remaining HelmRepositories to `home-operations/charts-mirror`](#migrate-remaining-helmrepositories-to-home-operationscharts-mirror)
   - [FluxInstance: Migrate Sync to GitHub App Authentication](#fluxinstance-migrate-sync-to-github-app-authentication)
   - [Tailscale kubectl Authentication (RBAC)](#tailscale-kubectl-authentication-rbac)
+  - [Cilium BGP Control Plane (replace L2 Announcement)](#cilium-bgp-control-plane-replace-l2-announcement)
   - [CSI Snapshots (external-snapshotter + Ceph VolumeSnapshotClass)](#csi-snapshots-external-snapshotter--ceph-volumesnapshotclass)
   - [VolSync (PVC Backup)](#volsync-pvc-backup)
   - [Researched Patterns (bykaj/home-ops)](#researched-patterns-bykajhome-ops)
@@ -542,6 +543,13 @@ Areas to investigate:
 - cp-03 (MS-A2, 32c/92GB) may benefit from NUMA-aware kubelet configuration
 - Confirm `installDisk` is consistent with actual disk layout (nvme0n1 vs nvme1n1) post-wipe
 
+**Talos v1.14 — native LVM wipe commands (upgrade motivation):**
+Talos v1.14.0 (in alpha as of 2026-06) adds `talosctl wipe lv <name>`, `talosctl wipe vg <name>`, and `talosctl wipe pv <name>` plus `LVMPhysicalVolumeStatus` / `LVMVolumeGroupStatus` / `LVMLogicalVolumeStatus` resources. These go through the controller's own deactivation path rather than fighting the `block.LVMActivationController` lock.
+
+**Impact on `live-osd-cleanup`:** once v1.14 is stable, the `task talos:wipe-ceph-osds-live` step in `bootstrap/mod.just` can be simplified from deploying privileged wipe pods (which fight the LVMActivationController and may require a node reboot) to a direct `talosctl wipe vg <ceph-vg-name>` call. Update `bootstrap/mod.just` and `.taskfiles/talos/Taskfile.yaml` at that point.
+
+Until then, the workaround (dd to zero the LVM PV header + node reboot) is documented in [QA.md → Why does task talos:wipe-ceph-osds-live fail after a cluster reset?](QA.md#why-does-task-taloswipe-ceph-osds-live-fail-after-a-cluster-reset).
+
 Deliverable: a PR updating `schematic.yaml` and the relevant patch files with reasoned changes; update `talenv.yaml` if the schematic ID changes (re-register at factory.talos.dev).
 
 ---
@@ -710,6 +718,270 @@ kubectl get nodes   # authenticated via Tailscale identity
 ```
 
 **Dependencies:** `tailscale-operator` ✅ (deployed in this session)
+
+---
+
+### Cilium BGP Control Plane (replace L2 Announcement)
+
+#### Incident background — how this was found
+
+During the rook-ceph phase-2 rollout (`rook-ceph-bgp-investigation` session), neither
+`https://grafana.${DOMAIN_CLUSTER}` nor the freshly-deployed `https://ceph.${DOMAIN_CLUSTER}` dashboard
+were reachable from a real browser on the LAN, despite every layer looking healthy in-cluster: Gateway
+`Programmed`, `HTTPRoute` `Accepted`/`ResolvedRefs`, TLS cert `Ready`, DNS resolving to the correct VIP,
+and a direct in-cluster curl to the Service returning `200`.
+
+**Root cause (confirmed, not guessed):** both affected `LoadBalancer` Services —
+`kube-system/kube-api` (`10.60.0.230`) and `network/envoy-internal` (`10.60.0.231`) — had
+`externalTrafficPolicy: Local`. `Local` policy means a node will *only* forward traffic to a backend pod
+running on itself, never redirect to a pod on another node (this is what lets it preserve the real client
+IP without SNAT in a traditional kube-proxy setup). Cilium's `CiliumL2AnnouncementPolicy` leader election
+has **no awareness of which nodes actually run a backend pod for a given service** — it elects *any*
+node matching `nodeSelector` as the ARP-announcing leader. At the time of the incident:
+
+| Service | Backend nodes | L2-announcement leader | Leader has a local backend? |
+|---|---|---|---|
+| `kube-api` | cp-01, cp-02, cp-03 (the 3 actual control-plane nodes) | `talos-worker-02` | **No** |
+| `envoy-internal` | cp-02, worker-01, worker-02 (3 of 5 envoy replicas) | `talos-cp-03` | **No** |
+
+Both elected leaders had zero local backend for their respective service. Traffic arriving there had
+nowhere to go and was silently dropped — while ARP and ICMP to the node still looked completely normal
+(pinging the VIP correctly returns "Destination Host Unreachable" *from the announcing node's real IP*,
+which is itself expected/healthy behaviour for an L2-announced VIP — ICMP isn't part of what Cilium's
+eBPF LB hook redirects). This is exactly why the cluster looked fully healthy from every angle except the
+one that mattered.
+
+This is a **documented, known Cilium limitation**, not a misconfiguration unique to us — see
+[Cilium L2 Announcements docs](https://docs.cilium.io/en/stable/network/l2-announcements/)
+("incompatible with `externalTrafficPolicy: Local`... fix: set the policy to `Cluster`") and
+[cilium/cilium#27800](https://github.com/cilium/cilium/issues/27800). A cross-check against
+`tmp/home-ops-bykaj` showed the **identical** `Local` + `loadBalancer.mode: dsr` + L2-announcement pattern
+— it doesn't break for them only because their `CLAUDE.md` states *"3-node control plane: All nodes are
+control plane"*, so for their `kube-api` service every L2-eligible node is trivially also a backend node.
+Our heterogeneous topology (3 CP + 2 pure workers) is exactly what exposes the gap their topology happens
+to hide.
+
+#### ✅ Immediate fix applied (commit pending)
+
+Changed `externalTrafficPolicy: Local` → `Cluster` on both affected resources:
+
+- `kubernetes/apps/kube-system/cilium/config/service.yaml` (`kube-api`)
+- `kubernetes/apps/network/envoy-gateway/config/envoy.yaml` (`envoyService`, shared by `envoy-internal` +
+  `envoy-external`)
+
+This loses nothing here specifically: `loadBalancer.mode: dsr` (already set in `kube-system/cilium`'s
+Helm values) preserves the real client source IP regardless of traffic policy — DSR's whole purpose is to
+let the backend reply directly to the client using the VIP as source, bypassing the entry node. `Cluster`
+policy only changes *which backends are eligible* (any node, not just the locally-receiving one); it
+doesn't reintroduce SNAT the way it would under classic kube-proxy/iptables.
+
+This is sufficient to fix the immediate bug. The remaining motivation below is about a **structurally
+better mechanism**, not a follow-up bug fix.
+
+#### Why go further than the `Cluster`-policy fix
+
+L2 announcement still has two properties worth removing even with the policy bug fixed:
+
+1. **Single point of announcement.** Exactly one node ARP-claims each VIP at a time (a Kubernetes
+   `Lease`, "first come, first served"). If that node goes down, there's a re-election gap before another
+   node claims the IP — and the chosen "leader" is still just whichever node won the lease race, with no
+   load-spreading across multiple healthy nodes simultaneously.
+2. **Confusing failure mode.** As this incident showed, when something *is* wrong, the symptoms look like
+   a generic network outage (ARP/ICMP fine, TCP silently dropped) rather than pointing at the actual
+   cause. A protocol that's aware of its own routing state surfaces failures more legibly.
+
+Cilium's BGP Control Plane solves both: it's correctly endpoint-aware (a node automatically **withdraws**
+its route the moment it has no local ready endpoint — no leader election, no blind spots), and multiple
+nodes can advertise the same VIP **simultaneously**, with the router doing real load-balancing
+(ECMP) across all of them.
+
+#### eBGP primer — for readers new to BGP
+
+This section exists because BGP is unfamiliar territory going in. The goal is to have enough vocabulary
+to read the CRDs below and reason about what they do, not to become a BGP expert.
+
+**What BGP actually is.** BGP (Border Gateway Protocol) is the routing protocol that holds the entire
+public internet together — it's how every Autonomous System (every ISP, cloud provider, large company)
+tells its neighbours "I know how to reach these IP ranges." It is a **path-vector** protocol: routers
+don't share a full network map, they just tell each neighbour "send traffic for prefix X to me," and
+that announcement propagates outward. Crucially for us, the same protocol scales down perfectly fine to
+"one router and five Kubernetes nodes on a home LAN" — it's just a much smaller AS-to-AS relationship.
+
+**AS numbers (ASN).** Every BGP speaker belongs to an Autonomous System, identified by a number. Public
+ASNs are globally registered (e.g. Cloudflare is AS13335); for anything internal/private — which is
+exactly our case — there are reserved private ranges that will never collide with anything on the real
+internet: the 16-bit range `64512–65534`, or the much larger 32-bit private range
+`4200000000–4294967294`. We'll use small 16-bit numbers since the UniFi BGP UI is built around that range
+(real-world UDM Pro Max BGP setups commonly use `65000`/`65001`-style numbers).
+
+**eBGP vs iBGP.** This is the one distinction that actually matters for understanding our setup:
+- **iBGP** (interior): peers share the *same* ASN — typically routers inside one organization's network.
+- **eBGP** (exterior): peers have *different* ASNs — typically routers belonging to different
+  organizations, peering at a boundary.
+
+In our design, the UDM Pro Max gets its own ASN (e.g. `65000`) and all five Talos nodes share a different
+ASN (e.g. `65001`). Since the UDM's ASN differs from the nodes' ASN, **every node-to-UDM session is
+eBGP** — even though it's all inside one home network, BGP doesn't care about physical topology, only
+about the AS relationship you define. (The nodes never peer with *each other* in this design — only with
+the UDM — so there's no iBGP mesh to worry about at all.)
+
+**Peering / neighbor sessions.** Two BGP speakers establish a **session** over plain TCP on port 179.
+Each side is configured with the other's IP and expected ASN ahead of time (BGP doesn't auto-discover
+peers the way, say, mDNS does — you tell each side explicitly who its neighbour is). Once the TCP
+connection is up, the speakers exchange `OPEN` messages to confirm the ASN/capabilities match, then start
+exchanging routes. `keepalive`/`hold` timers detect a dead peer (default hold time is 90s in most
+implementations; Cilium's example config above shows a much faster `holdTimeSeconds: 9` /
+`keepAliveTimeSeconds: 3`, more appropriate for fast failover on a LAN).
+
+**Route advertisement.** Once peered, a speaker can announce "I can reach prefix `10.60.0.231/32`" to its
+neighbour. The neighbour adds that to its routing table with the announcing speaker as the next hop. This
+is the BGP equivalent of what Cilium's L2 announcement does with ARP — except it's an explicit routing
+table entry, not a "whoever answers the ARP request wins" race, and it can span more than one physical L2
+segment (not relevant for our flat home LAN, but it's *why* BGP doesn't have the L2-adjacency fragility
+that came up earlier in this same investigation around DSR + routed clients).
+
+**ECMP (Equal-Cost Multi-Path).** If the UDM learns the *same* prefix (`10.60.0.231/32`) from **multiple**
+neighbours at once — because multiple Talos nodes are all simultaneously advertising it — it installs
+multiple equal-cost routes and load-balances traffic across all of them (typically by hashing the
+flow/5-tuple, so a given TCP connection consistently takes one path). This is the mechanism that gives
+true redundancy: lose any one node, the UDM simply stops seeing a route via that neighbour and shifts
+traffic to the survivors — no election, no lease, no gap.
+
+#### How Cilium implements this
+
+There is no separate BGP daemon to run. **Each node's existing Cilium agent embeds a [GoBGP](https://github.com/osrg/gobgp)
+instance** that activates once BGP Control Plane is enabled and a config matches that node. Three CRDs
+(Cilium v2 API — use this for all new config, not the deprecated v2alpha1 `CiliumBGPPeeringPolicy`):
+
+- **`CiliumBGPClusterConfig`** — the "who peers with whom" config: which nodes run a BGP instance
+  (`nodeSelector`), their local ASN, and the list of peers (remote address + remote ASN) each one
+  connects to.
+- **`CiliumBGPPeerConfig`** — referenced by a peer entry above; holds session-level tuning (timers,
+  graceful restart, authentication) and — critically — a label selector (`families[].advertisements.matchLabels`)
+  that decides *which* `CiliumBGPAdvertisement` resources actually get sent over that peering relationship.
+- **`CiliumBGPAdvertisement`** — the "what to advertise" config: `Service` (LoadBalancer/ClusterIP/
+  ExternalIP), `PodCIDR`, or `Interface` advertisement types, each with an optional `selector` to scope
+  which Services qualify (mirrors what `loadBalancerIPs: true` does unconditionally in the current
+  `CiliumL2AnnouncementPolicy`).
+
+#### Concrete plan for this cluster
+
+**UniFi side** — `Settings → Routing → BGP` on the UDM Pro Max (requires UniFi OS ≥ 4.1.13, confirmed
+present on UDM Pro Max/Pro/SE/UXG-Enterprise):
+
+| Field | Value |
+|---|---|
+| Local AS | `65000` |
+| Router ID | `10.60.0.1` (UDM's own LAN IP) |
+| Neighbors | all 5 node IPs: `10.60.0.201`–`.205` |
+| Remote AS (each neighbor) | `65001` |
+| Address family | IPv4 unicast |
+| Max-paths | ≥5 (enables ECMP across all nodes, not just 2) |
+
+Also required: a LAN firewall rule permitting TCP/179 between the UDM and the management subnet — easy
+to miss, and called out by the one real-world UDM+BGP writeup found during research
+([archy.net](https://www.archy.net/from-keepalived-to-haproxy-clustering-a-practical-guide/)).
+
+**Cilium side** — enable the feature (`bgpControlPlane.enabled: true` in
+`kubernetes/apps/kube-system/cilium/app/helm/values.yaml`; verify the exact flag against the installed
+chart version's `values.schema.json` at implementation time), then add a new config directory
+`kubernetes/apps/kube-system/cilium/config/bgp.yaml`:
+
+```yaml
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPClusterConfig
+metadata:
+  name: bgp-cluster
+spec:
+  nodeSelector:
+    matchLabels:
+      kubernetes.io/os: linux   # all 5 nodes — full ECMP coverage, unlike the L2 policy's leader-only model
+  bgpInstances:
+    - name: "instance-65001"
+      localASN: 65001
+      peers:
+        - name: "udm-pro-max"
+          peerASN: 65000
+          peerAddress: 10.60.0.1
+          peerConfigRef:
+            name: "udm-peer"
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPPeerConfig
+metadata:
+  name: udm-peer
+spec:
+  timers:
+    holdTimeSeconds: 9
+    keepAliveTimeSeconds: 3
+  families:
+    - afi: ipv4
+      safi: unicast
+      advertisements:
+        matchLabels:
+          advertise: "bgp"
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPAdvertisement
+metadata:
+  name: lb-advertisements
+  labels:
+    advertise: bgp
+spec:
+  advertisements:
+    - advertisementType: "Service"
+      service:
+        addresses:
+          - LoadBalancerIP
+      selector:
+        matchLabels: {}   # advertise every LoadBalancer Service, matching today's loadBalancerIPs: true behaviour
+```
+
+(Field names verified against the [Cilium BGP Control Plane Resources docs](https://docs.cilium.io/en/stable/network/bgp-control-plane/bgp-control-plane-configuration/)
+at the time this was written — re-check against the installed Cilium version's CRD schema before applying,
+since the BGP Control Plane is a comparatively young Cilium feature and field names have shifted between
+minor versions.)
+
+**What this replaces:** once BGP is confirmed working (all 5 nodes peered, `kube-api` and
+`envoy-internal`/`envoy-external` VIPs reachable via ECMP), the `CiliumL2AnnouncementPolicy` and
+`CiliumLoadBalancerIPPool`'s reliance on ARP leader election become unnecessary — though the IP pool
+itself (`kubernetes/apps/kube-system/cilium/config/networks.yaml`) stays, since BGP still needs Cilium to
+allocate the LoadBalancer IPs, it just changes *how those IPs get announced to the network*.
+
+#### Trade-offs — be honest about the cost
+
+This trades "works on any dumb switch via ARP, zero router config" for "a real routing protocol session
+to operate and troubleshoot." Concretely: BGP sessions can flap (rapidly go up/down) if timers are
+misconfigured; route policies/communities are an extra layer of indirection if ever needed; and debugging
+"why isn't this VIP reachable" now involves checking BGP session state (`cilium bgp peers`,
+`cilium bgp routes`) in addition to everything already in the Cilium/Gateway toolbox. None of this is
+hard, but it is new surface area for a home lab. Given this session already covered a full rook-ceph
+rollout plus the L2/traffic-policy investigation, treat this as a deliberate, separate follow-up rather
+than something to rush.
+
+#### Steps to implement
+
+1. Confirm UDM Pro Max BGP UI is available (`Settings → Routing → BGP`) and add the LAN firewall rule for
+   TCP/179 between the UDM and `10.60.0.0/24`.
+2. Configure the UDM side per the table above.
+3. Enable `bgpControlPlane.enabled: true` in Cilium's Helm values; verify the agent pods restart cleanly.
+4. Add `kubernetes/apps/kube-system/cilium/config/bgp.yaml` with the three CRDs above (re-verify schema
+   against the live cluster's installed Cilium CRD version first).
+5. Verify peering: `cilium bgp peers` (via `cilium-dbg` in an agent pod, or the Cilium CLI) should show
+   `ESTABLISHED` for all 5 nodes.
+6. Verify route advertisement: `cilium bgp routes` should list the `kube-api` and `envoy-internal`/
+   `envoy-external` VIPs, advertised only from nodes with a ready local backend.
+7. Test reachability + failover: confirm dashboards load, then drain/cordon the node currently handling
+   traffic and confirm the UDM's ECMP table converges to the survivors without a user-visible gap.
+8. Once confirmed stable, remove `kubernetes/apps/kube-system/cilium/config/networks.yaml`'s
+   `CiliumL2AnnouncementPolicy` section (keep the `CiliumLoadBalancerIPPool`) and update
+   `l2announcements.enabled` to `false` in Cilium's Helm values.
+
+**Dependencies:** None blocking — independently implementable. Builds on the `externalTrafficPolicy:
+Cluster` fix already applied above (BGP Control Plane handles `Local` policy correctly, but there's no
+reason to revert the `Cluster` fix once BGP lands — it remains the simpler, equally-correct choice and
+keeps DSR's client-IP preservation either way).
 
 ---
 

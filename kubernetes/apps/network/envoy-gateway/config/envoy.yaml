@@ -30,8 +30,14 @@ spec:
               memory: 256Mi
             limits:
               memory: 1Gi
+      # Cluster (not Local): Cilium's L2-announcement leader election is unaware of
+      # service endpoints and can elect a node with no local envoy pod (replicas: 3
+      # across 5 nodes), silently black-holing all traffic to the VIP.
+      # loadBalancer.mode: dsr (cilium values) already preserves the real client IP
+      # under Cluster policy, so this loses nothing. Documented Cilium incompatibility
+      # + fix: https://docs.cilium.io/en/stable/network/l2-announcements/
       envoyService:
-        externalTrafficPolicy: Local
+        externalTrafficPolicy: Cluster
   shutdown:
     drainTimeout: 180s
   telemetry:
