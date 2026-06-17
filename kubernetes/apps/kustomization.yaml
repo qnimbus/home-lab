@@ -15,10 +15,5 @@ resources:
   - ./actions-runner-system
   - ./system
   - ./rook-ceph
-  # phase-2 bootstrap: rook-ceph is live above. Wait for CephCluster HEALTH_OK, then restore
-  # ceph-block PVCs in kube-prometheus-stack values.yaml and re-add its rook-ceph-cluster
-  # dependsOn, before re-enabling the two namespaces below.
-  #   phase-3: ./database             — cloudnative-pg + pgadmin (depend on rook-ceph-cluster)
-  #   phase-3: ./automation           — waha (depends on rook-ceph-cluster)
-  # - ./automation
-  # - ./database
+  - ./automation
+  - ./database
