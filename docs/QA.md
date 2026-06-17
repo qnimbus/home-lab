@@ -1019,3 +1019,43 @@ Flux recreates the resource from the current Git state (which should already hav
 **Fix applied:** Remove feature gates (`MutatingAdmissionPolicy`, `v1alpha1` runtime-config) that would have caused unrelated errors; upgrade apiservers *one node at a time* using `talosctl patch mc` with a strategic merge patch, waiting for a 2-minute stable PID before touching the next node.
 
 **Will it recur?** v1.35.4 and v1.36.0 upgrades completed without incident using `talosctl upgrade-k8s` (sequential, not simultaneous). The thundering-herd appears to have been specific to v1.34's gRPC connection pool behaviour, or the single-node-at-a-time sequencing in `upgrade-k8s` provides sufficient spacing. Continue using tuppr's automatic path; fall back to manual `patch mc` with 2-minute windows only if a crash loop is observed.
+
+---
+
+### Why does `task talos:wipe-ceph-osds-live` fail after a cluster reset?
+
+**Short answer:** Talos's `block.LVMActivationController` locks the entire LVM VG (physical disk + all logical volumes) as a unit. Neither `dmsetup remove --force` inside a privileged pod nor `talosctl wipe disk` can break that lock while the controller holds it. The fix is a two-step process: destroy the LVM PV header on the raw disk with `dd`, then reboot the node.
+
+**Detail:** When Talos boots with a disk that has Ceph LVM metadata (left over from a previous cluster), the `LVMActivationController` activates the Ceph VG and creates `dm-0`/`dm-1` device-mapper entries. It then holds these as a locked group in its internal state. This causes two failure modes:
+
+1. **`dmsetup remove --force` hangs** — the controller continuously tries to re-activate the VG while the pod is trying to remove the DM device. `--force` bypasses some checks but does not interrupt a held lock; the `find -exec dmsetup remove` call never returns.
+2. **`talosctl wipe disk nvme0n1` fails** with `FailedPrecondition: blockdevice "nvme0n1" is in use by disk "dm-0"` — Talos's wipe API enforces the same group lock.
+
+**Why `dd` breaks the cycle:** `dd if=/dev/zero of=/dev/nvme0n1 bs=1M count=16 oflag=direct` writes directly to the raw block device, bypassing the DM layer entirely. Linux allows raw writes to a device even when DM devices are mapped on top of it — the DM layer is a logical overlay, not an exclusive lock at the kernel block level. Once the LVM PV header (at the start of the disk) is zeroed, Talos's controller rescans on its next pass and finds no LVM signature. Its `discoveredvolumes` status for `nvme0n1` transitions from `lvm2-pv` to blank.
+
+**Why a reboot is still required:** Zeroing the PV header tells the controller there is no VG to activate, but the DM devices (`dm-0`, `dm-1`) that were created at boot are already in the kernel DM table and are not removed automatically — Talos's wipe API zeroed their content but did not issue `dmsetup remove`. A node reboot clears all kernel DM state; because the PV metadata is gone, the controller finds nothing to activate on the next boot and the disk comes up clean.
+
+**Full recovery sequence (v1.13.x):**
+
+```bash
+# 1. Zero the LVM PV header — destroys the signature the controller reads
+talosctl -n <NODE_IP> wipe disk dm-0 dm-1      # zeros DM content (optional belt-and-suspenders)
+# OR from inside the wipe-osd-lvm.sh privileged pod:
+# dd if=/dev/zero of=/dev/nvme0n1 bs=1M count=16 oflag=direct conv=notrunc
+
+# 2. Verify Talos no longer sees an LVM PV on the disk
+talosctl -n <NODE_IP> get discoveredvolumes | grep nvme0n1
+# Should show: disk  2.0 TB  (no "lvm2-pv" type)
+
+# 3. Reboot the node to flush kernel DM state
+talosctl -n <NODE_IP> reboot
+# Wait for node to rejoin (check: kubectl get nodes)
+
+# 4. Confirm the disk is clean
+talosctl -n <NODE_IP> ls /dev/disk/by-id | grep ceph    # should be empty
+talosctl -n <NODE_IP> get discoveredvolumes | grep nvme0n1  # still blank
+```
+
+**Reboot safety:** cp-02 and worker-01 can be rebooted one at a time without risk. Rebooting cp-02 leaves 2/3 etcd members active (sufficient quorum); worker-01 is not an etcd member.
+
+**v1.14 will fix this natively:** Talos v1.14 (in alpha as of 2026-06) adds `talosctl wipe lv <name>`, `talosctl wipe vg <name>`, and `talosctl wipe pv <name>` commands that go through the controller's own deactivation path instead of fighting it. Once v1.14 is stable, the `live-osd-cleanup` bootstrap step can be simplified to call these commands directly instead of deploying privileged pods. See [ROADMAP.md → Talos Config Audit](ROADMAP.md#talos-config-image-extensions--patch-audit) for the upgrade note.

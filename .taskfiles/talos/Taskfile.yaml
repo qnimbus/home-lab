@@ -488,8 +488,8 @@ tasks:
             }' | kubectl apply -f -
         done
 
-        echo "Waiting for wipe pods to complete (up to 3m)..."
-        DEADLINE=$(($(date +%s) + 180))
+        echo "Waiting for wipe pods to complete (up to 5m)..."
+        DEADLINE=$(($(date +%s) + 300))
         while true; do
           ACTIVE=$(kubectl get pods -n rook-ceph -l app=osd-lvm-wiper \
             --no-headers 2>/dev/null \
