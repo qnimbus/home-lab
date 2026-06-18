@@ -128,7 +128,7 @@ Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` anno
 
 > **Topology spread**: all three components share the `app.kubernetes.io/instance: cert-manager` label. 6 pods spread across 5 nodes via `DoNotSchedule`. A node failure causes leader-election failover (~60 s for controller/cainjector); the webhook has zero downtime (both replicas always serve).
 
-> **Live wildcard certificate.** A `Certificate` named `wildcard-production` in the `network` namespace covers `${CLUSTER_DOMAIN}` and `*.${CLUSTER_DOMAIN}`. Issued by `letsencrypt-production` (Let's Encrypt R13); valid May–August 2026, auto-renewing via DNS-01. Secret: `network/wildcard-production-tls`.
+> **Live wildcard certificates.** Four `Certificate` objects in the `network` namespace cover the cluster's domains — `wildcard-cluster-vwn-io` (`cluster.vwn.io` / `*.cluster.vwn.io`), `wildcard-apps-vwn-io` (`apps.vwn.io` / `*.apps.vwn.io`), `wildcard-vwn-app` (`vwn.app` / `*.vwn.app`), `wildcard-vwn-casa` (`vwn.casa` / `*.vwn.casa`). All four issued by `letsencrypt-production`, valid through `2026-09-14`, auto-renewing via DNS-01. Secrets: `network/{cluster-vwn-io,apps-vwn-io,vwn-app,vwn-casa}-tls` — referenced via `certificateRefs` on both Gateways' `https` listener.
 
 > **Staging vs production issuers.** Always use `letsencrypt-staging` when first wiring up a new app or testing DNS-01 challenge configuration. Staging issues certificates from Let's Encrypt's untrusted fake root — browsers reject them, but the entire issuance flow (Cloudflare DNS record creation, ACME challenge, certificate delivery, renewal) is identical to production. This avoids burning against production's rate limits (5 duplicate certificates/week per domain). Once staging issues successfully, switch `clusterIssuerName` to `letsencrypt-production`.
 >
@@ -164,7 +164,7 @@ The Gateway API splits concerns into three levels: `GatewayClass` (which control
 | `envoy-internal` | `Gateway` | Pinned to `10.60.0.231`; same listener config as external; separate IP for internal-only services |
 | `envoy` | `ClientTrafficPolicy` | TLS 1.2 min; h2+http/1.1 ALPN; X-Forwarded-For trusted from pod CIDR (`10.42.0.0/16`) for Cloudflare Tunnel real-IP propagation |
 
-Both Gateways share the `network/wildcard-production-tls` secret for TLS termination. HTTP requests on port 80 receive a 301 redirect to HTTPS on both Gateways via dedicated `HTTPRoute` resources.
+Both Gateways reference the same four wildcard TLS secrets (`cluster-vwn-io-tls`, `apps-vwn-io-tls`, `vwn-app-tls`, `vwn-casa-tls`) on their `https` listener for TLS termination. HTTP requests on port 80 receive a 301 redirect to HTTPS on both Gateways via dedicated `HTTPRoute` resources.
 
 > **Adding a new app**: see [Exposing Services (HTTPRoute Workflow)](#exposing-services-httproute-workflow) below for the full step-by-step process covering internal-only, external, and dual-access scenarios.
 
@@ -194,6 +194,19 @@ The tunnel ingress config (mounted from a ConfigMap) routes `*.${CLUSTER_DOMAIN}
 | `external-dns-unifi` | UniFi webhook sidecar (`kashalls/external-dns-unifi-webhook`) | `gateway-httproute`, `Service` | `${CLUSTER_DOMAIN}` + `home.arpa` — creates A records for all gateways and LoadBalancer services on the local LAN |
 
 Both instances use `policy: sync` (records deleted when the resource is removed) and a `k8s.` TXT prefix to avoid collision. Cloudflare API token and UniFi credentials are sourced from 1Password via `ExternalSecret`.
+
+---
+
+### Tailscale · `v1.96.5` (operator image) · `tailscale`
+
+**Mesh VPN remote access.** The Tailscale Kubernetes operator exposes the management LAN (`10.60.0.0/24`) to other devices on the user's tailnet via a subnet router — no inbound port forwarding required. Installed via Flux HelmRelease (`chartRef` → OCIRepository `tailscale-operator`, version tracked there); the tailnet auth key is sourced from 1Password via `ExternalSecret`.
+
+| Pod | Type | Replicas | Role |
+|-----|------|----------|------|
+| `operator` | Deployment | 1 | Watches `Connector`/`ProxyClass` CRDs; provisions subnet-router StatefulSets on demand |
+| `ts-subnet-router-*` | StatefulSet (Tailscale-managed) | 1 | Advertises `10.60.0.0/24` as a subnet route to the tailnet |
+
+> A `Connector` CR (`subnet-router`) declares the advertised route. Complements rather than duplicates the Cloudflare Tunnel: Tailscale gives the user's own devices private, authenticated LAN access; cloudflared gives the public internet HTTPS access to specific routed hostnames.
 
 ---
 
@@ -404,12 +417,14 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 |-----|------|------|
 | `rook-ceph-operator` | Deployment | Watches `CephCluster`, `CephBlockPool`, etc. and manages the full Ceph lifecycle |
 | `rook-ceph-mon-{a,b,c}` | Deployment (3) | Ceph monitor daemons — provide quorum and cluster map; `hostNetwork` on the management subnet (`10.60.0.0/24`) |
-| `rook-ceph-osd-{0..4}` | Deployment (5) | One OSD per node storage disk; `hostNetwork` with `cluster_network: 10.200.0.0/24` for replication traffic |
+| `rook-ceph-osd-{0..7}` | Deployment (8) | 2 logical OSDs per active node's NVMe (`osdsPerDevice: 2`); `hostNetwork` with `cluster_network: 10.200.0.0/24` for replication traffic |
 | `rook-ceph-mgr-{a,b}` | Deployment (2) | Ceph manager — Prometheus metrics, dashboard, orchestration modules |
 | `rook-ceph-dashboard` | Service | Ceph dashboard UI (admin password from 1Password via ExternalSecret) |
 | CSI components | DaemonSets/Deployments | RBD CSI driver (`csi-rbdplugin`) + provisioner sidecars |
 
-> **Pool settings**: `size=3`, `min_size=2`, `deviceClass: nvme`. Five OSDs spread across five nodes. The `ceph-block` StorageClass is the cluster default — all new PVCs use it unless otherwise specified.
+> **Pool settings**: `size=3`, `min_size=2`, `deviceClass: nvme`. 8 OSDs (`osdsPerDevice: 2` splits each node's single NVMe into 2 logical OSDs) across **4 of 5 nodes** — cp-01, cp-02, cp-03, worker-01. The `ceph-block` StorageClass is the cluster default — all new PVCs use it unless otherwise specified.
+>
+> ⚠️ **talos-worker-02 has no OSD — known gap, root cause identified.** Its Kingston `nvme0n1` (1TB, idle) was mistakenly dropped from `cephClusterSpec.storage.nodes` in commit `36f6c77`, whose stated reason ("NV3 1TB is its boot disk, not a candidate OSD") is factually wrong — `talosctl get systemdisk` confirms the real boot disk is `nvme1n1` (Crucial CT1000P310SSD2). `nvme0n1` is genuinely idle but carries a stale `lvm2-pv` signature from an earlier provisioning attempt and needs a metadata wipe (same procedure as the `ceph-osd-wipe-prometheus-deps` session) before Rook will discover it cleanly. Fix is a one-line addition to `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` (`storage.nodes`) plus the disk wipe — not yet actioned.
 
 ---
 

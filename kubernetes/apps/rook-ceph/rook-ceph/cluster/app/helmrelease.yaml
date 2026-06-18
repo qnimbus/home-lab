@@ -114,6 +114,9 @@ spec:
           - name: talos-worker-01                      # M920q #1 — Crucial P310 2TB (CT2000P310SSD8, S/N 252450B1A33B; DRAM-less)
             devices:
               - name: /dev/disk/by-id/nvme-CT2000P310SSD8_252450B1A33B
+          - name: talos-worker-02                      # M920q #2 — Kingston NV3 1TB (SNV3S1000G, S/N 50026B7383B9D0CC); half the others' 2TB OSD disk, contributes ~1 OSD-slot worth of raw capacity instead of 2
+            devices:
+              - name: /dev/disk/by-id/nvme-KINGSTON_SNV3S1000G_50026B7383B9D0CC
     # Replicated RBD pool + its StorageClass. size=3 / failureDomain=host means
     # one replica per node — full host-level redundancy (usable capacity is
     # gated by the smallest host, ~1TB, until the cluster grows).
