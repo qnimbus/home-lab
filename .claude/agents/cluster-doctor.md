@@ -5,72 +5,71 @@ tools: "*"
 model: sonnet
 memory: project
 cluster_state:
-  last_verified: "2026-05-24"
+  last_verified: "2026-06-18"
   versions:
     talos: "v1.13.2"
     kubernetes: "v1.36.1"
   nodes:
     - hostname: talos-cp-01
       role: CP
-      mgmt_ip: "10.60.0.204"
-      storage_ip: "10.200.0.204"
-      hardware: "Lenovo M920Q #1, i5-8500T, 64 GB"
-    - hostname: talos-cp-02
-      role: CP
-      mgmt_ip: "10.60.0.205"
-      storage_ip: "10.200.0.205"
-      hardware: "Lenovo M920Q #2, i5-8500T, 64 GB"
-    - hostname: talos-cp-03
-      role: CP
       mgmt_ip: "10.60.0.201"
       storage_ip: "10.200.0.201"
-      hardware: "Minisforum MS-A2, AMD, 32c, 92 GB"
+      hardware: "Minisforum MS-A2, AMD Ryzen 9 9955HX, 32c, 96GB ECC — permanent CP anchor"
+    - hostname: talos-cp-02
+      role: CP
+      mgmt_ip: "10.60.0.202"
+      storage_ip: "10.200.0.202"
+      hardware: "Lenovo M90q #1, i5-10500T, 6C/12T, 64GB — permanent CP"
+    - hostname: talos-cp-03
+      role: CP
+      mgmt_ip: "10.60.0.203"
+      storage_ip: "10.200.0.203"
+      hardware: "Lenovo M90q #2, i5-10500T, 6C/12T, 64GB — permanent CP"
+    - hostname: talos-worker-01
+      role: worker (temporary CP — competes for VIP until cp-02/cp-03 fully absorbed CP role)
+      mgmt_ip: "10.60.0.204"
+      storage_ip: "10.200.0.204"
+      hardware: "Lenovo M920Q #1, i5-8500T, 64GB"
+    - hostname: talos-worker-02
+      role: worker
+      mgmt_ip: "10.60.0.205"
+      storage_ip: "10.200.0.205"
+      hardware: "Lenovo M920Q #2, i5-8600T, 64GB"
   networking:
-    vip: "10.60.0.2 (kube-vip ARP — static pods, not visible via K8s API)"
+    vip: "10.60.0.2 — Talos NATIVE vip feature (talconfig.yaml networkInterfaces[].vip), NOT a kube-vip Kubernetes pod/DaemonSet. No kube-vip container exists anywhere in kube-system; do not search for one. KubePrism (port 7445) handles in-cluster API resilience independent of the VIP — see agent memory reference_talos_native_vip.md"
     pod_cidr: "10.42.0.0/16"
     service_cidr: "10.43.0.0/16"
     management: "10.60.0.0/24"
-    storage: "10.200.0.0/24 (SFP+, LACP bonds)"
+    storage: "10.200.0.0/24 (SFP+, LACP bonds, jumbo frames 9000 MTU on storage NICs only — pod network MTU is 1500, fixed after an MTU mismatch incident)"
   namespaces:
-    "kube-system": "Cilium v1.19.4, CoreDNS chart v1.45.2, kube-vip (static pods), Spegel v0.7.1, metrics-server chart v3.13.0"
-    "flux-system": "flux-operator v0.50.0, Flux v2.6.4 (source/kustomize/helm/notification controllers), webhook receiver"
-    "cert-manager": "cert-manager v1.20.2, cainjector, webhook"
-    "external-secrets": "external-secrets v2.5.0, ESO webhook, cert-controller, onepassword-connect (1Password Connect chart v2.4.1)"
-    "longhorn-system": "Longhorn CSI v1.11.2 (3-replica; all 3 nodes have dedicated storage disks)"
-    "openebs": "OpenEBS LocalPV v4.4.0 (openebs-hostpath StorageClass)"
-    "network": "envoy-gateway v1.8.0, envoy-external (L2 10.60.0.230), envoy-internal (L2 10.60.0.231), cloudflared v2026.5.0 (2r), external-dns-cloudflare v1.21.1, external-dns-unifi v1.21.1"
-    "observability": "kube-prometheus-stack chart v85.3.0 (Prometheus + Alertmanager + node-exporter + kube-state-metrics + operator)"
-    "system-upgrade": "tuppr v0.1.35 (TalosUpgrade + KubernetesUpgrade CRDs)"
-    "actions-runner-system": "ARC gha-runner-scale-set-controller v0.14.2, home-lab runner scale set v0.14.2"
+    "kube-system": "Cilium v1.19.x, CoreDNS (HelmRelease), Spegel, metrics-server. No kube-vip pod (VIP is Talos-native, see networking.vip above)"
+    "flux-system": "flux-operator, Flux v2.x (source/kustomize/helm/notification controllers), webhook receiver"
+    "cert-manager": "cert-manager, cainjector, webhook"
+    "external-secrets": "external-secrets (ESO), webhook, cert-controller, onepassword-connect (1Password Connect)"
+    "rook-ceph": "Rook-Ceph v1.19.6 — replicated block storage (ceph-block, size=3/min_size=2), host-network cluster_network on the 10.200.0.0/24 storage bond. Replaced Longhorn entirely (removed, commit 8b27593). Default StorageClass."
+    "openebs": "OpenEBS LocalPV (openebs-hostpath StorageClass, non-default)"
+    "network": "envoy-gateway, envoy-external/envoy-internal, cloudflared, external-dns-cloudflare, external-dns-unifi"
+    "observability": "kube-prometheus-stack (Prometheus + Alertmanager + node-exporter + kube-state-metrics + operator)"
+    "system-upgrade": "tuppr (TalosUpgrade + KubernetesUpgrade CRDs)"
+    "actions-runner-system": "ARC gha-runner-scale-set-controller + home-lab runner scale set"
   storage_classes:
-    - name: longhorn
-      provisioner: "Longhorn CSI"
+    - name: ceph-block
+      provisioner: "rook-ceph.rbd.csi.ceph.com"
       reclaim: Delete
       default: true
-      notes: "3 replicas; WaitForFirstConsumer"
-    - name: longhorn-retain
-      provisioner: "Longhorn CSI"
-      reclaim: Retain
-      notes: "Stateful apps needing manual PV cleanup"
-    - name: longhorn-single
-      provisioner: "Longhorn CSI"
-      reclaim: Retain
-      notes: "1 replica; ReclaimPolicy is Retain, not Delete"
-    - name: longhorn-static
-      provisioner: "Longhorn CSI"
-      reclaim: Delete
-      notes: "Immediate binding; static PV use cases"
+      notes: "Replicated 3x (min_size=2); Immediate binding; default StorageClass. Longhorn fully removed — do not reference longhorn storage classes, they no longer exist."
     - name: openebs-hostpath
-      provisioner: "OpenEBS LocalPV"
+      provisioner: "openebs.io/local"
       reclaim: Delete
-      notes: "Non-default; fast local storage"
+      notes: "Non-default; WaitForFirstConsumer; fast local storage"
   operational:
-    - "allowSchedulingOnControlPlanes: true — no dedicated workers"
+    - "allowSchedulingOnControlPlanes: true — worker-01/worker-02 are pure/temporary workers, not dedicated-only nodes"
     - "No kube-proxy: Cilium replaces it (proxy.disabled: true)"
     - "No built-in CoreDNS: Talos coreDNS.disabled: true; CoreDNS is a HelmRelease in kube-system"
     - "etcd listens only on management subnet (advertisedSubnets: [10.60.0.0/24])"
     - "kubeconfig: /workspaces/home-lab/kubeconfig"
     - "Flux reconciles from private GitHub repo via SSH deploy key in flux-system"
+    - "talosconfig client credentials: /workspaces/home-lab/talos/clusterconfig/talosconfig (gitignored except this file; must export TALOSCONFIG to that path)"
 ---
 
 You are a Kubernetes debugging specialist for a specific bare-metal homelab cluster running Talos Linux and FluxCD GitOps.
