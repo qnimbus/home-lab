@@ -4,6 +4,37 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-18 — `rook-ceph-grafana-dashboards`
+
+### Goal
+Verify Prometheus/Grafana observability for Rook-Ceph and add the Ceph dashboards Grafana was missing.
+
+### What we did
+- User shared a screenshot of the Ceph Dashboard's "Pools > Overall Performance" tab prompting to configure Grafana embedding; investigated the full observability stack rather than just that one feature.
+- Found the `mcp-viewer` ClusterRole (`scripts/mcp.sh`) was silently missing the `ceph.rook.io` and `monitoring.coreos.com` API groups — queries for `CephCluster`/`ServiceMonitor`/`PrometheusRule` returned "No resources found," indistinguishable from the resources not existing. Added both groups (read-only `get/list/watch`) and renewed the token to confirm.
+- Confirmed Prometheus integration for Rook-Ceph was already fully live: `ServiceMonitor/rook-ceph-mgr`, `rook-ceph-exporter`, and `csi-metrics` all present and scraped (kube-prometheus-stack's `serviceMonitorSelectorNilUsesHelmValues: false` makes scraping cluster-wide regardless of Helm labels); `PrometheusRule/prometheus-ceph-rules` feeding Alertmanager; `CephCluster` status `HEALTH_OK`.
+- Fetched docs.ceph.com's Grafana-embedding instructions to confirm the screenshot's prompt is a separate, optional feature (native iframe embedding inside the Ceph dashboard UI) requiring `ceph dashboard set-grafana-api-url` plus Grafana anonymous/iframe access — distinct from Prometheus scraping, which already worked.
+- Checked HTTPRoutes: both `grafana` and `rook-ceph-dashboard` sit on `envoy-internal` (LAN-only), which informed the security tradeoff of the native-embedding path.
+- Asked the user to choose between (a) just adding Ceph dashboards to the existing Grafana, (b) also wiring native embedding with anonymous Grafana access, or (c) no changes — user chose (a).
+- Downloaded the 9 official ceph-mixin Grafana dashboards relevant to this cluster's RBD/block-only setup (`ceph-cluster`, `hosts-overview`, `host-details`, `osds-overview`, `osd-device-details`, `pool-overview`, `pool-detail`, `rbd-overview`, `rbd-details`) from `github.com/ceph/ceph`; skipped RGW/CephFS/NVMe-oF/SMB dashboards since those daemons aren't deployed here.
+- Verified the dashboards use Grafana's `$datasource` template-variable mechanism (not the `${DS_*}` input-substitution convention), so they load via sidecar provisioning with zero edits despite stray `__inputs`/`__requires` export metadata.
+- Wired the dashboards into `kube-prometheus-stack/app/kustomization.yaml` as a new `configMapGenerator` labeled `grafana_dashboard: "1"`, auto-discovered by the existing Grafana sidecar (`searchNamespace: ALL`) — no Helm values change needed.
+- Validated with `kubectl kustomize`: build succeeds, all 9 dashboard JSON files are valid, and the rendered ConfigMap carries both `grafana_dashboard: "1"` and `reconcile.fluxcd.io/watch: Enabled` labels with all 9 data keys present.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `scripts/mcp.sh` | Added `ceph.rook.io` and `monitoring.coreos.com` to the `mcp-viewer` ClusterRole (read-only); committed by the user as `8a4796e` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/kustomization.yaml` | Added `configMapGenerator` for `ceph-grafana-dashboards`, labeled `grafana_dashboard: "1"` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/dashboards/*.json` (9 files) | Added official ceph-mixin Grafana dashboards (cluster, hosts, OSDs, pools, RBD) |
+
+### Key decisions
+- Scoped dashboards to the RBD/block-only set, excluding RGW/CephFS/NVMe-oF/SMB dashboards since this cluster doesn't run those Ceph daemons — avoids panels that would just show "no data."
+- Chose the lightweight path (load dashboards into the existing authenticated Grafana) over native Ceph-dashboard iframe embedding, since the latter requires loosening Grafana to anonymous/iframe access; user picked this explicitly when offered both options.
+- Bundled all 9 dashboards into a single ConfigMap (multiple files/keys) rather than 9 separate ConfigMaps, since the Grafana k8s-sidecar supports multi-key ConfigMaps natively and this keeps the resource count down.
+
+---
+
 ## 2026-06-18 — `cnpg-recovery-drill-verified`
 
 ### Goal

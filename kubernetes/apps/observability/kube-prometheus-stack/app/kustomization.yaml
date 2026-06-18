@@ -7,6 +7,26 @@ configMapGenerator:
     namespace: observability
     files:
       - values.yaml=./helm/values.yaml
+  # Ceph-mixin dashboards (upstream: github.com/ceph/ceph monitoring/ceph-mixin).
+  # grafana_dashboard:"1" is picked up by the Grafana sidecar (sidecar.dashboards
+  # in helm/values.yaml), which watches ALL namespaces — no Helm values change
+  # needed to add or update these. Limited to RBD/block-only dashboards since
+  # this cluster has no CephFS or RGW (cephFileSystems/cephObjectStores: []).
+  - name: ceph-grafana-dashboards
+    namespace: observability
+    options:
+      labels:
+        grafana_dashboard: "1"
+    files:
+      - ceph-cluster.json=./dashboards/ceph-cluster.json
+      - hosts-overview.json=./dashboards/hosts-overview.json
+      - host-details.json=./dashboards/host-details.json
+      - osds-overview.json=./dashboards/osds-overview.json
+      - osd-device-details.json=./dashboards/osd-device-details.json
+      - pool-overview.json=./dashboards/pool-overview.json
+      - pool-detail.json=./dashboards/pool-detail.json
+      - rbd-overview.json=./dashboards/rbd-overview.json
+      - rbd-details.json=./dashboards/rbd-details.json
 generatorOptions:
   labels:
     reconcile.fluxcd.io/watch: "Enabled"
