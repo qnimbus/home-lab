@@ -34,7 +34,7 @@ tasks:
 
   validate:
     desc: Validate Kubernetes manifests and kustomize overlays
-    cmd: bash {{.ROOT_DIR}}/scripts/validate.sh -d kubernetes -e kubernetes/bootstrap
+    cmd: bash {{.ROOT_DIR}}/scripts/validate.sh -d kubernetes
     preconditions:
       - which yq
       - which kustomize

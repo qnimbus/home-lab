@@ -8,5 +8,8 @@ configMapGenerator:
   - name: coredns-values
     files:
       - values.yaml=./helm/values.yaml
+generatorOptions:
+  labels:
+    reconcile.fluxcd.io/watch: "Enabled"
 configurations:
   - ./helm/kustomizeconfig.yaml

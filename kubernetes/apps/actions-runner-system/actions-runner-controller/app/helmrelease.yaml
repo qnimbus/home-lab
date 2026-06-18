@@ -11,8 +11,6 @@ spec:
     kind: OCIRepository
     name: gha-runner-scale-set-controller
     namespace: flux-system
-  install:
-    createNamespace: true
   values:
     # Explicit SA name so the runner scale set can reference it deterministically.
     serviceAccount:

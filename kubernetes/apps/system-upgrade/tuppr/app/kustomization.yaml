@@ -7,6 +7,9 @@ configMapGenerator:
     namespace: system-upgrade
     files:
       - values.yaml=./helm/values.yaml
+generatorOptions:
+  labels:
+    reconcile.fluxcd.io/watch: "Enabled"
 configurations:
   - ./helm/kustomizeconfig.yaml
 resources:

@@ -1,7 +1,7 @@
 # GitOps Repository Audit <!-- omit from toc -->
 
 > **Living document** — re-run the audit commands in [How to Re-Audit](#how-to-re-audit) after significant changes and update the findings below.
-> Last audited: **2026-06-17** · Auditor: Claude Code (`gitops-repo-audit` skill) — post Rook-Ceph migration + GitHub App auth cutover; I2/I6/W2 resolved (see below)
+> Last audited: **2026-06-17** · Auditor: Claude Code (`gitops-repo-audit` skill) — post Rook-Ceph migration + GitHub App auth cutover. Follow-up fix pass same cycle: W3, I1, I5, I7, I8, I9 resolved; only W1 (Alertmanager receiver) and I4 (cosign coverage) remain open
 
 ## Contents <!-- omit from toc -->
 
@@ -104,11 +104,9 @@ All Flux resources use current stable API versions. No migration required.
 
 ### Gaps
 
-#### ⚠️ WARNING — 13 generated values ConfigMaps lack the reactivity label
+#### ✅ RESOLVED — 13 generated values ConfigMaps now carry the reactivity label
 
-Every chart using the `configMapGenerator` (+ `disableNameSuffixHash: true` for 3 of them) pattern for Helm values is missing `reconcile.fluxcd.io/watch: Enabled`. This is the root cause of the known gotcha in `feedback_flux_configmap_hash.md`: editing `values.yaml` doesn't trigger immediate reconciliation, requiring a manual `flux reconcile helmrelease <name> --force`.
-
-**Recommendation**: add a `labels:` block (or `generatorOptions.labels`) with `reconcile.fluxcd.io/watch: "Enabled"` to each of the 13 `kustomization.yaml` files using `configMapGenerator` for chart values. Turns the documented manual workaround into automatic behavior.
+Was W3. Added `generatorOptions: { labels: { reconcile.fluxcd.io/watch: "Enabled" } }` to all 13 `kustomization.yaml` files using `configMapGenerator` for chart values (merged into the existing `generatorOptions` block for `cloudflared`, which also sets `disableNameSuffixHash`). Verified via `kustomize build` that the label renders on the generated ConfigMap. This closes the gap behind the known `feedback_flux_configmap_hash.md` gotcha — `values.yaml` edits now trigger immediate reconciliation instead of requiring `flux reconcile helmrelease --force`.
 
 #### ⚠️ WARNING — Flux alerts wired, but Alertmanager has no outbound receiver
 
@@ -124,23 +122,27 @@ Was tracked as I6 (recommended `podAntiAffinity`). Implemented instead via `topo
 
 #### ✅ RESOLVED — Drift detection now cluster-wide default
 
-`driftDetection.mode: enabled` is in the global `cluster-apps` patch. All 27 HelmReleases have drift detection enabled (4 redundantly redeclare it locally — cosmetic only, see I-new below).
+`driftDetection.mode: enabled` is in the global `cluster-apps` patch. All 27 HelmReleases have drift detection enabled.
 
-#### ℹ️ INFO — FluxInstance `cluster.size` not set
+#### ✅ RESOLVED — FluxInstance `cluster.size` now set to `medium`
 
-`spec.cluster` is still `{}`. Without `cluster.size`, controllers run on default resource limits. **Recommendation**: set `cluster.size: medium` — appropriate for ~27 HelmReleases / ~41 Kustomizations.
+Was I1. `spec.cluster.size: medium` set in `flux-instance` values — appropriate for ~27 HelmReleases / ~41 Kustomizations (upstream guidance reserves `large` for fleets approaching a thousand apps).
 
-#### ℹ️ INFO — 5 HelmReleases set redundant `createNamespace: true`
+#### ✅ RESOLVED — Redundant `createNamespace: true` removed from 5 HelmReleases
 
-`openebs`, `kube-prometheus-stack`, `actions-runner-controller`, `envoy-gateway`, `tuppr`. All five already have a `namespace.yaml` ordered before `helmrelease.yaml` in the same Kustomization, so this is a harmless no-op — drop it for consistency with the other 22 HelmReleases.
+Was I7. Removed the now-empty `install:` block from `openebs`, `kube-prometheus-stack`, `actions-runner-controller`, `envoy-gateway`, `tuppr` — all five already have a `namespace.yaml` ordered before `helmrelease.yaml` in the same Kustomization, so the flag was a no-op. Verified all 5 still build cleanly via `kustomize build`.
 
-#### ℹ️ INFO — 4 HelmReleases redundantly redeclare `driftDetection: mode: enabled`
+#### ✅ RESOLVED — Redundant `driftDetection: mode: enabled` removed from 4 HelmReleases
 
-`external-secrets`, `envoy-gateway`, `cilium`, `cert-manager` — the global `cluster-apps` patch already sets this for every HelmRelease (and patches are the last writer regardless). Cosmetic cleanup only.
+Was I8. Removed the local `driftDetection` block from `external-secrets`, `envoy-gateway`, `cilium`, `cert-manager` — the global `cluster-apps` patch already sets this for every HelmRelease. Verified via `kustomize build` that drift detection still applies (injected by the global patch).
 
 #### ✅ RESOLVED — `retryInterval` now a cluster-wide default
 
 `retryInterval: 2m` is set via the global `cluster-apps` patch + top-level Kustomizations. (Was I3.)
+
+#### ✅ RESOLVED — `kustomize-controller` concurrency no longer relies on patch-ordering
+
+Was I9 (found during a follow-up discussion, not the original audit pass). `flux-instance`'s `values.yaml` had two separate `kustomize.patches` entries both appending a `--concurrent=N` arg to `kustomize-controller` — `--concurrent=10` (via the shared 3-controller patch) followed by `--concurrent=20` (via a kustomize-controller-only patch). Both ended up in the rendered args list; the last one parsed wins, so the *effective* value was already 20, but only by virtue of list order, not because anything declared 20 explicitly. Restructured so the shared patch targets `(helm-controller|source-controller)` only, and the dedicated `kustomize-controller` patch carries `--concurrent=20` + `--requeue-dependency=5s` + the tmpfs volume swap together — same effective runtime behavior, no more silent override.
 
 ---
 
@@ -215,21 +217,22 @@ _None._
 | # | Finding | Action |
 |---|---|---|
 | W1 | Flux `Alert`/`Provider` forward errors into Alertmanager, but Alertmanager has **no outbound receiver** (default `null` route) | Add an Alertmanager `config:` with a Slack/Discord/email/PagerDuty receiver + `route` (tracked in ROADMAP → Alertmanager Receiver) |
-| W3 | 13 `configMapGenerator`-based values ConfigMaps lack `reconcile.fluxcd.io/watch: Enabled` | Add the label via `generatorOptions.labels` or per-generator `labels:` in each of the 13 `kustomization.yaml` files |
 | ~~W2~~ | ~~Drift detection on 5/20 HelmReleases only~~ | ✅ Resolved — global patch in `cluster-apps` now injects `driftDetection: enabled` for all 27 HelmReleases |
+| ~~W3~~ | ~~13 `configMapGenerator`-based values ConfigMaps lack `reconcile.fluxcd.io/watch: Enabled`~~ | ✅ Resolved — `generatorOptions.labels` added to all 13 `kustomization.yaml` files |
 
 ### Info
 
 | # | Finding | Action |
 |---|---|---|
-| I1 | FluxInstance `cluster.size` unset (`cluster: {}`) — now 27 HR / 41 KS | Set `cluster.size: medium` in `flux-instance` values |
+| ~~I1~~ | ~~FluxInstance `cluster.size` unset (`cluster: {}`)~~ | ✅ Resolved — set to `medium` |
 | ~~I2~~ | ~~FluxInstance sync: SSH deploy key~~ | ✅ Resolved — GitHub App auth live (`provider: github`, `flux-github-app` secret); ROADMAP.md entry marked done |
 | ~~I3~~ | ~~No `retryInterval` on HelmReleases~~ | ✅ Resolved — `retryInterval: 2m` in the global `cluster-apps` patch + top-level Kustomizations |
 | I4 | 13 OCIRepositories without cosign (2 new: `rook-ceph`, `rook-ceph-cluster`) | Audit each upstream for cosign availability; add verification where supported |
-| I5 | Validation CI picks up non-K8s YAMLs (`Taskfile.yaml`, `bootstrap/helmfile.d/*`) | Add `-e talos -e assets -e bootstrap` to validate invocation; `Taskfile.yaml` at root is an unavoidable false positive |
+| ~~I5~~ | ~~Validation CI picks up non-K8s YAMLs~~ | ✅ Resolved — turned out CI/Task already scope `validate.sh` to `-d kubernetes`, never touching `Taskfile.yaml`/`talos/`; removed the dead `-e kubernetes/bootstrap` exclude (bootstrap moved to repo-root `bootstrap/` some time ago, so the flag pointed at a non-existent path) |
 | ~~I6~~ | ~~kustomize-controller co-location~~ | ✅ Resolved — `topologySpreadConstraints` + 2 replicas on helm/kustomize/notification-controller |
-| I7 | 5 HelmReleases set redundant `createNamespace: true` despite an explicit `namespace.yaml` in the same Kustomization | Drop the field for consistency (harmless no-op otherwise) |
-| I8 | 4 HelmReleases redundantly redeclare `driftDetection: mode: enabled` (already a global default) | Drop the local declaration; cosmetic only |
+| ~~I7~~ | ~~5 HelmReleases set redundant `createNamespace: true`~~ | ✅ Resolved — removed the now-empty `install:` block from all 5 |
+| ~~I8~~ | ~~4 HelmReleases redundantly redeclare `driftDetection: mode: enabled`~~ | ✅ Resolved — removed the local declaration from all 4 |
+| ~~I9~~ | ~~`kustomize-controller` `--concurrent` set via two colliding patches (10, then 20) — last one silently won~~ | ✅ Resolved — consolidated into one explicit patch; `(helm-controller\|source-controller)` keep `--concurrent=10` |
 
 ---
 

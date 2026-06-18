@@ -3,7 +3,8 @@ instance:
   distribution:
     # renovate: datasource=github-releases depName=fluxcd/flux2
     version: v2.8.8
-  cluster: {}
+  cluster:
+    size: medium
   components:
     - source-controller
     - kustomize-controller
@@ -31,7 +32,7 @@ instance:
             value: --requeue-dependency=5s
         target:
           kind: Deployment
-          name: (kustomize-controller|helm-controller|source-controller)
+          name: (helm-controller|source-controller)
       - patch: |
           apiVersion: apps/v1
           kind: Deployment
@@ -48,10 +49,17 @@ instance:
         target:
           kind: Deployment
           name: (kustomize-controller|helm-controller|source-controller)
+      # kustomize-controller runs at a higher concurrency than helm-controller/source-controller
+      # (more Kustomizations than HelmReleases in this repo, and dependency-chain unblocking
+      # benefits most from extra parallelism) — kept in one patch so the effective value is
+      # explicit rather than the result of two patches landing in a particular list order.
       - patch: |
           - op: add
             path: /spec/template/spec/containers/0/args/-
             value: --concurrent=20
+          - op: add
+            path: /spec/template/spec/containers/0/args/-
+            value: --requeue-dependency=5s
           - op: replace
             path: /spec/template/spec/volumes/0
             value:

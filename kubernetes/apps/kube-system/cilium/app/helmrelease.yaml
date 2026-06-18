@@ -6,8 +6,6 @@ metadata:
   name: cilium
 spec:
   interval: 1h
-  driftDetection:
-    mode: enabled
   chart:
     spec:
       chart: cilium

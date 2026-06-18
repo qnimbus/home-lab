@@ -11,8 +11,6 @@ spec:
     kind: OCIRepository
     name: openebs
     namespace: flux-system
-  install:
-    createNamespace: true
   values:
     localpv-provisioner:
       localpv:

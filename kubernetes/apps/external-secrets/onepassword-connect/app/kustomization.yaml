@@ -6,6 +6,9 @@ configMapGenerator:
   - name: onepassword-connect-helm-values
     files:
       - values.yaml=./helm/values.yaml
+generatorOptions:
+  labels:
+    reconcile.fluxcd.io/watch: "Enabled"
 configurations:
   - ./helm/kustomize-config.yaml
 resources:

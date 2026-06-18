@@ -10,10 +10,6 @@ spec:
     kind: OCIRepository
     name: envoy-gateway
     namespace: flux-system
-  driftDetection:
-    mode: enabled
-  install:
-    createNamespace: true
   values:
     config:
       envoyGateway:
