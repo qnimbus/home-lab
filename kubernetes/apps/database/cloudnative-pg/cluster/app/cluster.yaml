@@ -17,6 +17,12 @@ spec:
     name: cloudnative-pg-secret
   monitoring:
     enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: cloudnative-pg-storj
+        serverName: ${CNPG_V17_CURRENT_CLUSTER}
   postgresql:
     parameters:
       max_connections: "300"

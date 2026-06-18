@@ -21,5 +21,6 @@ resources:
   - ./reloader.yaml
   - ./tailscale-operator.yaml
   - ./cloudnative-pg.yaml
+  - ./plugin-barman-cloud.yaml
   - ./rook-ceph.yaml
   - ./rook-ceph-cluster.yaml
