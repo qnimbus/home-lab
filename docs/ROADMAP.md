@@ -202,7 +202,22 @@ maintain. Defer until a concrete need (e.g. offline image export) appears.
 
 ---
 
-### cp-02 Thermal Stability (Lenovo M920Q)
+### ~~cp-02 Thermal Stability (Lenovo M920Q)~~ — RESOLVED
+
+> **Status: RESOLVED (2026-06-17).** Two distinct fault patterns on this M920Q unit — the
+> 2026-06-01 board/VRM thermal shutdown below, and a series of recurring *silent* hard-downs
+> (leading theory: non-ECC RAM bit-flip, never confirmed via MemTest86+) — both stopped recurring
+> after the unit was opened, the heatsink cleaned, and thermal paste reapplied. No recurrence since.
+> Full incident timeline and diagnostic detail: `docs/incidents/2026-06-10-cp02-harddown.md`.
+>
+> **Naming note:** this physical unit (X520 storage bond, `nct6683` board sensor) is now
+> `talos-worker-02` (`10.60.0.205`) in the current 5-node topology — it was demoted from
+> control-plane during the 5-node expansion, when a Minisforum MS-A2 was promoted to `cp-01` and a
+> Lenovo M90q became the new `cp-02`. The `NodeVRMTemperatureHigh` / `NodeVRMTemperatureCritical`
+> PrometheusRules proposed in the monitoring-enhancement section below are live in
+> `kubernetes/apps/observability/kube-prometheus-stack/app/prometheusrules/hardware-temps.yaml`.
+> `scripts/cp02-watch.sh` / `scripts/cp-thermal-compare.sh` still hardcode the old cp-01/cp-02
+> hostnames for `.204`/`.205` — harmless (IPs unchanged) but mislabeled if ever reused as a template.
 
 **Incident — 2026-06-01:** cp-02 shut down twice under hardware thermal protection, causing a 124-minute outage (09:29–11:33 UTC). This blocked the Cilium `cni.exclusive=false` HelmRelease upgrade (Helm timed out because the Cilium DaemonSet health check failed on the stuck pod) and delayed the Longhorn storage network rollout.
 
@@ -224,9 +239,9 @@ Captured at 30 s resolution from `node_hwmon_temp_celsius`:
 
 #### Required physical actions
 
-- [ ] **Open the M920Q and blow out the fan/heatsink assembly** with compressed air — the M920Q accumulates dust between the fan blades and the heatsink fins; a single blocked fin halves effective airflow
-- [ ] **Reapply thermal paste** — the i5-8500T stock TIM on a 6–8-year-old machine has very likely dried and cracked; Noctua NT-H2 or similar recommended
-- [ ] **Verify the fan spins up under load** — listen or use `talosctl dmesg` to confirm no fan-stall events; the M920Q fan is audible when ramping
+- [x] **Open the M920Q and blow out the fan/heatsink assembly** with compressed air — done 2026-06-17
+- [x] **Reapply thermal paste** — done 2026-06-17; this resolved both fault patterns (see resolution note above)
+- [x] **Verify the fan spins up under load** — confirmed stable post-repaste, no recurrence since
 
 #### Update — recurring *silent* hard-downs (distinct from the 06-01 thermal trip)
 
@@ -242,7 +257,9 @@ crashlooped with `exec format error` **only while scheduled on cp-02** — on an
 correct multi-arch image, that means the **binary bytes were corrupted** (mangled ELF), exactly what a
 RAM/containerd-content-store bit-flip produces; it ran cleanly the moment it moved to cp-03.
 
-- [ ] **Run MemTest86+ on cp-02 (highest-value next step)** — directly tests the leading theory, cheap.
+- [ ] ~~Run MemTest86+ on cp-02~~ **MOOT** — never executed; the silent hard-downs stopped recurring
+      after the 2026-06-17 heatsink/repaste fix, so the non-ECC-RAM theory was never confirmed but the
+      investigation is closed (see resolution note at the top of this section).
 - [x] **Off-node vitals armed** (2026-06-10, commit `bca4cee`): node-exporter scrape tightened to 10s,
       Prometheus durable on `ceph-block` (already was), board/VRM (`platform_nct6683_2592/temp2`) +
       fixed CPU-temp alerts added. This is the primary pre-crash record — see [observability commit].
@@ -259,7 +276,8 @@ RAM/containerd-content-store bit-flip produces; it ran cleanly the moment it mov
       cp-02-specific UKI via an Image Factory schematic + a UKI-reinstall upgrade on the flaky node, for
       low yield against a *silent* hang (no `dmesg` output ⇒ kernel too wedged to emit over UDP anyway).
       Deprioritized in favour of the off-node vitals above. Revisit only if vitals + MemTest don't crack it.
-- [ ] Reseat X520 + RAM; if it recurs after MemTest passes, swap the X520 card or the whole unit.
+- [ ] ~~Reseat X520 + RAM; if it recurs after MemTest passes, swap the X520 card or the whole unit.~~
+      **MOOT** — no recurrence since the repaste fix; no further hardware action planned.
 
 #### Monitoring enhancement
 
@@ -290,7 +308,7 @@ Add a PrometheusRule for the board temperature sensor so future thermal stress i
 
 If the thermal paste reapplication does not stabilise temperatures, the BIOS fan curve may be too conservative. The active trip at 50°C means the fan should ramp at idle — but the *speed* at that trip may be too low. Enter BIOS → Hardware Monitor → Fan Control and lower the target temp or raise the fan speed percentage at the 50°C trip point.
 
-**Dependencies:** physical access to cp-02. No cluster changes required for the physical fix. The PrometheusRule addition is independent and can be done immediately.
+**Dependencies:** none — both the physical fix and the PrometheusRule addition are done (see resolution note at the top of this section).
 
 ---
 
