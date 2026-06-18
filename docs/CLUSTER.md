@@ -417,14 +417,14 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 |-----|------|------|
 | `rook-ceph-operator` | Deployment | Watches `CephCluster`, `CephBlockPool`, etc. and manages the full Ceph lifecycle |
 | `rook-ceph-mon-{a,b,c}` | Deployment (3) | Ceph monitor daemons — provide quorum and cluster map; `hostNetwork` on the management subnet (`10.60.0.0/24`) |
-| `rook-ceph-osd-{0..7}` | Deployment (8) | 2 logical OSDs per active node's NVMe (`osdsPerDevice: 2`); `hostNetwork` with `cluster_network: 10.200.0.0/24` for replication traffic |
+| `rook-ceph-osd-{0..8}` | Deployment (9) | 2 logical OSDs per NVMe on cp-01/cp-02/cp-03/worker-01 (`osdsPerDevice: 2`); 1 OSD on worker-02 (per-node override — its disk is half the others' size, see comment in the HelmRelease); `hostNetwork` with `cluster_network: 10.200.0.0/24` for replication traffic |
 | `rook-ceph-mgr-{a,b}` | Deployment (2) | Ceph manager — Prometheus metrics, dashboard, orchestration modules |
 | `rook-ceph-dashboard` | Service | Ceph dashboard UI (admin password from 1Password via ExternalSecret) |
 | CSI components | DaemonSets/Deployments | RBD CSI driver (`csi-rbdplugin`) + provisioner sidecars |
 
-> **Pool settings**: `size=3`, `min_size=2`, `deviceClass: nvme`. 8 OSDs (`osdsPerDevice: 2` splits each node's single NVMe into 2 logical OSDs) across **4 of 5 nodes** — cp-01, cp-02, cp-03, worker-01. The `ceph-block` StorageClass is the cluster default — all new PVCs use it unless otherwise specified.
+> **Pool settings**: `size=3`, `min_size=2`, `deviceClass: nvme`. 9 OSDs across all 5 nodes (8.2 TiB raw) — cp-01/cp-02/cp-03/worker-01 each run 2 logical OSDs from a 2TB NVMe (`osdsPerDevice: 2`); worker-02 runs 1 OSD from its smaller 1TB NVMe. The `ceph-block` StorageClass is the cluster default — all new PVCs use it unless otherwise specified.
 >
-> ⚠️ **talos-worker-02 has no OSD — known gap, root cause identified.** Its Kingston `nvme0n1` (1TB, idle) was mistakenly dropped from `cephClusterSpec.storage.nodes` in commit `36f6c77`, whose stated reason ("NV3 1TB is its boot disk, not a candidate OSD") is factually wrong — `talosctl get systemdisk` confirms the real boot disk is `nvme1n1` (Crucial CT1000P310SSD2). `nvme0n1` is genuinely idle but carries a stale `lvm2-pv` signature from an earlier provisioning attempt and needs a metadata wipe (same procedure as the `ceph-osd-wipe-prometheus-deps` session) before Rook will discover it cleanly. Fix is a one-line addition to `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` (`storage.nodes`) plus the disk wipe — not yet actioned.
+> **worker-02 onboarded 2026-06-18.** Its Kingston `nvme0n1` had been mistakenly excluded since commit `36f6c77` (which misidentified it as the boot disk — the real system disk is `nvme1n1`). Wiped a stale `lvm2-pv` signature left over from a defunct cluster FSID (`vgchange -an` + `wipefs -a`, no reboot needed, node stayed live throughout) and added it to `storage.nodes`; `osd.8` joined cleanly, cluster reached `HEALTH_OK` with all 33 PGs `active+clean` within under a minute.
 
 ---
 
