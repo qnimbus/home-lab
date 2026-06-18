@@ -20,4 +20,13 @@ spec:
       secretAccessKey:
         name: cloudnative-pg-secret
         key: CNPG_S3_SECRET_KEY
+  instanceSidecarConfiguration:
+    # Storj's S3 gateway rejects PutObject requests using botocore's newer
+    # chunked-trailer checksum encoding (no Content-Length header) with
+    # "MissingContentLength" - revert to the legacy header-based behaviour.
+    env:
+      - name: AWS_REQUEST_CHECKSUM_CALCULATION
+        value: when_required
+      - name: AWS_RESPONSE_CHECKSUM_VALIDATION
+        value: when_required
   retentionPolicy: 30d
