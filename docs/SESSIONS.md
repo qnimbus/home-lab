@@ -4,6 +4,42 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-18 — `cnpg-recovery-drill-verified`
+
+### Goal
+Push the CNPG recovery drill built earlier this session, verify it actually recovers real data from S3 with hard proof rather than just pod status, document the results, and tear down the disposable test cluster.
+
+### What we did
+- Renamed the `ObjectStore` CR `cloudnative-pg-storj` → `cloudnative-pg-backup` across `cluster.yaml`, `restore-test/app/cluster.yaml`, and `cnpg/mod.just`, since the pointer name shouldn't bake in the current S3 provider; discussed the blast radius of a future provider switch (B2/Hetzner) and the recovery-discontinuity risk for backups predating any such switch.
+- Ran `/git-commit`: committed the recovery-drill + DR-runbook + `just cnpg` work as `dafd5f6` (`feat(cloudnative-pg): add recovery drill and DR restore tooling`); `git fetch --dry-run` failed in this environment (SSH agent/publickey error), so upstream drift could not be checked before committing.
+- Discovered the commit was already on `origin/main` and Flux had already reconciled `cloudnative-pg-restore-test` to Ready — but `kubectl`/`flux` were hitting a TLS-handshake timeout against the API server (TCP connected, TLS hung) at the same time. Launched the `cluster-doctor` agent in the background to diagnose it while continuing.
+- Verified the recovery drill end-to-end against live data: `postgres-v17-restore-test-1` reached `Ready` in 54 seconds from a base backup ~5h24m old. Confirmed it was a genuine physical recovery, not a coincidentally-matching empty cluster, via `pg_control_system()` — identical 64-bit `system_identifier` on both clusters, with the recovered cluster correctly promoted onto a new timeline (`1` → `2`) and `pg_is_in_recovery() = false`.
+- `cluster-doctor` reported back: the TLS timeout was a transient, self-resolved API-server/VIP stall with no evidence tying it to the concurrent Rook-Ceph OSD work happening in this same repo. It also self-corrected its own stale frontmatter (old 3-node/Longhorn topology → current 5-node/Rook-Ceph), added two new memory notes (Talos-native VIP, benign apiserver↔etcd loopback log noise), and expanded the MCP viewer's RBAC to read Rook-Ceph and Prometheus-Operator CRDs.
+- Updated `docs/ROADMAP.md` (item 1: drill results + proof method; item 4: recovery mechanics now proven, not just unblocked) and `docs/CLUSTER.md` (Recovery model callout now states "verified," not "designed").
+- Deleted `kubernetes/apps/database/cloudnative-pg/restore-test/` and its reference in the parent `kustomization.yaml`, tearing the disposable drill cluster back out of Git — pending commit + push for Flux to actually prune it from the live cluster.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/ROADMAP.md` | Added recovery-drill verification results to item 1; updated item 4's "unblocked" note |
+| `docs/CLUSTER.md` | Recovery-model callout now states the drill is verified, not just designed |
+| `kubernetes/apps/database/cloudnative-pg/kustomization.yaml` | Removed the `restore-test/ks.yaml` reference |
+| `kubernetes/apps/database/cloudnative-pg/restore-test/ks.yaml` | Deleted — drill torn down after verification |
+| `kubernetes/apps/database/cloudnative-pg/restore-test/app/kustomization.yaml` | Deleted — drill torn down |
+| `kubernetes/apps/database/cloudnative-pg/restore-test/app/cluster.yaml` | Deleted — drill torn down |
+| `.claude/agents/cluster-doctor.md` | Agent self-corrected stale 3-node/Longhorn frontmatter to current 5-node/Rook-Ceph topology |
+| `.claude/agent-memory/cluster-doctor/MEMORY.md` | Agent indexed its two new memory notes |
+| `.claude/agent-memory/cluster-doctor/reference_talos_native_vip.md` | New — the VIP is Talos-native, not a `kube-vip` pod |
+| `.claude/agent-memory/cluster-doctor/reference_apiserver_etcd_loopback_noise.md` | New — apiserver↔etcd loopback gRPC log noise is benign here absent etcd-side symptoms |
+| `scripts/mcp.sh` | Agent expanded MCP viewer RBAC to read Rook-Ceph and Prometheus-Operator CRDs |
+
+### Key decisions
+- Logged this as a distinct, second same-day session entry rather than amending the earlier one — substantial new work (live verification with concrete proof, not just "built") happened after that entry was already written and closed.
+- Used `pg_control_system()`'s `system_identifier` match as the recovery proof rather than row-count/table comparisons, since the shared cluster currently holds negligible application data — identifier + timeline comparison is conclusive regardless of data volume.
+- Did not re-list files already committed in `dafd5f6` (covered by the prior entry) in this entry's table, to avoid duplicating the same paths across two adjacent session records.
+
+---
+
 ## 2026-06-18 — `cnpg-barman-cloud-pitr-recovery`
 
 ### Goal

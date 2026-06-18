@@ -54,6 +54,8 @@ S3-compatible bucket, closing that gap.
 
 **Verified working:** `ContinuousArchiving` and `LastBackupSucceeded` Cluster conditions both `True`; a manual test `Backup` completed end-to-end (hot/online, ~4s) with objects confirmed landing in the Storj bucket.
 
+**Recovery verified via live drill (2026-06-18):** a disposable `postgres-v17-restore-test` Cluster (`kubernetes/apps/database/cloudnative-pg/restore-test/`, removed again after the drill) recovered via `bootstrap.recovery.source` + `externalClusters[].plugin` pointing at the same `cloudnative-pg-backup` ObjectStore — `Cluster` object created to `Ready` in **54 seconds**, replaying ~5h24m of WAL forward from the most recent base backup. Confirmed as a genuine physical recovery (not a coincidentally-matching empty cluster) via `pg_control_system()`: identical `system_identifier` on source and recovered cluster, with the recovered cluster correctly promoted onto a new timeline (`1` → `2`). The renamed `cloudnative-pg-backup` ObjectStore (was `cloudnative-pg-storj`, made provider-agnostic since the CR name shouldn't bake in the current S3 backend) and a commented `bootstrap.recovery`/`externalClusters` template + runbook now live directly in `cluster.yaml` for the real disaster-recovery case — since CNPG only consults `spec.bootstrap` once, at `Cluster`-object creation, a full reset/rebootstrap today would otherwise silently `initdb` an empty database instead of recovering. Automated via `just cnpg restore-from-backup`/`undo-restore` (`cnpg/mod.just`).
+
 **Dependency chain:** `cloudnative-pg-operator → plugin-barman-cloud → cloudnative-pg-cluster` (`ks.yaml` `dependsOn`).
 
 ---
@@ -94,7 +96,7 @@ The `postgres-v17-rw` Service is created automatically by CNPG and always points
 
 CNPG supports in-place major version upgrades by creating a new cluster from a backup of the old one. The `postBuild.substitute` + `CNPG_V17_CURRENT_CLUSTER` / `CNPG_V17_PREVIOUS_CLUSTER` variables in `ks.yaml` (see bykaj reference `cluster/ks.yaml`) encode the active and previous cluster names so the `recovery.source` in the Cluster CR can be managed without editing YAML.
 
-**When to implement:** barman-cloud (item 1 above) is now done, so this is unblocked — pick up when a 17 → 18 upgrade is actually needed.
+**When to implement:** barman-cloud (item 1 above) is now done, and its `bootstrap.recovery`/`externalClusters` mechanics have been proven end-to-end via a live drill — not just theoretically unblocked. Pick up when a 17 → 18 upgrade is actually needed.
 
 ---
 
@@ -102,38 +104,29 @@ CNPG supports in-place major version upgrades by creating a new cluster from a b
 
 The `postgres-backup-local` CronJob writes a daily `pg_dumpall` backup to TrueNAS (`/mnt/tank/Cluster/cloudnative-pg`). A backup that has never been tested for restore is not a backup. This item tracks the restore workflow and periodic drills.
 
-**Restore procedure (full cluster restore):**
+**Why not restore straight into `postgres-v17-rw`:** `postgres-backup-local` dumps with `POSTGRES_EXTRA_OPTS: "-c"` (clean), so the dump is a single linear script containing `DROP DATABASE`/`DROP ROLE`/`CREATE DATABASE` statements ahead of each database's data. There is no way to selectively replay that "into a temporary database" on the same live server — piping it into `postgres-v17-rw` as superuser would drop and recreate every database on the production cluster. The only way to honor "never touch live data" is a fully disposable scratch Postgres server that never contacts `postgres-v17-rw`, mirroring the barman-cloud restore drill ([item 1 above](#1--barman-cloud-plugin--s3-wal-archiving-pitr-)).
 
-1. Locate the latest backup on TrueNAS:
-   ```sh
-   ls -lh /mnt/tank/Cluster/cloudnative-pg/last/
-   # e.g. postgres-20260529-203903.sql.gz
-   ```
-
-2. Copy the dump to a pod with `psql` access (or use a temporary pod):
-   ```sh
-   kubectl run -n database restore-shell --rm -it \
-     --image=docker.io/prodrigestivill/postgres-backup-local:17 \
-     --overrides='{"spec":{"volumes":[{"name":"backups","nfs":{"server":"10.200.0.41","path":"/mnt/tank/Cluster/cloudnative-pg"}}],"containers":[{"name":"restore-shell","image":"docker.io/prodrigestivill/postgres-backup-local:17","command":["bash"],"volumeMounts":[{"name":"backups","mountPath":"/backups"}]}]}}' -- bash
-   ```
-
-3. Run the restore inside the pod:
-   ```sh
-   gunzip -c /backups/last/postgres-latest.sql.gz | \
-     psql -h postgres-v17-rw.database.svc.cluster.local \
-          -U postgres \
-          --set ON_ERROR_STOP=on
-   ```
-   The dump includes `DROP`/`CREATE` statements (`-c` flag), so re-importing into an existing cluster is idempotent.
+**Restore drill:** automated via `just cnpg nfs-restore-drill` (`cnpg/mod.just`). The recipe:
+1. Starts a disposable `postgres:17` pod (official image, not the `prodrigestivill/postgres-backup-local` client wrapper) with the NFS backup share mounted **read-only**
+2. Discovers the latest backup filename dynamically from `/backups/last/*.sql.gz` inside that pod (never assumes a fixed filename)
+3. Restores the dump into the scratch instance only, via `psql --set ON_ERROR_STOP=on`, timing the operation
+4. Verifies by comparing database list (`pg_database`) and role list (`pg_roles`) between the scratch (restored) instance and the live `postgres-v17` primary — the live-side check is read-only, via `kubectl exec` into the existing CNPG primary pod (local trust auth as the `postgres` OS user), so the production superuser password is never extracted from `cloudnative-pg-secret`
+5. Tears the scratch pod down unconditionally (`trap ... EXIT`), so a failed run never leaves an orphaned pod. Set `KEEP_SCRATCH=1` to skip auto-teardown for manual inspection (used for the canary check below)
 
 **Restore drill checklist:**
-- [ ] Restore into a temporary database (`CREATE DATABASE restore_test`) rather than overwriting live data
-- [ ] Confirm row counts match between source and restored DB for key tables
-- [ ] Confirm `pg_restore_log` has no errors
-- [ ] Document the time taken (sets expectations for RTO)
-- [ ] Delete the test database when done
+- [x] Confirm the drill restored into the disposable scratch pod only — `postgres-v17-rw` was never contacted (structural: the recipe never references that Service)
+- [x] Confirm database list and role list match between scratch and live (modulo the scratch pod's own bootstrap defaults)
+- [x] Confirm `psql` exited 0 with no `ERROR`/`FATAL` lines in its output (there is no `pg_restore_log` — that's `pg_restore`/custom-format terminology; this is a plain-text dump restored via `psql`)
+- [x] Document the time taken (RTO) — printed by the recipe on completion
+- [x] Confirm the scratch pod was deleted (`kubectl get pod -n database` shows it gone)
 
-**When to drill:** after first successful backup, then every 3 months or after any major Postgres version upgrade.
+**Scope note:** no per-app data exists on `postgres-v17` yet — [item 3, per-app provisioning](#3--per-app-database-and-user-provisioning), is still pending — so the first drill run seeded a throwaway canary database/table on production (then deleted it) purely to give the row-count check something real to verify. Going forward, re-run this drill after item 3 lands real app data and extend the verification step to compare row counts for the app's key tables.
+
+**When to drill:** after first successful backup, then every 3 months or after any major Postgres version upgrade. Each run is recorded below:
+
+| Date | Duration (RTO) | Pass/Fail | Notes | Next due |
+|------|-----------------|-----------|-------|----------|
+| _(pending first run)_ | | | | |
 
 **Dependencies:** `postgres-backup-local` ✅ (backup running)
 
