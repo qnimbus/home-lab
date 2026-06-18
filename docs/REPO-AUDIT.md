@@ -1,7 +1,7 @@
 # GitOps Repository Audit <!-- omit from toc -->
 
 > **Living document** — re-run the audit commands in [How to Re-Audit](#how-to-re-audit) after significant changes and update the findings below.
-> Last audited: **2026-06-17** · Auditor: Claude Code (`gitops-repo-audit` skill) — post Rook-Ceph migration + GitHub App auth cutover. Follow-up fix pass same cycle: W3, I1, I5, I7, I8, I9 resolved; only W1 (Alertmanager receiver) and I4 (cosign coverage) remain open
+> Last audited: **2026-06-18** · Auditor: Claude Code (`gitops-repo-audit` skill) — refresh pass. Verified all 2026-06-17 fixes (W2/W3/I1/I2/I3/I5/I6/I7/I8/I9) are durable, and reviewed the new `cloudnative-pg/plugin-barman-cloud` component (PITR backups to Storj S3) added since: cosign-verified, correctly chained `dependsOn`, no redundant blocks — no new findings. Only W1 (Alertmanager receiver) and I4 (cosign coverage) remain open.
 
 ## Contents <!-- omit from toc -->
 
@@ -31,9 +31,9 @@
 
 | Kind | Count | Δ since 2026-06-05 |
 |---|---|---|
-| HelmRelease | 27 | +1 |
-| Kustomization | 41 | +1 |
-| OCIRepository | 19 | +2 (rook-ceph, rook-ceph-cluster) |
+| HelmRelease | 28 | +2 |
+| Kustomization | 42 | +2 |
+| OCIRepository | 20 | +3 (rook-ceph, rook-ceph-cluster, plugin-barman-cloud) |
 | HelmRepository | 4 | -1 |
 | Receiver | 1 | — |
 | Alert | 1 | — |
@@ -42,7 +42,7 @@
 
 **Namespaces (app-declared via `namespace.yaml`)**: actions-runner-system, automation, database, external-secrets, network, observability, openebs, reloader, rook-ceph, system-upgrade, tailscale. **Bootstrap-managed** (created by the Helmfile bootstrap phase before Flux takes over, not by a GitOps `namespace.yaml`): kube-system, cert-manager, flux-system.
 
-**Applications**: cilium · coredns · cert-manager · external-secrets · onepassword-connect · openebs · rook-ceph (operator + cluster) · envoy-gateway · cloudflared · external-dns (cloudflare + unifi) · tailscale-operator · actions-runner-controller · kube-prometheus-stack · smartctl-exporter · spegel · metrics-server · reloader · tuppr · cloudnative-pg (+ pgadmin + postgres-backup-local) · waha · external-services (truenas + wan-failover) · flux-operator · flux-instance · flux-receiver · flux-alerts
+**Applications**: cilium · coredns · cert-manager · external-secrets · onepassword-connect · openebs · rook-ceph (operator + cluster) · envoy-gateway · cloudflared · external-dns (cloudflare + unifi) · tailscale-operator · actions-runner-controller · kube-prometheus-stack · smartctl-exporter · spegel · metrics-server · reloader · tuppr · cloudnative-pg (+ pgadmin + postgres-backup-local + plugin-barman-cloud) · waha · external-services (truenas + wan-failover) · flux-operator · flux-instance · flux-receiver · flux-alerts
 
 > Longhorn is fully gone (superseded by Rook-Ceph, big-bang migration). `rook-ceph` (`ceph-block`) is now the default StorageClass with all 5 stateful consumers migrated.
 
@@ -94,7 +94,7 @@ All Flux resources use current stable API versions. No migration required.
 | `cluster-settings` ConfigMap + `cluster-secrets` Secret carry `reconcile.fluxcd.io/watch: Enabled` | ✅ |
 | All OCI-sourced HelmReleases use `chartRef` (modern pattern); the 4 remaining `HelmRepository`+`chart.spec` HelmReleases (cilium, external-secrets, onepassword-connect, metrics-server) are pinned to upstreams with no official OCI artifact | ✅ |
 | No legacy `install.remediation.retries`-only pattern — global `cluster-apps` patch injects `strategy.name: RetryOnFailure` + remediation defaults for every HelmRelease | ✅ |
-| Zero `dependsOn` cycles or dangling references across all 41 Kustomizations (verified programmatically) | ✅ |
+| Zero `dependsOn` cycles or dangling references across all 42 Kustomizations (verified programmatically) | ✅ |
 | Multi-document `ks.yaml` for operator + CRD-instance Kustomizations (operator dry-run isolation) | ✅ |
 | Renovate tracks all pinned versions via `# renovate: datasource=...` annotations; all OCIRepository refs use immutable exact tags | ✅ |
 | Receiver deployed for webhook-triggered immediate reconciliation on Git push | ✅ |
@@ -122,11 +122,11 @@ Was tracked as I6 (recommended `podAntiAffinity`). Implemented instead via `topo
 
 #### ✅ RESOLVED — Drift detection now cluster-wide default
 
-`driftDetection.mode: enabled` is in the global `cluster-apps` patch. All 27 HelmReleases have drift detection enabled.
+`driftDetection.mode: enabled` is in the global `cluster-apps` patch. All 28 HelmReleases have drift detection enabled.
 
 #### ✅ RESOLVED — FluxInstance `cluster.size` now set to `medium`
 
-Was I1. `spec.cluster.size: medium` set in `flux-instance` values — appropriate for ~27 HelmReleases / ~41 Kustomizations (upstream guidance reserves `large` for fleets approaching a thousand apps).
+Was I1. `spec.cluster.size: medium` set in `flux-instance` values — appropriate for ~28 HelmReleases / ~42 Kustomizations (upstream guidance reserves `large` for fleets approaching a thousand apps).
 
 #### ✅ RESOLVED — Redundant `createNamespace: true` removed from 5 HelmReleases
 
@@ -169,7 +169,7 @@ Was I9 (found during a follow-up discussion, not the original audit pass). `flux
 
 ### OCI Supply Chain (Cosign Verification)
 
-19 OCIRepositories in use. 6 have `spec.verify.provider: cosign`:
+20 OCIRepositories in use. 7 have `spec.verify.provider: cosign`:
 
 | OCIRepository | Cosign |
 |---|---|
@@ -179,6 +179,7 @@ Was I9 (found during a follow-up discussion, not the original audit pass). `flux
 | tailscale-operator | ✅ |
 | external-dns | ✅ |
 | openebs | ✅ |
+| **plugin-barman-cloud** | ✅ (new) |
 | cert-manager | ❌ |
 | cloudnative-pg | ❌ |
 | coredns | ❌ |
@@ -193,7 +194,7 @@ Was I9 (found during a follow-up discussion, not the original audit pass). `flux
 | spegel | ❌ |
 | tuppr | ❌ |
 
-13 repositories remain unverified, including the two new Rook-Ceph sources added during the storage migration. Should be assessed individually — some upstreams (e.g. cert-manager) publish cosign signatures; others may not.
+13 of 20 repositories remain unverified, including the two Rook-Ceph sources added during the storage migration. The newest addition, `plugin-barman-cloud`, ships cosign signatures and was verified on arrival — a good sign the convention is sticking for new apps. The remaining 13 should be assessed individually — some upstreams (e.g. cert-manager) publish cosign signatures; others may not.
 
 ### Network & RBAC
 
@@ -217,7 +218,7 @@ _None._
 | # | Finding | Action |
 |---|---|---|
 | W1 | Flux `Alert`/`Provider` forward errors into Alertmanager, but Alertmanager has **no outbound receiver** (default `null` route) | Add an Alertmanager `config:` with a Slack/Discord/email/PagerDuty receiver + `route` (tracked in ROADMAP → Alertmanager Receiver) |
-| ~~W2~~ | ~~Drift detection on 5/20 HelmReleases only~~ | ✅ Resolved — global patch in `cluster-apps` now injects `driftDetection: enabled` for all 27 HelmReleases |
+| ~~W2~~ | ~~Drift detection on 5/20 HelmReleases only~~ | ✅ Resolved — global patch in `cluster-apps` now injects `driftDetection: enabled` for all 28 HelmReleases |
 | ~~W3~~ | ~~13 `configMapGenerator`-based values ConfigMaps lack `reconcile.fluxcd.io/watch: Enabled`~~ | ✅ Resolved — `generatorOptions.labels` added to all 13 `kustomization.yaml` files |
 
 ### Info
@@ -227,7 +228,7 @@ _None._
 | ~~I1~~ | ~~FluxInstance `cluster.size` unset (`cluster: {}`)~~ | ✅ Resolved — set to `medium` |
 | ~~I2~~ | ~~FluxInstance sync: SSH deploy key~~ | ✅ Resolved — GitHub App auth live (`provider: github`, `flux-github-app` secret); ROADMAP.md entry marked done |
 | ~~I3~~ | ~~No `retryInterval` on HelmReleases~~ | ✅ Resolved — `retryInterval: 2m` in the global `cluster-apps` patch + top-level Kustomizations |
-| I4 | 13 OCIRepositories without cosign (2 new: `rook-ceph`, `rook-ceph-cluster`) | Audit each upstream for cosign availability; add verification where supported |
+| I4 | 13 of 20 OCIRepositories without cosign (`rook-ceph`, `rook-ceph-cluster` among them; newest addition `plugin-barman-cloud` arrived pre-verified) | Audit each upstream for cosign availability; add verification where supported |
 | ~~I5~~ | ~~Validation CI picks up non-K8s YAMLs~~ | ✅ Resolved — turned out CI/Task already scope `validate.sh` to `-d kubernetes`, never touching `Taskfile.yaml`/`talos/`; removed the dead `-e kubernetes/bootstrap` exclude (bootstrap moved to repo-root `bootstrap/` some time ago, so the flag pointed at a non-existent path) |
 | ~~I6~~ | ~~kustomize-controller co-location~~ | ✅ Resolved — `topologySpreadConstraints` + 2 replicas on helm/kustomize/notification-controller |
 | ~~I7~~ | ~~5 HelmReleases set redundant `createNamespace: true`~~ | ✅ Resolved — removed the now-empty `install:` block from all 5 |

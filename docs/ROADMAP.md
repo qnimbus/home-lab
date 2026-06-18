@@ -32,34 +32,29 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 
 The `cloudnative-pg-deploy` session deployed the CNPG operator and a shared `postgres-v17` cluster (3 instances, `openebs-hostpath`). Three follow-on items were explicitly deferred:
 
-#### 1 — Barman-cloud plugin + S3 WAL archiving (PITR)
+#### 1 — Barman-cloud plugin + S3 WAL archiving (PITR) ✅
 
-The cluster currently has HA via streaming replication but **no point-in-time recovery**. If all 3 replicas lose their `openebs-hostpath` volumes simultaneously (node failures, accidental PVC deletion), data is gone. Adding barman-cloud provides continuous WAL archiving to S3-compatible storage and enables PITR.
+Deployed 2026-06-18. The cluster previously had HA via streaming replication but no point-in-time
+recovery; barman-cloud now provides continuous WAL archiving plus daily base backups to a Storj.io
+S3-compatible bucket, closing that gap.
 
-**What to add** (following `tmp/home-ops-bykaj` reference):
+**What was implemented:**
 
-1. **OCIRepository** `kubernetes/flux/meta/repos/oci/barman-cloud.yaml` — `oci://ghcr.io/cloudnative-pg/charts/plugin-barman-cloud`
-2. **barman-cloud Kustomization** `kubernetes/apps/database/cloudnative-pg/barman-cloud/` — HelmRelease + cert-manager Certificates for plugin mTLS (the plugin communicates with the operator over a mutual-TLS gRPC channel)
-3. **ObjectStore CR** `kubernetes/apps/database/cloudnative-pg/cluster/app/objectstore.yaml` — points at Cloudflare R2 (or Backblaze B2); S3 credentials via ExternalSecret
-4. **ScheduledBackup CR** `kubernetes/apps/database/cloudnative-pg/cluster/app/scheduledbackup.yaml` — daily base backup, `method: plugin`, `backupOwnerReference: self`
-5. **Cluster CR updates** — add `plugins:` (WAL archiver) and `externalClusters:` (recovery source) entries; introduce `postBuild.substitute` with `CNPG_V17_CURRENT_CLUSTER` in `ks.yaml` so recovery `serverName` can be managed without editing the manifest
+1. **OCIRepository** `kubernetes/flux/meta/repos/oci/plugin-barman-cloud.yaml` — `oci://ghcr.io/cloudnative-pg/charts/plugin-barman-cloud` (cosign-verified, same publisher pipeline as the CNPG operator chart)
+2. **plugin-barman-cloud Kustomization** `kubernetes/apps/database/cloudnative-pg/plugin-barman-cloud/app/` — HelmRelease only. The chart is fully self-contained (creates its own cert-manager `Issuer`/`Certificate`s and a pre-annotated `Service` for plugin discovery) — no manual TLS resources needed, simpler than originally scoped below
+3. **ObjectStore CR** `kubernetes/apps/database/cloudnative-pg/cluster/app/objectstore.yaml` — targets an existing Storj.io bucket (`https://gateway.storjshare.io`), not Cloudflare R2/Backblaze B2 as originally planned. Storj's client-side-encrypted, erasure-coded architecture (no single custodian holds a complete decryptable copy) avoids the US CLOUD Act exposure that R2/B2 share regardless of EU data-residency settings
+4. **ScheduledBackup CR** `kubernetes/apps/database/cloudnative-pg/cluster/app/scheduledbackup.yaml` — daily `02:00 UTC` base backup, `method: plugin`, `backupOwnerReference: self`, `immediate: true`
+5. **Cluster CR** — `plugins: [{isWALArchiver: true, name: barman-cloud.cloudnative-pg.io}]`; `serverName` parameterized via `postBuild.substitute.CNPG_V17_CURRENT_CLUSTER` in `ks.yaml`
 
-**1Password fields to add** to the existing `cloudnative-pg` item:
+**1Password fields added** to the existing `cloudnative-pg` item: `S3_ACCESS_KEY`, `S3_SECRET_KEY` (Storj access key ID / secret key).
 
-| Field | Value |
-|-------|-------|
-| `S3_ACCESS_KEY` | R2 / B2 access key ID |
-| `S3_SECRET_KEY` | R2 / B2 secret key |
+**Two non-obvious bugs found during live testing** (fixed in commits `ff4c48d` / `9c883a6`):
+- The existing ExternalSecret's `target.template.data` block is an explicit key allow-list — `dataFrom.extract` + `rewrite.regexp` only populates the *template's* variable namespace, it does **not** automatically add new keys to the rendered Secret. Adding the 1Password fields alone did nothing until `CNPG_S3_ACCESS_KEY`/`CNPG_S3_SECRET_KEY` were added explicitly to `template.data`.
+- Storj's S3 gateway rejects `PutObject` calls using botocore's newer chunked-trailer checksum encoding (`MissingContentLength`). Fixed via `ObjectStore.spec.instanceSidecarConfiguration.env`, setting `AWS_REQUEST_CHECKSUM_CALCULATION`/`AWS_RESPONSE_CHECKSUM_VALIDATION` to `when_required` — the only override point the plugin exposes for the per-instance sidecar that runs both WAL archiving and base backups.
 
-Update `cluster/app/externalsecret.yaml` to include these in the superuser secret template (`CNPG_S3_ACCESS_KEY`, `CNPG_S3_SECRET_KEY`).
+**Verified working:** `ContinuousArchiving` and `LastBackupSucceeded` Cluster conditions both `True`; a manual test `Backup` completed end-to-end (hot/online, ~4s) with objects confirmed landing in the Storj bucket.
 
-**Dependency chain update:**
-```
-cloudnative-pg-operator → barman-cloud → cloudnative-pg-cluster
-```
-The cluster ks.yaml `dependsOn` must gain `barman-cloud` once the plugin is wired in.
-
-**Reference:** `tmp/home-ops-bykaj/kubernetes/apps/database/cloudnative-pg/barman-cloud/` and `cluster/app/objectstore.yaml`.
+**Dependency chain:** `cloudnative-pg-operator → plugin-barman-cloud → cloudnative-pg-cluster` (`ks.yaml` `dependsOn`).
 
 ---
 
@@ -99,7 +94,7 @@ The `postgres-v17-rw` Service is created automatically by CNPG and always points
 
 CNPG supports in-place major version upgrades by creating a new cluster from a backup of the old one. The `postBuild.substitute` + `CNPG_V17_CURRENT_CLUSTER` / `CNPG_V17_PREVIOUS_CLUSTER` variables in `ks.yaml` (see bykaj reference `cluster/ks.yaml`) encode the active and previous cluster names so the `recovery.source` in the Cluster CR can be managed without editing YAML.
 
-**When to implement:** after barman-cloud backup is wired in (item 1 above) — the upgrade path depends on a working WAL archive and base backup to restore from.
+**When to implement:** barman-cloud (item 1 above) is now done, so this is unblocked — pick up when a 17 → 18 upgrade is actually needed.
 
 ---
 
@@ -1005,8 +1000,9 @@ is on Ceph, NFS-CSI, or a future backend.
 **Recommended backup target — Backblaze B2 (or Cloudflare R2):**
 Restic supports any S3-compatible backend. B2 is the cost-effective choice: ~$0.006/GB/month
 storage, no per-request fees above the free tier, and Cloudflare-peered so egress from cluster → B2
-is free. **R2 is worth considering for consistency** — the CloudNativePG PITR item already targets
-R2/B2 for WAL archiving, so sharing one provider/credential surface reduces moving parts.
+is free. **Storj is also worth considering for consistency** — the CloudNativePG PITR item now uses
+an existing Storj.io bucket for WAL archiving, so sharing one provider/credential surface reduces
+moving parts.
 Self-hosted MinIO is the alternative if no egress cost or offline access is preferred — but adds
 another stateful workload to maintain.
 

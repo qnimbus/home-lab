@@ -504,16 +504,18 @@ Sourced via OCIRepository: `ghcr.io/bjw-s-labs/helm/app-template` (defined in `k
 
 #### Backup strategy
 
-Two layers, one deployed and one planned:
+Two independent layers, both deployed:
 
 | Layer | Mechanism | Target | Frequency | Retention |
 |---|---|---|---|---|
 | **Logical dump** ✅ | `postgres-backup-local` CronJob (`pg_dumpall`) | TrueNAS NFS `10.200.0.41:/mnt/tank/Cluster/cloudnative-pg` | `@daily` | 7 days / 4 weeks / 6 months |
-| **WAL archiving / PITR** 🔲 | barman-cloud plugin + `ObjectStore` CR | Cloudflare R2 / Backblaze B2 | Continuous | TBD |
+| **WAL archiving / PITR** ✅ | `plugin-barman-cloud` + `ObjectStore` CR | Storj.io S3-compatible bucket (`gateway.storjshare.io`) | Continuous WAL + daily base backup (`02:00 UTC`) | 30 days |
 
 The logical backup runs as UID 4000, writes gzip-compressed SQL, and keeps a `last/postgres-latest.sql.gz` symlink for quick restore access. The `-c` flag in `POSTGRES_EXTRA_OPTS` emits `DROP ... IF EXISTS` before each object, making restores clean and idempotent.
 
-> **Current recovery limit**: without WAL archiving, the only recovery point is the most recent daily dump. Data written between the last dump and a total PVC loss (all three nodes) is unrecoverable. See **[ROADMAP.md → CloudNativePG: Backup, PITR, and Per-App Provisioning](ROADMAP.md#cloudnative-pg-backup-pitr-and-per-app-provisioning)** for the barman-cloud implementation plan and **[ROADMAP.md → Postgres NFS Backup: Restore Drill](ROADMAP.md#postgres-nfs-backup-restore-drill)** for the manual restore procedure.
+The barman-cloud plugin runs as a per-instance sidecar (chart is self-contained — provisions its own cert-manager certs for the operator↔plugin gRPC channel) that streams WAL segments to Storj as they're generated and takes the nightly base backup from a replica to avoid primary load. Storj was chosen over Cloudflare R2/Backblaze B2 for its client-side-encrypted, erasure-coded architecture — no single custodian holds a complete decryptable copy, avoiding the US CLOUD Act exposure R2/B2 share regardless of EU data-residency settings.
+
+> **Recovery model**: with both layers live, a total loss of all three `openebs-hostpath` volumes is recoverable to near the point of failure via barman-cloud PITR, with the NFS logical dump as a simpler, independent fallback restore path. See **[ROADMAP.md → CloudNativePG: Backup, PITR, and Per-App Provisioning](ROADMAP.md#cloudnative-pg-backup-pitr-and-per-app-provisioning)** for implementation detail and **[ROADMAP.md → Postgres NFS Backup: Restore Drill](ROADMAP.md#postgres-nfs-backup-restore-drill)** for the manual NFS restore procedure.
 
 ---
 
@@ -688,7 +690,7 @@ flowchart TD
   actions_runner_system["actions-runner-system (2)"]
   automation["automation (1)"]
   cert_manager["cert-manager (2)"]
-  database["database (4)"]
+  database["database (5)"]
   external_secrets["external-secrets (3)"]
   flux_bootstrap["flux-bootstrap (3)"]
   flux_system["flux-system (4)"]
@@ -764,23 +766,27 @@ flowchart TD
 </details>
 
 <details>
-<summary>database (4)</summary>
+<summary>database (5)</summary>
 
 ```mermaid
 flowchart TD
   flux_system_cloudnative_pg_cluster["cloudnative-pg-cluster"]
   flux_system_cloudnative_pg_operator["cloudnative-pg-operator"]
   flux_system_pgadmin["pgadmin"]
+  flux_system_plugin_barman_cloud["plugin-barman-cloud"]
   flux_system_postgres_backup_local["postgres-backup-local"]
   flux_system_cert_manager(("cert-manager · cert-manager")):::external
   flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
   flux_system_rook_ceph_cluster(("rook-ceph-cluster · rook-ceph")):::external
   flux_system_cloudnative_pg_cluster --> flux_system_cloudnative_pg_operator
   flux_system_cloudnative_pg_cluster --> flux_system_onepassword_store
+  flux_system_cloudnative_pg_cluster --> flux_system_plugin_barman_cloud
   flux_system_cloudnative_pg_operator --> flux_system_cert_manager
   flux_system_pgadmin --> flux_system_cloudnative_pg_cluster
   flux_system_pgadmin --> flux_system_onepassword_store
   flux_system_pgadmin --> flux_system_rook_ceph_cluster
+  flux_system_plugin_barman_cloud --> flux_system_cert_manager
+  flux_system_plugin_barman_cloud --> flux_system_cloudnative_pg_operator
   flux_system_postgres_backup_local --> flux_system_cloudnative_pg_cluster
   classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
 ```
