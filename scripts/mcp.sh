@@ -147,6 +147,14 @@ rules:
   - apiGroups: [tuppr.home-operations.com]
     resources: ["*"]
     verbs: [get, list, watch]
+  # Storage — Rook-Ceph CRDs (CephCluster, CephBlockPool, …)
+  - apiGroups: [ceph.rook.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  # Observability — Prometheus Operator CRDs (ServiceMonitor, PrometheusRule, …)
+  - apiGroups: [monitoring.coreos.com]
+    resources: ["*"]
+    verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
