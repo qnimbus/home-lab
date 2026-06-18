@@ -173,7 +173,7 @@ nodes:
           - "10.200.0.201/24"
         mtu: 9000
 
-  - hostname: "talos-cp-02"                       # Lenovo M90q #1 (i5-10500T, 6C/12T, 64GB) — permanent CP; single 1GbE RJ45; VLAN 60 native/untagged (mgmt), VLAN 200 tagged (storage)
+  - hostname: "talos-cp-02"                       # Lenovo M90q #1 (i5-10500T, 6C/12T, 64GB, +X520-DA2 SFP+ 10GbE) — permanent CP
     ipAddress: "10.60.0.202"
     installDiskSelector:
       model: "KINGSTON SNV3S1000G"               # Kingston NV3 1TB — boot disk; CT2000T500SSD8 (T500 2TB) is Ceph OSD
@@ -186,32 +186,10 @@ nodes:
       topology.kubernetes.io/zone: homelab-cp-02
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
-      # talhelper generates both a VLANConfig doc AND processes inline machine.network vlans[],
-      # causing "file exists" when both try to create the VLAN subinterface. Fix: omit vlans:
-      # from networkInterfaces and own the full VLAN config here.
-      # Use interface: eno1 (explicit kernel name) rather than deviceSelector in the patch —
-      # a deviceSelector in the patch creates a second alias for the same NIC, cascading into
-      # duplicate VLAN subinterfaces (7+) that overflow Cilium's BPF VLAN filter limit.
-      # VLAN 60 (management) is native/untagged on the switch port — address lives directly on
-      # the physical interface in networkInterfaces below. Only VLAN 200 (storage) is tagged.
-      # Native/untagged VLAN 100 (10.100.0.0/24) is reserved for Intel AMT on the same NIC.
-      - |-
-        machine:
-          network:
-            interfaces:
-              - interface: eno1
-                vlans:
-                  - vlanId: 200
-                    dhcp: false
-                    addresses:
-                      - "10.200.0.202/24"
-                    mtu: 1500
     networkInterfaces:
-      # Single 1GbE RJ45 (eno1) — VLAN 60 (management) is native/untagged on the switch port;
-      # address configured directly on the physical interface.
+      # Management — single Intel I219-LM RJ45 (driver: e1000e) — VLAN 60 (management) is
+      # native/untagged on the switch port; address configured directly on the physical interface.
       # Native/untagged VLAN 100 (10.100.0.0/24) for Intel AMT is handled by the ME firmware.
-      # VLAN 200 (storage) rides tagged — config lives in the inline patch above to avoid the
-      # VLANConfig doc vs inline machine.network dual-controller conflict.
       - deviceSelector:
           hardwareAddr: "6c:24:08:4b:3f:e1"      # eno1 — onboard Intel NIC
         dhcp: false
@@ -223,8 +201,30 @@ nodes:
         mtu: 1500
         vip:
           ip: "${clusterEndpoint}"
+      # Storage — LACP bond of 2x SFP+ ports (Intel X520-DA2 / ixgbe, enp2s0f0 + enp2s0f1).
+      # hardwareAddr selectors used rather than driver: — see cp-01 comment above for why a
+      # driver selector matches both ports at once and prevents the bond from forming.
+      # bond-storage: consistent name across all nodes — the storage-VLAN fabric for Rook-Ceph
+      # (cluster_network on hostNetwork OSDs). Replaced the old eno1.200 VLAN-trunk storage path
+      # 2026-06-18 after adding this card; LACP confirmed (speedMbit: 20000 aggregate) and Ceph
+      # OSD/mon connectivity verified healthy post-cutover.
+      - interface: bond-storage
+        bond:
+          mode: 802.3ad
+          lacpRate: fast
+          miimon: 100
+          updelay: 200
+          downdelay: 200
+          xmitHashPolicy: layer3+4
+          deviceSelectors:
+            - hardwareAddr: "90:e2:ba:e8:e9:d0"   # enp2s0f0 — X520-DA2 port 0
+            - hardwareAddr: "90:e2:ba:e8:e9:d1"   # enp2s0f1 — X520-DA2 port 1
+        dhcp: false
+        addresses:
+          - "10.200.0.202/24"
+        mtu: 9000
 
-  - hostname: "talos-cp-03"                       # Lenovo M90q #2 (i5-10500T, 6C/12T, 64GB) — permanent CP; single 1GbE RJ45; VLAN 60 native/untagged (mgmt), VLAN 200 tagged (storage)
+  - hostname: "talos-cp-03"                       # Lenovo M90q #2 (i5-10500T, 6C/12T, 64GB, +X520-DA2 SFP+ 10GbE) — permanent CP
     ipAddress: "10.60.0.203"
     installDiskSelector:
       model: "WD PC SN740 SDDQNQD-256G-1001"    # WD SN740 256GB (2230, WLAN slot) — boot disk; CT2000T500SSD8 (T500 2TB) is Ceph OSD
@@ -237,32 +237,10 @@ nodes:
       topology.kubernetes.io/zone: homelab-cp-03
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
-      # talhelper generates both a VLANConfig doc AND processes inline machine.network vlans[],
-      # causing "file exists" when both try to create the VLAN subinterface. Fix: omit vlans:
-      # from networkInterfaces and own the full VLAN config here.
-      # Use interface: eno1 (explicit kernel name) rather than deviceSelector in the patch —
-      # a deviceSelector in the patch creates a second alias for the same NIC, cascading into
-      # duplicate VLAN subinterfaces (7+) that overflow Cilium's BPF VLAN filter limit.
-      # VLAN 60 (management) is native/untagged on the switch port — address lives directly on
-      # the physical interface in networkInterfaces below. Only VLAN 200 (storage) is tagged.
-      # Native/untagged VLAN 100 (10.100.0.0/24) is reserved for Intel AMT on the same NIC.
-      - |-
-        machine:
-          network:
-            interfaces:
-              - interface: eno1
-                vlans:
-                  - vlanId: 200
-                    dhcp: false
-                    addresses:
-                      - "10.200.0.203/24"
-                    mtu: 1500
     networkInterfaces:
-      # Single 1GbE RJ45 (eno1) — VLAN 60 (management) is native/untagged on the switch port;
-      # address configured directly on the physical interface.
+      # Management — single Intel I219-LM RJ45 (driver: e1000e) — VLAN 60 (management) is
+      # native/untagged on the switch port; address configured directly on the physical interface.
       # Native/untagged VLAN 100 (10.100.0.0/24) for Intel AMT is handled by the ME firmware.
-      # VLAN 200 (storage) rides tagged — config lives in the inline patch above to avoid the
-      # VLANConfig doc vs inline machine.network dual-controller conflict.
       - deviceSelector:
           hardwareAddr: "88:a4:c2:cc:ce:ac"      # eno1 — onboard Intel NIC
         dhcp: false
@@ -274,6 +252,28 @@ nodes:
         mtu: 1500
         vip:
           ip: "${clusterEndpoint}"
+      # Storage — LACP bond of 2x SFP+ ports (Intel X520-DA2 / ixgbe, enp2s0f0 + enp2s0f1).
+      # hardwareAddr selectors used rather than driver: — see cp-01 comment above for why a
+      # driver selector matches both ports at once and prevents the bond from forming.
+      # bond-storage: consistent name across all nodes — the storage-VLAN fabric for Rook-Ceph
+      # (cluster_network on hostNetwork OSDs). Replaced the old eno1.200 VLAN-trunk storage path
+      # 2026-06-18 after adding this card; LACP confirmed (speedMbit: 20000 aggregate) and Ceph
+      # OSD/mon connectivity verified healthy post-cutover.
+      - interface: bond-storage
+        bond:
+          mode: 802.3ad
+          lacpRate: fast
+          miimon: 100
+          updelay: 200
+          downdelay: 200
+          xmitHashPolicy: layer3+4
+          deviceSelectors:
+            - hardwareAddr: "90:e2:ba:e8:ea:64"   # enp2s0f0 — X520-DA2 port 0
+            - hardwareAddr: "90:e2:ba:e8:ea:65"   # enp2s0f1 — X520-DA2 port 1
+        dhcp: false
+        addresses:
+          - "10.200.0.203/24"
+        mtu: 9000
 
 patches:
   - "@./patches/global/machine-features.yaml"

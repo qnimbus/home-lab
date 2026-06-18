@@ -4,6 +4,37 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-18 — `cp02-cp03-bond-storage-10gbe`
+
+### Goal
+Verify newly-installed X520-DA2 SFP+ 10GbE NICs on cp-02 and cp-03, then migrate their storage network from the legacy 1GbE VLAN trunk to a proper `bond-storage` LACP bond, keeping config and docs in sync at every step.
+
+### What we did
+- Verified cp-03's new NIC via `talosctl -n 10.60.0.203 get links -o yaml`: `enp2s0f0`/`enp2s0f1` bound to the `ixgbe` driver as Intel 82599ES (X520-DA2), PCI `8086:10FB` — confirmed at the PCI/driver level before any cable was connected (`linkState: false` at that point, which is expected and distinct from driver binding).
+- Edited `talos/talconfig.yaml` for `talos-cp-03`: replaced the inline VLAN-200-over-`eno1` storage patch with a `bond-storage` LACP interface (802.3ad, MTU 9000) using the discovered MACs, matching the existing `cp-01`/`worker-01`/`worker-02` pattern. Marked provisional (not yet cabled) and validated the render via `talhelper genconfig`.
+- User then installed the matching card in cp-02 (M90q #1) and cabled both nodes; re-verified both via `talosctl get links` — both now showed `linkState: true`, `speedMbit: 10000`, `duplex: Full`, `port: DirectAttach`. Added the matching `bond-storage` block to cp-02's `talconfig.yaml` entry.
+- Updated `docs/CLUSTER.md` (NIC topology table) and `docs/HARDWARE-ARCHITECTURE.md` (action item 8) to describe the staged-but-unapplied bond, explicitly noting the live storage path was still the VLAN trunk until cutover.
+- Before applying anything live, asked the user to confirm the switch-side 802.3ad port-channel + jumbo-frame config was in place (it was), then confirmed an explicit go-ahead for a **staggered** apply — never both control-plane nodes at once, to protect etcd quorum and avoid a simultaneous Ceph network event.
+- Captured a Ceph baseline (`HEALTH_OK`, 8/8 OSDs up, mons `a`/`d`/`e` on cp-01/worker-02/cp-03) before touching anything.
+- Applied `task talos:apply IP=10.60.0.203` (cp-03) then, after verifying health, `IP=10.60.0.202` (cp-02) — both applied without a reboot. Confirmed each bond came up with `mode: 802.3ad` and `speedMbit: 20000` (both 10G members aggregated, proving LACP actually negotiated with the switch rather than just link-up).
+- Cutover briefly surfaced `OSD_SLOW_PING_TIME_BACK`/`_FRONT` `HEALTH_WARN` between cp-02/cp-03's OSDs; diagnosed as transient switch MAC-table/ARP relearning (latency dropped on each recheck, affected node-pairs shifted, PGs stayed `active+clean`) rather than a real fault — used a backgrounded `until` poll loop to wait for `HEALTH_OK` rather than blocking on a fixed sleep. Final state: 5/5 nodes Ready, 8/8 OSDs up, 3/3 mons in quorum, zero pod restarts on any affected mon/OSD throughout.
+- Updated the `talconfig.yaml` bond comments from "provisional/do not apply" to a record of the completed, verified cutover; updated `CLUSTER.md`'s table to show all 5 nodes on `bond-storage` with a dated note on the cutover and the transient warning; marked the `HARDWARE-ARCHITECTURE.md` action item ✅ DONE.
+- Ran `/git-commit`: 3 files were already staged, reviewed the diff and commit-log style, confirmed no upstream drift, committed as `8661329`. Did not push.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | Replaced cp-02/cp-03's VLAN-200-over-`eno1` storage trunk with a `bond-storage` 802.3ad LACP bond (MTU 9000) on the new X520-DA2 ports; updated hostname comments |
+| `docs/CLUSTER.md` | NIC topology table now shows all 5 nodes on `bond-storage`; added a dated note on the cutover and the transient `OSD_SLOW_PING_TIME` warning |
+| `docs/HARDWARE-ARCHITECTURE.md` | Marked action item 8 (X520 SFP+ install on M90q #1/#2) ✅ DONE |
+
+### Key decisions
+- Used `hardwareAddr` deviceSelectors (not `driver:`) for the bond members — a driver selector matches both ports of the same NIC simultaneously and silently prevents the bond from forming, per the same gotcha already documented at `cp-01`'s bond-storage entry.
+- Treated applying the network change to live control-plane/Ceph-OSD nodes as a risky, confirm-first action: prepared and validated the config fully, but did not run `task talos:apply` until the user explicitly confirmed switch-side LACP readiness and a staggered apply order.
+- Investigated the post-cutover `HEALTH_WARN` rather than dismissing or rolling back — the decreasing latency and shifting affected node-pairs across repeated checks were the signal that it was self-healing relearning, not a real fault.
+
+---
+
 ## 2026-06-18 — `flux-dependson-graph`
 
 ### Goal

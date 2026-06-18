@@ -25,17 +25,19 @@ Five-node bare-metal Talos Linux cluster (3 control-plane + 2 workers, schedulin
 
 ### Node NIC topology
 
-All CP nodes and workers with 10 GbE cards use a dedicated storage bond on the `10.200.0.0/24` subnet. This bond carries **Rook-Ceph cluster replication traffic** via `hostNetwork` OSDs (`cluster_network: 10.200.0.0/24`). cp-02 and cp-03 are single-port 1GbE nodes that trunk storage over a VLAN on the same NIC.
+All 5 nodes use a dedicated storage bond on the `10.200.0.0/24` subnet. This bond carries **Rook-Ceph cluster replication traffic** via `hostNetwork` OSDs (`cluster_network: 10.200.0.0/24`).
 
 | Node | Management | Storage |
 |------|------------|---------|
 | talos-cp-01 | `enp4s0` — Intel I225-V (igc), `10.60.0.201/24` (+ kube-vip `10.60.0.2`) | `bond-storage` — 2× Intel X710 SFP+ (i40e) `enp5s0f0np0`+`enp5s0f1np1`, `10.200.0.201/24` |
-| talos-cp-02 | `eno1` — Intel I219-LM (e1000e), `10.60.0.202/24` | `eno1.200` — VLAN 200 sub-interface, `10.200.0.202/24` |
-| talos-cp-03 | `eno1` — Intel I219-LM (e1000e), `10.60.0.203/24` | `eno1.200` — VLAN 200 sub-interface, `10.200.0.203/24` |
+| talos-cp-02 | `eno1` — Intel I219-LM (e1000e), `10.60.0.202/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp2s0f0`+`enp2s0f1`, `10.200.0.202/24` |
+| talos-cp-03 | `eno1` — Intel I219-LM (e1000e), `10.60.0.203/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp2s0f0`+`enp2s0f1`, `10.200.0.203/24` |
 | talos-worker-01 | `eno1` — Intel I219-LM (e1000e), `10.60.0.204/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp1s0f0`+`enp1s0f1`, `10.200.0.204/24` |
 | talos-worker-02 | `eno1` — Intel I219-LM (e1000e), `10.60.0.205/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp1s0f0`+`enp1s0f1`, `10.200.0.205/24` |
 
-Storage bonds (cp-01, worker-01, worker-02) run **802.3ad LACP** (fast rate, `layer3+4` hash policy) at **MTU 9000 (jumbo frames)**. Management interfaces run at MTU 1500. cp-01 also has an unused `enp3s0` (RTL8125B, r8169) that is down.
+All 5 storage bonds run **802.3ad LACP** (fast rate, `layer3+4` hash policy) at **MTU 9000 (jumbo frames)**, aggregating to a 20 Gbit/s link per node (`speedMbit: 20000` on the bond master). Management interfaces run at MTU 1500. cp-01 also has an unused `enp3s0` (RTL8125B, r8169) that is down.
+
+> **2026-06-18:** cp-02 and cp-03 each had an Intel X520-DA2 SFP+ 10GbE card added, replacing their previous `eno1.200` VLAN-200 storage trunk (single 1GbE NIC, MTU 1500). Cut over to `bond-storage` live with zero pod restarts on the affected mon/OSD pods; briefly surfaced `OSD_SLOW_PING_TIME_BACK`/`_FRONT` warnings (MAC-table/ARP relearning on the switch after the interface swap) that self-cleared within ~1 minute back to `HEALTH_OK`.
 
 > etcd peer traffic is restricted to the management subnet (`advertisedSubnets: ["10.60.0.0/24"]`) — it never crosses the storage VLAN.
 

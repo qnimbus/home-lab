@@ -217,6 +217,7 @@ Reuses the existing `10.200.0.0/24` storage fabric and policy (see [CLUSTER.md](
 5. **Add M920q #1 P310 2TB as Ceph OSD** — drive is physically installed; Rook-Ceph operator needs to discover it and add it as OSD #4 to complete the 4-host failure-domain topology.
 6. ✅ **DONE** — M90q WLAN slot confirmed PCIe/NVMe via M90q #2 WD SN740 2230 in WLAN slot.
 7. **Future capacity-first scaling:** buy additional T500 2TB drives and drop into banked M90q OSD bays (WLAN slot confirmed viable).
+8. ✅ **DONE (2026-06-18)** — X520-DA2 SFP+ 10GbE cards installed and cut over to `bond-storage` on both M90q #1 (cp-02) and M90q #2 (cp-03), closing the gap with the "10 GbE Network Design" section above (previously both ran storage over a 1GbE VLAN trunk — see CLUSTER.md). LACP confirmed (20 Gbit/s aggregate per node); Ceph stayed `HEALTH_OK` with zero pod restarts through the cutover.
 
 ---
 
