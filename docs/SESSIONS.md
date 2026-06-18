@@ -4,6 +4,35 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-18 — `flux-dependson-graph`
+
+### Goal
+Build tooling to chart and verify the Flux Kustomization `dependsOn` graph, then use it to find and fix a real obsolete dependency and stale doc references.
+
+### What we did
+- Built `scripts/depgraph.py` to parse `spec.dependsOn` across all 41 Kustomizations in `kubernetes/flux/**/ks.yaml` and `kubernetes/apps/**/ks.yaml`; implements three-color DFS cycle detection, dangling-reference detection, and transitive-redundancy detection (edge A→B flagged when B is also reachable from A via another path, but not auto-removed).
+- Verified the graph: 0 cycles, 0 dangling references, 7 transitively-redundant edges — kept as-is since this repo's style declares explicit deps for robustness even when transitively implied.
+- Generated a Mermaid visualization embedded in `docs/CLUSTER.md` under a new "App Dependency Graph" section (marked `<!-- BEGIN/END: DEPENDENCY-GRAPH-AUTO -->` for regeneration via `python3 scripts/depgraph.py`). First iteration was a single flat 41-node graph; redesigned after feedback into a collapsed 15-node group-level overview plus 15 collapsible (`<details>`) per-group detail diagrams with external-dependency stub nodes, fixing the unreadable arrow fan-in around `external-secrets`/`onepassword-store`.
+- Cross-referenced the chart against `docs/CONVENTIONS.md`'s documented "CRD pre-bootstrap phase" fix and found `smartctl-exporter`'s `dependsOn: kube-prometheus-stack` was an obsolete leftover from before that fix existed — contrasted against `flux-alerts`'s identical-looking dependency, which is legitimate (its `Provider` needs a live Alertmanager Service, not just the CRD). Removed the obsolete `dependsOn`.
+- Discovered `CLUSTER.md` and `CONVENTIONS.md` still referenced the pre-move `kubernetes/bootstrap/helmfile.yaml` path (the bootstrap dir moved to top-level `bootstrap/` back in the `five-node-bootstrap-completion` session); corrected both references to `bootstrap/helmfile.d/01-apps.yaml` / `bootstrap/helmfile.d/00-crds.yaml`.
+- Answered a question on whether CloudNativePG's dependents (`pgadmin`, `postgres-backup-local`) need to be suspended before scaling down/redeploying `cloudnative-pg-cluster`: confirmed via their `ks.yaml` (`wait: false`, no `healthChecks`) that Flux's `dependsOn` is install-order-only and never cascades health or suspend signals downstream — no GitOps action needed, only an optional `postgres-backup-local` suspend to avoid a failed-backup-job alert during the maintenance window.
+- Staged the session's changes via `/git-stage` (excluded `docs/ROADMAP.md`, a pre-existing unrelated modification).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `scripts/depgraph.py` | New — parses the Kustomization `dependsOn` graph; detects cycles, dangling refs, transitively-redundant edges; renders the collapsed overview + per-group Mermaid views into `docs/CLUSTER.md` |
+| `docs/CLUSTER.md` | Added "App Dependency Graph" section (auto-generated, marked block); fixed 2 stale `kubernetes/bootstrap/helmfile.yaml` path references |
+| `docs/CONVENTIONS.md` | Fixed stale `kubernetes/bootstrap/helmfile.d/00-crds.yaml` path reference |
+| `kubernetes/apps/observability/smartctl-exporter/ks.yaml` | Removed obsolete `dependsOn: kube-prometheus-stack` (superseded by the CRD pre-bootstrap phase) |
+
+### Key decisions
+- Flag transitively-redundant `dependsOn` edges for human review rather than auto-remove them — an explicit edge can be intentional robustness that survives if the intermediate dependency's own edge is later removed.
+- Redesigned the single flat Mermaid graph into a collapsed group overview + collapsible per-group detail views (GitHub `<details>` blocks) after the flat version proved unreadable around high-fan-in nodes like `external-secrets`.
+- Left `flux-alerts`'s `dependsOn: kube-prometheus-stack` untouched despite looking identical to the `smartctl-exporter` case — it's a genuine functional dependency (live Alertmanager Service for its `Provider`), not a CRD-dry-run artifact.
+
+---
+
 ## 2026-06-13 — `five-node-bootstrap-completion`
 
 ### Goal

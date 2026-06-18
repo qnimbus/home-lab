@@ -43,7 +43,7 @@ Storage bonds (cp-01, worker-01, worker-02) run **802.3ad LACP** (fast rate, `la
 
 ## Running Components
 
-**Talos v1.13.2 / Kubernetes v1.36.1.** All Helm-deployed components are installed via Helmfile during bootstrap (`kubernetes/bootstrap/helmfile.yaml`); version pins are tracked by Renovate.
+**Talos v1.13.2 / Kubernetes v1.36.1.** All Helm-deployed components are installed via Helmfile during bootstrap (`bootstrap/helmfile.d/01-apps.yaml`); version pins are tracked by Renovate.
 
 ### Kubernetes control plane · `kube-system`
 
@@ -588,7 +588,7 @@ All five nodes have Rook-Ceph OSD disks live and contributing to the `ceph-block
 
 ## FluxCD
 
-Flux is bootstrapped via Helmfile (`kubernetes/bootstrap/helmfile.yaml`), not `flux bootstrap`. Two charts from the [flux-operator](https://fluxcd.control-plane.io/operator/) are used:
+Flux is bootstrapped via Helmfile (`bootstrap/helmfile.d/01-apps.yaml`), not `flux bootstrap`. Two charts from the [flux-operator](https://fluxcd.control-plane.io/operator/) are used:
 
 | Chart | Role |
 |-------|------|
@@ -663,6 +663,306 @@ Helmfile: cilium → coredns → spegel → cert-manager → flux-operator → f
           (bootstrap secrets — sops-age, 1password-connect, flux-github-app — applied before apps stage)
 GitOps:   cluster-meta → cluster-vars → cluster-apps → <individual app Kustomizations>
 ```
+
+### App Dependency Graph
+
+Generated from every `spec.dependsOn` edge across all `ks.yaml` files — grouped by the app
+directory each Kustomization lives under. Regenerate after changing any `dependsOn` with:
+
+```sh
+python3 scripts/depgraph.py
+```
+
+The script also prints cycle, dangling-reference, and possibly-redundant-edge findings to the
+console (the latter are flagged for review, not auto-fixed — an edge that's transitively implied
+may still be declared explicitly so the dependency survives if the intermediate one is ever
+removed). Pass `--check` to skip the doc update and only print findings (e.g. for CI).
+
+<!-- BEGIN: DEPENDENCY-GRAPH-AUTO -->
+**Overview** — collapsed to one node per app directory; arrow means "depends on". Expand a group below for the individual Kustomizations and their external dependencies.
+
+```mermaid
+flowchart TD
+  actions_runner_system["actions-runner-system (2)"]
+  automation["automation (1)"]
+  cert_manager["cert-manager (2)"]
+  database["database (4)"]
+  external_secrets["external-secrets (3)"]
+  flux_bootstrap["flux-bootstrap (3)"]
+  flux_system["flux-system (4)"]
+  kube_system["kube-system (5)"]
+  network["network (7)"]
+  observability["observability (2)"]
+  openebs["openebs (1)"]
+  rook_ceph["rook-ceph (2)"]
+  system["system (1)"]
+  system_upgrade["system-upgrade (2)"]
+  tailscale["tailscale (2)"]
+  actions_runner_system --> external_secrets
+  automation --> external_secrets
+  automation --> rook_ceph
+  cert_manager --> external_secrets
+  database --> cert_manager
+  database --> external_secrets
+  database --> rook_ceph
+  flux_system --> external_secrets
+  flux_system --> network
+  flux_system --> observability
+  network --> cert_manager
+  network --> external_secrets
+  network --> kube_system
+  observability --> external_secrets
+  observability --> rook_ceph
+  tailscale --> external_secrets
+  tailscale --> kube_system
+```
+
+<details>
+<summary>actions-runner-system (2)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_actions_runner_controller["actions-runner-controller"]
+  flux_system_actions_runner_home_lab["actions-runner-home-lab"]
+  flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
+  flux_system_actions_runner_controller --> flux_system_onepassword_store
+  flux_system_actions_runner_home_lab --> flux_system_actions_runner_controller
+  classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
+```
+
+</details>
+
+<details>
+<summary>automation (1)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_waha["waha"]
+  flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
+  flux_system_rook_ceph_cluster(("rook-ceph-cluster · rook-ceph")):::external
+  flux_system_waha --> flux_system_onepassword_store
+  flux_system_waha --> flux_system_rook_ceph_cluster
+  classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
+```
+
+</details>
+
+<details>
+<summary>cert-manager (2)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_cert_manager["cert-manager"]
+  flux_system_cluster_issuers["cluster-issuers"]
+  flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
+  flux_system_cluster_issuers --> flux_system_onepassword_store
+  classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
+```
+
+</details>
+
+<details>
+<summary>database (4)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_cloudnative_pg_cluster["cloudnative-pg-cluster"]
+  flux_system_cloudnative_pg_operator["cloudnative-pg-operator"]
+  flux_system_pgadmin["pgadmin"]
+  flux_system_postgres_backup_local["postgres-backup-local"]
+  flux_system_cert_manager(("cert-manager · cert-manager")):::external
+  flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
+  flux_system_rook_ceph_cluster(("rook-ceph-cluster · rook-ceph")):::external
+  flux_system_cloudnative_pg_cluster --> flux_system_cloudnative_pg_operator
+  flux_system_cloudnative_pg_cluster --> flux_system_onepassword_store
+  flux_system_cloudnative_pg_operator --> flux_system_cert_manager
+  flux_system_pgadmin --> flux_system_cloudnative_pg_cluster
+  flux_system_pgadmin --> flux_system_onepassword_store
+  flux_system_pgadmin --> flux_system_rook_ceph_cluster
+  flux_system_postgres_backup_local --> flux_system_cloudnative_pg_cluster
+  classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
+```
+
+</details>
+
+<details>
+<summary>external-secrets (3)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_external_secrets["external-secrets"]
+  flux_system_onepassword_connect["onepassword-connect"]
+  flux_system_onepassword_store["onepassword-store"]
+  flux_system_onepassword_store --> flux_system_external_secrets
+  flux_system_onepassword_store --> flux_system_onepassword_connect
+```
+
+</details>
+
+<details>
+<summary>flux-bootstrap (3)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_cluster_apps["cluster-apps"]
+  flux_system_cluster_meta["cluster-meta"]
+  flux_system_cluster_vars["cluster-vars"]
+  flux_system_cluster_apps --> flux_system_cluster_meta
+  flux_system_cluster_apps --> flux_system_cluster_vars
+  flux_system_cluster_vars --> flux_system_cluster_meta
+```
+
+</details>
+
+<details>
+<summary>flux-system (4)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_flux_alerts["flux-alerts"]
+  flux_system_flux_instance["flux-instance"]
+  flux_system_flux_operator["flux-operator"]
+  flux_system_flux_receiver["flux-receiver"]
+  flux_system_envoy_gateway_config(("envoy-gateway-config · network")):::external
+  flux_system_external_secrets(("external-secrets · external-secrets")):::external
+  flux_system_kube_prometheus_stack(("kube-prometheus-stack · observability")):::external
+  flux_system_onepassword_connect(("onepassword-connect · external-secrets")):::external
+  flux_system_flux_alerts --> flux_system_kube_prometheus_stack
+  flux_system_flux_instance --> flux_system_external_secrets
+  flux_system_flux_instance --> flux_system_flux_operator
+  flux_system_flux_receiver --> flux_system_envoy_gateway_config
+  flux_system_flux_receiver --> flux_system_flux_operator
+  flux_system_flux_receiver --> flux_system_onepassword_connect
+  classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
+```
+
+</details>
+
+<details>
+<summary>kube-system (5)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_cilium["cilium"]
+  flux_system_cilium_config["cilium-config"]
+  flux_system_coredns["coredns"]
+  flux_system_metrics_server["metrics-server"]
+  flux_system_spegel["spegel"]
+  flux_system_cilium_config --> flux_system_cilium
+```
+
+</details>
+
+<details>
+<summary>network (7)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_cloudflared["cloudflared"]
+  flux_system_envoy_gateway["envoy-gateway"]
+  flux_system_envoy_gateway_config["envoy-gateway-config"]
+  flux_system_external_dns_cloudflare["external-dns-cloudflare"]
+  flux_system_external_dns_unifi["external-dns-unifi"]
+  flux_system_truenas["truenas"]
+  flux_system_wan_failover["wan-failover"]
+  flux_system_cilium_config(("cilium-config · kube-system")):::external
+  flux_system_cluster_issuers(("cluster-issuers · cert-manager")):::external
+  flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
+  flux_system_cloudflared --> flux_system_envoy_gateway_config
+  flux_system_cloudflared --> flux_system_external_dns_cloudflare
+  flux_system_cloudflared --> flux_system_onepassword_store
+  flux_system_envoy_gateway --> flux_system_cilium_config
+  flux_system_envoy_gateway_config --> flux_system_cluster_issuers
+  flux_system_envoy_gateway_config --> flux_system_envoy_gateway
+  flux_system_external_dns_cloudflare --> flux_system_envoy_gateway_config
+  flux_system_external_dns_cloudflare --> flux_system_onepassword_store
+  flux_system_external_dns_unifi --> flux_system_envoy_gateway_config
+  flux_system_external_dns_unifi --> flux_system_onepassword_store
+  flux_system_truenas --> flux_system_envoy_gateway_config
+  flux_system_wan_failover --> flux_system_envoy_gateway_config
+  classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
+```
+
+</details>
+
+<details>
+<summary>observability (2)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_kube_prometheus_stack["kube-prometheus-stack"]
+  flux_system_smartctl_exporter["smartctl-exporter"]
+  flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
+  flux_system_rook_ceph_cluster(("rook-ceph-cluster · rook-ceph")):::external
+  flux_system_kube_prometheus_stack --> flux_system_onepassword_store
+  flux_system_kube_prometheus_stack --> flux_system_rook_ceph_cluster
+  classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
+```
+
+</details>
+
+<details>
+<summary>openebs (1)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_openebs["openebs"]
+```
+
+</details>
+
+<details>
+<summary>rook-ceph (2)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_rook_ceph_cluster["rook-ceph-cluster"]
+  flux_system_rook_ceph_operator["rook-ceph-operator"]
+  flux_system_rook_ceph_cluster --> flux_system_rook_ceph_operator
+```
+
+</details>
+
+<details>
+<summary>system (1)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_reloader["reloader"]
+```
+
+</details>
+
+<details>
+<summary>system-upgrade (2)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_tuppr["tuppr"]
+  flux_system_tuppr_upgrade["tuppr-upgrade"]
+  flux_system_tuppr_upgrade --> flux_system_tuppr
+```
+
+</details>
+
+<details>
+<summary>tailscale (2)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_tailscale_configs["tailscale-configs"]
+  flux_system_tailscale_operator["tailscale-operator"]
+  flux_system_cilium_config(("cilium-config · kube-system")):::external
+  flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
+  flux_system_tailscale_configs --> flux_system_tailscale_operator
+  flux_system_tailscale_operator --> flux_system_cilium_config
+  flux_system_tailscale_operator --> flux_system_onepassword_store
+  classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
+```
+
+</details>
+
+<!-- END: DEPENDENCY-GRAPH-AUTO -->
 
 ---
 

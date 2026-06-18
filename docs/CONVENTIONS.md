@@ -218,7 +218,7 @@ is wrong for two reasons:
 
 ### The correct fix — CRD pre-bootstrap phase
 
-`kubernetes/bootstrap/helmfile.d/00-crds.yaml` runs **before** Flux reconciles anything.
+`bootstrap/helmfile.d/00-crds.yaml` runs **before** Flux reconciles anything.
 It renders each chart with `--include-crds` and filters the output to CRDs only via a
 `yq` post-renderer, installing zero controllers:
 

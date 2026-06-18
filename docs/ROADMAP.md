@@ -17,7 +17,6 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
   - [Kubernetes Descheduler](#kubernetes-descheduler)
   - [Talos Config, Image Extensions \& Patch Audit](#talos-config-image-extensions--patch-audit)
   - [Migrate Remaining HelmRepositories to `home-operations/charts-mirror`](#migrate-remaining-helmrepositories-to-home-operationscharts-mirror)
-  - [FluxInstance: Migrate Sync to GitHub App Authentication](#fluxinstance-migrate-sync-to-github-app-authentication)
   - [Tailscale kubectl Authentication (RBAC)](#tailscale-kubectl-authentication-rbac)
   - [Cilium BGP Control Plane (replace L2 Announcement)](#cilium-bgp-control-plane-replace-l2-announcement)
   - [CSI Snapshots (external-snapshotter + Ceph VolumeSnapshotClass)](#csi-snapshots-external-snapshotter--ceph-volumesnapshotclass)
@@ -1288,7 +1287,7 @@ A third Gateway alongside `envoy-external` and `envoy-internal`, purpose-built f
 | Cilium                        | Running via Helmfile bootstrap                  |
 | CoreDNS                       | Running via Helmfile bootstrap                  |
 | cert-manager                  | Running via Helmfile bootstrap                  |
-| Flux (operator + instance)    | Reconciling from private repo via SSH           |
+| Flux (operator + instance)    | Reconciling from private repo via GitHub App auth (`provider: github`, `flux-github-app` ExternalSecret) — migrated off SSH deploy key |
 | Renovate                      | `renovate.json5` in place; GitHub App installed; Talos/k8s tracked via `separateMinorPatch` rules (PRs target tuppr CRDs) |
 | Talos + Kubernetes upgrades   | tuppr deployed; Talos v1.13.2; Kubernetes v1.36.1; upgrades now fully automated via Renovate PRs + tuppr |
 | OpenEBS OCIRepository fix     | Transient timing race (HelmRelease checked source 30s before artifact was stored); forced reconcile cleared it; added `crds: CreateReplace` to HelmRelease |
