@@ -1,0 +1,36 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/postgresql.cnpg.io/cluster_v1.json
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres-v17-restore-test
+spec:
+  instances: 1
+  # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.6
+  enableSuperuserAccess: true
+  superuserSecret:
+    name: cloudnative-pg-secret # recovery restores the real superuser password from the backup anyway
+  bootstrap:
+    recovery:
+      source: postgres-v17-source
+      # No recoveryTarget: recovers to the latest available WAL, proving the
+      # "how current is a restore" claim rather than just restoring the base backup.
+  externalClusters:
+    - name: postgres-v17-source
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: cloudnative-pg-backup
+          serverName: postgres-v17-20260618 # live cluster's actual backup prefix
+  # Deliberately no `plugins:` block - this cluster only reads existing backups,
+  # it never archives its own WAL, so it can't collide with the production prefix.
+  resources:
+    requests:
+      cpu: 80m
+      memory: 768Mi
+    limits:
+      memory: 2Gi
+  storage:
+    size: 20Gi
+    storageClass: openebs-hostpath

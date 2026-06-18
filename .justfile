@@ -4,6 +4,7 @@ set quiet := true
 set shell := ['bash', '-euo', 'pipefail', '-c']
 
 mod bootstrap "bootstrap"
+mod cnpg "cnpg"
 mod talos "talos"
 
 [private]

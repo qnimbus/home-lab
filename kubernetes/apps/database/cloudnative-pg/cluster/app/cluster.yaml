@@ -8,6 +8,38 @@ spec:
   instances: 3
   # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
   imageName: ghcr.io/cloudnative-pg/postgresql:17.6
+  ## --- DISASTER RECOVERY ---
+  ## spec.bootstrap is only consulted by CNPG once, the moment this Cluster object is
+  ## first created. It's omitted today, so a from-scratch reset (Talos wipe + fresh
+  ## `just bootstrap`) creates an EMPTY database via the implicit `initdb` default —
+  ## the WAL archive + base backups in `cloudnative-pg-backup` exist but are never
+  ## consulted unless this is set BEFORE the Cluster object is (re)created.
+  ##
+  ## To recover from the most recent S3 backup after a full reset:
+  ##   1. Find the last serverName this cluster archived under: `git log -p --
+  ##      kubernetes/apps/database/cloudnative-pg/ks.yaml` and read the last
+  ##      `CNPG_V17_CURRENT_CLUSTER` value (e.g. "postgres-v17-20260618") —
+  ##      or run `just cnpg restore-from-backup`, which finds it automatically.
+  ##   2. Uncomment `bootstrap.recovery` and `externalClusters` below, setting
+  ##      `serverName` to that value.
+  ##   3. Commit and let Flux (re)create the Cluster with this config — barman-cloud
+  ##      restore runs automatically: pulls the base backup, replays WAL to latest.
+  ##   4. Once healthy, re-comment both blocks (harmless to leave live, but keeps this
+  ##      file matching steady-state so the next reset doesn't need archaeology).
+  ##
+  ## A new serverName is minted every time CNPG_V17_CURRENT_CLUSTER changes (see
+  ## ks.yaml), so the recovered cluster's own WAL archiver never collides with the
+  ## prefix it just restored from — no S3 folder renaming needed.
+  # bootstrap:
+  #   recovery:
+  #     source: postgres-v17-source
+  # externalClusters:
+  #   - name: postgres-v17-source
+  #     plugin:
+  #       name: barman-cloud.cloudnative-pg.io
+  #       parameters:
+  #         barmanObjectName: cloudnative-pg-backup
+  #         serverName: postgres-v17-20260618 # REPLACE with last-known CNPG_V17_CURRENT_CLUSTER
   affinity:
     podAntiAffinityType: required
   # Ref: https://github.com/cloudnative-pg/cloudnative-pg/issues/2570
@@ -21,7 +53,7 @@ spec:
     - isWALArchiver: true
       name: barman-cloud.cloudnative-pg.io
       parameters:
-        barmanObjectName: cloudnative-pg-storj
+        barmanObjectName: cloudnative-pg-backup
         serverName: ${CNPG_V17_CURRENT_CLUSTER}
   postgresql:
     parameters:

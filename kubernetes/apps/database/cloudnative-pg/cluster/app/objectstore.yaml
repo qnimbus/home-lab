@@ -3,7 +3,7 @@
 apiVersion: barmancloud.cnpg.io/v1
 kind: ObjectStore
 metadata:
-  name: cloudnative-pg-storj
+  name: cloudnative-pg-backup
 spec:
   configuration:
     destinationPath: "s3://cloudnative-pg"

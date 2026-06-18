@@ -4,6 +4,53 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-18 — `cnpg-barman-cloud-pitr-recovery`
+
+### Goal
+Implement and verify CloudNativePG PITR (continuous WAL archiving + scheduled base backups) via the `barman-cloud.cloudnative-pg.io` CNPG-I plugin against Storj S3, then research, document, and tool the recovery/restore side, which had never been built or tested.
+
+### What we did
+- Implemented the write path: new `OCIRepository`/`HelmRelease` for the `plugin-barman-cloud` chart, a new `ObjectStore` CR (`cloudnative-pg-storj`) pointing at a Storj S3-compatible bucket, a daily `ScheduledBackup` (`02:00 UTC` + `immediate: true`), and a `plugins:` (WAL-archiver) block on the live `postgres-v17` `Cluster`.
+- Live-tested the pipeline and found/fixed two real bugs blocking it: the `ExternalSecret`'s `target.template.data` allow-list was silently dropping the new `CNPG_S3_ACCESS_KEY`/`CNPG_S3_SECRET_KEY` fields despite `dataFrom.extract` pulling them from 1Password (fixed by adding them explicitly); and Storj's S3 gateway rejected `PutObject` with `MissingContentLength` due to botocore's newer chunked-checksum encoding (fixed via `instanceSidecarConfiguration.env` `AWS_REQUEST_CHECKSUM_CALCULATION`/`AWS_RESPONSE_CHECKSUM_VALIDATION=when_required`). Manually deleted/recreated CNPG instance pods to force them to re-derive specs from the updated `ObjectStore`, since CNPG doesn't bump the `Cluster`'s generation just because a referenced `ObjectStore` CR changed.
+- Added `archive_timeout: 5min` to bound the WAL-archiving staleness gap on a low-write cluster, with inline doc comments explaining the default and rationale.
+- Via `/fork`, updated `docs/ROADMAP.md` and `docs/CLUSTER.md` to mark the barman-cloud item done and document both backup layers + the recovery model; manually cherry-picked only session-relevant hunks out of `docs/CLUSTER.md` via a hand-trimmed patch, since a concurrent external session had also modified that file for unrelated Rook-Ceph/Tailscale/cert content.
+- Researched the actual CNPG-I recovery CRD shape from three corroborating sources rather than assuming legacy non-plugin barman docs applied: this repo's own `.archive` (a commented recovery template + a full restore runbook), the `bykaj` reference repo's live, currently-running recovery config for its own `postgres-v17` cluster, and upstream CNPG/`plugin-barman-cloud` docs. Confirmed the shape: `bootstrap.recovery.source` → `externalClusters[].plugin.parameters.{barmanObjectName,serverName}`, `recoveryTarget` fields (`targetTime`/`targetLSN`/`targetName`/`targetXID`/`targetImmediate`), and that recovery always bootstraps a brand-new `Cluster` object — never in-place.
+- Designed and built a safe, non-destructive recovery drill: a disposable single-instance `postgres-v17-restore-test` `Cluster` (new `restore-test/` Kustomization) that recovers from the live cluster's existing backups but carries no `plugins:` (WAL-archiver) block of its own, so it can never collide with the production S3 prefix.
+- Added a documented, commented-out disaster-recovery template + runbook directly to the live `cluster.yaml`, explaining that CNPG only reads `spec.bootstrap` once, at cluster-creation time — so a full reset/rebootstrap today would silently create an empty database rather than auto-recovering from the S3 backups.
+- Built a new `just cnpg` module (`cnpg/mod.just`, wired into `.justfile`) with `restore-from-backup` (finds the last archived `serverName` from `ks.yaml`'s git history, warns if the cluster is still alive, then writes the recovery block into `cluster.yaml` via `yq`) and `undo-restore` — automates the toil of the Git-mediated DR workflow without ever calling `kubectl apply`, keeping the actual cluster mutation behind a commit and Flux reconciliation.
+- Validated everything offline before staging: `kubectl kustomize` builds for `cluster/app` and `restore-test/app`, a `yq` merge dry-run against a scratch copy, a git-history regex extraction test, and `just --list`/`just cnpg` listing.
+- Ran `/git-stage`: 7 files staged cleanly (no warn-bucket files) — `.justfile`, `cnpg/mod.just`, `cluster.yaml`, `kustomization.yaml`, and the 3 new `restore-test/` files.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/plugin-barman-cloud.yaml` | New OCIRepository for the `plugin-barman-cloud` chart (cosign-verified) |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Registered the new OCIRepository |
+| `kubernetes/apps/database/cloudnative-pg/plugin-barman-cloud/app/helmrelease.yaml` | New HelmRelease for the plugin |
+| `kubernetes/apps/database/cloudnative-pg/plugin-barman-cloud/app/kustomization.yaml` | Kustomize entrypoint for the plugin app |
+| `kubernetes/apps/database/cloudnative-pg/ks.yaml` | Added `plugin-barman-cloud` Kustomization, `cloudnative-pg-cluster` dependsOn + `postBuild.substitute` for the WAL-archiver `serverName` |
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/objectstore.yaml` | New `ObjectStore` CR for Storj S3; added the `MissingContentLength` sidecar checksum workaround |
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/scheduledbackup.yaml` | New daily (`02:00 UTC`) `ScheduledBackup` CR with `immediate: true` |
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/cluster.yaml` | Added the WAL-archiver `plugins:` block, `archive_timeout: 5min`, and a commented disaster-recovery `bootstrap`/`externalClusters` template + runbook |
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/kustomization.yaml` | Registered `objectstore.yaml`/`scheduledbackup.yaml`, then `restore-test/ks.yaml` |
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/externalsecret.yaml` | Added `CNPG_S3_ACCESS_KEY`/`CNPG_S3_SECRET_KEY` to the rendered Secret's `template.data` allow-list |
+| `docs/ROADMAP.md` | Marked the barman-cloud PITR item done with accurate implementation detail |
+| `docs/CLUSTER.md` | Rewrote the backup-strategy table/recovery-model callout and regenerated the dependency graph (session-relevant hunks only) |
+| `docs/REPO-AUDIT.md` | Refreshed resource counts/findings to include the new plugin component |
+| `.justfile` | Wired in the new `cnpg` module |
+| `cnpg/mod.just` | New `restore-from-backup`/`undo-restore` recipes |
+| `kubernetes/apps/database/cloudnative-pg/restore-test/ks.yaml` | New disposable recovery-drill Kustomization |
+| `kubernetes/apps/database/cloudnative-pg/restore-test/app/kustomization.yaml` | Kustomize entrypoint for the drill |
+| `kubernetes/apps/database/cloudnative-pg/restore-test/app/cluster.yaml` | New disposable `postgres-v17-restore-test` Cluster, recovers from the existing Storj backups with no WAL-archiver of its own |
+
+### Key decisions
+- Chose Storj over R2/B2 for its client-side-encrypted, erasure-coded, no-single-custodian architecture, avoiding the US CLOUD Act exposure R2/B2 share regardless of EU data-residency settings — this rationale is now documented in `docs/CLUSTER.md` and would need revisiting if the backend ever changes.
+- The recovery drill cluster deliberately omits its own WAL-archiver `plugins:` block rather than following `.archive`'s S3-folder-rename workaround for the "Expected empty archive" failure mode — a pure-read drill structurally can't collide with the production prefix, so there's nothing to work around.
+- The `just cnpg` module automates only the Git-tracked YAML edit, never the cluster mutation itself — preserves the repo's IaC-only policy (no `kubectl apply` outside Flux) while removing the error-prone manual step of finding the correct historical `serverName`.
+- `bootstrap.recovery` is consulted by CNPG only once, at `Cluster`-object creation time — confirmed via docs and reference-repo behavior, not assumed — which is why the live `cluster.yaml` needed an explicit DR runbook rather than relying on "the backups exist, so recovery will just work."
+
+---
+
 ## 2026-06-18 — `cp02-cp03-bond-storage-10gbe`
 
 ### Goal

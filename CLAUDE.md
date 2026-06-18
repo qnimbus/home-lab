@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-18 | `cnpg-barman-cloud-pitr-recovery` | Implemented barman-cloud PITR to Storj S3 (2 live bugs fixed); built recovery drill, DR runbook, `just cnpg` tooling |
 > | 2026-06-18 | `cp02-cp03-bond-storage-10gbe` | Added X520 SFP+ 10GbE NICs to cp-02/cp-03; migrated storage from VLAN trunk to LACP bond-storage via staggered apply |
 > | 2026-06-18 | `flux-dependson-graph` | Built scripts/depgraph.py (cycle/dangling/redundant checks + Mermaid chart in CLUSTER.md); fixed obsolete smartctl-exporter dependsOn + stale bootstrap path docs |
 > | 2026-06-13 | `five-node-bootstrap-completion` | Fixed cp-01 serial + cp-03 MAC/disk; corrected Rook OSD assignments; bootstrapped 5-node cluster; fixed resources/helmfile pipeline; adopted gotmpl values pattern |
@@ -11,7 +12,6 @@
 > | 2026-06-12 | `ceph-osd-wipe-prometheus-deps` | Fixed Ceph HEALTH_WARN (stale LVM on worker OSDs wiped via privileged pods); fixed kube-prometheus-stack CSI race; hardened bootstrap |
 > | 2026-06-12 | `bootstrap-retest-helm4-fixes` | Reset+rebootstrap to validate CRD pre-bootstrap; fixed 4 task bugs (wait-maintenance jq, task refs, namespace ordering, Helm 4 post-renderer); cloudflared DNSEndpoint race |
 > | 2026-06-12 | `crd-prebootstrap-helmfile-split` | Replaced dependsOn:kube-prometheus-stack workaround with helmfile.d/00-crds.yaml CRD pre-bootstrap phase; validated against bykaj pattern |
-> | 2026-06-12 | `servicemonitor-bootstrap-deadlock` | Fixed circular Flux bootstrap deadlock: metrics-server missing dependsOn; rook-ceph-operator/kube-prometheus-stack cycle broken via dependsOn restructure |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
