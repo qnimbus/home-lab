@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-19 | `cloudflare-edge-cert-gap-and-legacy-dns-cleanup` | Fixed Cloudflare edge-cert two-level wildcard gap; found+cleaned up archived-cluster's orphaned tunnel DNS/TXT records |
 > | 2026-06-19 | `whoami-network-plumbing-fixes` | Deployed whoami smoke-test; fixed cloudflared SNI + ExternalDNS gaps; retargeted envoy-external to proxii.nl |
 > | 2026-06-18 | `rook-ceph-grafana-dashboards` | Confirmed Ceph Prometheus scraping already live; fixed MCP RBAC gap; added 9 ceph-mixin Grafana dashboards |
 > | 2026-06-18 | `cnpg-recovery-drill-verified` | Verified CNPG recovery drill live (54s, matching system ID); renamed ObjectStore provider-agnostic; tore down drill |
@@ -11,7 +12,7 @@
 > | 2026-06-18 | `cp02-cp03-bond-storage-10gbe` | Added X520 SFP+ 10GbE NICs to cp-02/cp-03; migrated storage from VLAN trunk to LACP bond-storage via staggered apply |
 > | 2026-06-18 | `flux-dependson-graph` | Built scripts/depgraph.py (cycle/dangling/redundant checks + Mermaid chart in CLUSTER.md); fixed obsolete smartctl-exporter dependsOn + stale bootstrap path docs |
 > | 2026-06-13 | `five-node-bootstrap-completion` | Fixed cp-01 serial + cp-03 MAC/disk; corrected Rook OSD assignments; bootstrapped 5-node cluster; fixed resources/helmfile pipeline; adopted gotmpl values pattern |
-> | 2026-06-13 | `just-bootstrap-talos-config-improvements` | Migrated bootstrap to `just` pipeline; added `talos/mod.just` day-2 ops; added Talos feature/kubelet/scheduler patches from bykaj comparison |
+
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
