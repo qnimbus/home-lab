@@ -13,6 +13,10 @@ spec:
   values:
     controllers:
       cloudflared:
+        annotations:
+          # config.yaml is mounted via subPath, which Kubernetes never live-updates —
+          # Reloader forces a rolling restart so ConfigMap edits actually take effect.
+          reloader.stakater.com/auto: "true"
         replicas: 2
         strategy: RollingUpdate
         containers:

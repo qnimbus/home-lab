@@ -1,6 +1,10 @@
 originRequest:
   matchSNItoHost: true
-  noTLSVerify: true
+  # Origin cert is now verified: every ingress hostname below has a matching
+  # production wildcard Certificate in envoy-external's certificateRefs
+  # (vwn-app-tls, vwn-casa-tls, apps-vwn-io-tls, vwn-io-tls). If a renewal
+  # ever fails, that domain hard-fails here instead of silently passing.
+  noTLSVerify: false
 
 ingress:
   - hostname: "*.${DOMAIN_APP}"
