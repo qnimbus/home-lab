@@ -6,6 +6,9 @@ metadata:
   annotations:
     external-dns.alpha.kubernetes.io/hostname: kube-vip.cluster.vwn.io
     external-dns.alpha.kubernetes.io/target: "10.60.0.2"
+    # Pin to the dedicated pool-kube-api pool — keeps this Service out of the
+    # envoy-external/envoy-internal block (10.60.0.230/.231).
+    lbipam.cilium.io/ips: "10.60.0.250"
 spec:
   type: LoadBalancer
   # Cluster (not Local): Cilium's L2-announcement leader election is unaware of
