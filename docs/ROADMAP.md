@@ -109,14 +109,16 @@ The `postgres-backup-local` CronJob writes a daily `pg_dumpall` backup to TrueNA
 **Restore drill:** automated via `just cnpg nfs-restore-drill` (`cnpg/mod.just`). The recipe:
 1. Starts a disposable `postgres:17` pod (official image, not the `prodrigestivill/postgres-backup-local` client wrapper) with the NFS backup share mounted **read-only**
 2. Discovers the latest backup filename dynamically from `/backups/last/*.sql.gz` inside that pod (never assumes a fixed filename)
-3. Restores the dump into the scratch instance only, via `psql --set ON_ERROR_STOP=on`, timing the operation
+3. Restores the dump into the scratch instance only, via plain `psql` (deliberately **without** `ON_ERROR_STOP`), timing the operation. A `pg_dumpall --clean` dump replayed by connecting as the very role it drops/recreates (`postgres`) always throws a handful of harmless, well-documented self-referential errors for that one role — can't drop your own current role, so the role "already exists" on the subsequent `CREATE ROLE`, so the dump's recorded `GRANTED BY postgres` can't be replayed until that role holds admin on the granted role. The recipe scans the output and fails only on errors **outside** that known/tolerated set — there is no `pg_restore_log` to check (that's `pg_restore`/custom-format terminology; this is a plain-text dump restored via `psql`)
 4. Verifies by comparing database list (`pg_database`) and role list (`pg_roles`) between the scratch (restored) instance and the live `postgres-v17` primary — the live-side check is read-only, via `kubectl exec` into the existing CNPG primary pod (local trust auth as the `postgres` OS user), so the production superuser password is never extracted from `cloudnative-pg-secret`
 5. Tears the scratch pod down unconditionally (`trap ... EXIT`), so a failed run never leaves an orphaned pod. Set `KEEP_SCRATCH=1` to skip auto-teardown for manual inspection (used for the canary check below)
+
+**Bug found and fixed by the first drill run:** `postgres-backup-local`'s `POSTGRES_EXTRA_OPTS` was `"-c"` only, which makes `pg_dumpall` emit *unconditional* `DROP DATABASE`/`DROP ROLE` statements. Restoring onto a fresh/empty target (exactly the disaster-recovery scenario this backup exists for) failed immediately on the first `DROP DATABASE app` — the database that never existed there. Fixed by adding `--if-exists` (commit `18a053a`, pushed) — the standard pairing for `--clean` that makes those drops conditional.
 
 **Restore drill checklist:**
 - [x] Confirm the drill restored into the disposable scratch pod only — `postgres-v17-rw` was never contacted (structural: the recipe never references that Service)
 - [x] Confirm database list and role list match between scratch and live (modulo the scratch pod's own bootstrap defaults)
-- [x] Confirm `psql` exited 0 with no `ERROR`/`FATAL` lines in its output (there is no `pg_restore_log` — that's `pg_restore`/custom-format terminology; this is a plain-text dump restored via `psql`)
+- [x] Confirm no *unexpected* `ERROR`/`FATAL` lines in `psql` output (the tolerated self-referential `postgres`-role errors above are expected on every run, not a failure signal)
 - [x] Document the time taken (RTO) — printed by the recipe on completion
 - [x] Confirm the scratch pod was deleted (`kubectl get pod -n database` shows it gone)
 
@@ -126,7 +128,24 @@ The `postgres-backup-local` CronJob writes a daily `pg_dumpall` backup to TrueNA
 
 | Date | Duration (RTO) | Pass/Fail | Notes | Next due |
 |------|-----------------|-----------|-------|----------|
-| _(pending first run)_ | | | | |
+| 2026-06-18 | 4s | ✅ Pass | First run. Found+fixed a real restore-blocking bug (missing `--if-exists`, commit `18a053a`). Canary dataset (50 rows) restored intact, matching live exactly; database/role lists matched | 2026-09-18 |
+
+**Real disaster-recovery restore (production-touching):** automated via `just cnpg nfs-restore-from-backup` (`cnpg/mod.just`) — the actual incident-recovery procedure, distinct from the disposable drill above. **Only safe when `postgres-v17` has no data worth losing** (verified live by the recipe before it asks for confirmation) — it restores **directly into `postgres-v17-rw`**, dropping and recreating every database. The recipe:
+1. Prints the current database list on `postgres-v17-rw` and warns explicitly before asking to proceed
+2. Starts a helper pod (official `postgres:17` image, command overridden to `sleep infinity` so it never runs its own `initdb`) with the NFS share mounted read-only and `PGHOST`/`PGUSER`/`PGPASSWORD` wired from `cloudnative-pg-secret` via `secretKeyRef` — credentials never pass through a shell or this tool's context
+3. Discovers the latest backup file and prints its mtime for visual confirmation, behind a second confirm gate
+4. **Terminates all other active backend connections** to `postgres-v17-rw` (`pg_terminate_backend`) immediately before restoring — `DROP DATABASE` refuses to run while *any* session, even idle, is connected, and pgAdmin keeps a persistent connection open per database it has browsed
+5. Restores via `gunzip | psql` (no `ON_ERROR_STOP`), timing the run, and tolerates the same self-referential role errors as the drill plus one CNPG-specific case: `streaming_replica` (CNPG's permanent replication role) can't be dropped because it permanently holds `EXECUTE` grants on file-access functions used by CNPG's instance manager — that role is reconciled by the CNPG operator independently of this dump, so leaving it untouched is correct
+6. Prints the database list again and tears the helper pod down unconditionally
+
+**First real run (2026-06-19):** validated end-to-end against live production with no per-app data at risk (`app` had zero user tables at the time). Two real, previously-undiscovered issues surfaced and were fixed before the run that finally passed cleanly:
+- A `gum log` formatting bug: passing a multi-line message as several separate quoted strings (used purely for source readability) followed by a trailing `stage <value>` pair caused `gum` to mis-pair the extra strings as bogus key/value fields, garbling the rendered warning. Fixed by collapsing each multi-string message into one string — also retroactively fixed in `nfs-restore-drill`'s verify-warning and `restore-from-backup`'s existing-cluster warning, which had the same latent bug.
+- `streaming_replica`'s standing function grants blocking `DROP ROLE` (see step 5) — added to the tolerated-error filter.
+- pgAdmin's idle per-database connections blocking `DROP DATABASE` (see step 4) — fixed by terminating other backends immediately before the restore.
+
+| Date | Duration (RTO) | Pass/Fail | Notes | Next due |
+|------|-----------------|-----------|-------|----------|
+| 2026-06-19 | 1s | ✅ Pass | First real run against `postgres-v17-rw` (no per-app data at risk). Two attempts failed and were fixed in-flight (`streaming_replica` grant-dependency tolerance, pgAdmin connection termination) before a clean pass; also fixed a latent `gum log` formatting bug found along the way | 2026-09-19 |
 
 **Dependencies:** `postgres-backup-local` ✅ (backup running)
 

@@ -9,15 +9,13 @@ live_primary_label := "cnpg.io/cluster=postgres-v17,role=primary"
 default:
     just --list --justfile {{ source_file() }}
 
-[doc('Configure postgres-v17 to recover from the latest S3 backup after a full reset (edits cluster.yaml — still requires commit + Flux to take effect)')]
+[doc('Configure postgres-v17 to recover from the latest S3 backup after a full reset, and bump CNPG_V17_CURRENT_CLUSTER so it archives forward under a fresh prefix (edits cluster.yaml + ks.yaml — still requires commit + Flux to take effect)')]
 restore-from-backup:
     #!/usr/bin/env bash
     set -euo pipefail
     if kubectl get cluster postgres-v17 -n database >/dev/null 2>&1; then
         gum log -t rfc3339 -s -l warn \
-            "postgres-v17 already exists and is running — CNPG only reads spec.bootstrap" \
-            "at creation time, so this edit has no effect until the object is deleted and" \
-            "recreated. Did you mean to run this against a genuinely fresh/reset cluster?"
+            "postgres-v17 already exists and is running — CNPG only reads spec.bootstrap at creation time, so this edit has no effect until the object is deleted and recreated. Did you mean to run this against a genuinely fresh/reset cluster?"
         gum confirm "Continue anyway?" || exit 0
     fi
 
@@ -28,7 +26,23 @@ restore-from-backup:
         exit 1
     fi
 
-    gum confirm "Configure postgres-v17 to recover from S3 backups archived under serverName '${last_server}'?" || exit 0
+    new_server="postgres-v17-$(date +%Y%m%d)"
+    if [ "${new_server}" = "${last_server}" ]; then
+        gum log -t rfc3339 -s -l error \
+            "Minted serverName '${new_server}' is identical to the last one — a restore already ran today. Pick a distinct value manually (e.g. append '-2') and edit ks.yaml yourself."
+        exit 1
+    fi
+
+    # Two different serverNames, two different lifetimes: 'last_server' is the
+    # RECOVERY SOURCE (read-only, never archived to again — it's where the lost
+    # cluster's backups already live in S3). 'new_server' is what the recovered
+    # cluster will archive its OWN future WAL/backups under, going forward. They
+    # must differ, or the recovered cluster's new WAL stream lands in the same S3
+    # prefix it just restored from — see the DISASTER RECOVERY comment in cluster.yaml.
+    gum log -t rfc3339 -s -l warn \
+        "This changes TWO files. cluster.yaml: postgres-v17 will recover from the S3 backups archived under serverName '${last_server}' — that's the recovery SOURCE, read-only, never written to again. ks.yaml: CNPG_V17_CURRENT_CLUSTER moves to '${new_server}' — that's the prefix the recovered cluster archives its OWN future backups under, so it never collides with the one it just restored from." stage warn
+
+    gum confirm "Apply both edits — recover from '${last_server}', archive forward as '${new_server}'?" || exit 0
 
     export LAST_SERVER="${last_server}"
     yq -i '
@@ -45,9 +59,11 @@ restore-from-backup:
       }]
     ' "{{ cluster_yaml }}"
 
+    export NEW_SERVER="${new_server}"
+    yq -i '(select(.metadata.name == "cloudnative-pg-cluster").spec.postBuild.substitute.CNPG_V17_CURRENT_CLUSTER) = strenv(NEW_SERVER)' "{{ ks_yaml }}"
+
     gum log -t rfc3339 -s -l info \
-        "cluster.yaml updated — review with 'git diff', stage/commit via /git-stage" \
-        "+ /git-commit, then let Flux reconcile."
+        "Changed cluster.yaml (recovery source = '${last_server}') and ks.yaml (CNPG_V17_CURRENT_CLUSTER = '${new_server}') — review both with 'git diff', stage/commit via /git-stage + /git-commit, then let Flux reconcile."
 
 [doc('Remove the disaster-recovery bootstrap config from cluster.yaml once the recovered cluster is healthy')]
 undo-restore:
@@ -118,16 +134,23 @@ nfs-restore-drill:
     gum log -t rfc3339 -s -l info "Using backup file: ${LATEST}" stage discover
 
     gum log -t rfc3339 -s -l info "Restoring into the scratch instance via psql (this is NOT postgres-v17-rw)..." stage restore
-    if ! kubectl exec "${POD}" -n "${NS}" -- bash -c \
-        "gunzip -c '${LATEST}' | psql -U postgres --set ON_ERROR_STOP=on -v client_min_messages=warning" \
-        > /tmp/nfs-restore-drill.log 2>&1; then
-        gum log -t rfc3339 -s -l error "Restore failed — see output below" stage restore
-        cat /tmp/nfs-restore-drill.log
-        exit 1
-    fi
-    if grep -qiE 'ERROR|FATAL' /tmp/nfs-restore-drill.log; then
-        gum log -t rfc3339 -s -l error "psql exited 0 but ERROR/FATAL lines were found in output:" stage restore
-        grep -iE 'ERROR|FATAL' /tmp/nfs-restore-drill.log
+    kubectl exec "${POD}" -n "${NS}" -- bash -c \
+        "gunzip -c '${LATEST}' | psql -U postgres -v client_min_messages=warning" \
+        > /tmp/nfs-restore-drill.log 2>&1 || true
+
+    # pg_dumpall --clean, replayed by connecting as the very role it drops/recreates,
+    # always throws harmless, well-documented self-referential errors for that one
+    # role: DROP ROLE postgres fails ("current user cannot be dropped"), which means
+    # CREATE ROLE postgres then fails too ("already exists"), and the dump's recorded
+    # "GRANTED BY postgres" can't be replayed until that role actually holds admin on
+    # the predefined role being granted. None of this is data loss — filter only
+    # these, fail on anything else.
+    unexpected=$(grep -iE 'ERROR|FATAL' /tmp/nfs-restore-drill.log \
+        | grep -viE 'current user cannot be dropped|role "postgres" already exists|permission denied to grant privileges as role' \
+        || true)
+    if [ -n "${unexpected}" ]; then
+        gum log -t rfc3339 -s -l error "Unexpected ERROR/FATAL lines found in restore output:" stage restore
+        echo "${unexpected}"
         exit 1
     fi
     rm -f /tmp/nfs-restore-drill.log
@@ -152,9 +175,99 @@ nfs-restore-drill:
         || gum log -t rfc3339 -s -l warn "Role lists differ — see diff above" stage verify
 
     gum log -t rfc3339 -s -l warn \
-        "Verification above is catalog-level (databases/roles) only. Per-app table row-count parity" \
-        "is only meaningful once real app data exists on postgres-v17 — re-run after the per-app" \
-        "provisioning roadmap item lands. Set KEEP_SCRATCH=1 to inspect the restored data manually" \
-        "before teardown (e.g. for a one-off canary-table row-count check)." stage verify
+        "Verification above is catalog-level (databases/roles) only. Per-app table row-count parity is only meaningful once real app data exists on postgres-v17 — re-run after the per-app provisioning roadmap item lands. Set KEEP_SCRATCH=1 to inspect the restored data manually before teardown (e.g. for a one-off canary-table row-count check)." stage verify
 
     gum log -t rfc3339 -s -l info "Drill complete in ${DURATION}s total. Record this RTO + pass/fail in docs/ROADMAP.md." stage done
+
+[doc('DESTRUCTIVE: restore the latest NFS pg_dumpall backup directly into postgres-v17-rw, dropping and recreating every database. Only safe when postgres-v17 has no data worth keeping — verify with this recipe before running.')]
+nfs-restore-from-backup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    POD="nfs-restore-from-backup"
+    NS="database"
+
+    cleanup() {
+        gum log -t rfc3339 -s -l info "Cleaning up restore helper pod..." stage cleanup
+        kubectl delete pod "${POD}" -n "${NS}" --ignore-not-found --wait=true --timeout=60s >/dev/null 2>&1 || \
+            gum log -t rfc3339 -s -l warn "Cleanup did not confirm deletion — check 'kubectl get pod ${POD} -n ${NS}' manually" stage cleanup
+    }
+    trap cleanup EXIT
+
+    gum log -t rfc3339 -s -l warn \
+        "THIS IS DESTRUCTIVE: pg_dumpall --clean drops and recreates EVERY database on postgres-v17-rw, including 'app' and any other live data. Only run this immediately after a fresh/empty bootstrap, or when you have verified (as below) that nothing of value would be lost." stage warn
+
+    echo "--- current databases on postgres-v17-rw ---"
+    kubectl exec -n "${NS}" postgres-v17-1 -c postgres -- psql -U postgres -At -c "select datname from pg_database order by 1;"
+
+    gum confirm "Restore the latest NFS backup directly into postgres-v17-rw? This drops/recreates every database listed above." || exit 0
+
+    gum log -t rfc3339 -s -l info "Starting helper pod with NFS backups mounted read-only..." stage start-pod
+    kubectl run "${POD}" -n "${NS}" --restart=Never --image=docker.io/library/postgres:17 \
+        --overrides='{
+          "spec": {
+            "volumes": [{"name": "backups", "nfs": {"server": "10.200.0.41", "path": "/mnt/tank/Cluster/cloudnative-pg", "readOnly": true}}],
+            "containers": [{
+              "name": "'"${POD}"'",
+              "image": "docker.io/library/postgres:17",
+              "command": ["sleep", "infinity"],
+              "env": [
+                {"name": "PGHOST", "value": "postgres-v17-rw.database.svc.cluster.local"},
+                {"name": "PGUSER", "valueFrom": {"secretKeyRef": {"name": "cloudnative-pg-secret", "key": "username"}}},
+                {"name": "PGPASSWORD", "valueFrom": {"secretKeyRef": {"name": "cloudnative-pg-secret", "key": "password"}}}
+              ],
+              "volumeMounts": [{"name": "backups", "mountPath": "/backups", "readOnly": true}]
+            }]
+          }
+        }'
+
+    kubectl wait pod "${POD}" -n "${NS}" --for=condition=Ready --timeout=60s
+
+    gum log -t rfc3339 -s -l info "Discovering latest backup file from /backups/last/..." stage discover
+    LATEST=$(kubectl exec "${POD}" -n "${NS}" -- bash -c 'ls -t /backups/last/*.sql.gz 2>/dev/null | head -1')
+    if [ -z "${LATEST}" ]; then
+        gum log -t rfc3339 -s -l error "No .sql.gz files found under /backups/last/" stage discover
+        exit 1
+    fi
+    kubectl exec "${POD}" -n "${NS}" -- bash -c "stat -c 'file=%n  modified=%y' '${LATEST}'"
+
+    gum confirm "Confirmed backup file timestamp above — proceed with restore into postgres-v17-rw?" || exit 0
+
+    # DROP DATABASE refuses to run while any other session — even idle — is connected
+    # (e.g. pgAdmin keeps a persistent connection open per database it has browsed).
+    # Force-disconnect everyone else right before the restore so the dump's DROP
+    # DATABASE statements can proceed.
+    gum log -t rfc3339 -s -l info "Terminating other active connections to postgres-v17-rw so DROP DATABASE can proceed..." stage terminate
+    kubectl exec -n "${NS}" postgres-v17-1 -c postgres -- psql -U postgres -At -c \
+        "select pg_terminate_backend(pid) from pg_stat_activity where pid <> pg_backend_pid() and datname is not null;" >/dev/null
+
+    START=$(date +%s)
+    gum log -t rfc3339 -s -l info "Restoring into postgres-v17-rw..." stage restore
+    kubectl exec "${POD}" -n "${NS}" -- bash -c \
+        "gunzip -c '${LATEST}' | psql -v client_min_messages=warning" \
+        > /tmp/nfs-restore-from-backup.log 2>&1 || true
+
+    # See nfs-restore-drill for the three self-referential errors from replaying
+    # pg_dumpall --clean while connected as the role it drops/recreates. Restoring
+    # straight onto a live CNPG cluster adds one more: streaming_replica can't be
+    # dropped because it permanently holds EXECUTE grants on file-access functions
+    # (used by CNPG's instance manager/replication tooling) — that role is reconciled
+    # by the CNPG operator independently of this dump, so leaving it untouched is fine.
+    unexpected=$(grep -iE 'ERROR|FATAL' /tmp/nfs-restore-from-backup.log \
+        | grep -viE 'current user cannot be dropped|role "postgres" already exists|permission denied to grant privileges as role|role "streaming_replica" (already exists|cannot be dropped because some objects depend on it)' \
+        || true)
+    if [ -n "${unexpected}" ]; then
+        gum log -t rfc3339 -s -l error "Unexpected ERROR/FATAL lines found in restore output:" stage restore
+        echo "${unexpected}"
+        exit 1
+    fi
+    rm -f /tmp/nfs-restore-from-backup.log
+
+    END=$(date +%s)
+    DURATION=$((END - START))
+    gum log -t rfc3339 -s -l info "Restore completed cleanly in ${DURATION}s (this run's RTO)" stage restore
+
+    echo "--- databases on postgres-v17-rw after restore ---"
+    kubectl exec -n "${NS}" postgres-v17-1 -c postgres -- psql -U postgres -At -c "select datname from pg_database order by 1;"
+
+    gum log -t rfc3339 -s -l info "Restore complete in ${DURATION}s. Verify application connectivity, then record RTO + pass/fail in docs/ROADMAP.md." stage done
