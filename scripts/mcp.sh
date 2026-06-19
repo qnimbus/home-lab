@@ -105,6 +105,17 @@ rules:
   - apiGroups: [networking.k8s.io]
     resources: ["*"]
     verbs: [get, list, watch]
+  # Gateway API — Gateway, HTTPRoute, GRPCRoute, ReferenceGrant, …
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  - apiGroups: [gateway.networking.x-k8s.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  # Envoy Gateway CRDs — EnvoyProxy, SecurityPolicy, ClientTrafficPolicy, …
+  - apiGroups: [gateway.envoyproxy.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
   # Flux CRDs
   - apiGroups: [helm.toolkit.fluxcd.io]
     resources: ["*"]
