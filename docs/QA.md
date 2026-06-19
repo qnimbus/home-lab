@@ -14,6 +14,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 - [Why does cp-03 show many `eth0: renamed from tmp<random>` messages?](#why-does-the-talos-console-for-cp-03-show-many-eth0-renamed-from-tmprandom-kernel-messages)
 - [Why can't I reach the cluster nodes (both VLANs) while the internet works fine?](#why-cant-i-reach-the-cluster-nodes-both-vlans-while-the-internet-works-fine)
 - [A single iperf3 stream over the storage bond tops out at ~9.7 Gbit/s — is the LACP bond broken? (+ how to benchmark the storage fabric)](#a-single-iperf3-stream-over-the-storage-bond-tops-out-at-97-gbits--is-the-lacp-bond-broken)
+- [Why does an externally-exposed app get `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` even though its Envoy certificate looks correct?](#why-does-an-externally-exposed-app-get-err_ssl_version_or_cipher_mismatch-even-though-its-envoy-certificate-looks-correct)
 
 **Cluster Recovery / Unclean Shutdown**
 - [After a simultaneous power-off, the dashboard shows ~90 failed pods — but the cluster looks healthy. What happened?](#after-a-simultaneous-power-off-of-all-nodes-the-dashboard-shows-90-failed-pods-and-a-failed-deployment--but-the-cluster-looks-healthy-what-happened)
@@ -276,6 +277,30 @@ when done. They are **not** Flux-managed (this is the same throwaway pattern use
 disks can deliver — even a worst-case full-OSD rebuild won't bottleneck on the network; the NVMe will. If
 storage throughput ever needs to grow, the lever is disks (faster/enterprise NVMe, more OSDs per node), not
 the bond.
+
+---
+
+### Why does an externally-exposed app get `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` even though its Envoy certificate looks correct?
+
+**Short answer:** Cloudflare's free Universal SSL only issues an edge certificate covering the zone root plus *one* level of wildcard (`example.com` + `*.example.com`). A hostname two levels deep — like `whoami.apps.vwn.io` (`whoami` under `apps.vwn.io`, itself under `vwn.io`) — isn't covered by `*.vwn.io`, so Cloudflare's edge rejects the TLS handshake outright. This happens *before* the request ever reaches the tunnel, `cloudflared`, or anything in this repo — the origin-side `Certificate`/`Secret` on the Gateway is completely irrelevant to this failure.
+
+**The trap:** Gateway API's `ResolvedRefs` status only checks that the referenced `Secret` exists — it doesn't validate SAN coverage — and the origin cert genuinely *is* correct (`apps-vwn-io-tls` does cover `*.apps.vwn.io`). Everything in-cluster looks healthy: `HTTPRoute` Accepted, `Certificate` Ready, `Gateway` Programmed. The failure is invisible to `kubectl` entirely; it only shows up as a generic client-side TLS error when actually browsing the hostname from outside the LAN. Worse, testing from the LAN itself can give a false negative: if local DNS (e.g. a UniFi `service`-source record) resolves the hostname straight to the Gateway's private LB IP, that test never touches Cloudflare's edge at all and "succeeds" while the public path is still broken.
+
+**Confirm:** compare a one-level vs. two-level hostname against Cloudflare's real edge IP directly, bypassing local DNS:
+```bash
+dig @1.1.1.1 <hostname> +short                                          # get a real Cloudflare anycast IP
+curl -v --resolve <hostname>:443:<that-ip> https://<hostname> 2>&1 | grep -E "subjectAltName|TLS alert|handshake failure"
+```
+One level deep (`flux-webhook.vwn.io`, `apps.vwn.io`) → handshake succeeds, SAN matched via `*.vwn.io`. Two levels deep (`whoami.apps.vwn.io`) → `TLS alert, handshake failure`, no HTTP response at all.
+
+**Fix — pick one:**
+1. Use a hostname that only nests one level under a zone you already control (e.g. `whoami.vwn.app` instead of `whoami.apps.vwn.io`) — works immediately with zero Cloudflare changes, as long as the origin `Certificate`, `cloudflared` ingress rule, and both `external-dns` `domainFilters` already cover that zone (they did here, since `vwn.app` was already in use elsewhere).
+2. Enable Cloudflare **Total TLS** for the zone (auto-issues certs for every subdomain level).
+3. Order a Cloudflare **Advanced Certificate** explicitly listing the second-level wildcard (e.g. `*.apps.vwn.io`).
+
+**Prevention:** `envoy-external`'s `certificateRefs` (`kubernetes/apps/network/envoy-gateway/config/gateway.yaml`) has an inline comment marking which certs are WAN-safe for new routes. Only `vwn-app-tls`/`vwn-casa-tls` (one level under their own zone roots) are safe without one of the fixes above; `cluster-vwn-io-tls`/`apps-vwn-io-tls` are origin-only until Cloudflare's edge coverage is extended.
+
+**Encountered 2026-06-19** while validating external connectivity with a `whoami` smoke-test app, after first fixing an unrelated, genuinely-real `cloudflared` SNI bug that looked like it would explain the same symptom but didn't.
 
 ---
 

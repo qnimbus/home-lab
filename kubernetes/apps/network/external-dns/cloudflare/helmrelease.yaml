@@ -16,6 +16,7 @@ spec:
       - "${DOMAIN_CASA}"
       - "${DOMAIN_IO}"
       - "${DOMAIN_APPS}"
+      - "${DOMAIN_PROXII}"
     env:
       - name: CF_API_TOKEN
         valueFrom:

@@ -10,7 +10,7 @@ spec:
       namespace: network
       sectionName: https
   hostnames:
-    - "whoami.${DOMAIN_APPS}"
+    - "whoami.${DOMAIN_APP}"
   rules:
     - backendRefs:
         - name: whoami

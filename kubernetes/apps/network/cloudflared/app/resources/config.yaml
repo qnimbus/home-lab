@@ -1,5 +1,5 @@
 originRequest:
-  originServerName: "gateway.${DOMAIN_IO}"
+  matchSNItoHost: true
   noTLSVerify: true
 
 ingress:

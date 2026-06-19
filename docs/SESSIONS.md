@@ -4,6 +4,47 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-19 — `whoami-network-plumbing-fixes`
+
+### Goal
+Deploy a `whoami` smoke-test app to validate Envoy Gateway external connectivity, then use the failures it surfaced to find and fix real bugs in the Cloudflare Tunnel / ExternalDNS / Envoy Gateway stack.
+
+### What we did
+- Researched lightweight homelab network-verification deployments (`traefik/whoami`, `ealen/echo-server`, `agnhost`); recommended `whoami` for HTTP-layer routing/TLS smoke tests. Clarified Flux `OCIRepository` semantics (Helm-chart artifacts vs raw-manifest artifacts) and confirmed the existing `app-template` OCIRepository source already covers any of the three candidate images.
+- Deployed `whoami` via the `app-template` chart, HTTPRoute attached to `envoy-external`'s `https` listener at `whoami.${DOMAIN_APPS}`. Initially placed it in the `network` namespace; user questioned this, and a check against the `pgadmin`/`waha` precedent (apps keep their own functional namespace, cross-reference the Gateway via `parentRefs` — `network` is reserved for plumbing controllers) showed it was misplaced. Moved it into a new `default` namespace. Committed as `82f7660`.
+- Live-tested it: external (WAN) gave `ERR_SSL_VERSION_OR_CIPHER_MISMATCH`; LAN gave a DNS resolve error. Dispatched `cluster-doctor` to diagnose live.
+- Root cause #1: `cloudflared`'s `originRequest.originServerName` was hardcoded to `"gateway.${DOMAIN_IO}"` for every ingress rule, but no cert on `envoy-external` covers that SNI — handshake failure for any domain actually used externally (also silently broke the pre-existing `flux-webhook.${DOMAIN_IO}` route). Verified Cloudflare's `matchSNItoHost` flag directly via their docs rather than guessing, and cross-checked the `tmp/home-ops-bykaj` reference repo (uses a different static-anchor-hostname + YAML-anchor pattern) — concluded `matchSNItoHost: true` is the better fit here since this repo has no single domain safe to use as a universal anchor. Applied the fix.
+- Root cause #2 (initial diagnosis, later corrected): thought `whoami.apps.vwn.io`'s CNAME target (`external.${DOMAIN_IO}`) was never created by either ExternalDNS instance, and fixed it by adding the `service` source to `external-dns-cloudflare`. A follow-up audit found this would leak `envoy-internal`'s private LAN IP (`internal.proxii.nl` → `10.60.0.231`) to public Cloudflare DNS once reconciled — `--gateway-name` only scopes the `gateway-httproute` source, not `service`. Reverted, and instead updated a **pre-existing** `cloudflare-tunnel` `DNSEndpoint` CRD (already the correct mechanism — CNAME straight to the tunnel, never the raw LB IP) to point at `${DOMAIN_PROXII}` instead of `${DOMAIN_IO}`.
+- User asked about renaming `envoy-external`'s target from `external.${DOMAIN_IO}` to `external.${DOMAIN_PROXII}` for consistency with `envoy-internal`'s existing `internal.${DOMAIN_PROXII}` pattern. Verified via `dig NS proxii.nl` that it's delegated to the same Cloudflare account as `vwn.io` (confirming feasibility rather than assuming), then applied the rename plus added `DOMAIN_PROXII` to the cloudflare instance's `domainFilters`.
+- Decrypted `cluster-secrets.sops.yaml` mid-session to ground all hostname reasoning in actual `DOMAIN_*` values instead of inferring them from cert/secret naming patterns.
+- User clarified the original "`external.vwn.io` missing" symptom was checked against **LAN/UniFi** DNS, not public Cloudflare DNS — the public side had been resolving correctly via the `DNSEndpoint` CRD since a May 2026 commit, no bug there. The actual gap was UniFi's `domainFilters` never including `DOMAIN_IO`; the `DOMAIN_PROXII` rename fixes this for free since `DOMAIN_PROXII` was already in UniFi's scope.
+- Dispatched a second, broader `cluster-doctor` audit of every `HTTPRoute`/`Certificate`/ExternalDNS-coverage/Cilium-LB-IPAM pairing. User correctly flagged it would read live (pre-reconcile) cluster state for anything still uncommitted — let it run anyway since most of its scope was unrelated pre-existing resources. Results: found the LAN-IP-leak risk above (the one genuinely new/urgent finding); reassessed the missing-`${DOMAIN_IO}`-certificate gap as lower-severity than feared (Cloudflare's edge cert + `noTLSVerify` on the origin hop mean `flux-webhook` delivery likely already works, despite the origin-side gap being real); reconstructed the orphaned `external.cluster.vwn.io` record's likely origin via `git log -p` (a same-day May 2026 rename followed by a `domainFilters` drop ~4 minutes later, probably outrunning ExternalDNS's reconcile loop) — recommended confirming via the record's TXT companion in the Cloudflare dashboard before deleting it, left as a manual follow-up outside this repo; everything else (all 9 HTTPRoutes, Cilium LB-IPAM, all relevant Flux `Kustomization`/`HelmRelease`/`Certificate` objects) confirmed fine.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/default/kustomization.yaml` | New — registers the `default` namespace |
+| `kubernetes/apps/default/whoami/ks.yaml` | New — Flux Kustomization, `targetNamespace: default` |
+| `kubernetes/apps/default/whoami/app/kustomization.yaml` | New |
+| `kubernetes/apps/default/whoami/app/helmrelease.yaml` | New — `traefik/whoami:v1.11.0` via `app-template` |
+| `kubernetes/apps/default/whoami/app/httproute.yaml` | New — routes `whoami.${DOMAIN_APPS}` to `envoy-external` |
+| `kubernetes/apps/kustomization.yaml` | Added `./default` |
+| `kubernetes/apps/network/cloudflared/app/resources/config.yaml` | `originServerName` → `matchSNItoHost: true` |
+| `kubernetes/apps/network/cloudflared/app/dnsendpoint.yaml` | `cloudflare-tunnel` DNSEndpoint's `dnsName` `external.${DOMAIN_IO}` → `external.${DOMAIN_PROXII}` |
+| `kubernetes/apps/network/envoy-gateway/config/gateway.yaml` | `envoy-external` target/hostname `external.${DOMAIN_IO}` → `external.${DOMAIN_PROXII}`; corrected a stale comment |
+| `kubernetes/apps/network/external-dns/cloudflare/helmrelease.yaml` | Added `${DOMAIN_PROXII}` to `domainFilters` (a `service`-source addition was tried, found unsafe, reverted — see Key decisions) |
+| `.claude/agent-memory/cluster-doctor/MEMORY.md` | Cluster-doctor self-updated: added a pointer to the new reference file below |
+| `.claude/agent-memory/cluster-doctor/reference_envoy_gateway_external_dns_topology.md` | New — cluster-doctor's own durable notes on the `--gateway-name` scoping gotcha and the `ResolvedRefs`-doesn't-validate-SAN-coverage blind spot |
+
+### Key decisions
+- Namespace `default` over `network` for `whoami`, matching the `pgadmin`/`waha` precedent rather than co-locating it with the plumbing controllers it merely tests.
+- `matchSNItoHost: true` over bykaj's static-anchor-hostname pattern, since this repo lacks a single domain with a cert safe to use as a universal SNI anchor.
+- Renamed `envoy-external`'s canonical hostname to use `DOMAIN_PROXII`, accepting that `proxii.nl` (previously LAN-only) now gets one publicly-resolvable (Cloudflare-proxied) hostname, after confirming via `dig NS` — not assumption — that the zone is actually Cloudflare-managed.
+- Preferred the pre-existing `DNSEndpoint` CRD (CNAME straight to the Cloudflare Tunnel) over a `service`-source-based approach for publishing `envoy-external`'s public hostname: the `service` source would have published the raw private LB IP, which is both a leak risk (for `envoy-internal`'s Service) and non-functional for `envoy-external`'s own case (`10.60.0.230` isn't internet-routable regardless).
+- Left the missing `DOMAIN_IO` certificate and the orphaned `external.cluster.vwn.io` record open rather than fixing reactively — the former is reassessed as lower-severity (edge cert + `noTLSVerify` mask it in practice), the latter needs a Cloudflare-dashboard TXT-record check this repo can't perform.
+
+---
+
 ## 2026-06-18 — `rook-ceph-grafana-dashboards`
 
 ### Goal
