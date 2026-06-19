@@ -37,4 +37,5 @@ resources:
   - ./helmrelease.yaml
   - ./httproute.yaml
   - ./externalsecret.yaml
+  - ./alertmanagerconfig.yaml
   - ./prometheusrules

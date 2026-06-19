@@ -10,6 +10,13 @@ crds:
 
 alertmanager:
   alertmanagerSpec:
+    # Replaces the chart's inline `config:` (which only has a 'null' receiver) with our own
+    # AlertmanagerConfig as the literal root config — not a discovered sub-route. This sidesteps
+    # alertmanagerConfigSelector's default OnNamespace matcher strategy entirely (which would
+    # otherwise require every alert's `namespace` label to equal this object's namespace, breaking
+    # cross-namespace routing for e.g. rook-ceph alerts). See app/alertmanagerconfig.yaml.
+    alertmanagerConfiguration:
+      name: alertmanager
     # All nodes are control-plane only — no workers. Every pod needs this toleration or it won't schedule.
     tolerations:
       - key: node-role.kubernetes.io/control-plane
