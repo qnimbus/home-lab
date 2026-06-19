@@ -45,7 +45,7 @@ All 5 storage bonds run **802.3ad LACP** (fast rate, `layer3+4` hash policy) at 
 
 ## Running Components
 
-**Talos v1.13.2 / Kubernetes v1.36.1.** All Helm-deployed components are installed via Helmfile during bootstrap (`bootstrap/helmfile.d/01-apps.yaml`); version pins are tracked by Renovate.
+**Talos v1.13.2 / Kubernetes v1.36.1.** All Helm-deployed components are installed via Helmfile during bootstrap (`ops/bootstrap/helmfile.d/01-apps.yaml`); version pins are tracked by Renovate.
 
 ### Kubernetes control plane · `kube-system`
 
@@ -607,7 +607,7 @@ All five nodes have Rook-Ceph OSD disks live and contributing to the `ceph-block
 
 ## FluxCD
 
-Flux is bootstrapped via Helmfile (`bootstrap/helmfile.d/01-apps.yaml`), not `flux bootstrap`. Two charts from the [flux-operator](https://fluxcd.control-plane.io/operator/) are used:
+Flux is bootstrapped via Helmfile (`ops/bootstrap/helmfile.d/01-apps.yaml`), not `flux bootstrap`. Two charts from the [flux-operator](https://fluxcd.control-plane.io/operator/) are used:
 
 | Chart | Role |
 |-------|------|

@@ -3,8 +3,8 @@
 set quiet := true
 set shell := ['bash', '-euo', 'pipefail', '-c']
 
-mod bootstrap "bootstrap"
-mod cnpg "cnpg"
+mod bootstrap "ops/bootstrap"
+mod cnpg "ops/cnpg"
 mod talos "talos"
 
 [private]

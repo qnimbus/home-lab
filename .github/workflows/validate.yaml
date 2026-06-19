@@ -36,7 +36,7 @@ jobs:
 
       - name: Validate Kubernetes manifests
         # Scoped to kubernetes/ to avoid false positives from Taskfile.yaml and talos patches.
-        # bootstrap/ (Helmfile, not Kubernetes resources) lives outside kubernetes/, so no exclude needed.
+        # ops/bootstrap/ (Helmfile, not Kubernetes resources) lives outside kubernetes/, so no exclude needed.
         run: |
           bash scripts/validate.sh \
             -d kubernetes

@@ -1,7 +1,7 @@
 set quiet := true
 set shell := ['bash', '-euo', 'pipefail', '-c']
 
-bootstrap_dir := justfile_dir() + '/bootstrap'
+bootstrap_dir := justfile_dir() + '/ops/bootstrap'
 kubernetes_dir := justfile_dir() + '/kubernetes'
 talos_dir := justfile_dir() + '/talos'
 
