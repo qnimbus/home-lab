@@ -19,15 +19,30 @@ spec:
               repository: traefik/whoami
               # renovate: datasource=docker depName=traefik/whoami
               tag: "v1.11.0"
+            env:
+              # Moves the app off the privileged port 80 default so it can run as non-root
+              # without needing NET_BIND_SERVICE. Service port stays 80 via targetPort below.
+              WHOAMI_PORT_NUMBER: "8080"
             resources:
               requests:
                 cpu: 10m
                 memory: 32Mi
               limits:
                 memory: 64Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
     service:
       app:
         controller: whoami
         ports:
           http:
             port: 80
+            targetPort: 8080

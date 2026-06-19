@@ -1,7 +1,7 @@
 # GitOps Repository Audit <!-- omit from toc -->
 
 > **Living document** — re-run the audit commands in [How to Re-Audit](#how-to-re-audit) after significant changes and update the findings below.
-> Last audited: **2026-06-18** · Auditor: Claude Code (`gitops-repo-audit` skill) — refresh pass. Verified all 2026-06-17 fixes (W2/W3/I1/I2/I3/I5/I6/I7/I8/I9) are durable, and reviewed the new `cloudnative-pg/plugin-barman-cloud` component (PITR backups to Storj S3) added since: cosign-verified, correctly chained `dependsOn`, no redundant blocks — no new findings. Only W1 (Alertmanager receiver) and I4 (cosign coverage) remain open.
+> Last audited: **2026-06-19** · Auditor: Claude Code (`gitops-repo-audit` skill) — refresh pass. Reviewed everything added since 2026-06-18: the `whoami` smoke-test app (currently disabled/inert — file on disk but not wired into its parent `kustomization.yaml`), a dedicated `pool-kube-api` `CiliumLoadBalancerIPPool` to stop kube-vip from sharing the envoy LB-IP block, the `cloudflared`/`external-dns` SNI + `DOMAIN_PROXII` routing fix, a per-node `osdsPerDevice` override for `talos-worker-02`'s smaller Ceph OSD disk, and the new `ceph-grafana-dashboards` `configMapGenerator` (verified its reactivity-watch label survives the per-generator `options.labels` merge — same class of bug as the resolved W3). One new minor gap found and fixed in the same pass (I10 — `whoami` lacked `securityContext` hardening; resolved by moving it off the privileged port instead of adding a capability back). W1 (Alertmanager receiver) and I4 (cosign coverage) remain open from prior passes.
 
 ## Contents <!-- omit from toc -->
 
@@ -29,20 +29,22 @@
 
 ## Resource Inventory
 
-| Kind | Count | Δ since 2026-06-05 |
+| Kind | Count | Δ since 2026-06-18 |
 |---|---|---|
-| HelmRelease | 28 | +2 |
-| Kustomization | 42 | +2 |
-| OCIRepository | 20 | +3 (rook-ceph, rook-ceph-cluster, plugin-barman-cloud) |
-| HelmRepository | 4 | -1 |
+| HelmRelease | 29 | +1 (whoami — **disabled**, see note) |
+| Kustomization | 43 | +1 (whoami/ks.yaml — **disabled**, see note) |
+| OCIRepository | 20 | — (envoy-gateway patch-bumped 1.8.0 → 1.8.1, no new sources) |
+| HelmRepository | 4 | — |
 | Receiver | 1 | — |
 | Alert | 1 | — |
 | Provider | 1 | — |
 | ImageUpdateAutomation | 0 | — |
 
-**Namespaces (app-declared via `namespace.yaml`)**: actions-runner-system, automation, database, external-secrets, network, observability, openebs, reloader, rook-ceph, system-upgrade, tailscale. **Bootstrap-managed** (created by the Helmfile bootstrap phase before Flux takes over, not by a GitOps `namespace.yaml`): kube-system, cert-manager, flux-system.
+> **Note on the whoami count**: `kubernetes/apps/default/whoami/ks.yaml` exists on disk (a static-scan inventory like `discover.sh` counts it), but `kubernetes/apps/default/kustomization.yaml` has it commented out of `resources:`. It is **not applied to the live cluster** — added as a connectivity smoke-test, then deliberately disabled (commit `a88ecf1`). Don't read the +1 as a live resource change.
 
-**Applications**: cilium · coredns · cert-manager · external-secrets · onepassword-connect · openebs · rook-ceph (operator + cluster) · envoy-gateway · cloudflared · external-dns (cloudflare + unifi) · tailscale-operator · actions-runner-controller · kube-prometheus-stack · smartctl-exporter · spegel · metrics-server · reloader · tuppr · cloudnative-pg (+ pgadmin + postgres-backup-local + plugin-barman-cloud) · waha · external-services (truenas + wan-failover) · flux-operator · flux-instance · flux-receiver · flux-alerts
+**Namespaces (app-declared via `namespace.yaml`)**: actions-runner-system, automation, database, external-secrets, network, observability, openebs, reloader, rook-ceph, system-upgrade, tailscale. **Bootstrap-managed** (created by the Helmfile bootstrap phase before Flux takes over, not by a GitOps `namespace.yaml`): kube-system, cert-manager, flux-system. `default` is a built-in namespace — whoami targets it directly via `targetNamespace`, no `namespace.yaml` needed.
+
+**Applications**: cilium · coredns · cert-manager · external-secrets · onepassword-connect · openebs · rook-ceph (operator + cluster) · envoy-gateway · cloudflared · external-dns (cloudflare + unifi) · tailscale-operator · actions-runner-controller · kube-prometheus-stack · smartctl-exporter · spegel · metrics-server · reloader · tuppr · cloudnative-pg (+ pgadmin + postgres-backup-local + plugin-barman-cloud) · waha · external-services (truenas + wan-failover) · flux-operator · flux-instance · flux-receiver · flux-alerts · whoami (disabled)
 
 > Longhorn is fully gone (superseded by Rook-Ceph, big-bang migration). `rook-ceph` (`ceph-block`) is now the default StorageClass with all 5 stateful consumers migrated.
 
@@ -61,16 +63,7 @@ kustomize build: 0 errors
 
 ### Non-Kubernetes Files — Expected False Positives
 
-The validate script also scans root-level YAML and `talos/` patches, producing 16 "missing `kind` key" errors (was 15 — the CRD-prebootstrap split added a second Helmfile file). These are **not Kubernetes resources** and should be excluded in CI:
-
-| File | Reason |
-|---|---|
-| `Taskfile.yaml` | go-task task runner, not Kubernetes |
-| `bootstrap/helmfile.d/00-crds.yaml`, `01-apps.yaml` | Helmfile bootstrap (CRD pre-bootstrap phase), not Kubernetes |
-| `talos/talconfig.yaml`, `talenv.yaml`, `talsecret.sops.yaml`, `schematic.yaml` | Talos machine config |
-| `talos/patches/**/*.yaml` (9 files) | Talos strategic-merge patches |
-
-**CI fix**: add `-e talos -e assets -e bootstrap` to the validate invocation. See [How to Re-Audit](#how-to-re-audit).
+With the `-e talos -e assets -e .archive -e bootstrap` exclusions applied, only `Taskfile.yaml` (go-task runner, not a Kubernetes manifest — missing `kind` key) remains as an expected false positive. Confirmed CI never hits this either way, since `Taskfile.yaml`/`talos/`/`bootstrap/` sit outside the `-d kubernetes` scope the actual CI/Task invocation uses (I5, resolved 2026-06-17).
 
 ---
 
@@ -94,13 +87,14 @@ All Flux resources use current stable API versions. No migration required.
 | `cluster-settings` ConfigMap + `cluster-secrets` Secret carry `reconcile.fluxcd.io/watch: Enabled` | ✅ |
 | All OCI-sourced HelmReleases use `chartRef` (modern pattern); the 4 remaining `HelmRepository`+`chart.spec` HelmReleases (cilium, external-secrets, onepassword-connect, metrics-server) are pinned to upstreams with no official OCI artifact | ✅ |
 | No legacy `install.remediation.retries`-only pattern — global `cluster-apps` patch injects `strategy.name: RetryOnFailure` + remediation defaults for every HelmRelease | ✅ |
-| Zero `dependsOn` cycles or dangling references across all 42 Kustomizations (verified programmatically) | ✅ |
+| Zero `dependsOn` cycles or dangling references across all 43 Kustomizations (verified programmatically) | ✅ |
 | Multi-document `ks.yaml` for operator + CRD-instance Kustomizations (operator dry-run isolation) | ✅ |
 | Renovate tracks all pinned versions via `# renovate: datasource=...` annotations; all OCIRepository refs use immutable exact tags | ✅ |
 | Receiver deployed for webhook-triggered immediate reconciliation on Git push | ✅ |
 | kube-prometheus-stack deployed for Flux controller monitoring | ✅ |
 | SOPS + ESO two-tier secrets — Talos secrets encrypted at rest, app secrets never in Git | ✅ |
 | Flux controllers (helm/kustomize/notification) run 2 replicas + `topologySpreadConstraints` (`ScheduleAnyway`) — survive single-node reboots during Talos/K8s upgrades | ✅ |
+| New `ceph-grafana-dashboards` `configMapGenerator` (9 dashboard JSONs) correctly inherits the reactivity-watch label | ✅ — verified via `kustomize build`: Kustomize **merges** top-level `generatorOptions.labels` with a generator's own `options.labels` (doesn't override), so the rendered ConfigMap carries both `grafana_dashboard: "1"` and `reconcile.fluxcd.io/watch: Enabled` |
 
 ### Gaps
 
@@ -112,6 +106,18 @@ Was W3. Added `generatorOptions: { labels: { reconcile.fluxcd.io/watch: "Enabled
 
 **Still open.** `kubernetes/apps/flux-system/flux-alerts/` deploys a Flux-native `Provider` (`type: alertmanager`) + `Alert` (`eventSeverity: error`) forwarding reconciliation errors into Alertmanager. But `kube-prometheus-stack`'s `alertmanagerSpec` has no `config:`/receiver/route — Alertmanager runs the chart's default config, whose route terminates in the `null` receiver. Flux errors reach Alertmanager's state but never page a human. Tracked in [ROADMAP.md → Alertmanager Receiver](ROADMAP.md#alertmanager-receiver).
 
+#### ✅ RESOLVED — `whoami` HelmRelease now has Pod-security hardening
+
+Was I10, found and fixed in the same pass. `traefik/whoami` runs as root and binds port 80 by
+default with no support for non-root execution out of the box — naively adding
+`runAsNonRoot: true` + `capabilities.drop: ["ALL"]` would have broken the privileged-port bind.
+Verified (via the upstream README) that the binary supports `WHOAMI_PORT_NUMBER` to change its
+listening port, so the fix moves the app to `:8080` internally and uses app-template's
+`service.<name>.ports.<name>.targetPort` to keep the Service/HTTPRoute-facing port at 80 — no
+external contract change. This allows `runAsNonRoot: true` + `runAsUser/runAsGroup/fsGroup: 65534`
++ `capabilities.drop: ["ALL"]` with no capability add-back, matching the `waha` pattern. Confirmed
+via `kustomize build` + `kubeconform` that the HelmRelease still renders and validates cleanly.
+
 #### ✅ RESOLVED — FluxInstance sync now uses GitHub App authentication
 
 Was tracked as I2 (SSH deploy key). `kubernetes/apps/flux-system/flux-instance/app/helm/values.yaml` now sets `sync.provider: github` with an HTTPS URL and `pullSecret: flux-github-app`, backed by an `ExternalSecret` populating `githubAppID`/`githubAppInstallationID`/`githubAppPrivateKey`. The corresponding `docs/ROADMAP.md` entry was stale (described this as pending) and has been marked done.
@@ -122,7 +128,7 @@ Was tracked as I6 (recommended `podAntiAffinity`). Implemented instead via `topo
 
 #### ✅ RESOLVED — Drift detection now cluster-wide default
 
-`driftDetection.mode: enabled` is in the global `cluster-apps` patch. All 28 HelmReleases have drift detection enabled.
+`driftDetection.mode: enabled` is in the global `cluster-apps` patch. All 29 HelmReleases have drift detection enabled (the new `whoami` HelmRelease inherits it too, though it's not currently live).
 
 #### ✅ RESOLVED — FluxInstance `cluster.size` now set to `medium`
 
@@ -234,6 +240,7 @@ _None._
 | ~~I7~~ | ~~5 HelmReleases set redundant `createNamespace: true`~~ | ✅ Resolved — removed the now-empty `install:` block from all 5 |
 | ~~I8~~ | ~~4 HelmReleases redundantly redeclare `driftDetection: mode: enabled`~~ | ✅ Resolved — removed the local declaration from all 4 |
 | ~~I9~~ | ~~`kustomize-controller` `--concurrent` set via two colliding patches (10, then 20) — last one silently won~~ | ✅ Resolved — consolidated into one explicit patch; `(helm-controller\|source-controller)` keep `--concurrent=10` |
+| ~~I10~~ | ~~`whoami` HelmRelease lacked `securityContext`/`defaultPodOptions` hardening~~ | ✅ Resolved — moved app to internal port 8080 (`WHOAMI_PORT_NUMBER`) + `targetPort: 8080` on the Service, enabling `runAsNonRoot`/`capabilities.drop: ["ALL"]` with no capability add-back |
 
 ---
 
