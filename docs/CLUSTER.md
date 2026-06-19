@@ -128,7 +128,7 @@ Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` anno
 
 > **Topology spread**: all three components share the `app.kubernetes.io/instance: cert-manager` label. 6 pods spread across 5 nodes via `DoNotSchedule`. A node failure causes leader-election failover (~60 s for controller/cainjector); the webhook has zero downtime (both replicas always serve).
 
-> **Live wildcard certificates.** Four `Certificate` objects in the `network` namespace cover the cluster's domains — `wildcard-cluster-vwn-io` (`cluster.vwn.io` / `*.cluster.vwn.io`), `wildcard-apps-vwn-io` (`apps.vwn.io` / `*.apps.vwn.io`), `wildcard-vwn-app` (`vwn.app` / `*.vwn.app`), `wildcard-vwn-casa` (`vwn.casa` / `*.vwn.casa`). All four issued by `letsencrypt-production`, valid through `2026-09-14`, auto-renewing via DNS-01. Secrets: `network/{cluster-vwn-io,apps-vwn-io,vwn-app,vwn-casa}-tls` — referenced via `certificateRefs` on both Gateways' `https` listener.
+> **Live wildcard certificates.** Five `Certificate` objects in the `network` namespace cover the cluster's domains — `wildcard-cluster-vwn-io` (`cluster.vwn.io` / `*.cluster.vwn.io`), `wildcard-apps-vwn-io` (`apps.vwn.io` / `*.apps.vwn.io`), `wildcard-vwn-app` (`vwn.app` / `*.vwn.app`), `wildcard-vwn-casa` (`vwn.casa` / `*.vwn.casa`), `wildcard-vwn-io` (`vwn.io` / `*.vwn.io`, added `2026-06-19` — see [Domain convention](#domain-convention) below for why). All five issued by `letsencrypt-production`, auto-renewing via DNS-01. Secrets: `network/{cluster-vwn-io,apps-vwn-io,vwn-app,vwn-casa,vwn-io}-tls` — referenced via `certificateRefs` on both Gateways' `https` listener.
 
 > **Staging vs production issuers.** Always use `letsencrypt-staging` when first wiring up a new app or testing DNS-01 challenge configuration. Staging issues certificates from Let's Encrypt's untrusted fake root — browsers reject them, but the entire issuance flow (Cloudflare DNS record creation, ACME challenge, certificate delivery, renewal) is identical to production. This avoids burning against production's rate limits (5 duplicate certificates/week per domain). Once staging issues successfully, switch `clusterIssuerName` to `letsencrypt-production`.
 >
@@ -225,48 +225,48 @@ Both gateways share pre-issued wildcard TLS certificates (in the `network` names
 
 ### Domain convention
 
-| Variable | Domain | Routed externally? |
-|---|---|---|
-| `${DOMAIN_CLUSTER}` | `cluster.vwn.io` | No — absent from cloudflared config; internal-only |
-| `${DOMAIN_IO}` | `vwn.io` | Yes — covered by cloudflared tunnel |
-| `${DOMAIN_APP}` | *(encrypted)* | Yes — covered by cloudflared tunnel |
-| `${DOMAIN_CASA}` | *(encrypted)* | Yes — covered by cloudflared tunnel |
-| `${DOMAIN_APPS}` | *(encrypted)* | Yes — covered by cloudflared tunnel |
+| Variable | Domain | Routed externally? | Safe for a *new* external hostname? |
+|---|---|---|---|
+| `${DOMAIN_CLUSTER}` | `cluster.vwn.io` | No — absent from cloudflared config; internal-only | N/A |
+| `${DOMAIN_IO}` | `vwn.io` | Yes — covered by cloudflared tunnel | ✅ Zone root with its own wildcard `Certificate` (`wildcard-vwn-io` → `vwn-io-tls`), issued by `letsencrypt-production` and in both Gateways' `certificateRefs` — a one-level-deep hostname is fully covered end-to-end, same as `${DOMAIN_APP}`/`${DOMAIN_CASA}`. |
+| `${DOMAIN_APP}` | *(encrypted)* | Yes — covered by cloudflared tunnel | ✅ Zone root with its own wildcard `Certificate` (`vwn-app-tls`) — a one-level-deep hostname is fully covered end-to-end |
+| `${DOMAIN_CASA}` | *(encrypted)* | Yes — covered by cloudflared tunnel | ✅ Zone root with its own wildcard `Certificate` (`vwn-casa-tls`) — a one-level-deep hostname is fully covered end-to-end |
+| `${DOMAIN_APPS}` | *(encrypted)* | Yes — covered by cloudflared tunnel | ❌ **Not safe for new routes.** `${DOMAIN_APPS}` (`apps.vwn.io`) is itself one level under `${DOMAIN_IO}`'s zone, so `myapp.${DOMAIN_APPS}` sits *two* levels under the zone root. Cloudflare's free Universal SSL only covers the zone root plus one wildcard level (`*.vwn.io`) — the edge rejects the TLS handshake before the tunnel is ever reached, even though the origin `Certificate` (`apps-vwn-io-tls`) is correct. See [QA.md](QA.md#why-does-an-externally-exposed-app-get-err_ssl_version_or_cipher_mismatch-even-though-its-envoy-certificate-looks-correct). |
 
-Use `${DOMAIN_CLUSTER}` for internal-only services. Use any of the other domains for services that should be reachable from the internet.
+Use `${DOMAIN_CLUSTER}` for internal-only services. For new external services, use `${DOMAIN_IO}`, `${DOMAIN_APP}`, or `${DOMAIN_CASA}` — all three are one-level-deep zone roots fully covered by Cloudflare's edge certificate. **Do not** nest a new hostname under `${DOMAIN_APPS}` (e.g. `myapp.${DOMAIN_APPS}`) — fixing that would require enabling Cloudflare Total TLS or buying an Advanced Certificate, neither of which is currently in place.
 
 ### Scenario 1 — Internal only (LAN)
 
-Attach to `envoy-internal` with a `${DOMAIN_CLUSTER}` hostname. Example for the Longhorn UI:
+Attach to `envoy-internal` with a `${DOMAIN_CLUSTER}` hostname. Example for the Rook-Ceph dashboard:
 
 ```yaml
-# kubernetes/apps/longhorn-system/longhorn/app/httproute.yaml
+# kubernetes/apps/rook-ceph/rook-ceph/cluster/app/httproute.yaml
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: longhorn
+  name: rook-ceph-dashboard
 spec:
   parentRefs:
     - name: envoy-internal
       namespace: network
       sectionName: https
   hostnames:
-    - "longhorn.${DOMAIN_CLUSTER}"
+    - "ceph.${DOMAIN_CLUSTER}"
   rules:
     - backendRefs:
-        - name: longhorn-frontend
-          port: 80
+        - name: rook-ceph-mgr-dashboard
+          port: 7000
 ```
 
 What happens automatically:
-- `external-dns-unifi` creates a DNS record in UniFi: `longhorn.cluster.vwn.io → CNAME internal.proxii.nl → 10.60.0.231`
+- `external-dns-unifi` creates a DNS record in UniFi: `ceph.cluster.vwn.io → CNAME internal.proxii.nl → 10.60.0.231`
 - `external-dns-cloudflare` does **not** act — it only watches `envoy-external`
 - TLS is handled by the pre-existing `cluster-vwn-io-tls` wildcard on the gateway
 
 ### Scenario 2 — External (WAN + LAN)
 
-Attach to `envoy-external` with a hostname under any cloudflared-routed domain:
+Attach to `envoy-external` with a hostname one level under a cloudflared-routed **zone root** (`${DOMAIN_IO}`, `${DOMAIN_APP}`, or `${DOMAIN_CASA}`). Do **not** nest under `${DOMAIN_APPS}` — see the [Domain convention](#domain-convention) table above for why.
 
 ```yaml
 spec:
@@ -362,7 +362,7 @@ Group all LAN services under `kubernetes/apps/network/external-services/` — on
 
 1. Create `httproute.yaml` in the app's `app/` directory
 2. Choose gateway: `envoy-internal` (LAN only) or `envoy-external` (WAN + LAN)
-3. Choose domain: `${DOMAIN_CLUSTER}` for internal-only; any other domain for external
+3. Choose domain: `${DOMAIN_CLUSTER}` for internal-only; for external, use `${DOMAIN_IO}`, `${DOMAIN_APP}`, or `${DOMAIN_CASA}` one level deep (e.g. `myapp.${DOMAIN_APP}`) — **not** `${DOMAIN_APPS}`, see [Domain convention](#domain-convention)
 4. Add `httproute.yaml` to the app's `app/kustomization.yaml` resources list
 5. No TLS config needed — wildcard certs are pre-loaded on both gateways
 6. No ExternalDNS annotation needed — both instances auto-discover from `gateway-httproute` source

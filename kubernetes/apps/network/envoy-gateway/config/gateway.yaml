@@ -36,6 +36,8 @@ spec:
             name: vwn-app-tls
           - kind: Secret
             name: vwn-casa-tls
+          - kind: Secret
+            name: vwn-io-tls
           # NOT WAN-safe for new routes — two levels under vwn.io's zone root.
           # These origin certs are correct, but Cloudflare's edge has no cert
           # covering them, so the TLS handshake fails before the tunnel is ever
@@ -78,6 +80,8 @@ spec:
             name: vwn-app-tls
           - kind: Secret
             name: vwn-casa-tls
+          - kind: Secret
+            name: vwn-io-tls
           - kind: Secret
             name: cluster-vwn-io-tls
           - kind: Secret

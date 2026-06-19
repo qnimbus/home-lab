@@ -22,3 +22,4 @@ spec:
             - ${DOMAIN_CASA}
             - ${DOMAIN_CLUSTER}
             - ${DOMAIN_APPS}
+            - ${DOMAIN_IO}

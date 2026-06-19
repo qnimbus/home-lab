@@ -70,3 +70,21 @@ spec:
   dnsNames:
     - "${DOMAIN_APPS}"
     - "*.${DOMAIN_APPS}"
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/cert-manager.io/certificate_v1.json
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-vwn-io
+spec:
+  secretName: vwn-io-tls
+  issuerRef:
+    name: letsencrypt-production
+    kind: ClusterIssuer
+    group: cert-manager.io
+  privateKey:
+    rotationPolicy: Always
+  commonName: "${DOMAIN_IO}"
+  dnsNames:
+    - "${DOMAIN_IO}"
+    - "*.${DOMAIN_IO}"
