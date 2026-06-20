@@ -1,2 +1,8 @@
 ---
-{}
+# Without this, flux_instance_info (and the FluxInstanceAbsent/FluxInstanceNotReady
+# PrometheusRules in flux-instance/app/prometheusrule.yaml that depend on it) is never
+# scraped — flux-operator isn't covered by flux-instance's PodMonitor, which only
+# selects the GOTK component controllers (helm/source/kustomize/notification-controller),
+# not the operator pod itself.
+serviceMonitor:
+  create: true
