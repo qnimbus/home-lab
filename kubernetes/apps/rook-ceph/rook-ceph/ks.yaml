@@ -49,6 +49,7 @@ spec:
     namespace: flux-system
   dependsOn:
     - name: rook-ceph-operator
+    - name: snapshot-controller
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease

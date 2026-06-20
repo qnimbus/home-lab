@@ -4,6 +4,45 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-20 — `csi-snapshot-controller-deploy`
+
+### Goal
+Deploy a CSI snapshot-controller cluster singleton, enable Rook-Ceph's `VolumeSnapshotClass`, and verify the full snapshot→restore path live — closing the ROADMAP's "CSI Snapshots" item and unblocking VolSync.
+
+### What we did
+- User asked what the most reasonable next `docs/ROADMAP.md` item was; reviewed the roadmap and `docs/REPO-AUDIT.md`, recommended CSI Snapshots (external-snapshotter + Ceph `VolumeSnapshotClass`) — small, dependency-free, and the literal prerequisite `rook-ceph-cluster`'s HelmRelease was already wired with a disabled flag waiting for.
+- Entered plan mode; ran three parallel Explore agents to research (1) the community-standard snapshot-controller chart via kubesearch.dev-style research, (2) `bykaj/home-ops`'s own snapshot-controller + VolSync patterns in `tmp/home-ops-bykaj`, and (3) this repo's own Kustomization/OCIRepository conventions plus the exact disabled-flag context in `rook-ceph-cluster`'s HelmRelease.
+- Confirmed convergent findings: `oci://ghcr.io/piraeusdatastore/helm-charts/snapshot-controller` (v5.1.1) is both the dominant community choice and bykaj's exact pick; no cosign signatures are published for this chart.
+- Asked the user two clarifying questions: where to place the new app (chose `kubernetes/apps/system/snapshot-controller/`, mirroring the existing `system/reloader` precedent — corrected mid-flight that `system/` is an org folder, not a namespace, so the app gets its own dedicated `snapshot-controller` namespace) and single- vs multi-replica (chose single replica, matching reloader's simplicity, since the controller is leader-elected and not on the live-traffic path).
+- Dispatched a Plan agent with the full research context to produce a file-by-file implementation plan; independently verified its key claims (schema-host majority, inline `values:` convention, exact `dependsOn` syntax) before finalizing and writing the plan file, then exited plan mode.
+- Implemented: new OCIRepository + app scaffold under `kubernetes/apps/system/snapshot-controller/`, flipped Rook-Ceph's `cephBlockPoolsVolumeSnapshotClass` to enabled with an explicit name (avoiding a collision with the existing `ceph-block` StorageClass name), added `snapshot-controller` to `rook-ceph-cluster`'s `dependsOn`.
+- Validated locally before committing: `kubectl kustomize` on every touched tree, the repo's own `validate.sh` (kubeconform — clean except one pre-existing, documented `Taskfile.yaml` false positive), and `scripts/depgraph.py` (0 cycles/dangling refs, new edge correctly non-redundant; this also auto-refreshed `docs/CLUSTER.md`'s dependency diagrams).
+- Ran `/git-stage` and `/git-commit` (commit `aa92488`); user pushed manually.
+- Verified live: forced Flux reconciliation, confirmed both the new and dependent Kustomizations `Ready`, all snapshot CRDs installed, the `snapshot-controller` + conversion-webhook pods `Running`, and the `ceph-block-snapshot` `VolumeSnapshotClass` created exactly as configured with Ceph staying `HEALTH_OK`.
+- Ran the full smoke test against disposable scratch resources (never touching live app PVCs): wrote a canary file, snapshotted it, restored into a new PVC, confirmed byte-for-byte data integrity, then tore down every test resource including confirming the `VolumeSnapshotContent` was garbage-collected.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/snapshot-controller.yaml` | New `OCIRepository` source for the chart (v5.1.1, no cosign available) |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Registered the new `OCIRepository` |
+| `kubernetes/apps/system/snapshot-controller/ks.yaml` | New Flux `Kustomization`, `wait: true` so downstream dependents block correctly |
+| `kubernetes/apps/system/snapshot-controller/app/namespace.yaml` | New dedicated `snapshot-controller` namespace |
+| `kubernetes/apps/system/snapshot-controller/app/helmrelease.yaml` | New `HelmRelease`, single replica, `ServiceMonitor` enabled |
+| `kubernetes/apps/system/snapshot-controller/app/kustomization.yaml` | New app-level Kustomize aggregator |
+| `kubernetes/apps/system/kustomization.yaml` | Registered the new app's `ks.yaml` |
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` | Enabled `cephBlockPoolsVolumeSnapshotClass`, named `ceph-block-snapshot` |
+| `kubernetes/apps/rook-ceph/rook-ceph/ks.yaml` | Added `snapshot-controller` to `rook-ceph-cluster`'s `dependsOn` |
+| `docs/CLUSTER.md` | Auto-regenerated dependency-graph diagrams via `scripts/depgraph.py` |
+
+### Key decisions
+- Placement: `kubernetes/apps/system/snapshot-controller/` with its own dedicated namespace (not a shared "system" namespace) — mirrors the existing `system/reloader` precedent exactly, after verifying reloader's actual namespace wiring directly rather than trusting the initial (incorrect) framing of the question.
+- Single replica, no `topologySpreadConstraints` — deliberately rejected the cert-manager/ESO-style 2-replica HA pattern the Plan agent first proposed, since snapshot-controller is leader-elected and a brief outage only delays snapshot create/delete rather than affecting live traffic; reloader (the structural template) is also single-replica.
+- `VolumeSnapshotClass` named `ceph-block-snapshot` explicitly rather than accepting the chart/Rook default name, which is literally `ceph-block` — identical to the existing StorageClass name (distinct API kinds, no functional collision, but confusing in `kubectl get` output).
+- No cosign verification on the new `OCIRepository` — confirmed piraeusdatastore doesn't publish signatures for this chart, so it follows the plain/unverified pattern (matching `rook-ceph.yaml`) rather than the cosign pattern (matching `plugin-barman-cloud.yaml`).
+
+---
+
 ## 2026-06-19 — `cloudflare-edge-cert-gap-and-legacy-dns-cleanup`
 
 ### Goal

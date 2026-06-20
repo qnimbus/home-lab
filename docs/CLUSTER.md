@@ -715,7 +715,7 @@ flowchart TD
   observability["observability (2)"]
   openebs["openebs (1)"]
   rook_ceph["rook-ceph (2)"]
-  system["system (1)"]
+  system["system (2)"]
   system_upgrade["system-upgrade (2)"]
   tailscale["tailscale (2)"]
   actions_runner_system --> external_secrets
@@ -733,6 +733,7 @@ flowchart TD
   network --> kube_system
   observability --> external_secrets
   observability --> rook_ceph
+  rook_ceph --> system
   tailscale --> external_secrets
   tailscale --> kube_system
 ```
@@ -952,17 +953,21 @@ flowchart TD
 flowchart TD
   flux_system_rook_ceph_cluster["rook-ceph-cluster"]
   flux_system_rook_ceph_operator["rook-ceph-operator"]
+  flux_system_snapshot_controller(("snapshot-controller · system")):::external
   flux_system_rook_ceph_cluster --> flux_system_rook_ceph_operator
+  flux_system_rook_ceph_cluster --> flux_system_snapshot_controller
+  classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
 ```
 
 </details>
 
 <details>
-<summary>system (1)</summary>
+<summary>system (2)</summary>
 
 ```mermaid
 flowchart TD
   flux_system_reloader["reloader"]
+  flux_system_snapshot_controller["snapshot-controller"]
 ```
 
 </details>

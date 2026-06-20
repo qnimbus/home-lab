@@ -24,3 +24,4 @@ resources:
   - ./plugin-barman-cloud.yaml
   - ./rook-ceph.yaml
   - ./rook-ceph-cluster.yaml
+  - ./snapshot-controller.yaml

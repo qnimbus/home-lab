@@ -159,10 +159,16 @@ spec:
             csi.storage.k8s.io/node-stage-secret-name: rook-csi-rbd-node
             csi.storage.k8s.io/node-stage-secret-namespace: "{{ .Release.Namespace }}"
             csi.storage.k8s.io/fstype: ext4
-    # VolumeSnapshotClass needs the external-snapshotter CRDs, which we have not
-    # deployed yet — leaving it on would fail the Flux dry-run. Enable alongside
-    # a snapshot-controller later.
+    # Backed by the rook-ceph.rbd.csi.ceph.com driver via the external-snapshotter
+    # (kubernetes/apps/system/snapshot-controller). Named explicitly rather than
+    # the chart's own default ("ceph-block" — identical to the ceph-block
+    # StorageClass name; distinct API kinds so no functional collision, but
+    # confusing in `kubectl get` output). Not the cluster-default snapshot
+    # class — consumers (e.g. VolSync) reference it by name explicitly.
     cephBlockPoolsVolumeSnapshotClass:
-      enabled: false
+      enabled: true
+      name: ceph-block-snapshot
+      isDefault: false
+      deletionPolicy: Delete
     cephFileSystems: []
     cephObjectStores: []
