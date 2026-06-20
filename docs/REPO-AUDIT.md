@@ -1,7 +1,7 @@
 # GitOps Repository Audit <!-- omit from toc -->
 
 > **Living document** — re-run the audit commands in [How to Re-Audit](#how-to-re-audit) after significant changes and update the findings below.
-> Last audited: **2026-06-20** · Auditor: Claude Code (`gitops-repo-audit` skill) — second refresh pass plus a same-day follow-up. Reviewed everything added since the previous pass: a wildcard cert for `vwn.io` (`DOMAIN_IO`, wired into both envoy gateways), `cloudflared`'s origin-cert verification flipped from `noTLSVerify: true` to real verification now that all four ingress domains have matching Certificates (plus a Reloader annotation, since its `config.yaml` is mounted via `subPath` and won't live-update otherwise), and a repo-wide restructure consolidating `bootstrap/` and `cnpg/` under `ops/`. The Alertmanager Pushover receiver (W1) was implemented, committed (`878b7d1`), live-tested, fixed for message truncation (`0d51e10`), and confirmed working by the user — now resolved, see Gaps. Two doc-accuracy issues found and fixed in this pass: this file's own "How to Re-Audit" recipe referenced the pre-restructure `bootstrap/` path (now `ops/bootstrap/`, see I11), and `docs/CLUSTER.md`'s auto-generated dependency chart was stale (missing the `default/whoami` Kustomization) — refreshed by re-running `scripts/depgraph.py`. I4 (cosign coverage, still 13/20 unverified) remains open, unchanged by this pass's commits.
+> Last audited: **2026-06-21** · Auditor: Claude Code (`gitops-repo-audit` skill) — fourth pass. `HEAD` (`0772f5a`) is unchanged from the prior pass and the working tree is clean, so no new commits to assess. Re-ran the full discovery/validation/API-compliance/security spot-check suite anyway rather than trusting the recorded output: resource counts unchanged (30 HelmReleases, 44 Kustomizations, 21 OCIRepositories), `kubeconform`/`kustomize build` clean (only the documented `Taskfile.yaml` false positive), `flux migrate --dry-run` reports no deprecated APIs, cosign coverage unchanged at 14/21 unverified, drift-detection opt-outs and `configMapGenerator` watch-label gaps both still zero, and the `dependsOn` graph still shows 0 cycles / 0 dangling across all 44 Kustomizations. Additionally hand-verified the two `kind: Secret` hits the unencrypted-secrets grep always flags (`envoy-gateway/config/gateway.yaml`'s `certificateRefs` and `flux/cluster/ks.yaml`'s `substituteFrom`) — both are reference fields pointing at existing Secret names, not embedded manifests, confirming the "no plaintext Secrets" finding. No findings changed.
 
 ## Contents <!-- omit from toc -->
 
@@ -31,9 +31,9 @@
 
 | Kind | Count | Δ since 2026-06-18 |
 |---|---|---|
-| HelmRelease | 29 | +1 (whoami — **disabled**, see note) |
-| Kustomization | 43 | +1 (whoami/ks.yaml — **disabled**, see note) |
-| OCIRepository | 20 | — (envoy-gateway patch-bumped 1.8.0 → 1.8.1, no new sources) |
+| HelmRelease | 30 | +2 (whoami — **disabled**, see note; snapshot-controller, `2349057`) |
+| Kustomization | 44 | +2 (whoami/ks.yaml — **disabled**, see note; snapshot-controller, `2349057`) |
+| OCIRepository | 21 | +1 (snapshot-controller, `2349057`) |
 | HelmRepository | 4 | — |
 | Receiver | 1 | — |
 | Alert | 1 | — |
@@ -42,9 +42,9 @@
 
 > **Note on the whoami count**: `kubernetes/apps/default/whoami/ks.yaml` exists on disk (a static-scan inventory like `discover.sh` counts it), but `kubernetes/apps/default/kustomization.yaml` has it commented out of `resources:`. It is **not applied to the live cluster** — added as a connectivity smoke-test, then deliberately disabled (commit `a88ecf1`). Don't read the +1 as a live resource change.
 
-**Namespaces (app-declared via `namespace.yaml`)**: actions-runner-system, automation, database, external-secrets, network, observability, openebs, reloader, rook-ceph, system-upgrade, tailscale. **Bootstrap-managed** (created by the Helmfile bootstrap phase before Flux takes over, not by a GitOps `namespace.yaml`): kube-system, cert-manager, flux-system. `default` is a built-in namespace — whoami targets it directly via `targetNamespace`, no `namespace.yaml` needed.
+**Namespaces (app-declared via `namespace.yaml`)**: actions-runner-system, automation, database, external-secrets, network, observability, openebs, reloader, rook-ceph, snapshot-controller, system-upgrade, tailscale. **Bootstrap-managed** (created by the Helmfile bootstrap phase before Flux takes over, not by a GitOps `namespace.yaml`): kube-system, cert-manager, flux-system. `default` is a built-in namespace — whoami targets it directly via `targetNamespace`, no `namespace.yaml` needed.
 
-**Applications**: cilium · coredns · cert-manager · external-secrets · onepassword-connect · openebs · rook-ceph (operator + cluster) · envoy-gateway · cloudflared · external-dns (cloudflare + unifi) · tailscale-operator · actions-runner-controller · kube-prometheus-stack · smartctl-exporter · spegel · metrics-server · reloader · tuppr · cloudnative-pg (+ pgadmin + postgres-backup-local + plugin-barman-cloud) · waha · external-services (truenas + wan-failover) · flux-operator · flux-instance · flux-receiver · flux-alerts · whoami (disabled)
+**Applications**: cilium · coredns · cert-manager · external-secrets · onepassword-connect · openebs · rook-ceph (operator + cluster) · envoy-gateway · cloudflared · external-dns (cloudflare + unifi) · tailscale-operator · actions-runner-controller · kube-prometheus-stack · smartctl-exporter · spegel · metrics-server · reloader · snapshot-controller · tuppr · cloudnative-pg (+ pgadmin + postgres-backup-local + plugin-barman-cloud) · waha · external-services (truenas + wan-failover) · flux-operator · flux-instance · flux-receiver · flux-alerts · whoami (disabled)
 
 > Longhorn is fully gone (superseded by Rook-Ceph, big-bang migration). `rook-ceph` (`ceph-block`) is now the default StorageClass with all 5 stateful consumers migrated.
 
@@ -89,7 +89,7 @@ All Flux resources use current stable API versions. No migration required.
 | `cluster-settings` ConfigMap + `cluster-secrets` Secret carry `reconcile.fluxcd.io/watch: Enabled` | ✅ |
 | All OCI-sourced HelmReleases use `chartRef` (modern pattern); the 4 remaining `HelmRepository`+`chart.spec` HelmReleases (cilium, external-secrets, onepassword-connect, metrics-server) are pinned to upstreams with no official OCI artifact | ✅ |
 | No legacy `install.remediation.retries`-only pattern — global `cluster-apps` patch injects `strategy.name: RetryOnFailure` + remediation defaults for every HelmRelease | ✅ |
-| Zero `dependsOn` cycles or dangling references across all 43 Kustomizations (verified programmatically) | ✅ |
+| Zero `dependsOn` cycles or dangling references across all 44 Kustomizations (verified programmatically) | ✅ |
 | Multi-document `ks.yaml` for operator + CRD-instance Kustomizations (operator dry-run isolation) | ✅ |
 | Renovate tracks all pinned versions via `# renovate: datasource=...` annotations; all OCIRepository refs use immutable exact tags | ✅ |
 | Receiver deployed for webhook-triggered immediate reconciliation on Git push | ✅ |
@@ -137,7 +137,7 @@ Was tracked as I6 (recommended `podAntiAffinity`). Implemented instead via `topo
 
 #### ✅ RESOLVED — Drift detection now cluster-wide default
 
-`driftDetection.mode: enabled` is in the global `cluster-apps` patch. All 29 HelmReleases have drift detection enabled (the new `whoami` HelmRelease inherits it too, though it's not currently live).
+`driftDetection.mode: enabled` is in the global `cluster-apps` patch. All 30 HelmReleases have drift detection enabled (the disabled `whoami` and the newly added `snapshot-controller` both inherit it too).
 
 #### ✅ RESOLVED — FluxInstance `cluster.size` now set to `medium`
 
@@ -184,7 +184,7 @@ Was I9 (found during a follow-up discussion, not the original audit pass). `flux
 
 ### OCI Supply Chain (Cosign Verification)
 
-20 OCIRepositories in use. 7 have `spec.verify.provider: cosign`:
+21 OCIRepositories in use. 7 have `spec.verify.provider: cosign`:
 
 | OCIRepository | Cosign |
 |---|---|
@@ -194,7 +194,7 @@ Was I9 (found during a follow-up discussion, not the original audit pass). `flux
 | tailscale-operator | ✅ |
 | external-dns | ✅ |
 | openebs | ✅ |
-| **plugin-barman-cloud** | ✅ (new) |
+| plugin-barman-cloud | ✅ |
 | cert-manager | ❌ |
 | cloudnative-pg | ❌ |
 | coredns | ❌ |
@@ -203,13 +203,14 @@ Was I9 (found during a follow-up discussion, not the original audit pass). `flux
 | gha-runner-scale-set | ❌ |
 | kube-prometheus-stack | ❌ |
 | reloader | ❌ |
-| **rook-ceph** | ❌ (new) |
-| **rook-ceph-cluster** | ❌ (new) |
+| rook-ceph | ❌ |
+| rook-ceph-cluster | ❌ |
 | smartctl-exporter | ❌ |
+| **snapshot-controller** | ❌ (new, `2349057`) |
 | spegel | ❌ |
 | tuppr | ❌ |
 
-13 of 20 repositories remain unverified, including the two Rook-Ceph sources added during the storage migration. The newest addition, `plugin-barman-cloud`, ships cosign signatures and was verified on arrival — a good sign the convention is sticking for new apps. The remaining 13 should be assessed individually — some upstreams (e.g. cert-manager) publish cosign signatures; others may not.
+14 of 21 repositories remain unverified, including the two Rook-Ceph sources added during the storage migration and the newest addition, `snapshot-controller` (piraeusdatastore/helm-charts) — its upstream publishes no cosign signature as of this chart version. `plugin-barman-cloud` is the lone recent addition that arrived pre-verified, a good sign the convention is sticking where upstreams support it. The remaining 14 should be assessed individually — some upstreams (e.g. cert-manager) publish cosign signatures; others may not.
 
 ### Network & RBAC
 
@@ -243,7 +244,7 @@ _None._
 | ~~I1~~ | ~~FluxInstance `cluster.size` unset (`cluster: {}`)~~ | ✅ Resolved — set to `medium` |
 | ~~I2~~ | ~~FluxInstance sync: SSH deploy key~~ | ✅ Resolved — GitHub App auth live (`provider: github`, `flux-github-app` secret); ROADMAP.md entry marked done |
 | ~~I3~~ | ~~No `retryInterval` on HelmReleases~~ | ✅ Resolved — `retryInterval: 2m` in the global `cluster-apps` patch + top-level Kustomizations |
-| I4 | 13 of 20 OCIRepositories without cosign (`rook-ceph`, `rook-ceph-cluster` among them; newest addition `plugin-barman-cloud` arrived pre-verified) | Audit each upstream for cosign availability; add verification where supported |
+| I4 | 14 of 21 OCIRepositories without cosign (`rook-ceph`, `rook-ceph-cluster`, `snapshot-controller` among them; `plugin-barman-cloud` is the lone recent addition that arrived pre-verified) | Audit each upstream for cosign availability; add verification where supported |
 | ~~I5~~ | ~~Validation CI picks up non-K8s YAMLs~~ | ✅ Resolved — turned out CI/Task already scope `validate.sh` to `-d kubernetes`, never touching `Taskfile.yaml`/`talos/`; removed the dead `-e kubernetes/bootstrap` exclude (bootstrap moved to repo-root `bootstrap/` some time ago, so the flag pointed at a non-existent path) |
 | ~~I6~~ | ~~kustomize-controller co-location~~ | ✅ Resolved — `topologySpreadConstraints` + 2 replicas on helm/kustomize/notification-controller |
 | ~~I7~~ | ~~5 HelmReleases set redundant `createNamespace: true`~~ | ✅ Resolved — removed the now-empty `install:` block from all 5 |
@@ -251,6 +252,7 @@ _None._
 | ~~I9~~ | ~~`kustomize-controller` `--concurrent` set via two colliding patches (10, then 20) — last one silently won~~ | ✅ Resolved — consolidated into one explicit patch; `(helm-controller\|source-controller)` keep `--concurrent=10` |
 | ~~I10~~ | ~~`whoami` HelmRelease lacked `securityContext`/`defaultPodOptions` hardening~~ | ✅ Resolved — moved app to internal port 8080 (`WHOAMI_PORT_NUMBER`) + `targetPort: 8080` on the Service, enabling `runAsNonRoot`/`capabilities.drop: ["ALL"]` with no capability add-back |
 | ~~I11~~ | ~~This doc's own "How to Re-Audit" recipe used a stale `-e bootstrap` exclude after the `ops/` restructure (`c8771da`)~~ | ✅ Resolved — updated to `-e ops`; verified `ops/bootstrap/helmfile.d/*.yaml` no longer false-positive when scanning from repo root |
+| ~~I12~~ | ~~This doc's own "How to Re-Audit" recipe had two latent bugs in its spot-checks: the drift-detection check grepped individual `helmrelease.yaml` files for `driftDetection`, which never appears there (it's injected centrally by a `cluster-apps` patch in `kubernetes/flux/cluster/ks.yaml`) — would report 100% of HelmReleases as missing drift detection regardless of truth; previously masked by an unrelated `xargs -l` syntax bug that silently no-op'd instead of running. The cosign-coverage loop's glob also picked up the oci repos directory's own `kustomization.yaml` as a false `NO-VERIFY` entry~~ | ✅ Resolved — drift-detection check rewritten to look for the `drift-detection.flux.home.arpa/disabled` opt-out label instead (none found — all 29 HelmReleases genuinely inherit the global default, confirming the existing W2 finding was correct despite the broken check); cosign loop now excludes `kustomization.yaml` |
 
 ---
 
@@ -274,14 +276,20 @@ bash .claude/skills/gitops-repo-audit/scripts/check-deprecated.sh -d .
 grep -rl "kind: Secret" kubernetes/ --include="*.yaml" | \
   xargs -I{} sh -c 'grep -q "sops:\|ENC\[" "$1" || echo "CHECK: $1"' _ {}
 
-# OCIRepositories missing cosign:
+# OCIRepositories missing cosign (excludes the directory's own kustomization.yaml):
 for f in kubernetes/flux/meta/repos/oci/*.yaml; do
+  [ "$(basename "$f")" = "kustomization.yaml" ] && continue
   grep -q "provider: cosign" "$f" || echo "NO-VERIFY: $(basename $f .yaml)"
 done
 
-# HelmReleases missing drift detection:
-find kubernetes/ -name "helmrelease.yaml" | \
-  xargs -l sh -c 'grep -q "driftDetection" "$1" || echo "NO-DRIFT: $1"'
+# HelmReleases opted OUT of the cluster-wide drift-detection default.
+# driftDetection.mode: enabled is injected centrally by a patch in
+# kubernetes/flux/cluster/ks.yaml — it never appears in individual
+# helmrelease.yaml files, so grepping those files for the string always
+# reports 100% missing regardless of truth. Check for the opt-out label
+# instead (see I12):
+grep -rl "drift-detection.flux.home.arpa/disabled" kubernetes/apps --include="*.yaml" \
+  || echo "No opt-outs — all HelmReleases inherit the global default"
 
 # Generated values ConfigMaps missing the reactivity watch label:
 for f in $(grep -rl "configMapGenerator" kubernetes/apps --include="kustomization.yaml"); do
