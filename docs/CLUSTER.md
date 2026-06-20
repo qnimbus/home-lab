@@ -706,6 +706,7 @@ flowchart TD
   automation["automation (1)"]
   cert_manager["cert-manager (2)"]
   database["database (5)"]
+  default["default (1)"]
   external_secrets["external-secrets (3)"]
   flux_bootstrap["flux-bootstrap (3)"]
   flux_system["flux-system (4)"]
@@ -804,6 +805,16 @@ flowchart TD
   flux_system_plugin_barman_cloud --> flux_system_cloudnative_pg_operator
   flux_system_postgres_backup_local --> flux_system_cloudnative_pg_cluster
   classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
+```
+
+</details>
+
+<details>
+<summary>default (1)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_whoami["whoami"]
 ```
 
 </details>

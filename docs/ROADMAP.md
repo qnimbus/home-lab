@@ -411,21 +411,14 @@ migration. `sidecar.dashboards`/`sidecar.datasources` enabled (auto-discovers Co
 
 ### Alertmanager Receiver
 
-Wire an Alertmanager notification receiver so cluster alerts reach a human. Alertmanager is deployed and running; it currently has no routes configured so all alerts are silently dropped.
+**✅ Done (2026-06-20, commits `878b7d1`, `0d51e10`).** A root `AlertmanagerConfig` (`alertmanagerSpec.alertmanagerConfiguration.name`) routes by `severity` label — `critical` → emergency-priority Pushover (retry/expire, persistent sound), `warning|error` → normal Pushover, default `null`. The `error` value also catches Flux's own `notification-controller` `Alert`/`Provider` forwarding. Credentials via a new `alertmanager` ExternalSecret from 1Password. Live-tested; a message-truncation bug (Pushover's 1024-rune cap, blown past by the per-alert label dump multiplying across grouped alerts) was found and fixed in the same pass.
 
-**Alerting rules to add at minimum:**
-- `kube_pod_status_phase{phase=~"Failed|Unknown"} > 0` — stale pod accumulation
-- `kube_helmrelease_ready == 0` — Flux HelmRelease degraded
-- `node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.15` — disk pressure
-- `ceph_health_status != 0` — Ceph not `HEALTH_OK` (warn on `1`/`HEALTH_WARN`, page on `2`/`HEALTH_ERR`)
-- `ceph_osd_up < ceph_osd_in` — a Ceph OSD is `in` the CRUSH map but `down` (degraded redundancy)
-
-**Deployment notes:**
-- Receiver options: Discord webhook, SMTP, or Pushover (archive precedent)
-- Receiver credentials via ExternalSecret from 1Password (ESO already running)
-- Add `alertmanager.config` to `helm/values.yaml` with routes + receiver; keep the secret itself in 1Password
-
-**Dependencies:** kube-prometheus-stack ✅, onepassword-connect ✅
+> Residual, unverified: whether each "alerting rule to add at minimum" below already exists as a bundled rule (Rook-Ceph ships its own Ceph-mixin `PrometheusRule`s; kube-prometheus-stack ships default rule groups) or still needs to be authored — the routing now exists either way, but coverage hasn't been confirmed metric-by-metric.
+> - `kube_pod_status_phase{phase=~"Failed|Unknown"} > 0` — stale pod accumulation
+> - `kube_helmrelease_ready == 0` — Flux HelmRelease degraded
+> - `node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.15` — disk pressure
+> - `ceph_health_status != 0` — Ceph not `HEALTH_OK` (warn on `1`/`HEALTH_WARN`, page on `2`/`HEALTH_ERR`)
+> - `ceph_osd_up < ceph_osd_in` — a Ceph OSD is `in` the CRUSH map but `down` (degraded redundancy)
 
 ---
 
@@ -1324,7 +1317,7 @@ A third Gateway alongside `envoy-external` and `envoy-internal`, purpose-built f
 | Cloudflare Tunnel (cloudflared)        | 2-replica HA deployment in `network` namespace; `*.vwn.io` + `vwn.io` → `envoy-external`; token via ExternalSecret from 1Password |
 | Flux GitHub Webhook Receiver           | `flux-receiver` Kustomization in `flux-system`; ExternalSecret token from 1Password; HTTPRoute on `envoy-external`; GitHub webhook configured — reconcile latency ~5 min → seconds |
 | ExternalDNS (Split-DNS)                | `external-dns-cloudflare` (watches `envoy-external`, `--cloudflare-proxied`, `txtOwnerId: k8s`) + `external-dns-unifi` (webhook sidecar, watches all gateways + services, `txtOwnerId: k8s-internal`); shared OCIRepository `ghcr.io/home-operations/charts-mirror/external-dns` v1.21.1; CF token mapped from `API_TOKEN` → `CF_API_TOKEN` via ESO `data[]` |
-| kube-prometheus-stack                  | Prometheus + Alertmanager in `observability` namespace; 20 Gi + 1 Gi `ceph-block` PVCs (migrated off Longhorn in Phase 5; grafana `grafana.db` restored from NFS); node-exporter on all 3 nodes; full-cluster scraping (`*SelectorNilUsesHelmValues: false`); HTTPRoutes on `envoy-internal`; receiver deferred |
+| kube-prometheus-stack                  | Prometheus + Alertmanager in `observability` namespace; 20 Gi + 1 Gi `ceph-block` PVCs (migrated off Longhorn in Phase 5; grafana `grafana.db` restored from NFS); node-exporter on all 3 nodes; full-cluster scraping (`*SelectorNilUsesHelmValues: false`); HTTPRoutes on `envoy-internal`; Pushover receiver live (see Alertmanager Receiver) |
 | metrics-server                         | `kube-system`; HelmRelease `v3.13.0` (HelmRepository `https://kubernetes-sigs.github.io/metrics-server`); `kubectl top` and HPA resource metrics enabled; `--kubelet-insecure-tls` flag set; migration to `home-operations/charts-mirror` OCIRepository tracked in roadmap |
 | GitHub Actions Self-Hosted Runners (ARC + Claude PR Review) | ARC `gha-runner-scale-set-controller@0.14.1` + `home-lab` scale set deployed in `actions-runner-system`; Flux HelmReleases Ready; listener pod active; Renovate PR auto-review via `claude-code-action` wired |
 | ExternalSecrets `dataFrom` + `rewrite` migration | All 9 ExternalSecrets migrated to `dataFrom.extract` + `rewrite.regexp` pattern; 1Password field renames completed; all 12 cluster ExternalSecrets `SecretSynced: True` |

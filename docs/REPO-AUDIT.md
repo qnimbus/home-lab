@@ -1,7 +1,7 @@
 # GitOps Repository Audit <!-- omit from toc -->
 
 > **Living document** — re-run the audit commands in [How to Re-Audit](#how-to-re-audit) after significant changes and update the findings below.
-> Last audited: **2026-06-19** · Auditor: Claude Code (`gitops-repo-audit` skill) — refresh pass. Reviewed everything added since 2026-06-18: the `whoami` smoke-test app (currently disabled/inert — file on disk but not wired into its parent `kustomization.yaml`), a dedicated `pool-kube-api` `CiliumLoadBalancerIPPool` to stop kube-vip from sharing the envoy LB-IP block, the `cloudflared`/`external-dns` SNI + `DOMAIN_PROXII` routing fix, a per-node `osdsPerDevice` override for `talos-worker-02`'s smaller Ceph OSD disk, and the new `ceph-grafana-dashboards` `configMapGenerator` (verified its reactivity-watch label survives the per-generator `options.labels` merge — same class of bug as the resolved W3). One new minor gap found and fixed in the same pass (I10 — `whoami` lacked `securityContext` hardening; resolved by moving it off the privileged port instead of adding a capability back). W1 (Alertmanager receiver) and I4 (cosign coverage) remain open from prior passes.
+> Last audited: **2026-06-20** · Auditor: Claude Code (`gitops-repo-audit` skill) — second refresh pass plus a same-day follow-up. Reviewed everything added since the previous pass: a wildcard cert for `vwn.io` (`DOMAIN_IO`, wired into both envoy gateways), `cloudflared`'s origin-cert verification flipped from `noTLSVerify: true` to real verification now that all four ingress domains have matching Certificates (plus a Reloader annotation, since its `config.yaml` is mounted via `subPath` and won't live-update otherwise), and a repo-wide restructure consolidating `bootstrap/` and `cnpg/` under `ops/`. The Alertmanager Pushover receiver (W1) was implemented, committed (`878b7d1`), live-tested, fixed for message truncation (`0d51e10`), and confirmed working by the user — now resolved, see Gaps. Two doc-accuracy issues found and fixed in this pass: this file's own "How to Re-Audit" recipe referenced the pre-restructure `bootstrap/` path (now `ops/bootstrap/`, see I11), and `docs/CLUSTER.md`'s auto-generated dependency chart was stale (missing the `default/whoami` Kustomization) — refreshed by re-running `scripts/depgraph.py`. I4 (cosign coverage, still 13/20 unverified) remains open, unchanged by this pass's commits.
 
 ## Contents <!-- omit from toc -->
 
@@ -63,7 +63,9 @@ kustomize build: 0 errors
 
 ### Non-Kubernetes Files — Expected False Positives
 
-With the `-e talos -e assets -e .archive -e bootstrap` exclusions applied, only `Taskfile.yaml` (go-task runner, not a Kubernetes manifest — missing `kind` key) remains as an expected false positive. Confirmed CI never hits this either way, since `Taskfile.yaml`/`talos/`/`bootstrap/` sit outside the `-d kubernetes` scope the actual CI/Task invocation uses (I5, resolved 2026-06-17).
+With the `-e talos -e assets -e .archive -e ops` exclusions applied, only `Taskfile.yaml` (go-task runner, not a Kubernetes manifest — missing `kind` key) remains as an expected false positive. Confirmed CI never hits this either way, since `Taskfile.yaml`/`talos/`/`ops/` sit outside the `-d kubernetes` scope the actual CI/Task invocation uses (I5, resolved 2026-06-17).
+
+Note: the repo restructure in commit `c8771da` moved `bootstrap/` → `ops/bootstrap/` and `cnpg/` → `ops/cnpg/`. The previous version of this exclusion list (`-e bootstrap`) is now stale — `ops/bootstrap/helmfile.d/{00-crds,01-apps}.yaml` (Helmfile configs, not Kubernetes manifests) surface as two additional false positives if you still pass `-e bootstrap` instead of `-e ops`. Fixed in the "How to Re-Audit" recipe below (I11).
 
 ---
 
@@ -95,6 +97,8 @@ All Flux resources use current stable API versions. No migration required.
 | SOPS + ESO two-tier secrets — Talos secrets encrypted at rest, app secrets never in Git | ✅ |
 | Flux controllers (helm/kustomize/notification) run 2 replicas + `topologySpreadConstraints` (`ScheduleAnyway`) — survive single-node reboots during Talos/K8s upgrades | ✅ |
 | New `ceph-grafana-dashboards` `configMapGenerator` (9 dashboard JSONs) correctly inherits the reactivity-watch label | ✅ — verified via `kustomize build`: Kustomize **merges** top-level `generatorOptions.labels` with a generator's own `options.labels` (doesn't override), so the rendered ConfigMap carries both `grafana_dashboard: "1"` and `reconcile.fluxcd.io/watch: Enabled` |
+| `ops/` repo restructure (`bootstrap/`, `cnpg/` → `ops/bootstrap/`, `ops/cnpg/`) left no broken references | ✅ — `.github/workflows/validate.yaml`'s scoping comment was updated in the same commit (`c8771da`) to reflect the new path; `values.yaml.gotmpl`'s relative `readFile` (previously hardcoded to the old 3-levels-deep nesting) was also fixed and verified via `helmfile template` |
+| `cloudflared` origin-cert verification (`noTLSVerify: true` → `false`) shipped together with a `reloader.stakater.com/auto` annotation | ✅ — correctly recognizes that `config.yaml` is mounted via `subPath`, which Kubernetes never live-updates; without Reloader this and future config edits would sit inert in Git until a manual restart |
 
 ### Gaps
 
@@ -102,9 +106,14 @@ All Flux resources use current stable API versions. No migration required.
 
 Was W3. Added `generatorOptions: { labels: { reconcile.fluxcd.io/watch: "Enabled" } }` to all 13 `kustomization.yaml` files using `configMapGenerator` for chart values (merged into the existing `generatorOptions` block for `cloudflared`, which also sets `disableNameSuffixHash`). Verified via `kustomize build` that the label renders on the generated ConfigMap. This closes the gap behind the known `feedback_flux_configmap_hash.md` gotcha — `values.yaml` edits now trigger immediate reconciliation instead of requiring `flux reconcile helmrelease --force`.
 
-#### ⚠️ WARNING — Flux alerts wired, but Alertmanager has no outbound receiver
+#### ✅ RESOLVED — Alertmanager outbound receiver (Pushover) live
 
-**Still open.** `kubernetes/apps/flux-system/flux-alerts/` deploys a Flux-native `Provider` (`type: alertmanager`) + `Alert` (`eventSeverity: error`) forwarding reconciliation errors into Alertmanager. But `kube-prometheus-stack`'s `alertmanagerSpec` has no `config:`/receiver/route — Alertmanager runs the chart's default config, whose route terminates in the `null` receiver. Flux errors reach Alertmanager's state but never page a human. Tracked in [ROADMAP.md → Alertmanager Receiver](ROADMAP.md#alertmanager-receiver).
+Was W1. Implemented and committed (`878b7d1`):
+- `app/alertmanagerconfig.yaml` — a root `AlertmanagerConfig` (wired via `alertmanagerSpec.alertmanagerConfiguration.name`, which replaces the chart's literal `config:` rather than being discovered as a sub-route — sidesteps `alertmanagerConfigSelector`'s default `OnNamespace` matcher entirely). Routes `severity=critical` → `pushover-critical` (priority 2, `retry: 60s`, `expire: 1h`), `severity=~"warning|error"` → `pushover` (priority 1). The `error` severity value is what Flux's own `notification-controller` uses for its `alertmanager`-type `Provider` (`flux-errors` Alert in `flux-alerts/`), so Flux reconciliation failures now route into the same paging path.
+- `app/externalsecret.yaml` — new `alertmanager` ExternalSecret pulling a 1Password item (key `alertmanager`) and rewriting every extracted field via `regexp: (.*) → ALERTMANAGER_$1` into `alertmanager-secret`, with the target `template.data` referencing `{{ .ALERTMANAGER_PUSHOVER_TOKEN }}` / `{{ .ALERTMANAGER_PUSHOVER_USER_KEY }}`.
+- `app/helm/values.yaml` + `app/kustomization.yaml` wiring.
+
+Both verification items closed: the 1Password `alertmanager` item's fields are confirmed named literally `PUSHOVER_TOKEN`/`PUSHOVER_USER_KEY`, matching the `ALERTMANAGER_` rewrite + template lookup; and the path has been live-tested end-to-end by the user, who found and fixed a message-truncation issue (`0d51e10` — the per-alert label dump multiplied across grouped alerts and blew past Pushover's 1024-rune message cap; dropped the label dump, capped the loop to 5 alerts, and dropped `html: true` since it's no longer needed) before confirming delivery works.
 
 #### ✅ RESOLVED — `whoami` HelmRelease now has Pod-security hardening
 
@@ -223,7 +232,7 @@ _None._
 
 | # | Finding | Action |
 |---|---|---|
-| W1 | Flux `Alert`/`Provider` forward errors into Alertmanager, but Alertmanager has **no outbound receiver** (default `null` route) | Add an Alertmanager `config:` with a Slack/Discord/email/PagerDuty receiver + `route` (tracked in ROADMAP → Alertmanager Receiver) |
+| ~~W1~~ | ~~Flux `Alert`/`Provider` forward errors into Alertmanager, but Alertmanager has no outbound receiver~~ | ✅ Resolved — Pushover receiver + `AlertmanagerConfig` live (`878b7d1`, `0d51e10`); 1Password fields and end-to-end delivery both confirmed |
 | ~~W2~~ | ~~Drift detection on 5/20 HelmReleases only~~ | ✅ Resolved — global patch in `cluster-apps` now injects `driftDetection: enabled` for all 28 HelmReleases |
 | ~~W3~~ | ~~13 `configMapGenerator`-based values ConfigMaps lack `reconcile.fluxcd.io/watch: Enabled`~~ | ✅ Resolved — `generatorOptions.labels` added to all 13 `kustomization.yaml` files |
 
@@ -241,6 +250,7 @@ _None._
 | ~~I8~~ | ~~4 HelmReleases redundantly redeclare `driftDetection: mode: enabled`~~ | ✅ Resolved — removed the local declaration from all 4 |
 | ~~I9~~ | ~~`kustomize-controller` `--concurrent` set via two colliding patches (10, then 20) — last one silently won~~ | ✅ Resolved — consolidated into one explicit patch; `(helm-controller\|source-controller)` keep `--concurrent=10` |
 | ~~I10~~ | ~~`whoami` HelmRelease lacked `securityContext`/`defaultPodOptions` hardening~~ | ✅ Resolved — moved app to internal port 8080 (`WHOAMI_PORT_NUMBER`) + `targetPort: 8080` on the Service, enabling `runAsNonRoot`/`capabilities.drop: ["ALL"]` with no capability add-back |
+| ~~I11~~ | ~~This doc's own "How to Re-Audit" recipe used a stale `-e bootstrap` exclude after the `ops/` restructure (`c8771da`)~~ | ✅ Resolved — updated to `-e ops`; verified `ops/bootstrap/helmfile.d/*.yaml` no longer false-positive when scanning from repo root |
 
 ---
 
@@ -254,7 +264,7 @@ bash .claude/skills/gitops-repo-audit/scripts/discover.sh -d .
 
 # 2. Manifest validation (with non-K8s exclusions)
 bash .claude/skills/gitops-repo-audit/scripts/validate.sh -d . \
-  -e talos -e assets -e .archive -e bootstrap
+  -e talos -e assets -e .archive -e ops
 
 # 3. Deprecated API check
 bash .claude/skills/gitops-repo-audit/scripts/check-deprecated.sh -d .
