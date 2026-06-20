@@ -42,27 +42,30 @@ spec:
           token:
             name: alertmanager-secret
             key: PUSHOVER_TOKEN
-          html: true
           title: >-
             [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}]
             {{ .CommonLabels.alertname }}
+          # Pushover caps messages at 1024 runes. The old per-alert label dump multiplied
+          # across grouped alerts and blew past that (logged as "Truncated message" by
+          # Alertmanager) -- dropped it in favor of just the description/summary/message,
+          # and capped the loop to 5 alerts as defense-in-depth for large groups. Only
+          # range/len/if (core Go template builtins) are used here -- deliberately avoiding
+          # any assumption about which extra funcs Alertmanager's template funcmap exposes.
           message: |-
-            {{- range .Alerts }}
-              {{- if ne .Annotations.description "" }}
-                {{ .Annotations.description }}
-              {{- else if ne .Annotations.summary "" }}
-                {{ .Annotations.summary }}
-              {{- else if ne .Annotations.message "" }}
-                {{ .Annotations.message }}
-              {{- else }}
-                Alert description not available
-              {{- end }}
-              {{- if gt (len .Labels.SortedPairs) 0 }}
-                <small>
-                  {{- range .Labels.SortedPairs }}
-                    <b>{{ .Name }}:</b> {{ .Value }}
-                  {{- end }}
-                </small>
+            {{- if gt (len .Alerts) 5 }}
+              Showing 5 of {{ len .Alerts }} alerts in this group:
+            {{- end }}
+            {{- range $i, $alert := .Alerts }}
+              {{- if lt $i 5 }}
+                {{- if ne $alert.Annotations.description "" }}
+                  {{ $alert.Annotations.description }}
+                {{- else if ne $alert.Annotations.summary "" }}
+                  {{ $alert.Annotations.summary }}
+                {{- else if ne $alert.Annotations.message "" }}
+                  {{ $alert.Annotations.message }}
+                {{- else }}
+                  Alert description not available
+                {{- end }}
               {{- end }}
             {{- end }}
           priority: '{{ if eq .Status "firing" }}1{{ else }}0{{ end }}'
@@ -77,27 +80,30 @@ spec:
           token:
             name: alertmanager-secret
             key: PUSHOVER_TOKEN
-          html: true
           title: >-
             [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}]
             {{ .CommonLabels.alertname }}
+          # Pushover caps messages at 1024 runes. The old per-alert label dump multiplied
+          # across grouped alerts and blew past that (logged as "Truncated message" by
+          # Alertmanager) -- dropped it in favor of just the description/summary/message,
+          # and capped the loop to 5 alerts as defense-in-depth for large groups. Only
+          # range/len/if (core Go template builtins) are used here -- deliberately avoiding
+          # any assumption about which extra funcs Alertmanager's template funcmap exposes.
           message: |-
-            {{- range .Alerts }}
-              {{- if ne .Annotations.description "" }}
-                {{ .Annotations.description }}
-              {{- else if ne .Annotations.summary "" }}
-                {{ .Annotations.summary }}
-              {{- else if ne .Annotations.message "" }}
-                {{ .Annotations.message }}
-              {{- else }}
-                Alert description not available
-              {{- end }}
-              {{- if gt (len .Labels.SortedPairs) 0 }}
-                <small>
-                  {{- range .Labels.SortedPairs }}
-                    <b>{{ .Name }}:</b> {{ .Value }}
-                  {{- end }}
-                </small>
+            {{- if gt (len .Alerts) 5 }}
+              Showing 5 of {{ len .Alerts }} alerts in this group:
+            {{- end }}
+            {{- range $i, $alert := .Alerts }}
+              {{- if lt $i 5 }}
+                {{- if ne $alert.Annotations.description "" }}
+                  {{ $alert.Annotations.description }}
+                {{- else if ne $alert.Annotations.summary "" }}
+                  {{ $alert.Annotations.summary }}
+                {{- else if ne $alert.Annotations.message "" }}
+                  {{ $alert.Annotations.message }}
+                {{- else }}
+                  Alert description not available
+                {{- end }}
               {{- end }}
             {{- end }}
           # Emergency priority: Pushover repeats the push every `retry` seconds (min 30s) for

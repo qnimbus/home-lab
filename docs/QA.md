@@ -42,6 +42,10 @@ Concise answers to questions that came up during cluster operation. Each entry c
 - [Does Renovate create incremental PRs per minor version, or one PR to the latest?](#does-renovate-create-incremental-prs-for-each-talosk8s-minor-version-or-one-pr-jumping-to-the-latest)
 - [Why does tuppr start failing "downgrade" jobs after a manual upgrade?](#why-does-tuppr-start-spawning-failing-downgrade-jobs-after-a-manual-kubernetes-upgrade)
 - [What caused the kube-apiserver v1.34.7 crash loop?](#what-caused-the-kube-apiserver-v1347-crash-loop-and-will-it-happen-again)
+- [Why does `task talos:wipe-ceph-osds-live` fail after a cluster reset?](#why-does-task-taloswipe-ceph-osds-live-fail-after-a-cluster-reset)
+
+**Observability / Alerting**
+- [Why did a "Ceph" alert fire for packet drops on a management NIC, when Ceph traffic runs on the storage VLAN?](#why-did-a-ceph-alert-cephnodenetworkpacketdrops-fire-for-packet-drops-on-a-management-nic-when-ceph-traffic-runs-on-the-storage-vlan)
 
 ---
 
@@ -1084,3 +1088,17 @@ talosctl -n <NODE_IP> get discoveredvolumes | grep nvme0n1  # still blank
 **Reboot safety:** cp-02 and worker-01 can be rebooted one at a time without risk. Rebooting cp-02 leaves 2/3 etcd members active (sufficient quorum); worker-01 is not an etcd member.
 
 **v1.14 will fix this natively:** Talos v1.14 (in alpha as of 2026-06) adds `talosctl wipe lv <name>`, `talosctl wipe vg <name>`, and `talosctl wipe pv <name>` commands that go through the controller's own deactivation path instead of fighting it. Once v1.14 is stable, the `live-osd-cleanup` bootstrap step can be simplified to call these commands directly instead of deploying privileged pods. See [ROADMAP.md → Talos Config Audit](ROADMAP.md#talos-config-image-extensions--patch-audit) for the upgrade note.
+
+---
+
+## Observability / Alerting
+
+### Why did a "Ceph" alert (`CephNodeNetworkPacketDrops`) fire for packet drops on a management NIC, when Ceph traffic runs on the storage VLAN?
+
+**Short answer:** the alert name is misleading. Rook's bundled `CephNodeNetworkPacketDrops` rule (from the upstream ceph-mixin) has no network-scoping in its PromQL — it checks `device!="lo"` and nothing else, meaning it fires on *any* interface on *any* node node-exporter runs on, not specifically Ceph's `cluster_network`/`public_network` interfaces. It only carries the "Ceph" name because the upstream mixin assumes Ceph owns dedicated hardware (every NIC on a Ceph node *is* "a Ceph NIC" in that world) — not true here, where Ceph cleanly rides the `10.200.0.0/24` storage bond and the management NIC is functionally unrelated to it.
+
+**What actually happened (2026-06-20):** a genuine, brief traffic burst on `eno1` (the management NIC) on `talos-worker-02` — packet rate jumped from a ~200/s baseline to ~2000/s for about 60–90 seconds (09:00:30–09:01:00 UTC), tripping the rule's `≥10 drops/sec` threshold. Checked for a cause via Prometheus: CPU was flat (no starvation-driven ring-buffer overflow), no pod restarts occurred cluster-wide in that window, and Spegel (the most likely "bursty host traffic" source) doesn't use `hostNetwork` so it can't directly explain a host-interface spike. Root cause of the burst itself was not identified — pinning it down would need kernel `dmesg` or a live packet capture from the moment it happened, which isn't retroactively recoverable from Prometheus metrics alone.
+
+**When to dig further:** treat a single occurrence as noise — it self-resolved within a minute and hasn't recurred. If it starts recurring, capture `talosctl dmesg` and interface stats live (via the `talos-node-manager` agent) at the moment it fires; that's the only way to actually catch the responsible traffic.
+
+**Encountered 2026-06-20** while verifying the newly-wired Alertmanager → Pushover pipeline (see [ROADMAP.md → Alertmanager Receiver](ROADMAP.md#alertmanager-receiver)).
