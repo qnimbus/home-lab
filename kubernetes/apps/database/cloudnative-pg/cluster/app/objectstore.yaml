@@ -20,6 +20,10 @@ spec:
       maxParallel: 1
       encryption: AES256
     s3Credentials:
+      # Set for when cloudnative-pg/cloudnative-pg#9724 is fixed upstream - this
+      # key is currently silently ignored, see AWS_DEFAULT_REGION below for the
+      # actual fix.
+      region: us-west-001
       accessKeyId:
         name: cloudnative-pg-secret
         key: CNPG_S3_ACCESS_KEY
@@ -33,9 +37,16 @@ spec:
     # the legacy header-based behaviour. Confirmed required for both providers;
     # see cloudnative-pg/cloudnative-pg#7105 for the B2 case (maxParallel: 1 +
     # trailing-slash destinationPath were also needed there).
+    #
+    # AWS_DEFAULT_REGION works around cloudnative-pg/cloudnative-pg#9724:
+    # s3Credentials.region above is not actually wired to the barman sidecar's
+    # env, so requests sign with the us-east-1 default and B2 rejects them with
+    # SignatureDoesNotMatch.
     env:
       - name: AWS_REQUEST_CHECKSUM_CALCULATION
         value: when_required
       - name: AWS_RESPONSE_CHECKSUM_VALIDATION
         value: when_required
+      - name: AWS_DEFAULT_REGION
+        value: us-west-001
   retentionPolicy: 30d
