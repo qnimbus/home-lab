@@ -73,7 +73,7 @@ spec:
   path: ./kubernetes/apps/database/cloudnative-pg/cluster/app
   postBuild:
     substitute:
-      CNPG_V17_CURRENT_CLUSTER: "postgres-v17-20260618"
+      CNPG_V17_CURRENT_CLUSTER: "postgres-v17-20260621"
   prune: true
   wait: false
   sourceRef:
