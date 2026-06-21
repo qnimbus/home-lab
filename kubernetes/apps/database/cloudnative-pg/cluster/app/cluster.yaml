@@ -83,13 +83,3 @@ spec:
   storage:
     size: 20Gi
     storageClass: openebs-hostpath
-  bootstrap:
-    recovery:
-      source: postgres-v17-source
-  externalClusters:
-    - name: postgres-v17-source
-      plugin:
-        name: barman-cloud.cloudnative-pg.io
-        parameters:
-          barmanObjectName: cloudnative-pg-backup
-          serverName: postgres-v17-20260618
