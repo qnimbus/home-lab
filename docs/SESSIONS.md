@@ -4,6 +4,35 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-21 — `cnpg-storj-to-b2-migration`
+
+### Goal
+Migrate the CloudNativePG barman-cloud backup target from Storj.io to Backblaze B2 as a temporary stopgap, after first discovering and resolving a stale, half-finished migration attempt to a different provider (LeafCloud).
+
+### What we did
+- Found a stale task list from an unrelated prior effort to migrate the same backup target to LeafCloud (an OpenStack-based provider) — an application credential had already been created there and EC2/S3 key minting was in progress. Asked the user, who chose to abandon LeafCloud (revoking the credential themselves) in favor of B2; cleaned up the LeafCloud-specific tasks and repurposed the provider-agnostic ones.
+- Mapped every Storj touchpoint in the repo (`objectstore.yaml`, `externalsecret.yaml`, `cluster.yaml`, `ks.yaml`, CLUSTER.md/ROADMAP.md) and confirmed only `objectstore.yaml`'s `destinationPath`/`endpointURL` plus the 1Password credential values needed to change — the ExternalSecret's generic `dataFrom.extract` + regex-rewrite design meant no schema changes were needed there.
+- Walked the user through creating a B2 bucket + scoped application key in the Backblaze console (external action).
+- Researched two facts before editing anything: (1) B2 data-locality/region is fixed at the *account* level at signup, not per-bucket — moving to EU would require a brand-new account; user accepted the existing region for this stopgap. (2) barman-cloud only supports server-side encryption (AES256/aws:kms), never client-side — so the original Storj-over-B2/R2 rationale documented in CLUSTER.md (client-side encryption avoiding US CLOUD Act exposure) does not carry over to B2; user chose to skip encryption config for now as an accepted temporary trade-off.
+- Confirmed Backblaze's `keyID`/`keySecret` terminology maps directly onto the AWS-style access/secret key fields the ExternalSecret already expects, and verified with the user that the 1Password rotation reused the existing `S3_ACCESS_KEY`/`S3_SECRET_KEY` field labels — no ExternalSecret changes needed.
+- Used the `1password` skill to read the new bucket name from `op://homelab/cloudnative-pg/S3_BUCKET` into a shell-only env var and applied it via `yq -i` + `strenv()`, keeping it out of the conversation transcript. This caught a real discrepancy: the bucket name visible in the endpoint URL the user had pasted (`vwn.io-cluster-backup`) differed from the actual bucket name in 1Password (`vwn.io-cluster-cnpg`) — using the pasted value would have pointed the manifest at the wrong bucket.
+- Edited `objectstore.yaml`: updated `destinationPath` and `endpointURL` (`https://s3.us-west-001.backblazeb2.com`), and generalized the Storj-specific checksum-workaround comment since the env vars are being kept as a cross-provider safe default.
+- Decided cutover strategy: fresh start on B2, no historical Storj WAL/base-backup data migration, since this is an explicitly temporary provider choice and the independent NFS `pg_dumpall` backup is unaffected.
+- Left as open follow-up: user-driven `/git-stage` + `/git-commit` + push, post-reconcile verification of the `ContinuousArchiving` condition, an on-demand `Backup` to close the PITR gap, and updating CLUSTER.md/ROADMAP.md + decommissioning Storj.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/objectstore.yaml` | Repointed barman-cloud `ObjectStore` from Storj to Backblaze B2 (`destinationPath`, `endpointURL`, generalized comment) — staged, not yet committed |
+
+### Key decisions
+- Abandoned the in-progress LeafCloud migration in favor of B2, per explicit user choice; user owns revoking the LeafCloud application credential.
+- Cut over fresh rather than migrating historical Storj backup data.
+- Accepted B2's account-level region (no EU move) and skipped barman-cloud's server-side-only encryption option, since neither fully restores the original Storj-selection rationale and the user prioritized speed for this temporary stopgap.
+- Sourced the B2 bucket name from 1Password via the `1password` skill rather than having the user paste it in chat — caught a stale/wrong bucket name that had leaked into a pasted endpoint string.
+
+---
+
 ## 2026-06-20 — `csi-snapshot-controller-deploy`
 
 ### Goal

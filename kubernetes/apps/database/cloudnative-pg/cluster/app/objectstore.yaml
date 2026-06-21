@@ -6,8 +6,8 @@ metadata:
   name: cloudnative-pg-backup
 spec:
   configuration:
-    destinationPath: "s3://cloudnative-pg"
-    endpointURL: "https://gateway.storjshare.io"
+    destinationPath: "s3://vwn.io-cluster-cnpg"
+    endpointURL: "https://s3.us-west-001.backblazeb2.com"
     data:
       compression: bzip2
     wal:
@@ -21,9 +21,11 @@ spec:
         name: cloudnative-pg-secret
         key: CNPG_S3_SECRET_KEY
   instanceSidecarConfiguration:
-    # Storj's S3 gateway rejects PutObject requests using botocore's newer
-    # chunked-trailer checksum encoding (no Content-Length header) with
-    # "MissingContentLength" - revert to the legacy header-based behaviour.
+    # Several non-AWS S3-compatible providers reject PutObject requests using
+    # botocore's newer chunked-trailer checksum encoding (no Content-Length
+    # header) with "MissingContentLength" - revert to the legacy header-based
+    # behaviour. Kept as a safe default across providers (Storj needed this;
+    # unconfirmed whether B2 does too).
     env:
       - name: AWS_REQUEST_CHECKSUM_CALCULATION
         value: when_required
