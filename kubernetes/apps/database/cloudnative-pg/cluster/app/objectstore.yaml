@@ -6,13 +6,19 @@ metadata:
   name: cloudnative-pg-backup
 spec:
   configuration:
-    destinationPath: "s3://vwn.io-cluster-cnpg"
+    destinationPath: "s3://vwn.io-cluster-cnpg/"
     endpointURL: "https://s3.us-west-001.backblazeb2.com"
+    # Server-side only: tells B2 to encrypt at rest with its own managed keys.
+    # barman-cloud has no client-side encryption path, so this does not restore
+    # the no-custodian-can-decrypt property Storj had - Backblaze can still
+    # technically decrypt these backups.
     data:
       compression: bzip2
+      encryption: AES256
     wal:
       compression: bzip2
-      maxParallel: 8
+      maxParallel: 1
+      encryption: AES256
     s3Credentials:
       accessKeyId:
         name: cloudnative-pg-secret
@@ -22,10 +28,11 @@ spec:
         key: CNPG_S3_SECRET_KEY
   instanceSidecarConfiguration:
     # Several non-AWS S3-compatible providers reject PutObject requests using
-    # botocore's newer chunked-trailer checksum encoding (no Content-Length
-    # header) with "MissingContentLength" - revert to the legacy header-based
-    # behaviour. Kept as a safe default across providers (Storj needed this;
-    # unconfirmed whether B2 does too).
+    # botocore's newer chunked-trailer checksum encoding with "MissingContentLength"
+    # (Storj) or "IncompleteBody: request body was too small" (B2) - revert to
+    # the legacy header-based behaviour. Confirmed required for both providers;
+    # see cloudnative-pg/cloudnative-pg#7105 for the B2 case (maxParallel: 1 +
+    # trailing-slash destinationPath were also needed there).
     env:
       - name: AWS_REQUEST_CHECKSUM_CALCULATION
         value: when_required
