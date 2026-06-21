@@ -4,7 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
-> | 2026-06-21 | `cnpg-storj-to-b2-migration` | Migrated CNPG barman-cloud backups Storj→B2; abandoned stale LeafCloud attempt; deferred EU region/client-side encryption |
+> | 2026-06-21 | `cnpg-storj-to-b2-migration` | Migrated CNPG backups Storj→B2; root-caused dot-in-bucket-name WAL-archive bug; verified live recovery drill |
 > | 2026-06-20 | `csi-snapshot-controller-deploy` | Deployed CSI snapshot-controller; enabled Ceph VolumeSnapshotClass; verified snapshot→restore live |
 > | 2026-06-19 | `cloudflare-edge-cert-gap-and-legacy-dns-cleanup` | Fixed Cloudflare edge-cert two-level wildcard gap; found+cleaned up archived-cluster's orphaned tunnel DNS/TXT records |
 > | 2026-06-19 | `whoami-network-plumbing-fixes` | Deployed whoami smoke-test; fixed cloudflared SNI + ExternalDNS gaps; retargeted envoy-external to proxii.nl |

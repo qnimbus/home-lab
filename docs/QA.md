@@ -47,6 +47,9 @@ Concise answers to questions that came up during cluster operation. Each entry c
 **Observability / Alerting**
 - [Why did a "Ceph" alert fire for packet drops on a management NIC, when Ceph traffic runs on the storage VLAN?](#why-did-a-ceph-alert-cephnodenetworkpacketdrops-fire-for-packet-drops-on-a-management-nic-when-ceph-traffic-runs-on-the-storage-vlan)
 
+**Database / Backups**
+- [Why did Backblaze B2 WAL archiving fail with `IncompleteBody: The request body was too small` after migrating off Storj?](#why-did-backblaze-b2-wal-archiving-fail-with-incompletebody-the-request-body-was-too-small-after-migrating-off-storj)
+
 ---
 
 ## Storage
@@ -1102,3 +1105,19 @@ talosctl -n <NODE_IP> get discoveredvolumes | grep nvme0n1  # still blank
 **When to dig further:** treat a single occurrence as noise — it self-resolved within a minute and hasn't recurred. If it starts recurring, capture `talosctl dmesg` and interface stats live (via the `talos-node-manager` agent) at the moment it fires; that's the only way to actually catch the responsible traffic.
 
 **Encountered 2026-06-20** while verifying the newly-wired Alertmanager → Pushover pipeline (see [ROADMAP.md → Alertmanager Receiver](ROADMAP.md#alertmanager-receiver)).
+
+---
+
+## Database / Backups
+
+### Why did Backblaze B2 WAL archiving fail with `IncompleteBody: The request body was too small` after migrating off Storj?
+
+**Short answer:** the bucket name contained a literal dot (`vwn.io-cluster-cnpg`). AWS's own S3 docs warn against periods in bucket names specifically because of HTTPS/virtual-hosted-style hostname-matching issues, and Backblaze's S3-compatible API broke the same way. Renaming to a dot-free bucket fixed it immediately — none of the other things tried (chart version, `maxParallel`, trailing slash, region) were the actual cause.
+
+**The trap:** `exit status 4` from `barman-cloud-wal-archive` is a generic wrapper error code — the real message is one level down, in `barman-cloud-wal-archive`'s own stderr. Multiple *different*, real GitHub issues (`cloudnative-pg/cloudnative-pg#7105`, `#9724`) document *different* root causes that all surface as the same generic `exit status 4` against B2/MinIO/IBM S3/Hetzner — a `maxParallel`/trailing-slash workaround for one user, a region-signing bug for another. None of those fixes were wrong in general, they just weren't *this* cluster's problem — each was tried and empirically disproven against the live cluster before moving to the next theory.
+
+**What actually settled it:** comparing against a known-working reference (`bykaj/home-ops`, running barman-cloud against B2 in the same region, `us-west-001`) showed a far simpler config than what had been built up — no `maxParallel` override, no region setting, no trailing slash. The only remaining real difference was the bucket name itself.
+
+**Detail — why a dot in a bucket name breaks HTTPS:** S3-style virtual-hosted addressing puts the bucket name in the hostname (`bucket.s3.region.example.com`). A wildcard TLS certificate (`*.s3.region.example.com`) only matches one DNS label — a bucket name containing a dot turns part of the bucket name into what looks like an extra hostname label, breaking certificate/hostname validation for any code path that constructs (even transiently) a virtual-hosted-style request, even when the configured `endpointURL` is otherwise path-style.
+
+**Encountered 2026-06-21** during the Storj → Backblaze B2 backup migration (see [ROADMAP.md → CloudNativePG: Backup, PITR, and Per-App Provisioning](ROADMAP.md#cloudnative-pg-backup-pitr-and-per-app-provisioning)).
