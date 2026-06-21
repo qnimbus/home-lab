@@ -6,7 +6,7 @@ metadata:
   name: cloudnative-pg-backup
 spec:
   configuration:
-    destinationPath: "s3://vwn.io-cluster-cnpg"
+    destinationPath: "s3://vwn-io-cluster-cnpg"
     endpointURL: "https://s3.us-west-001.backblazeb2.com"
     # Server-side only: tells B2 to encrypt at rest with its own managed keys.
     # barman-cloud has no client-side encryption path, so this does not restore

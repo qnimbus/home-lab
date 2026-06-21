@@ -12,12 +12,8 @@ spec:
     operation: copy
   url: oci://ghcr.io/cloudnative-pg/charts/plugin-barman-cloud
   ref:
-    # Pinned below latest to test whether 0.7.0's barman-cloud/boto3 bump is
-    # what's causing "IncompleteBody: request body was too small" against
-    # Backblaze B2 - bykaj/home-ops runs 0.6.0 against the same B2 region
-    # without this error. Revert this comment + bump back once confirmed.
     # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/charts/plugin-barman-cloud
-    tag: "0.6.0"
+    tag: "0.7.0"
   verify:
     provider: cosign
     matchOIDCIdentity:
