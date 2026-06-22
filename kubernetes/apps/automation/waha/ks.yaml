@@ -10,12 +10,13 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
-  # Phase 2 of the VolSync retrofit (see app/helmrelease.yaml): now using the full Component.
-  # dataSourceRef only populates a PVC at creation time — it can't retroactively attach to
-  # the already-Bound "waha" PVC, so this alone doesn't restore anything. The Component's PVC
-  # carries ssa: IfNotPresent, so Flux just skips it while "waha" already exists; the actual
-  # cutover to a dataSourceRef-backed PVC is a separate, deliberate step (delete the live PVC
-  # once its backup is verified restorable, let this Component recreate it fresh).
+  # VolSync retrofit, step 2 of 3 (see app/helmrelease.yaml): now wired to the full
+  # components/volsync Component (was Phase 1's standalone ExternalSecret/ReplicationSource).
+  # dataSourceRef only populates a PVC at creation time, so this alone does NOT take over the
+  # existing "waha" PVC — the Component's PVC carries ssa: IfNotPresent, so Flux skips it
+  # while that object still exists. Step 3 (separate, deliberate, not yet done): verify the
+  # backup restores cleanly, delete the live PVC, let this Component recreate it fresh with
+  # dataSourceRef intact.
   components:
     - ../../../../components/volsync
   wait: false

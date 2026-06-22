@@ -149,10 +149,12 @@ spec:
             readOnly: true
       sessions:
         type: persistentVolumeClaim
-        # Phase 2 of the VolSync retrofit (see ks.yaml): the components/volsync Component now
-        # owns this PVC (named "waha" — the release name, not "sessions" — see ks.yaml). Helm
-        # no longer declares it; Phase 1's retain: true already proved Helm leaves an
-        # undeclared-but-kept PVC alone rather than deleting it.
+        # VolSync retrofit, step 2 of 3 (see ks.yaml): existingClaim points at the real PVC
+        # name ("waha" — the release name, not "sessions"). Helm has stopped declaring it, but
+        # step 1's retain: true already proved live that Helm leaves a kept-but-undeclared PVC
+        # alone rather than deleting it. This PVC is NOT yet Component-managed/dataSourceRef-
+        # backed — that's step 3, a separate deliberate cutover (delete + recreate), not yet
+        # performed.
         existingClaim: waha
         globalMounts:
           - path: /app/.sessions
