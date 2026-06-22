@@ -10,11 +10,14 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
-  # Phase 1 (see app/helmrelease.yaml): direct ReplicationSource only, not the full
-  # components/volsync Component yet — the Component's PVC/ReplicationDestination assume a
-  # PVC that doesn't exist yet, which doesn't hold for this app (it already has live data).
-  # Phase 2 adds `components: [../../../../components/volsync]` back once a real backup is
-  # verified working.
+  # Phase 2 of the VolSync retrofit (see app/helmrelease.yaml): now using the full Component.
+  # dataSourceRef only populates a PVC at creation time — it can't retroactively attach to
+  # the already-Bound "waha" PVC, so this alone doesn't restore anything. The Component's PVC
+  # carries ssa: IfNotPresent, so Flux just skips it while "waha" already exists; the actual
+  # cutover to a dataSourceRef-backed PVC is a separate, deliberate step (delete the live PVC
+  # once its backup is verified restorable, let this Component recreate it fresh).
+  components:
+    - ../../../../components/volsync
   wait: false
   prune: true
   interval: 1h

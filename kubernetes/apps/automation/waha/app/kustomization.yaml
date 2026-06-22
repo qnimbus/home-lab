@@ -6,5 +6,3 @@ resources:
   - ./externalsecret.yaml
   - ./helmrelease.yaml
   - ./httproute.yaml
-  - ./volsync-externalsecret.yaml
-  - ./volsync-replicationsource.yaml
