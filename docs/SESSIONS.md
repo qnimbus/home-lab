@@ -4,6 +4,32 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-22 — `tailscale-subnet-route-precedence-fix`
+
+### Goal
+Stop the Tailscale `k8s-subnet-router` Connector from hijacking LAN traffic to `10.60.0.0/24`, both for devices natively on that VLAN and for devices reaching it only through the UniFi gateway's inter-VLAN routing.
+
+### What we did
+- Changed the `tailscale-operator` `subnet-router` Connector to advertise `10.60.0.0/23` instead of the exact `10.60.0.0/24`, with an inline comment explaining the root cause (Tailscale's installed routes can tie in prefix length with a host's own connected route and aren't reliably out-ranked, per upstream `tailscale/tailscale#1227`, `#6231`, `#7947`); committed as `a02cab9`.
+- Verified the fix on a Windows laptop using `tracert`, PowerShell `Find-NetRoute`, and `route print`. Initially claimed tracert hop-count couldn't distinguish LAN vs. Tailscale routing (WireGuard normally hides intermediate hops) — corrected this after the user's own traces showed a subnet router *does* appear as a visible hop, since it performs real IP forwarding and decrements TTL.
+- Diagnosed why the laptop still routed via Tailscale after reconnecting: it lives on a separate `10.10.0.0/24` LAN and only reaches `10.60.0.0/24` via the UniFi gateway's inter-VLAN routing, so it never had a directly-connected `/24` route to out-rank Tailscale's `/23` — the cluster-side fix only protects devices natively attached to the management VLAN, not routed clients.
+- Checked whether the UDM Pro Max's newly-available eBGP support was relevant. Confirmed it isn't: BGP is router-to-router and wouldn't propagate routes to DHCP clients, and the cluster's `CiliumLoadBalancerIPPool`/`CiliumL2AnnouncementPolicy` setup already advertises LB IPs via L2/ARP within the same VLAN as the nodes, so there's no unmet need for BGP today.
+- Computed the RFC 3442 Option 121 hex payload (`180A3C000A0A0001000A0A0001`) encoding both the `10.60.0.0/24 → 10.10.0.1` route and a required `0.0.0.0/0` default-route entry, and walked through adding it (plus the legacy Microsoft Option 249 duplicate, for older-Windows safety) as a custom DHCP option on the UDM Pro Max's `10.10.0.0/24` network.
+- User applied the DHCP option, renewed the laptop's lease, and confirmed the routing table now carries both the `/24` (via the LAN gateway) and `/23` (via Tailscale) entries for `10.60.0.0` — completing the fix for routed, non-VLAN-attached clients.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/tailscale/tailscale-operator/configs/subnet-router.yaml` | Changed advertised route `10.60.0.0/24` → `10.60.0.0/23`; added inline comment with upstream issue references (commit `a02cab9`) |
+
+### Key decisions
+- Advertise the less-specific `/23` supernet rather than the exact `/24` so the OS's longest-prefix-match always prefers a directly-connected `/24` LAN route over Tailscale's advertisement — fixes the precedence bug for devices natively on the management VLAN.
+- For devices on other VLANs with no competing local route at all, fixed it one layer down with a UniFi-pushed DHCP classless static route rather than any further cluster-side change — the Connector can only ever encode what it advertises on the tailnet; it has no influence over a client's default-route behavior on an unrelated VLAN.
+- Included the `0.0.0.0/0` default-route descriptor inside the Option 121 payload, not just the `10.60.0.0/24` entry — omitting it would make RFC-3442-compliant clients (including Windows) discard their normal default gateway entirely, breaking general internet access for every device on `10.10.0.0/24`.
+- Decided not to pursue eBGP on the UDM despite its new availability: it solves a different problem (dynamic route exchange between routers) than the one at hand (getting a route into a DHCP client's table), and the cluster's current LoadBalancer IP design has no gap it would close.
+
+---
+
 ## 2026-06-22 — `worker02-power-brick-rootcause`
 
 ### Goal
