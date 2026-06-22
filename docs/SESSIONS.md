@@ -4,6 +4,37 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-22 — `worker02-power-brick-rootcause`
+
+### Goal
+Explain why CloudNativePG couldn't reschedule a stuck instance off a downed `talos-worker-02`, then investigate yet another worker-02 hard-down — and this time root-cause the long-running recurring-hard-down mystery to a single point of failure via clean hardware isolation.
+
+### What we did
+- Explained why `postgres-v17-2` kept restarting in place on `talos-worker-02` instead of moving nodes: the `postgres-v17` Cluster uses `storageClass: openebs-hostpath` (node-local storage), whose PV `nodeAffinity` permanently pins it to one node. Confirmed against current CloudNativePG docs (via context7) that there is no automatic "node's gone, delete the PVC, reschedule elsewhere" behavior — the only documented remedy is a manual `kubectl delete pvc/pod`. Also explained the mechanical, duration-based reason via the pod's `tolerationSeconds: 300` on the not-ready/unreachable taints.
+- Investigated the actual 2026-06-21 outage by dispatching `talos-node-manager` and `cluster-doctor` in parallel against a 16:30-18:30Z window inferred from the Node object's `lastTransitionTime` — which, as it turned out, only reflects the *most recent* kubelet restart and silently hid an earlier, real incident.
+- Corrected course twice based on the user's first-hand account: the 18:23:45Z "blip" the agents flagged was a deliberate BIOS reboot to revert a fan-speed setting, not a fault; the real unexplained hard-down was 14:17:30Z-14:39:45Z (confirmed via a wider `up{}` Prometheus range query), including a failed first restart attempt. Updated persistent memory each time the picture changed rather than leaving stale conclusions in place.
+- Reviewed existing hardware-monitoring coverage: the "Node Exporter Full" Grafana dashboard, the `hardware-temps.yaml` PrometheusRules, and the Pushover/Alertmanager wiring (incl. an emergency-priority `pushover-critical` tier). Confirmed it's solid for genuine thermal events but has no detector for brief node flaps that resolve before any `for:` window elapses; proposed (not yet implemented) a `resets(node_boot_time_seconds[1h])`-based flap rule. Explained AMD `k10temp`'s `Tctl` offset quirk on `cp-01` along the way (live cross-check against the `Tccd1`/`Tccd2` sensors confirmed it).
+- User exported the Intel AMT event log via MeshCommander. Found a consistent +2h offset between its timestamps and real UTC (cross-checked against the known fan-reboot event) and confirmed, by enumerating every distinct `EventSensorType` across all 169 events, that this AMT/BIOS implementation has no thermal/power/MCE sensor wired in at all — only boot/restart events — closing off that channel for good. Surfaced 3 previously-uncatalogued pre-repaste reboot clusters (2026-06-12, 06-13, 06-16) never logged in any prior session, including one true Intel ME re-init (power-cut) signature on 06-12.
+- User ran PassMark MemTest86 on `talos-worker-02` via remote KVM (AMT IDE-R, then JetKVM). Got a reproducible **power-off** (not a freeze) across 4 runs, always at ~40-42s elapsed / Test 3 (Moving inversions) / Pass 25%, zero MemTest-reported errors, CPU temp comfortable (54-59°C) every time.
+- Ruled out CPU-die thermal as the trigger: a fan-at-100% test verifiably dropped CPU temp 59°C→54°C but didn't move the failure point at all.
+- Ran a clean hardware-swap isolation: worker-02's own brick failed at the same point with or without an in-line JetKVM DC passthrough adapter; talos-worker-01's brick (swapped in) ran 28+ minutes clean with zero errors. This isolated the fault to worker-02's power brick specifically, independent of the board, CPU, RAM, or the passthrough adapter — and retroactively explained the entire incident history (zero thermal precursor, cooling-insensitive, genuine power-loss, why the identical-hardware twin never faulted, why production incidents were sporadic rather than constant).
+- User confirmed the diagnosis live: a 400W Lenovo laptop adapter keeps worker-02 running fine, and ordered a proper 90W Lenovo replacement. Updated persistent memory to record the confirmed root cause, superseding the long-standing non-ECC-RAM-bitflip theory.
+
+### Files changed
+No repository files were changed — this was a live diagnostics and hardware-isolation session. The `talos-node-manager` subagent updated its own persistent memory:
+
+| File | Change |
+|------|--------|
+| `.claude/agent-memory/talos-node-manager/MEMORY.md` | Agent self-updated its index after the 06-21 investigation |
+| `.claude/agent-memory/talos-node-manager/project_worker02_harddown_20260621.md` | Agent's own findings record for the 06-21 incident (new file) |
+
+### Key decisions
+- Didn't count two early MemTest86 freezes (booted from an unsupported ISO via AMT IDE-R) as genuine fault data — switched to JetKVM + the officially-supported USB `.img` before treating any result as signal, since the unsupported boot path was a plausible confound on its own.
+- Stopped investing further effort in the AMT event log once the sensor-type enumeration showed it structurally cannot record thermal/power/MCE events on this hardware — a negative result worth confirming once, not worth re-checking on every future incident.
+- Deprioritized the months-long non-ECC-RAM-bitflip theory once MemTest86 produced zero reported errors across 4 full attempts but a reproducible power-loss instead — recognized the fault as power-delivery, not memory-integrity, and didn't force the data to fit the prior leading theory.
+
+---
+
 ## 2026-06-21 — `cnpg-storj-to-b2-migration`
 
 ### Goal
