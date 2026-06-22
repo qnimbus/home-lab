@@ -592,6 +592,19 @@ per-app boilerplate beyond a few `postBuild.substitute` variables.
 >   -p='{"spec":{"trigger":{"manual":"initial-'$(date +%s)'"}}}'
 > ```
 >
+> **`dataSourceRef` only populates a PVC at creation time — it is not continuous reconciliation.**
+> Kubernetes' generic volume-populator framework only engages while a PVC is `Pending` with no
+> bound volume yet; once `Bound`, nothing retroactively rewires it, and `dataSourceRef` itself is
+> immutable on an existing object regardless. This is *the* fact that governs whether a given app
+> can use the Component as-is (see Retrofitting, below) — confirmed by directly observing the
+> mechanism fire during the `waha` cutover: deleting its PVC produced a `vs-prime-<uid>`
+> temporary claim (`VolSyncPopulatorPVCCreated`: *"Populator pvc created from snapshot ..."*),
+> Ceph CSI provisioned it normally, then the framework re-pointed the underlying `PersistentVolume`
+> onto the real `waha` claim (`VolSyncPopulatorFinished`) — surfacing a `ClaimMisbound` Warning
+> event on the now-redundant `vs-prime-*` claim for one transient tick before it was garbage
+> collected. That `ClaimMisbound`/`vs-prime-*` pair is the **expected**, self-resolving signature
+> of this mechanism working correctly, not an error to chase.
+>
 > **CNPG's `postgres-v17` PVC is explicitly excluded.** It already has its own Postgres-aware
 > backup paths — barman-cloud WAL/PITR to Backblaze B2 and a local `pg_dumpall` to NFS, see
 > [CloudNativePG → Backup strategy](#backup-strategy) above. A generic filesystem-level VolSync
@@ -605,27 +618,53 @@ per-app boilerplate beyond a few `postBuild.substitute` variables.
 > backups simultaneously — there is no per-app blast-radius containment on credential loss, only
 > on data-path collision.
 >
-> **Canary.** `waha`'s PVC, which holds its WhatsApp session/auth state — chosen over pgadmin
-> because losing it actually hurts (a manual QR re-link, with WhatsApp anti-automation risk on
-> repeated re-auths) versus pgadmin's config, which is trivially regenerable from Git +
-> 1Password. **The PVC's actual name is `waha`** (app-template renders unnamed PVCs after the
-> release, not the persistence map key — `sessions` was a wrong assumption that briefly reached
-> production and cost the original session data; always verify the live object name with
-> `kubectl get pvc` before writing a retrofit, don't trust chart-templating assumptions).
+> **Canary — `waha`, fully cut over and verified (2026-06-22).** Its PVC holds WhatsApp
+> session/auth state — chosen over pgadmin because losing it actually hurts (a manual QR
+> re-link, with WhatsApp anti-automation risk on repeated re-auths) versus pgadmin's config,
+> which is trivially regenerable from Git + 1Password. **The PVC's actual name is `waha`**
+> (app-template renders unnamed PVCs after the release, not the persistence map key —
+> `sessions` was a wrong assumption that briefly reached production and cost the original
+> session data; always verify the live object name with `kubectl get pvc` before writing a
+> retrofit, don't trust chart-templating assumptions). `waha` is now genuinely
+> Component-managed and `dataSourceRef`-backed end to end: its live PVC was deliberately deleted
+> and recreated by `components/volsync` from a verified-restorable backup, and the pod came back
+> with WhatsApp still connected — no re-link needed, confirming the restored data was byte-for-
+> byte correct. Any future delete/redeploy of `waha` now auto-restores with zero manual steps.
+> Next target: Prometheus's larger `prometheus-db` PVC (20 Gi), deliberately deferred until the
+> canary loop was proven — which it now has been, twice over (Phase 1's first scheduled backup,
+> and this full cutover). See [ROADMAP.md → VolSync (PVC Backup)](ROADMAP.md#volsync-pvc-backup).
 >
-> **Retrofitting onto an app with existing data needs two phases, not one.** Phase 1: keep
+> **Retrofitting onto an app with existing data needs three steps, not one.** Step 1: keep
 > app-template owning the PVC, add `persistence.<key>.retain: true` (Helm annotates it
 > `helm.sh/resource-policy: keep`, so a later upgrade that stops declaring it won't delete it),
 > and point a hand-written `ReplicationSource` directly at `sourcePVC: <real-pvc-name>` —
-> `sourcePVC` only has to *name* an existing PVC, not own or have created it. Phase 2, only once
-> a real backup is verified restorable: switch to `existingClaim` + the full
-> `components/volsync` Component (now safe, since `dataSourceRef` is immutable on an existing
-> PVC and the Component's PVC carries `kustomize.toolkit.fluxcd.io/ssa: IfNotPresent` — Flux
-> skips it while the old object exists, and only creates the dataSourceRef'd replacement once
-> it's deliberately removed post-backup). A brand-new app with no existing PVC can use the full
-> Component from day one — this phasing is only needed when data already exists.
-> Validated end-to-end before extending to Prometheus's larger `prometheus-db` PVC (20 Gi), the
-> deliberately-deferred next target. See [ROADMAP.md → VolSync (PVC Backup)](ROADMAP.md#volsync-pvc-backup).
+> `sourcePVC` only has to *name* an existing PVC, not own or have created it. Step 2: switch to
+> `existingClaim` + the full `components/volsync` Component (safe once step 1's backup exists,
+> since the Component's PVC carries `kustomize.toolkit.fluxcd.io/ssa: IfNotPresent` — Flux skips
+> it while the old object exists, rather than erroring on the immutable `dataSourceRef` field).
+> Step 3, the actual cutover, only once a real backup is verified restorable (test-restore into
+> a throwaway PVC first): scale the app to 0, delete the live PVC, force a Flux reconcile
+> (`kubectl annotate kustomization <app> -n flux-system reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite`),
+> confirm the new PVC binds via the populator mechanism above, scale back up. A brand-new app
+> with no existing PVC skips all of this and uses the full Component from day one —
+> `dataSourceRef` populates cleanly because nothing exists yet to conflict with.
+>
+> **Validate every CRD field against the actual schema, not just a reference repo.** The
+> Component's `replicationdestination.yaml` initially carried a `sourceIdentity` field copied
+> from the bykaj reference — it doesn't exist anywhere in upstream `backube/volsync`'s CRD (it's
+> a `perfectra1n`-fork-only Kopia convenience field). Flux's dry-run caught it immediately
+> (`Ready: False`, "field not declared in schema") the first time this Kustomization tried to
+> reconcile post-retrofit — harmlessly, since a failed dry-run blocks the apply rather than
+> partially running it, but it's a reminder that adapting a reference implementation still
+> means re-verifying every field against `https://raw.githubusercontent.com/backube/volsync/main/config/crd/bases/`
+> directly, not just trusting that it compiled in someone else's repo.
+>
+> **`VOLSYNC_NFS_SERVER`/`_NFS_PATH`/`_STORAGECLASS`/`_SNAPSHOTCLASS`/`_CACHE_STORAGECLASS`**
+> live in `kubernetes/flux/vars/cluster-settings.yaml` as the single source of truth, alongside
+> `CLUSTER_NAME`/`CLUSTER_TIMEZONE`. The Component's own `${VAR:=default}` inline fallbacks are
+> identical values, kept as defense-in-depth — Flux's substitution precedence means an explicit
+> value always wins, so this changed nothing behaviorally, just centralized where to edit these
+> if the NAS or storage backend ever changes.
 
 ---
 
@@ -810,12 +849,13 @@ flowchart TD
   observability["observability (2)"]
   openebs["openebs (1)"]
   rook_ceph["rook-ceph (2)"]
-  system["system (2)"]
+  system["system (3)"]
   system_upgrade["system-upgrade (2)"]
   tailscale["tailscale (2)"]
   actions_runner_system --> external_secrets
   automation --> external_secrets
   automation --> rook_ceph
+  automation --> system
   cert_manager --> external_secrets
   database --> cert_manager
   database --> external_secrets
@@ -829,6 +869,7 @@ flowchart TD
   observability --> external_secrets
   observability --> rook_ceph
   rook_ceph --> system
+  system --> openebs
   tailscale --> external_secrets
   tailscale --> kube_system
 ```
@@ -856,8 +897,10 @@ flowchart TD
   flux_system_waha["waha"]
   flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
   flux_system_rook_ceph_cluster(("rook-ceph-cluster · rook-ceph")):::external
+  flux_system_volsync(("volsync · system")):::external
   flux_system_waha --> flux_system_onepassword_store
   flux_system_waha --> flux_system_rook_ceph_cluster
+  flux_system_waha --> flux_system_volsync
   classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
 ```
 
@@ -1057,12 +1100,17 @@ flowchart TD
 </details>
 
 <details>
-<summary>system (2)</summary>
+<summary>system (3)</summary>
 
 ```mermaid
 flowchart TD
   flux_system_reloader["reloader"]
   flux_system_snapshot_controller["snapshot-controller"]
+  flux_system_volsync["volsync"]
+  flux_system_openebs(("openebs · openebs")):::external
+  flux_system_volsync --> flux_system_openebs
+  flux_system_volsync --> flux_system_snapshot_controller
+  classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
 ```
 
 </details>

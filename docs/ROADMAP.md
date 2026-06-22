@@ -982,10 +982,11 @@ now also live.
 
 ### VolSync (PVC Backup)
 
-> **Status: operator + Component built; canary in Phase 1 (direct `ReplicationSource`, not yet
-> the full bootstrap pattern).** VolSync backs up every stateful app's `ceph-block` PVC (except
-> CNPG's — see below) to a local, NFS-direct Restic repository on TrueNAS. Canary: `waha`'s PVC
-> (`kubernetes/apps/automation/waha/`) — note the object is named **`waha`**, not `sessions`.
+> **Status: ✅ DONE.** VolSync backs up every stateful app's `ceph-block` PVC (except CNPG's —
+> see below) to a local, NFS-direct Restic repository on TrueNAS. Canary `waha`
+> (`kubernetes/apps/automation/waha/`) is fully cut over: its PVC (named **`waha`**, not
+> `sessions`) was deliberately deleted and recreated by `components/volsync` from a
+> verified-restorable backup, restoring real WhatsApp session data with no re-link needed.
 >
 > **Incident, 2026-06-22:** a first attempt wired waha straight to `existingClaim` +
 > `dataSourceRef` on the wrong assumption that app-template names an unnamed PVC after the
@@ -1061,11 +1062,16 @@ ReplicationSource + ReplicationDestination, wired via `spec.components` +
 `spec.postBuild.substitute` on the consuming app's `ks.yaml`). See
 [CLUSTER.md → VolSync](CLUSTER.md#volsync-pvc-backup) for full architecture detail.
 
-**Next:** verify Phase 1's `ReplicationSource` actually produces a restic snapshot on NFS for the
-real `waha` PVC, then Phase 2 (`existingClaim` + full `components/volsync` Component, safe now
-that the Component's PVC carries `kustomize.toolkit.fluxcd.io/ssa: IfNotPresent`), then extend to
-Prometheus's larger `prometheus-db` PVC (20 Gi) — deliberately deferred until the canary loop is
-proven twice over.
+**Next:** extend to Prometheus's larger `prometheus-db` PVC (20 Gi) — deliberately deferred until
+the canary loop was proven, which it now has been twice over (Phase 1's first scheduled backup,
+then the full cutover). **This is a different, harder problem than `waha`, not an easier repeat
+of it**: Prometheus's PVC (`prometheus-kube-prometheus-stack-prometheus-db-prometheus-kube-
+prometheus-stack-prometheus-0`) is StatefulSet-generated via `volumeClaimTemplate`, not
+app-template's `persistence` block — StatefulSets have no `existingClaim` equivalent, they
+always own their PVC via the template. A direct `ReplicationSource` against `sourcePVC: <that
+name>` (Phase 1's approach) works unchanged for ongoing backup, but the full Component's
+`existingClaim`+`dataSourceRef` cutover has no StatefulSet analog yet — needs its own design
+pass before attempting, not a copy-paste of the `waha` procedure.
 
 **Dependencies:** CSI Snapshots ✅, external-secrets ✅, onepassword-connect ✅.
 
