@@ -10,10 +10,18 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
+  # Phase 1 (see app/helmrelease.yaml): direct ReplicationSource only, not the full
+  # components/volsync Component yet — the Component's PVC/ReplicationDestination assume a
+  # PVC that doesn't exist yet, which doesn't hold for this app (it already has live data).
+  # Phase 2 adds `components: [../../../../components/volsync]` back once a real backup is
+  # verified working.
   wait: false
   prune: true
   interval: 1h
   path: ./kubernetes/apps/automation/waha/app
+  postBuild:
+    substitute:
+      APP: *app
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -21,6 +29,7 @@ spec:
   dependsOn:
     - name: onepassword-store
     - name: rook-ceph-cluster
+    - name: volsync
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease

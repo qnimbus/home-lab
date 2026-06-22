@@ -953,19 +953,19 @@ keeps DSR's client-IP preservation either way).
 
 ### CSI Snapshots (external-snapshotter + Ceph VolumeSnapshotClass)
 
-**Prerequisite for VolSync and for any point-in-time rollback.** The cluster currently has **no
-snapshot capability at all** — there is no snapshot-controller and the `snapshot.storage.k8s.io`
-CRDs are not installed. Rook's `cephBlockPoolsVolumeSnapshotClass` is therefore explicitly
-**disabled** in `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` (enabling it
-with no CRDs present would fail the Flux dry-run). Until this is fixed, *not a single CSI snapshot
-can be taken*, and VolSync's `copyMethod: Snapshot` (the only viable method for live Prometheus /
-Postgres volumes) cannot work.
-
-> **Why this is a separate item from VolSync:** the snapshot-controller + CRDs are *cluster-singleton
-> infrastructure* — deployed once, like a CSI driver, not per-app. Kubernetes upstream ships the
-> controller + CRDs; Rook ships only the `VolumeSnapshotClass` that *consumes* them. Talos bundles
-> neither. Longhorn used to pull its own VolumeSnapshotClass — that left with the Rook-Ceph migration,
-> so the gap is new.
+> **Status: ✅ DONE (2026-06-20).** Deployed `piraeusdatastore/snapshot-controller` (v5.1.1) as a
+> cluster-singleton in its own `snapshot-controller` namespace
+> (`kubernetes/apps/system/snapshot-controller/`), installing the controller Deployment and the
+> three CRDs (`VolumeSnapshot`, `VolumeSnapshotContent`, `VolumeSnapshotClass`). Rook's
+> `cephBlockPoolsVolumeSnapshotClass` is enabled in
+> `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml`, producing a
+> VolumeSnapshotClass named **`ceph-block-snapshot`** (named explicitly rather than accepting the
+> chart's own default of `ceph-block` — identical to the StorageClass name; distinct API kinds,
+> no functional collision, but confusing in `kubectl get` output) backed by
+> `rook-ceph.rbd.csi.ceph.com`. Not the cluster-default snapshot class — consumers (e.g. VolSync)
+> reference it by name explicitly. Verified live via a full smoke test on disposable scratch
+> resources (canary file → snapshot → restore into a new PVC → byte-for-byte integrity confirmed,
+> then full teardown including `VolumeSnapshotContent` garbage collection).
 
 **What "backup" buys that `ceph-block` replication does not:** `size=3`/`min_size=2` keeps three
 *live, synchronously-updated* copies — it survives a **node/disk hardware failure** but a
@@ -973,171 +973,101 @@ Postgres volumes) cannot work.
 Snapshots give local point-in-time rollback; VolSync (below) gives off-cluster, portable recovery.
 This closes the 3-2-1 gap that replication alone leaves open.
 
-**Steps to implement:**
+**Unblocked VolSync's `copyMethod: Snapshot`** — see [VolSync (PVC Backup)](#volsync-pvc-backup),
+now also live.
 
-1. Deploy the **external-snapshotter** as a cluster-singleton. Two common paths:
-   - `piraeusdatastore/snapshot-controller` (or the `kubernetes-csi/external-snapshotter`
-     manifests) via a Helm chart + OCIRepository — installs the snapshot-controller Deployment
-     **and** the three CRDs (`VolumeSnapshot`, `VolumeSnapshotContent`, `VolumeSnapshotClass`).
-   - Place in its own namespace (e.g. `volume-snapshotter` or alongside `rook-ceph`). Most
-     home-ops repos use a dedicated `kubernetes/apps/storage/snapshot-controller/`.
-   - Verify against [kubesearch.dev](https://kubesearch.dev) for the prevailing community chart
-     before writing the Kustomization (per CONVENTIONS — community research first).
-2. Once the CRDs exist, flip `cephBlockPoolsVolumeSnapshotClass.enabled: true` in the Rook cluster
-   HelmRelease (`rook-ceph/cluster/app/helmrelease.yaml:146`) and drop the explanatory `enabled:
-   false` comment. This produces a `csi-rbdplugin-snapclass` VolumeSnapshotClass backed by
-   `rook-ceph.rbd.csi.ceph.com`. Optionally set it as the default snapshot class.
-3. Smoke-test: create a `VolumeSnapshot` of a small live PVC, confirm a `VolumeSnapshotContent`
-   binds and `readyToUse: true`, then restore it into a new PVC and verify the data.
-
-**Dependencies:** Rook-Ceph ✅. Independent of external-secrets. **Blocks:** VolSync (below).
+**Dependencies:** Rook-Ceph ✅.
 
 ---
 
 ### VolSync (PVC Backup)
 
-Deploy VolSync to back up **Ceph RBD (`ceph-block`)** PVCs to an off-cluster Restic repository.
-VolSync takes a CSI snapshot of a running volume and transfers it to a remote Restic backend —
-producing crash-consistent, encrypted, deduplicated point-in-time backups that are restorable on
-*any* Kubernetes cluster or locally via the `restic` CLI.
+> **Status: operator + Component built; canary in Phase 1 (direct `ReplicationSource`, not yet
+> the full bootstrap pattern).** VolSync backs up every stateful app's `ceph-block` PVC (except
+> CNPG's — see below) to a local, NFS-direct Restic repository on TrueNAS. Canary: `waha`'s PVC
+> (`kubernetes/apps/automation/waha/`) — note the object is named **`waha`**, not `sessions`.
+>
+> **Incident, 2026-06-22:** a first attempt wired waha straight to `existingClaim` +
+> `dataSourceRef` on the wrong assumption that app-template names an unnamed PVC after the
+> persistence map key (`sessions`); it actually names it after the release (`waha`). That
+> commit reached production briefly before being reverted, and Helm's upgrade deleted the
+> live, undeclared-by-the-new-template `waha` PVC in the process — the original ~4 days of
+> WhatsApp session data was lost (recoverable only via re-linking the WhatsApp session, not a
+> backup, since no backup pipeline existed yet at the time). Root cause and the corrected
+> two-phase retrofit procedure are in
+> [CLUSTER.md → VolSync → Canary](CLUSTER.md#volsync-pvc-backup).
 
-**Why VolSync (Restic) over a storage-native snapshot export:**
-Ceph's own `rbd export` / mirror produces Ceph-native images that only restore into another Ceph
-cluster. VolSync produces standard Restic repositories — portable, inspectable with `restic
-snapshots`, restorable anywhere, and verifiable offline without a running cluster. It is also
-storage-backend-agnostic: the same `ReplicationSource` works regardless of whether the source PVC
-is on Ceph, NFS-CSI, or a future backend.
+**Why Restic + upstream `backube/volsync`, not Kopia + the `perfectra1n` fork:** Kopia mover and
+its decoupled `KopiaMaintenance` CRD only exist in a community fork — verified directly against
+upstream's CRD schema, which has zero `kopia` references anywhere. Adopting the fork would trade
+the officially-maintained, cosign-eligible chart for a single-maintainer fork with no signatures
+and a 4-year-stale upstream discussion (`backube/volsync#474`) about Kopia support with zero
+momentum — for a feature whose only real edge (coordinated repo maintenance) Restic's own
+`pruneIntervalDays` mostly covers. The NFS-direct design below was assumed fork-exclusive going
+in; it isn't — upstream's Restic mover's `moverVolumes` already supports mounting a raw `nfs:`
+volume directly (verified against the CRD schema), so there was no capability actually traded
+away by staying on upstream.
 
-**Recommended backup target — Backblaze B2 (or Cloudflare R2):**
-Restic supports any S3-compatible backend. B2 is the cost-effective choice: ~$0.006/GB/month
-storage, no per-request fees above the free tier, and Cloudflare-peered so egress from cluster → B2
-is free. **Storj is also worth considering for consistency** — the CloudNativePG PITR item now uses
-an existing Storj.io bucket for WAL archiving, so sharing one provider/credential surface reduces
-moving parts.
-Self-hosted MinIO is the alternative if no egress cost or offline access is preferred — but adds
-another stateful workload to maintain.
+**Why NFS-direct, not S3/B2:** backups land on `10.200.0.41:/mnt/tank/Cluster/volsync` directly
+over the storage VLAN — restore time is bounded by LAN throughput, not internet upload/download,
+which matters for the common case (accidental delete, bad deploy). Off-site protection against a
+full NAS loss is handled **on TrueNAS itself** (e.g. a Cloud Sync Task mirroring that directory to
+S3/B2) — deliberately out of Kubernetes/GitOps scope, since it's NAS-native functionality, not a
+cluster concern.
 
-**Dependencies:** **[CSI Snapshots](#csi-snapshots-external-snapshotter--ceph-volumesnapshotclass)** ⛔
-(must land first — provides the `csi-rbdplugin-snapclass` VolumeSnapshotClass that `copyMethod:
-Snapshot` requires), external-secrets ✅, onepassword-connect ✅.
+**Jitter / staggering:** a `MutatingAdmissionPolicy`
+(`kubernetes/apps/system/volsync/app/mutatingadmissionpolicy.yaml`, native CEL-based admission,
+GA in `admissionregistration.k8s.io/v1` on this cluster) injects a random 0–30s sleep
+`initContainer` into every backup Job — CEL match on the `volsync-src-` name prefix +
+`app.kubernetes.io/created-by: volsync` label, verified upstream-genuine in VolSync's own shared
+controller code, not fork-specific. Spreads backup start times so a growing number of apps on the
+same schedule doesn't spike NFS/CPU load simultaneously. Deliberately scoped to backup (`src`)
+Jobs only — restore (`dst`) Jobs are rare, one-shot events (manual trigger or bootstrap), not a
+recurring thundering-herd risk, so jittering them would only delay getting data back with no
+offsetting benefit.
 
----
+**Bootstrap-restore pattern:** every app's PVC carries `dataSourceRef` pointing at its own
+`${APP}-bootstrap` `ReplicationDestination` (manual `restore-once` trigger) — see
+`kubernetes/components/volsync/pvc.yaml`. This makes restore-or-start-empty automatic on every
+deploy or redeploy, with no manual step. **Bootstrap window caveat:** there's a gap between first
+deploy and first completed backup where a deleted app has nothing to restore from — trigger a
+manual backup immediately after deploying a new VolSync-enabled app:
+```sh
+kubectl patch replicationsource <app> -n <namespace> --type=merge \
+  -p='{"spec":{"trigger":{"manual":"initial-'$(date +%s)'"}}}'
+```
 
-#### Phase 1 — Deploy the VolSync operator
+**CNPG exclusion:** `postgres-v17`'s PVC is **not** covered by VolSync — it already has dedicated
+barman-cloud PITR (B2) + local `pg_dumpall` (NFS) backup paths, see
+[CLUSTER.md → CloudNativePG → Backup strategy](CLUSTER.md#backup-strategy). Adding VolSync there
+would be redundant, competing backup machinery for the same data, not complementary coverage.
 
-1. Add `kubernetes/flux/meta/repos/oci/volsync.yaml`:
-   ```yaml
-   apiVersion: source.toolkit.fluxcd.io/v1
-   kind: OCIRepository
-   metadata:
-     name: volsync
-     namespace: flux-system
-   spec:
-     interval: 1h
-     layerSelector:
-       mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
-       operation: copy
-     url: oci://ghcr.io/backube/helm-charts/volsync
-     ref:
-       # renovate: datasource=docker depName=ghcr.io/backube/helm-charts/volsync
-       tag: "<latest>"
-   ```
-   > Check `ghcr.io/home-operations/charts-mirror/volsync` first — if mirrored, prefer the mirror URL and add `verify.provider: cosign`. The upstream backube registry does not publish cosign signatures.
+**1Password:** one shared item, `volsync-restic`, holding a single `RESTIC_PASSWORD` field —
+every app's Restic repository uses the same password; per-app isolation comes entirely from the
+repository sub-path (`local:/mnt/repository/${APP}`), not from separate credentials. Losing this
+password is permanent data loss for every app's backups.
 
-2. Create `kubernetes/apps/volsync/volsync/`:
-   - `app/namespace.yaml` — `volsync-system` namespace
-   - `app/helmrelease.yaml` — `chartRef: kind: OCIRepository, name: volsync`; no special values needed beyond metrics
-   - `app/helm/values.yaml` — `metrics.enabled: true` so Prometheus auto-discovers the VolSync metrics endpoint
-   - `app/kustomization.yaml`
-   - `ks.yaml` — `dependsOn: [snapshot-controller]` (the `csi-rbdplugin-snapclass` VolumeSnapshotClass must exist before any `ReplicationSource` is created)
+**Manual TrueNAS-side prerequisite** (not GitOps): create dataset `tank/Cluster/volsync`, `chown
+4000:4000`, and confirm the NFS export ACL allows `10.200.0.0/24` (the storage bond) — same as
+the existing `postgres-backup-local` share. Verified live via Cilium's BPF NAT table that pod
+traffic to TrueNAS masquerades through the egressing node's storage-bond IP, not its management
+IP (`cilium-dbg bpf nat list` showed `10.42.x.x:port -> 10.200.0.41:2049 XLATE_SRC
+10.200.0.20x:port`) — Cilium's masquerade follows the kernel's per-destination routing decision
+here, not a single hardcoded device, so `10.60.0.0/24` is not needed in the export ACL.
 
-3. Add `volsync` to `kubernetes/apps/kustomization.yaml`.
+**Files:** `kubernetes/apps/system/volsync/` (operator + jitter policy),
+`kubernetes/components/volsync/` (per-app Kustomize Component: ExternalSecret + PVC +
+ReplicationSource + ReplicationDestination, wired via `spec.components` +
+`spec.postBuild.substitute` on the consuming app's `ks.yaml`). See
+[CLUSTER.md → VolSync](CLUSTER.md#volsync-pvc-backup) for full architecture detail.
 
----
+**Next:** verify Phase 1's `ReplicationSource` actually produces a restic snapshot on NFS for the
+real `waha` PVC, then Phase 2 (`existingClaim` + full `components/volsync` Component, safe now
+that the Component's PVC carries `kustomize.toolkit.fluxcd.io/ssa: IfNotPresent`), then extend to
+Prometheus's larger `prometheus-db` PVC (20 Gi) — deliberately deferred until the canary loop is
+proven twice over.
 
-#### Phase 2 — Seed backup credentials in 1Password
-
-VolSync's Restic mover reads credentials from a `Secret` with these exact keys. Create a 1Password item (e.g. `volsync-b2-restic`) with the following fields:
-
-| Secret key | Value |
-|------------|-------|
-| `RESTIC_REPOSITORY` | `s3:https://s3.<region>.backblazeb2.com/<bucket>/<path>` |
-| `RESTIC_PASSWORD` | strong random passphrase — **loss = backups permanently unrecoverable** |
-| `AWS_ACCESS_KEY_ID` | B2 application key ID |
-| `AWS_SECRET_ACCESS_KEY` | B2 application key secret |
-
-Steps:
-1. In the Backblaze console: create a private bucket and a dedicated application key scoped to that bucket only.
-2. Add the four fields above to the `volsync-b2-restic` 1Password item.
-3. For each namespace that needs backup, create an `ExternalSecret` that pulls these fields into a `Secret` named `volsync-secret`:
-   ```yaml
-   apiVersion: external-secrets.io/v1
-   kind: ExternalSecret
-   metadata:
-     name: volsync-secret
-     namespace: <target-namespace>
-   spec:
-     refreshInterval: 1h
-     secretStoreRef:
-       name: onepassword
-       kind: ClusterSecretStore
-     target:
-       name: volsync-secret
-     data:
-       - secretKey: RESTIC_REPOSITORY
-         remoteRef: { key: volsync-b2-restic, property: RESTIC_REPOSITORY }
-       - secretKey: RESTIC_PASSWORD
-         remoteRef: { key: volsync-b2-restic, property: RESTIC_PASSWORD }
-       - secretKey: AWS_ACCESS_KEY_ID
-         remoteRef: { key: volsync-b2-restic, property: AWS_ACCESS_KEY_ID }
-       - secretKey: AWS_SECRET_ACCESS_KEY
-         remoteRef: { key: volsync-b2-restic, property: AWS_SECRET_ACCESS_KEY }
-   ```
-
----
-
-#### Phase 3 — Wire first workload
-
-Pick a **small, stateful, annoying-to-rebuild** canary first (e.g. waha's session volume or pgadmin)
-to validate the snapshot→restic→prune loop end-to-end before pointing it at Prometheus's 20 Gi
-`prometheus-db` (the larger, but already-deployed, eventual target). Add a `volsync.yaml` to the
-app's `app/` directory:
-
-- `volsync.yaml` — the `ReplicationSource`:
-  ```yaml
-  apiVersion: volsync.backube/v1alpha1
-  kind: ReplicationSource
-  metadata:
-    name: prometheus-db-backup
-    namespace: observability
-  spec:
-    sourcePVC: prometheus-db
-    trigger:
-      schedule: "0 2 * * *"          # daily at 02:00 UTC
-    restic:
-      repository: volsync-secret
-      copyMethod: Snapshot            # take a Ceph RBD CSI snapshot first; read from snapshot PVC
-      volumeSnapshotClassName: csi-rbdplugin-snapclass
-      storageClassName: ceph-block
-      retain:
-        daily: 7
-        weekly: 4
-        monthly: 12
-      pruneIntervalDays: 7
-  ```
-- The `ExternalSecret` for `volsync-secret` in the target namespace (see Phase 2).
-- Reference both files in `app/kustomization.yaml`.
-
-**`copyMethod: Snapshot` is the key choice:** VolSync takes a Ceph RBD CSI snapshot, creates a
-temporary PVC from it, and backs up from *that* — the live volume stays mounted and continues
-writing without interruption. Direct copy (`copyMethod: Direct`) would require the volume to be
-unmounted, which is not viable for a running Prometheus or database.
-
----
-
-#### Phase 4 — `components/volsync/` Kustomize Component (deferred)
-
-Once 3+ apps have VolSync `ReplicationSource` + `ExternalSecret` manifests, extract the boilerplate into `kubernetes/components/volsync/` following the pattern described in the [Researched Patterns](#researched-patterns-bykajhome-ops) section. Until then, add per-app manifests directly.
+**Dependencies:** CSI Snapshots ✅, external-secrets ✅, onepassword-connect ✅.
 
 ---
 
@@ -1148,20 +1078,24 @@ Patterns observed in the [`bykaj/home-ops`](https://github.com/bykaj/home-ops) r
 #### Kustomize Components (`kubernetes/components/`)
 
 Reusable Kustomize Components (`apiVersion: kustomize.config.k8s.io/v1alpha1 / kind: Component`)
-that apps include in their `app/kustomization.yaml` via `components:` references. bykaj ships:
+that apps include via **`spec.components` on the Flux `Kustomization` (`ks.yaml`)**, not the
+plain `app/kustomization.yaml` — `postBuild.substitute` (for any `${VAR}` tokens the Component's
+templates use) only exists on the Flux CRD, so declaring `components:` anywhere else leaves those
+tokens unsubstituted. bykaj ships:
 - `components/namespace/` — bundles namespace creation + `cluster-secrets` Secret per-app
   namespace + Flux alerts
-- `components/volsync/` — VolSync backup PVC + ReplicationSource/Destination templates
 - `components/keda/*-scaler/` — KEDA ScaledObject templates for Postgres, Redis, NFS, SMB
 - `components/gpu/` — ResourceClaimTemplate for GPU workloads
 
-**Steps to implement:**
-- Create `kubernetes/components/` as app count grows
-- The `namespace` Component is highest priority: bundles namespace creation + cluster-secrets
+**`components/volsync/` is built** — see [VolSync (PVC Backup)](#volsync-pvc-backup) above, the
+first Component in this repo and the reference implementation for the `ks.yaml`-level wiring
+pattern described above (see `kubernetes/apps/automation/waha/ks.yaml` for a concrete example).
+
+**Steps to implement further Components:**
+- The `namespace` Component is next highest priority: bundles namespace creation + cluster-secrets
   per-app, so apps never need separate namespace manifests or per-namespace secret wiring
 - Add a Component only when the same boilerplate appears in 3+ apps — don't create early
-- Natural order: `components/namespace/` first (after cluster-vars lands), then
-  `components/volsync/` when backup is added, then KEDA scalers if KEDA is deployed
+- KEDA scalers if/when KEDA is deployed
 
 ---
 

@@ -152,6 +152,12 @@ spec:
         storageClass: ceph-block
         accessMode: ReadWriteOnce
         size: 2Gi
+        # Phase 1 of the VolSync retrofit (see ks.yaml): keep app-template owning this PVC
+        # (rendered name is "waha", matching the release — NOT "sessions", the persistence
+        # key) but protect it from Helm's prune-on-upgrade deletion via the keep annotation.
+        # Only once a real backup is verified working does phase 2 switch this to
+        # existingClaim + the dataSourceRef bootstrap pattern via components/volsync.
+        retain: true
         globalMounts:
           - path: /app/.sessions
       media:

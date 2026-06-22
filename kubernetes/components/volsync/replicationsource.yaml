@@ -1,0 +1,36 @@
+---
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: "${APP}"
+spec:
+  sourcePVC: "${VOLSYNC_CLAIM:=${APP}}"
+  trigger:
+    schedule: "${VOLSYNC_SCHEDULE:=0 * * * *}"
+  restic:
+    repository: "${APP}-volsync-secret"
+    copyMethod: Snapshot
+    pruneIntervalDays: "${VOLSYNC_PRUNE_INTERVAL_DAYS:=7}"
+    retain:
+      hourly: "${VOLSYNC_RETAIN_HOURLY:=24}"
+      daily: "${VOLSYNC_RETAIN_DAILY:=7}"
+      weekly: "${VOLSYNC_RETAIN_WEEKLY:=4}"
+    accessModes:
+      - "${VOLSYNC_ACCESSMODES:=ReadWriteOnce}"
+    storageClassName: "${VOLSYNC_STORAGECLASS:=ceph-block}"
+    volumeSnapshotClassName: "${VOLSYNC_SNAPSHOTCLASS:=ceph-block-snapshot}"
+    cacheAccessModes:
+      - "${VOLSYNC_CACHE_ACCESSMODES:=ReadWriteOnce}"
+    cacheCapacity: "${VOLSYNC_CACHE_CAPACITY:=${VOLSYNC_CAPACITY:=5Gi}}"
+    # Restic's local metadata cache kept off replicated storage — local-disk only.
+    cacheStorageClassName: "${VOLSYNC_CACHE_STORAGECLASS:=openebs-hostpath}"
+    moverSecurityContext:
+      runAsUser: ${APP_UID:=4000}
+      runAsGroup: ${APP_GID:=4000}
+      fsGroup: ${APP_GID:=4000}
+    moverVolumes:
+      - mountPath: repository
+        volumeSource:
+          nfs:
+            server: "${VOLSYNC_NFS_SERVER:=10.200.0.41}"
+            path: "${VOLSYNC_NFS_PATH:=/mnt/tank/Cluster/volsync}"

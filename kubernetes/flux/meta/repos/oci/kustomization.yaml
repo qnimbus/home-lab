@@ -25,3 +25,4 @@ resources:
   - ./rook-ceph.yaml
   - ./rook-ceph-cluster.yaml
   - ./snapshot-controller.yaml
+  - ./volsync.yaml

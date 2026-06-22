@@ -534,6 +534,101 @@ The barman-cloud plugin runs as a per-instance sidecar (chart is self-contained 
 
 ---
 
+### VolSync (PVC Backup) · `v0.15.0` (chart) · `volsync`
+
+**Per-app PVC backup.** Backs up every stateful app's `ceph-block` PVC (except CNPG's, see
+below) to a local, NFS-direct Restic repository on TrueNAS. Each app gets its own
+`ReplicationSource`/`ReplicationDestination` pair via a shared Kustomize Component — no
+per-app boilerplate beyond a few `postBuild.substitute` variables.
+
+| Component | Type | Role |
+|-----------|------|------|
+| `volsync` | Deployment | Watches `ReplicationSource`/`ReplicationDestination` CRDs; orchestrates CSI snapshots + Restic mover Jobs |
+| `volsync-src-<app>` | Job (ephemeral) | Per-app backup run — snapshot → Restic backup → prune, on the app's own schedule |
+| `volsync-dst-<app>-bootstrap` | Job (ephemeral, one-shot) | Restore-or-start-empty, triggered automatically whenever the app's PVC is (re)created |
+| `volsync-mover-jitter` | MutatingAdmissionPolicy + Binding | Injects a random 0–30s sleep into every backup Job to avoid a thundering herd |
+
+> **Local-NFS-first, not S3/B2 direct.** Backups land on `10.200.0.41:/mnt/tank/Cluster/volsync`
+> directly over the storage VLAN — restore time is bounded by LAN throughput, not internet
+> upload/download, which matters for the common case (accidental delete, bad deploy, a
+> mis-applied manifest). Off-site protection against a full NAS loss is handled **on TrueNAS
+> itself** — e.g. a Cloud Sync Task mirroring `/mnt/tank/Cluster/volsync` to S3/B2 — deliberately
+> **not** a Kubernetes CronJob or Flux-managed resource. This is intentional: replicating a
+> directory off a NAS is NAS-native functionality, not a cluster concern, and keeping it there
+> means the Kubernetes side never needs S3/B2 credentials at all for routine backup/restore.
+>
+> **Why Restic on upstream `backube/volsync`, not Kopia on the `perfectra1n` fork.** Kopia mover
+> support and its decoupled `KopiaMaintenance` CRD only exist in a community fork — confirmed by
+> reading both CRD schemas directly; upstream has zero `kopia` references anywhere. The fork has
+> no cosign signatures, a single-maintainer bus-factor risk, and a 4-year-stale upstream
+> discussion (`backube/volsync#474`) about adding Kopia support with no real movement since. Its
+> one genuine advantage — a coordinated, repo-wide maintenance schedule decoupled from any single
+> app's backup cadence — is mostly covered by Restic's own per-`ReplicationSource`
+> `pruneIntervalDays`. The NFS-direct design above was assumed to require the fork going in; it
+> doesn't — upstream's Restic mover's `moverVolumes` field already supports mounting a raw `nfs:`
+> volume, verified directly against the CRD.
+>
+> **Jitter / staggering.** A `MutatingAdmissionPolicy` (native CEL-based admission, GA in
+> `admissionregistration.k8s.io/v1` on this cluster — no feature gate needed) matches Jobs named
+> `volsync-src-*` with the `app.kubernetes.io/created-by: volsync` label — both verified
+> upstream-genuine in VolSync's own shared controller code, not specific to any fork — and
+> injects an init container that sleeps a random 0–30s before the backup runs. This spreads
+> backup start times so a growing number of apps on the same hourly schedule doesn't spike NFS
+> and CPU load all at once. Deliberately scoped to backup (`src`) Jobs only: restore (`dst`) Jobs
+> are rare, one-shot events (manual trigger, or the bootstrap-restore flow below), not a
+> recurring thundering-herd risk — jittering them would only delay getting data back with no
+> offsetting benefit. See `kubernetes/apps/system/volsync/app/mutatingadmissionpolicy.yaml`.
+>
+> **Bootstrap-restore pattern.** Every app's PVC (`kubernetes/components/volsync/pvc.yaml`)
+> carries `spec.dataSourceRef` pointing at its own `${APP}-bootstrap` `ReplicationDestination`
+> (`trigger.manual: restore-once`). This makes restore-or-start-empty fully automatic on every
+> deploy or redeploy — if a Restic repository already has snapshots, the PVC is populated from
+> the latest one; if not, it just comes up empty. No manual restore step, ever, for the common
+> case. **Bootstrap window caveat:** there is a gap between an app's first deploy and its first
+> completed backup during which a deleted app has nothing to restore from. Trigger a manual
+> backup immediately after deploying any new VolSync-enabled app:
+> ```sh
+> kubectl patch replicationsource <app> -n <namespace> --type=merge \
+>   -p='{"spec":{"trigger":{"manual":"initial-'$(date +%s)'"}}}'
+> ```
+>
+> **CNPG's `postgres-v17` PVC is explicitly excluded.** It already has its own Postgres-aware
+> backup paths — barman-cloud WAL/PITR to Backblaze B2 and a local `pg_dumpall` to NFS, see
+> [CloudNativePG → Backup strategy](#backup-strategy) above. A generic filesystem-level VolSync
+> snapshot would be redundant, competing backup machinery for the same data — not complementary
+> coverage — and isn't WAL-consistent the way CNPG's own mechanism is.
+>
+> **Credentials.** A single shared 1Password item, `volsync-restic`, holds one field —
+> `RESTIC_PASSWORD` — used by every app's Restic repository. Per-app isolation comes entirely
+> from the repository **path** (`local:/mnt/repository/${APP}`), not from separate passwords or
+> 1Password items. Losing this password is permanent, unrecoverable data loss for every app's
+> backups simultaneously — there is no per-app blast-radius containment on credential loss, only
+> on data-path collision.
+>
+> **Canary.** `waha`'s PVC, which holds its WhatsApp session/auth state — chosen over pgadmin
+> because losing it actually hurts (a manual QR re-link, with WhatsApp anti-automation risk on
+> repeated re-auths) versus pgadmin's config, which is trivially regenerable from Git +
+> 1Password. **The PVC's actual name is `waha`** (app-template renders unnamed PVCs after the
+> release, not the persistence map key — `sessions` was a wrong assumption that briefly reached
+> production and cost the original session data; always verify the live object name with
+> `kubectl get pvc` before writing a retrofit, don't trust chart-templating assumptions).
+>
+> **Retrofitting onto an app with existing data needs two phases, not one.** Phase 1: keep
+> app-template owning the PVC, add `persistence.<key>.retain: true` (Helm annotates it
+> `helm.sh/resource-policy: keep`, so a later upgrade that stops declaring it won't delete it),
+> and point a hand-written `ReplicationSource` directly at `sourcePVC: <real-pvc-name>` —
+> `sourcePVC` only has to *name* an existing PVC, not own or have created it. Phase 2, only once
+> a real backup is verified restorable: switch to `existingClaim` + the full
+> `components/volsync` Component (now safe, since `dataSourceRef` is immutable on an existing
+> PVC and the Component's PVC carries `kustomize.toolkit.fluxcd.io/ssa: IfNotPresent` — Flux
+> skips it while the old object exists, and only creates the dataSourceRef'd replacement once
+> it's deliberately removed post-backup). A brand-new app with no existing PVC can use the full
+> Component from day one — this phasing is only needed when data already exists.
+> Validated end-to-end before extending to Prometheus's larger `prometheus-db` PVC (20 Gi), the
+> deliberately-deferred next target. See [ROADMAP.md → VolSync (PVC Backup)](ROADMAP.md#volsync-pvc-backup).
+
+---
+
 ### Reloader · `v2.2.11` (chart) · `reloader`
 
 **ConfigMap/Secret change propagator.** Watches `ConfigMap` and `Secret` objects and performs a rolling restart of any Deployment/DaemonSet/StatefulSet that references them (via the `reloader.stakater.com/auto` annotation or explicit `configmap.reloader.stakater.com/reload`). Closes the gap where a mounted config changes but the pod keeps the stale copy until manually restarted.

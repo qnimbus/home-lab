@@ -1,0 +1,18 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: volsync
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: volsync
+    namespace: flux-system
+  values:
+    manageCRDs: true
+    metrics:
+      disableAuth: true
+      serviceMonitor:
+        create: true
