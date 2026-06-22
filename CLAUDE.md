@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-22 | `volsync-deploy-pvc-incident` | Deployed VolSync (Restic, NFS-direct, jitter); Helm deleted waha's live PVC on a wrong name assumption |
 > | 2026-06-22 | `tailscale-subnet-route-precedence-fix` | Fixed Tailscale LAN-hijack: advertised /23 in-cluster; added UniFi DHCP classless routes for routed clients |
 > | 2026-06-22 | `worker02-power-brick-rootcause` | Root-caused recurring talos-worker-02 hard-downs to a failing power brick via MemTest86 hardware isolation; explained CNPG local-storage rescheduling |
 > | 2026-06-21 | `cnpg-storj-to-b2-migration` | Migrated CNPG backups Storj→B2; root-caused dot-in-bucket-name WAL-archive bug; verified live recovery drill |
@@ -11,7 +12,6 @@
 > | 2026-06-19 | `cloudflare-edge-cert-gap-and-legacy-dns-cleanup` | Fixed Cloudflare edge-cert two-level wildcard gap; found+cleaned up archived-cluster's orphaned tunnel DNS/TXT records |
 > | 2026-06-19 | `whoami-network-plumbing-fixes` | Deployed whoami smoke-test; fixed cloudflared SNI + ExternalDNS gaps; retargeted envoy-external to proxii.nl |
 > | 2026-06-18 | `rook-ceph-grafana-dashboards` | Confirmed Ceph Prometheus scraping already live; fixed MCP RBAC gap; added 9 ceph-mixin Grafana dashboards |
-> | 2026-06-18 | `cnpg-recovery-drill-verified` | Verified CNPG recovery drill live (54s, matching system ID); renamed ObjectStore provider-agnostic; tore down drill |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

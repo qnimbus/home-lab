@@ -4,6 +4,57 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-22 — `volsync-deploy-pvc-incident`
+
+### Goal
+Design and deploy a VolSync-based PVC backup system (Restic, NFS-direct, jitter-staggered), then diagnose and recover from a production incident where a wrong PVC-naming assumption caused Helm to delete waha's live PVC during the first rollout attempt.
+
+### What we did
+- User asked for the VolSync roadmap status; found the documented CSI Snapshots blocker was actually already resolved (2026-06-20) but the roadmap was never updated, and the VolSync draft itself was stale (Restic→B2, no jitter, no bootstrap-restore pattern).
+- Researched a local `bykaj/home-ops` reference clone (`tmp/home-ops-bykaj`) for community best practices: the bootstrap-restore PVC `dataSourceRef` pattern, a shared Kustomize Component, and a `MutatingAdmissionPolicy`-based jitter mechanism.
+- User redirected the design: move off Restic→B2 to a local NFS-first target (off-site sync handled separately on the NAS), adopt the staggered/jitter approach, and switch to Kopia — explicitly requested this all be documented in detail in `CLUSTER.md`.
+- Investigated the Kopia request: verified directly against `backube/volsync`'s upstream CRD schema that Kopia mover and its `KopiaMaintenance` CRD only exist in the `perfectra1n` community fork (zero `kopia` references upstream); found a 4-year-stale upstream discussion (`#474`) with no real movement. Presented the trade-off; user chose Restic + upstream after a second pass. Also discovered upstream's Restic mover's `moverVolumes` already supports a raw `nfs:` volume directly — the NFS-direct design wasn't actually fork-exclusive.
+- Verified live that `MutatingAdmissionPolicy` is GA (`admissionregistration.k8s.io/v1`) on this cluster's K8s v1.36.1, and that VolSync's `volsync-src-*` Job naming + `created-by: volsync` label are set by shared, mover-agnostic controller code (read directly from the VolSync source), not Kopia-fork-specific — so the jitter policy adapted from the reference repo works unmodified on Restic.
+- Dispatched a Plan agent with full context; reviewed its draft against live/upstream sources before implementing and caught two real bugs: (1) the chart tag `0.16.0` has no cosign signature yet in `ghcr.io/home-operations/charts-mirror/volsync` (checked the manifest digest against the `.sig` tag list directly) — pinned `0.15.0` instead; (2) the draft wired `components:`/`postBuild.substitute` onto the plain `app/kustomization.yaml` instead of the Flux `ks.yaml` — found the correct mechanism by reading a real consuming app in the reference repo and confirming `spec.components` is a documented field on the Flux Kustomization CRD.
+- Implemented and committed (`495ed68`): new `system/volsync` app (operator + jitter policy), new `components/volsync` Kustomize Component, waha wired as the canary via `existingClaim` + the bootstrap-restore PVC, `ROADMAP.md`/`CLUSTER.md` rewritten.
+- Side investigation mid-session: a `/fork` dispatched separately to research an NVMe upgrade path for the rook-ceph cluster (unrelated to VolSync) reported back twice with hardware recommendations — not actioned in this session.
+- Resolved an NFS export-ACL question: a live diagnostic (disposable test pod + `cilium-dbg bpf nat list`, after the auto-mode permission classifier required explicit approval to exec into the cilium-agent pod) showed pod traffic to TrueNAS masquerades through the egressing node's storage-bond IP, confirming `10.200.0.0/24` alone (the user's existing config) is correct and `10.60.0.0/24` is not needed — corrected an earlier, wrong theoretical answer.
+- User pushed `495ed68`. While answering "what will happen if I push" retroactively, traced a real defect: app-template's actual PVC-naming behavior (verified against the live cluster and `bjw-s-labs/helm-charts` source) didn't match the assumption used to design the canary — the live PVC is named `waha` (the release name), not `sessions` (the persistence key). The commit had in fact already reached production and been reverted by the user by the time this was caught; live diagnostics (`kubectl get pvc/pod/events`, HelmRelease `.status.history`, `git reflog`, `git ls-remote`) confirmed Helm's upgrade deleted the real `waha` PVC once `existingClaim` stopped declaring it, and that the repo was already back to a clean, reverted state with no orphaned cluster resources. ~4 days of WAHA's WhatsApp session data was lost — no backup pipeline existed yet to recover from.
+- Fixed the design: reverted waha to an app-template-owned PVC with `retain: true` (Helm `keep`-annotation protection), added standalone Phase-1 `ExternalSecret`/`ReplicationSource` files targeting `sourcePVC: waha` directly (bypassing the Component, which assumes a PVC that doesn't exist yet), hardened `components/volsync/pvc.yaml` with `kustomize.toolkit.fluxcd.io/ssa: IfNotPresent` for any future retrofit, and documented the incident plainly in `CLUSTER.md`/`ROADMAP.md`. Re-validated via `kustomize build` (standalone waha app, and the Component in isolation) and `scripts/validate.sh` (clean except the 16 pre-existing, unrelated false positives).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/CLUSTER.md` | Added detailed VolSync architecture section; corrected canary PVC-naming claim and documented the two-phase retrofit procedure |
+| `docs/ROADMAP.md` | Replaced the stale VolSync draft, marked CSI Snapshots done, corrected the NFS ACL fact, documented the incident |
+| `kubernetes/apps/automation/waha/app/helmrelease.yaml` | Reverted `existingClaim` attempt to app-template-owned PVC + `retain: true` |
+| `kubernetes/apps/automation/waha/app/kustomization.yaml` | Registered the new standalone `volsync-*` files |
+| `kubernetes/apps/automation/waha/ks.yaml` | `dependsOn: volsync` + `postBuild.substitute: {APP}`; `components:` inclusion added then removed (deferred to Phase 2) |
+| `kubernetes/apps/automation/waha/app/volsync-externalsecret.yaml` | New — Phase 1 standalone ExternalSecret for the Restic password |
+| `kubernetes/apps/automation/waha/app/volsync-replicationsource.yaml` | New — Phase 1 standalone ReplicationSource targeting `sourcePVC: waha` directly |
+| `kubernetes/apps/system/kustomization.yaml` | Registered the new `volsync` app |
+| `kubernetes/apps/system/volsync/app/helmrelease.yaml` | New — VolSync operator HelmRelease |
+| `kubernetes/apps/system/volsync/app/kustomization.yaml` | New |
+| `kubernetes/apps/system/volsync/app/mutatingadmissionpolicy.yaml` | New — jitter `MutatingAdmissionPolicy` + Binding |
+| `kubernetes/apps/system/volsync/app/namespace.yaml` | New |
+| `kubernetes/apps/system/volsync/ks.yaml` | New — operator Flux Kustomization |
+| `kubernetes/components/volsync/externalsecret.yaml` | New — reusable per-app ExternalSecret template |
+| `kubernetes/components/volsync/kustomization.yaml` | New — Component definition |
+| `kubernetes/components/volsync/pvc.yaml` | New, then hardened with `kustomize.toolkit.fluxcd.io/ssa: IfNotPresent` |
+| `kubernetes/components/volsync/replicationdestination.yaml` | New — reusable bootstrap-restore template |
+| `kubernetes/components/volsync/replicationsource.yaml` | New — reusable backup-schedule template |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Registered the new `volsync` OCIRepository |
+| `kubernetes/flux/meta/repos/oci/volsync.yaml` | New — cosign-verified chart source pinned to `0.15.0` |
+
+### Key decisions
+- Restic + upstream `backube/volsync` over Kopia + the `perfectra1n` fork — no cosign signatures, a single-maintainer bus-factor risk, and a 4-year-stale upstream discussion with zero momentum; upstream's Restic mover turned out to already support the NFS-direct capability assumed fork-exclusive.
+- Off-site S3/B2 replication deliberately left out of GitOps scope — handled by the user directly on TrueNAS (Cloud Sync Task), not a Kubernetes CronJob.
+- CNPG's `postgres-v17` PVC explicitly excluded from VolSync's scope — already has its own barman-cloud PITR + `pg_dumpall` paths; adding VolSync there would be redundant, not complementary.
+- Pinned chart tag `0.15.0` instead of the newer `0.16.0` after verifying the mirror's cosign signature for `0.16.0` doesn't exist yet — bump once signed.
+- Adopted a two-phase retrofit pattern for any app with pre-existing PVC data (Phase 1: `retain: true` + a direct `ReplicationSource`; Phase 2: `existingClaim` + the full Component, gated by `IfNotPresent`) — necessary because `dataSourceRef` is immutable on an existing PVC and Helm prunes resources it no longer declares by default. This was learned the hard way: the first attempt skipped straight to Phase 2 on an app that already had live data, based on an unverified assumption about the PVC's name, and Helm deleted it.
+
+---
+
 ## 2026-06-22 — `tailscale-subnet-route-precedence-fix`
 
 ### Goal
