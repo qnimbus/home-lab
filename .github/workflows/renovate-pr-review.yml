@@ -14,7 +14,7 @@ concurrency:
 jobs:
   review:
     if: github.actor == 'renovate[bot]'
-    runs-on: home-lab
+    runs-on: home-lab-readonly
     timeout-minutes: 30
     permissions:
       contents: read
@@ -44,7 +44,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           allowed_bots: 'renovate' # Or '*' to allow all bots
           claude_args: |
-            --allowedTools "Read,WebFetch,WebSearch,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --allowedTools "Read,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
           prompt: |
             Review PR #${{ github.event.pull_request.number }} using the
             pr-upgrade-reviewer agent. Assess upgrade risk, breaking changes,

@@ -1,0 +1,68 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumnetworkpolicy_v2.json
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: home-lab-readonly-egress
+  namespace: actions-runner-system
+spec:
+  # Matches the listener pod AND every ephemeral per-job pod (containerMode: kubernetes
+  # spawns one pod per job) — both carry this label, stamped deterministically by ARC from
+  # the HelmRelease/AutoscalingRunnerSet name, not job-controlled.
+  endpointSelector:
+    matchLabels:
+      actions.github.com/scale-set-name: home-lab-readonly
+      actions.github.com/scale-set-namespace: actions-runner-system
+  # No `ingress` section: Cilium's default enforcement mode only restricts the direction(s)
+  # present in a policy that selects the endpoint. This is intentionally egress-only.
+  egress:
+    # 1) DNS — required before any toFQDNs rule below can resolve.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
+            "k8s:k8s-app": kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    # 2) GitHub's full documented self-hosted-runner endpoint set (docs.github.com ->
+    #    Self-hosted runners -> Communication requirements), not just what this specific
+    #    workflow exercises today — chosen deliberately broader to avoid surprise blocks on
+    #    runner self-update / artifact-log upload paths.
+    #
+    #    *.blob.core.windows.net is the one entry worth re-reading before you forget why:
+    #    it's a generic, multi-tenant Azure Storage suffix — anyone, including an attacker,
+    #    can stand up a storage account under it. Including it as a wildcard means a
+    #    compromised job could exfiltrate data to an attacker-controlled blob endpoint that
+    #    still matches this FQDN rule; it's accepted here because GitHub's own runner
+    #    artifact/log upload path depends on it, but it is the weakest link in this policy.
+    - toFQDNs:
+        - matchName: "github.com"
+        - matchName: "api.github.com"
+        - matchName: "codeload.github.com"
+        - matchName: "github-releases.githubusercontent.com"
+        - matchName: "github-registry-files.githubusercontent.com"
+        - matchName: "objects.githubusercontent.com"
+        - matchName: "objects-origin.githubusercontent.com"
+        - matchName: "results-receiver.actions.githubusercontent.com"
+        - matchName: "pkg-containers.githubusercontent.com"
+        - matchName: "github-cloud.githubusercontent.com"
+        - matchName: "github-cloud.s3.amazonaws.com"
+        - matchPattern: "*.actions.githubusercontent.com"
+        - matchPattern: "*.pipelines.actions.githubusercontent.com"
+        - matchPattern: "*.pkg.github.com"
+        - matchPattern: "*.blob.core.windows.net" # see comment above
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+    # 3) Claude Code Action.
+    - toFQDNs:
+        - matchName: "api.anthropic.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

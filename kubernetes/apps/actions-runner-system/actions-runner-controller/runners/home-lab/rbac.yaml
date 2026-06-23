@@ -5,8 +5,11 @@ metadata:
   name: actions-runner
   namespace: actions-runner-system
 ---
-# cluster-admin is intentional for a homelab runner that needs full cluster access
-# (kubectl, talosctl, flux reconcile, etc. in workflow jobs).
+# cluster-admin is intentional, reserved for future manually-dispatched ops workflows
+# (kubectl, talosctl, flux reconcile, etc.) — none exist yet. The only workflow that runs
+# today (Renovate PR review) runs on the home-lab-readonly group instead, which has no
+# RBAC at all. Do not point an auto-triggered workflow (pull_request/push/schedule) at
+# this group — only workflow_dispatch.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
