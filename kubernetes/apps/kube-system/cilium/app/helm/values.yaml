@@ -8,19 +8,6 @@ cgroup:
   automount:
     enabled: false
   hostRoot: /sys/fs/cgroup
-dnsProxy:
-  # Cilium's dns-garbage-collector-job sweeps roughly every 60s and evicts any
-  # toFQDNs IP allow-state not backing an actively-tracked connection once this
-  # grace period elapses — default 0s means no grace at all. A workload that
-  # calls the same FQDN intermittently (e.g. ARC's session-create then a
-  # cleanup call ~30s later, not one continuous stream) loses its allow-state
-  # between calls and has to re-earn it via a fresh DNS lookup, surfacing as
-  # transient "Policy denied" drops even though the upstream DNS TTL is still
-  # valid. Confirmed via cilium-agent's own "FQDN garbage collector work
-  # deleted entries" log line evicting broker.actions.githubusercontent.com
-  # every ~60s while home-lab-readonly's CiliumNetworkPolicy was otherwise
-  # correct. 2m covers the observed ~30s gap with margin.
-  idleConnectionGracePeriod: 2m
 # Bond layout (all nodes use bond-storage for storage after talconfig.yaml rename):
 #   cp-01/02: management=e1000e (single port), storage=bond-storage (ixgbe X520)
 #   cp-03:    management=bond0 (RTL8125+igc),  storage=bond-storage (i40e X710)
