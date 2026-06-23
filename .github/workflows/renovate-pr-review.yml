@@ -20,7 +20,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         timeout-minutes: 5
 
       - name: Export Kubernetes-injected secrets to GitHub env context
