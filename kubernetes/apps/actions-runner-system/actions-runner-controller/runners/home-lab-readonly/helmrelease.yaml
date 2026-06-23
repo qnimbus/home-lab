@@ -40,8 +40,3 @@ spec:
             env:
               - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
                 value: "false"
-              - name: ANTHROPIC_API_KEY
-                valueFrom:
-                  secretKeyRef:
-                    name: anthropic-readonly-secret
-                    key: ANTHROPIC_API_KEY

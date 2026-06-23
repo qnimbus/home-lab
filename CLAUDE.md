@@ -4,7 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
-> | 2026-06-23 | `actions-runner-rbac-cilium-egress-hardening` | Audited GitOps repo, split ARC runner RBAC; CiliumNetworkPolicy proved unreliable (3 toFQDNs bugs) and was reverted |
+> | 2026-06-23 | `actions-runner-rbac-cilium-egress-hardening` | Audited repo, split ARC runner RBAC; reverted unreliable CiliumNetworkPolicy; fixed leaked Anthropic key via secrets.* |
 > | 2026-06-22 | `volsync-deploy-pvc-incident` | Deployed VolSync (Restic, NFS-direct, jitter); Helm deleted waha's live PVC on a wrong name assumption |
 > | 2026-06-22 | `tailscale-subnet-route-precedence-fix` | Fixed Tailscale LAN-hijack: advertised /23 in-cluster; added UniFi DHCP classless routes for routed clients |
 > | 2026-06-22 | `worker02-power-brick-rootcause` | Root-caused recurring talos-worker-02 hard-downs to a failing power brick via MemTest86 hardware isolation; explained CNPG local-storage rescheduling |
