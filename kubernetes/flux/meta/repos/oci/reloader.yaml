@@ -12,5 +12,5 @@ spec:
     operation: copy
   ref:
     # renovate: datasource=docker depName=ghcr.io/stakater/charts/reloader
-    tag: "2.2.11"
+    tag: "2.2.12"
   url: oci://ghcr.io/stakater/charts/reloader
