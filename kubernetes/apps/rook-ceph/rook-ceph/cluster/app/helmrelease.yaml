@@ -159,6 +159,34 @@ spec:
             csi.storage.k8s.io/node-stage-secret-name: rook-csi-rbd-node
             csi.storage.k8s.io/node-stage-secret-namespace: "{{ .Release.Namespace }}"
             csi.storage.k8s.io/fstype: ext4
+      # Unreplicated pool — zero Ceph-level redundancy; a single OSD failure loses
+      # any PVC on this class outright, with no degraded-but-available state like
+      # the size=3 pool above. For disposable/regenerable data only, traded for
+      # ~3x storage efficiency and lower write latency (one ack, not min_size=2).
+      # Not the cluster default — opt in by name. See docs/CLUSTER.md → Rook-Ceph.
+      - name: ceph-blockpool-single
+        spec:
+          failureDomain: host
+          replicated:
+            size: 1
+        storageClass:
+          enabled: true
+          name: ceph-block-single
+          isDefault: false
+          reclaimPolicy: Delete
+          allowVolumeExpansion: true
+          volumeBindingMode: Immediate
+          mountOptions: ["discard"]
+          parameters:
+            imageFormat: "2"
+            imageFeatures: layering,fast-diff,object-map,deep-flatten,exclusive-lock
+            csi.storage.k8s.io/provisioner-secret-name: rook-csi-rbd-provisioner
+            csi.storage.k8s.io/provisioner-secret-namespace: "{{ .Release.Namespace }}"
+            csi.storage.k8s.io/controller-expand-secret-name: rook-csi-rbd-provisioner
+            csi.storage.k8s.io/controller-expand-secret-namespace: "{{ .Release.Namespace }}"
+            csi.storage.k8s.io/node-stage-secret-name: rook-csi-rbd-node
+            csi.storage.k8s.io/node-stage-secret-namespace: "{{ .Release.Namespace }}"
+            csi.storage.k8s.io/fstype: ext4
     # Backed by the rook-ceph.rbd.csi.ceph.com driver via the external-snapshotter
     # (kubernetes/apps/system/snapshot-controller). Named explicitly rather than
     # the chart's own default ("ceph-block" — identical to the ceph-block

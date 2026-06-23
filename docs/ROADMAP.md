@@ -964,18 +964,22 @@ ReplicationSource + ReplicationDestination, wired via `spec.components` +
 `spec.postBuild.substitute` on the consuming app's `ks.yaml`). See
 [CLUSTER.md → VolSync](CLUSTER.md#volsync-pvc-backup) for full architecture detail.
 
-**Next:** extend to Prometheus's larger `prometheus-db` PVC (20 Gi) — deliberately deferred until
-the canary loop was proven, which it now has been twice over (Phase 1's first scheduled backup,
-then the full cutover). **This is a different, harder problem than `waha`, not an easier repeat
-of it**: Prometheus's PVC (`prometheus-kube-prometheus-stack-prometheus-db-prometheus-kube-
-prometheus-stack-prometheus-0`) is StatefulSet-generated via `volumeClaimTemplate`, not
-app-template's `persistence` block — StatefulSets have no `existingClaim` equivalent, they
-always own their PVC via the template. A direct `ReplicationSource` against `sourcePVC: <that
-name>` (Phase 1's approach) works unchanged for ongoing backup, but the full Component's
-`existingClaim`+`dataSourceRef` cutover has no StatefulSet analog yet — needs its own design
-pass before attempting, not a copy-paste of the `waha` procedure.
+**Decided: Prometheus's `prometheus-db` PVC is explicitly excluded from VolSync scope.** Its real
+PVC (`prometheus-kube-prometheus-stack-prometheus-db-prometheus-kube-prometheus-stack-
+prometheus-0`, 20 Gi, `ceph-block`) is StatefulSet-generated via `volumeClaimTemplate` — confirmed
+live that `dataSourceRef` is a schema-valid field there (`kubectl explain
+prometheus.spec.storage.volumeClaimTemplate.spec`), so a bootstrap-restore mechanism is technically
+buildable, but it would be inert on this already-running cluster (Kubernetes never retroactively
+applies `volumeClaimTemplate` changes to PVCs that already exist) and only pays off on a genuine
+from-scratch rebuild. Weighed against that: Prometheus's TSDB is short-term operational data, not
+an archive (`retention: 14d` / `retentionSize: 18GB`, well under the 20 Gi PVC), continuously
+regenerated, already protected day-to-day by 3× Ceph replication, and restoring a stale snapshot
+into a live TSDB is operationally messy (block-compaction overlap). The restore complexity isn't
+worth it for data this disposable — `waha` remains VolSync's only consumer, by design, not a
+stepping stone to more.
 
-**Dependencies:** CSI Snapshots ✅, external-secrets ✅, onepassword-connect ✅.
+**Dependencies:** CSI Snapshots ✅, external-secrets ✅, onepassword-connect ✅. (Historical —
+this item is now closed.)
 
 ---
 

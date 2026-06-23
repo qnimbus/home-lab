@@ -425,6 +425,15 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 > **Pool settings**: `size=3`, `min_size=2`, `deviceClass: nvme`. 9 OSDs across all 5 nodes (8.2 TiB raw) — cp-01/cp-02/cp-03/worker-01 each run 2 logical OSDs from a 2TB NVMe (`osdsPerDevice: 2`); worker-02 runs 1 OSD from its smaller 1TB NVMe. The `ceph-block` StorageClass is the cluster default — all new PVCs use it unless otherwise specified.
 >
 > **worker-02 onboarded 2026-06-18.** Its Kingston `nvme0n1` had been mistakenly excluded since commit `36f6c77` (which misidentified it as the boot disk — the real system disk is `nvme1n1`). Wiped a stale `lvm2-pv` signature left over from a defunct cluster FSID (`vgchange -an` + `wipefs -a`, no reboot needed, node stayed live throughout) and added it to `storage.nodes`; `osd.8` joined cleanly, cluster reached `HEALTH_OK` with all 33 PGs `active+clean` within under a minute.
+>
+> **`ceph-block-single` (2026-06-23): `size=1`, no redundancy, opt-in only.** A second
+> `cephBlockPools` entry/StorageClass for disposable or trivially-regenerable data, trading away
+> Ceph-level replication for ~3x storage efficiency and lower write latency (one ack instead of
+> waiting on `min_size=2`). A single OSD failure loses any PVC on this class outright — there is
+> no degraded-but-available state. RBD is network-attached regardless of replica count, so this
+> does **not** pin a pod's pod-to-data locality either; CRUSH placement and pod scheduling remain
+> fully decoupled at any `size`. Not used by `waha` or any app whose data is worth protecting —
+> see [VolSync (PVC Backup)](#volsync-pvc-backup) for what already has redundancy/backup coverage.
 
 ---
 
@@ -630,9 +639,17 @@ per-app boilerplate beyond a few `postBuild.substitute` variables.
 > and recreated by `components/volsync` from a verified-restorable backup, and the pod came back
 > with WhatsApp still connected — no re-link needed, confirming the restored data was byte-for-
 > byte correct. Any future delete/redeploy of `waha` now auto-restores with zero manual steps.
-> Next target: Prometheus's larger `prometheus-db` PVC (20 Gi), deliberately deferred until the
-> canary loop was proven — which it now has been, twice over (Phase 1's first scheduled backup,
-> and this full cutover). See [ROADMAP.md → VolSync (PVC Backup)](ROADMAP.md#volsync-pvc-backup).
+> `waha` is VolSync's only consumer, by design, not a stepping stone to more — see
+> [ROADMAP.md → VolSync (PVC Backup)](ROADMAP.md#volsync-pvc-backup) for the closed-out decision
+> on Prometheus, below.
+>
+> **Prometheus's `prometheus-db` PVC is also explicitly excluded.** Its TSDB is short-term
+> operational data, not an archive — `retention: 14d` / `retentionSize: 18GB` already caps it well
+> under the 20 Gi PVC, it's continuously regenerated, and 3× Ceph replication already covers
+> day-to-day loss. Restoring a stale snapshot into a live TSDB is also operationally messy
+> (block-compaction overlap). `dataSourceRef` on `storage.volumeClaimTemplate.spec` was confirmed
+> schema-valid but deliberately not used — same category of exclusion as CNPG above, different
+> reasoning (low recovery value here, vs. a redundant mechanism there).
 >
 > **Retrofitting onto an app with existing data needs three steps, not one.** Step 1: keep
 > app-template owning the PVC, add `persistence.<key>.retain: true` (Helm annotates it
