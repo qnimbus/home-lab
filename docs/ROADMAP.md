@@ -217,111 +217,13 @@ maintain. Defer until a concrete need (e.g. offline image export) appears.
 
 ### ~~cp-02 Thermal Stability (Lenovo M920Q)~~ — RESOLVED
 
-> **Status: RESOLVED (2026-06-17).** Two distinct fault patterns on this M920Q unit — the
-> 2026-06-01 board/VRM thermal shutdown below, and a series of recurring *silent* hard-downs
-> (leading theory: non-ECC RAM bit-flip, never confirmed via MemTest86+) — both stopped recurring
-> after the unit was opened, the heatsink cleaned, and thermal paste reapplied. No recurrence since.
-> Full incident timeline and diagnostic detail: `docs/incidents/2026-06-10-cp02-harddown.md`.
->
-> **Naming note:** this physical unit (X520 storage bond, `nct6683` board sensor) is now
-> `talos-worker-02` (`10.60.0.205`) in the current 5-node topology — it was demoted from
-> control-plane during the 5-node expansion, when a Minisforum MS-A2 was promoted to `cp-01` and a
-> Lenovo M90q became the new `cp-02`. The `NodeVRMTemperatureHigh` / `NodeVRMTemperatureCritical`
-> PrometheusRules proposed in the monitoring-enhancement section below are live in
-> `kubernetes/apps/observability/kube-prometheus-stack/app/prometheusrules/hardware-temps.yaml`.
-> `scripts/cp02-watch.sh` / `scripts/cp-thermal-compare.sh` still hardcode the old cp-01/cp-02
-> hostnames for `.204`/`.205` — harmless (IPs unchanged) but mislabeled if ever reused as a template.
-
-**Incident — 2026-06-01:** cp-02 shut down twice under hardware thermal protection, causing a 124-minute outage (09:29–11:33 UTC). This blocked the Cilium `cni.exclusive=false` HelmRelease upgrade (Helm timed out because the Cilium DaemonSet health check failed on the stuck pod) and delayed the Longhorn storage network rollout.
-
-#### Root cause — findings from Prometheus
-
-Captured at 30 s resolution from `node_hwmon_temp_celsius`:
-
-```
-09:26:55  CPU cores: 47–48°C   nct6683/temp2 (VRM/board): 53°C  — normal
-09:27:25  CPU cores: 64–66°C   nct6683/temp2: 64°C               — all 6 cores +15–18°C in one scrape
-09:27:55  CPU cores: 48–53°C   nct6683/temp2: 68°C               — cores recover via TCC throttle
-09:28:25  CPU cores: 48–52°C   nct6683/temp2: 71°C               — board keeps heating
-09:29:25  CPU cores: 47–52°C   nct6683/temp2: 72°C               — last reading; BIOS cuts power
-```
-
-**Key finding:** CPU cores recovered (throttling kicked in) but the nct6683/temp2 sensor — the NCT6683D system monitor IC's board/VRM temperature channel — continued rising even after load dropped. The BIOS thermal protection tripped on the **board/VRM temperature**, not the CPU die. ACPI trip points confirm: fan first activates at 50°C (barely above idle), active trip at 71°C, critical at 119°C — but the BIOS has an unlisted hardware VRM threshold around 72–75°C.
-
-**The pattern** (all cores spike simultaneously + board keeps heating after core recovery) is consistent with a **degraded thermal path causing poor airflow over the VRM area** — dried thermal paste and/or a dust-clogged fan reducing airflow over both the CPU heatsink and the motherboard components behind it.
-
-#### Required physical actions
-
-- [x] **Open the M920Q and blow out the fan/heatsink assembly** with compressed air — done 2026-06-17
-- [x] **Reapply thermal paste** — done 2026-06-17; this resolved both fault patterns (see resolution note above)
-- [x] **Verify the fan spins up under load** — confirmed stable post-repaste, no recurrence since
-
-#### Update — recurring *silent* hard-downs (distinct from the 06-01 thermal trip)
-
-cp-02 has since gone **hard-down at least 3 more times** (2026-06-02 ×2, 2026-06-10) with a *different*
-signature from the thermal incident above: **no thermal trip, 100% packet loss on BOTH NICs at once
-(mgmt e1000e + storage X520), apid unreachable, nothing in `dmesg`** — and current idle temps are normal
-(~28°C). cp-01 is **identical** hardware on **identical** config and has never done this, which rules out
-software and points to a **cp-02 unit-specific fault**.
-
-**Leading diagnosis: non-ECC RAM fault.** The M920Q has no ECC, and a bit-flip wedging the kernel fits the
-"silent, no logs, both NICs gone" signature. **New corroborating evidence (2026-06-10):** `kube-state-metrics`
-crashlooped with `exec format error` **only while scheduled on cp-02** — on an all-amd64 cluster with a
-correct multi-arch image, that means the **binary bytes were corrupted** (mangled ELF), exactly what a
-RAM/containerd-content-store bit-flip produces; it ran cleanly the moment it moved to cp-03.
-
-- [ ] ~~Run MemTest86+ on cp-02~~ **MOOT** — never executed; the silent hard-downs stopped recurring
-      after the 2026-06-17 heatsink/repaste fix, so the non-ECC-RAM theory was never confirmed but the
-      investigation is closed (see resolution note at the top of this section).
-- [x] **Off-node vitals armed** (2026-06-10, commit `bca4cee`): node-exporter scrape tightened to 10s,
-      Prometheus durable on `ceph-block` (already was), board/VRM (`platform_nct6683_2592/temp2`) +
-      fixed CPU-temp alerts added. This is the primary pre-crash record — see [observability commit].
-      Reusable tooling: `scripts/cp02-watch.sh` (live board/CPU/up alerter — run via the Monitor tool in a
-      session), `scripts/cp-thermal-compare.sh` + [`docs/cp02-thermal-measurements.md`](cp02-thermal-measurements.md)
-      (cp-01-vs-cp-02 board delta — re-run at fans-100% and post-repaste).
-- [x] **Thermal-path fault CONFIRMED cp-02-specific** (2026-06-10): under a Ceph benchmark at standard
-      cooling cp-02's board hit 70°C vs cp-01's 62°C under identical load (Δ +8°C peak) while cp-02's CPU
-      ran *cooler* and lighter — degraded VRM airflow, not extra heat. Distinct from the silent idle
-      hard-downs. → physical fix below (clean + repaste); target post-fix Δ within ~1–2°C of cp-01.
-- [ ] ~~netconsole over the mgmt NIC~~ **NOT VIABLE**: cp-02 boots systemd-boot + UKI
-      (`bootedWithUKI: true`), and Talos ignores `machine.install.extraKernelArgs` under UKI
-      (breaking change since v1.10 — siderolabs/talos#11145). Would require baking `netconsole=` into a
-      cp-02-specific UKI via an Image Factory schematic + a UKI-reinstall upgrade on the flaky node, for
-      low yield against a *silent* hang (no `dmesg` output ⇒ kernel too wedged to emit over UDP anyway).
-      Deprioritized in favour of the off-node vitals above. Revisit only if vitals + MemTest don't crack it.
-- [ ] ~~Reseat X520 + RAM; if it recurs after MemTest passes, swap the X520 card or the whole unit.~~
-      **MOOT** — no recurrence since the repaste fix; no further hardware action planned.
-
-#### Monitoring enhancement
-
-Add a PrometheusRule for the board temperature sensor so future thermal stress is caught before shutdown:
-
-```yaml
-# in kubernetes/apps/observability/kube-prometheus-stack/app/helm/values.yaml
-# additionalPrometheusRulesMap:
-- alert: NodeVRMTemperatureHigh
-  expr: node_hwmon_temp_celsius{chip="platform_nct6683_2592", sensor="temp2"} > 65
-  for: 2m
-  labels:
-    severity: warning
-  annotations:
-    summary: "cp-{{ $labels.instance }} board/VRM temperature above 65°C"
-- alert: NodeVRMTemperatureCritical
-  expr: node_hwmon_temp_celsius{chip="platform_nct6683_2592", sensor="temp2"} > 72
-  for: 30s
-  labels:
-    severity: critical
-  annotations:
-    summary: "cp-{{ $labels.instance }} board/VRM near thermal shutdown threshold"
-```
-
-> Note: `chip` label uses the nct6683 designation. Verify against live `node_hwmon_temp_celsius` labels — cp-01 confirmed `platform_nct6683_2592`. Exclude the phantom `temp5` sensor (always 127.5°C) which is already filtered via `metricRelabelings` in the node-exporter ServiceMonitor.
-
-#### BIOS fan curve (optional)
-
-If the thermal paste reapplication does not stabilise temperatures, the BIOS fan curve may be too conservative. The active trip at 50°C means the fan should ramp at idle — but the *speed* at that trip may be too low. Enter BIOS → Hardware Monitor → Fan Control and lower the target temp or raise the fan speed percentage at the 50°C trip point.
-
-**Dependencies:** none — both the physical fix and the PrometheusRule addition are done (see resolution note at the top of this section).
+> **Status: RESOLVED.** Two distinct fault patterns on this M920Q unit (now `talos-worker-02`,
+> 10.60.0.205) — a 2026-06-01 board/VRM thermal shutdown, and a series of recurring silent
+> hard-downs spanning 2026-06-02 → 2026-06-21 — are both closed. The thermal fault was fixed by
+> a heatsink clean + repaste (2026-06-17); the hard-downs were root-caused (2026-06-22) to a
+> failing external power brick via MemTest86 hardware-isolation, which has since been replaced
+> and confirmed stable. Full investigation timeline, diagnostics, and tooling:
+> [history/cp02-worker02-hardware-faults.md](history/cp02-worker02-hardware-faults.md).
 
 ---
 

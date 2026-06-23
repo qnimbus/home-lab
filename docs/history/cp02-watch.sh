@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # cp02-watch.sh — live pre-crash vitals watch for the recurring cp-02 hard-downs.
 #
+# ARCHIVED 2026-06-22 — RESOLVED, kept for reference only. The investigation this supported
+# is closed (root cause: failing power brick, replaced) — see docs/history/cp02-worker02-hardware-faults.md.
+# Originally lived at scripts/cp02-watch.sh; relocated here since it's diagnostic-only tooling
+# for a now-closed investigation, not active cluster tooling.
+#
 # WHY THIS EXISTS
 #   cp-02 (Lenovo M920Q) has gone hard-down several times with a silent signature
 #   (100% packet loss on both NICs, nothing in dmesg). Every crash was unforensicable
 #   post-reboot. This streams cp-02's last-known vitals so a hard-down is preceded by a
 #   dense record, and warns *before* a thermal runaway reaches the BIOS shutdown.
-#   Background: docs/ROADMAP.md → "cp-02 Thermal Stability"; memory
-#   project-cp02-outage-investigation. The durable record lives in Prometheus
-#   (node-exporter @10s on ceph-block, off-node) — this script is the live alerter.
+#   Background: docs/history/cp02-worker02-hardware-faults.md. The durable record lives in
+#   Prometheus (node-exporter @10s on ceph-block, off-node) — this script is the live alerter.
 #
 # HOW IT WORKS
 #   Polls Prometheus every $POLL seconds via the kube-apiserver proxy (no port-forward —
@@ -21,7 +25,7 @@
 #     - node unscraped for 2 consecutive polls  => possible hard-down (with last board temp)
 #
 # USAGE
-#   Direct (terminal):   KUBECONFIG=$(pwd)/kubeconfig bash scripts/cp02-watch.sh
+#   Direct (terminal):   KUBECONFIG=$(pwd)/kubeconfig bash docs/history/cp02-watch.sh
 #   In a Claude session: run this script via the Monitor tool with persistent:true so each
 #                        emitted line streams into the chat as an event. (This is the
 #                        recommended way to keep eyes on cp-02 across a troubleshooting session.)

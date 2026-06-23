@@ -2,14 +2,18 @@
 # cp-thermal-compare.sh — side-by-side board/VRM + CPU thermal comparison of the two
 # identical Lenovo M920Q nodes (cp-01 vs cp-02), to isolate cp-02's degraded thermal path.
 #
+# ARCHIVED 2026-06-22 — RESOLVED, kept for reference only. The investigation this supported
+# is closed (root cause: failing power brick, replaced) — see docs/history/cp02-worker02-hardware-faults.md.
+# Originally lived at scripts/cp-thermal-compare.sh; relocated here since it's diagnostic-only
+# tooling for a now-closed investigation, not active cluster tooling.
+#
 # WHY
 #   cp-01 and cp-02 are identical hardware (i5-8500T, nct6683 super-I/O, X520) running the
 #   same workloads. If cp-02's board/VRM runs hotter than cp-01 under comparable load, that
 #   points to a physical thermal-path problem on cp-02 (dust-clogged heatsink / dried paste)
 #   — the 2026-06-01 mechanism — as opposed to the *silent* idle hard-downs (RAM suspect,
 #   which strike at ~28°C). cp-01 is the "what good looks like" reference.
-#   Background: docs/ROADMAP.md → "cp-02 Thermal Stability"; memory project-cp02-outage-investigation;
-#   record runs in docs/cp02-thermal-measurements.md.
+#   Background: docs/history/cp02-worker02-hardware-faults.md.
 #
 # WHAT IT REPORTS (over a trailing $WINDOW)
 #   board (nct6683 PCH/VRM sensor) NOW/MIN/AVG/MAX, CPU package NOW/MAX, CPU-busy NOW/MAX,
@@ -17,10 +21,11 @@
 #   under *comparable* load — a board delta only means something at similar utilisation.
 #
 # USAGE
-#   KUBECONFIG=$(pwd)/kubeconfig bash scripts/cp-thermal-compare.sh [LABEL]
+#   KUBECONFIG=$(pwd)/kubeconfig bash docs/history/cp-thermal-compare.sh [LABEL]
 #   Env: WINDOW (default 30m)  LABEL (run description, e.g. "fans-100 idle", "standard benchmark")
-#   Take a run now (standard cooling), then again with cp-02 BIOS fans at 100%, and again
-#   after a heatsink clean+repaste — append each as a row in docs/cp02-thermal-measurements.md.
+#   This was originally a repeatable measurement loop (standard / fans-100 / post-repaste runs
+#   logged in docs/history/cp02-worker02-hardware-faults.md's Appendix B) — kept runnable for
+#   reference if a similar investigation is ever needed again.
 #
 # NOTE: the board sensor (platform_nct6683_2592) exists only on the M920Q nodes (cp-01/cp-02);
 #       cp-03 is AMD and has no equivalent, so it is intentionally excluded.
