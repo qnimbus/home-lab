@@ -31,6 +31,9 @@ spec:
           bdev_async_discard_threads: "1"
           # Warn earlier on low mon-store space (percent free).
           mon_data_avail_warn: "10"
+          # ceph-block-single (size=1) is intentionally unreplicated — suppress the
+          # POOL_NO_REDUNDANCY HEALTH_WARN it triggers by design, not by mistake.
+          mon_warn_on_pool_no_redundancy: "false"
         osd:
           # Default is 3; bump to 5 for NVMe workloads where the disk is not
           # the bottleneck and messenger threads can otherwise become the ceiling.

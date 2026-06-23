@@ -434,6 +434,9 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 > does **not** pin a pod's pod-to-data locality either; CRUSH placement and pod scheduling remain
 > fully decoupled at any `size`. Not used by `waha` or any app whose data is worth protecting —
 > see [VolSync (PVC Backup)](#volsync-pvc-backup) for what already has redundancy/backup coverage.
+> Ceph's own `POOL_NO_REDUNDANCY` mon check fires for any `size=1` pool — expected, not a fault —
+> so `mon_warn_on_pool_no_redundancy: "false"` is set cluster-wide in `cephConfig.global` to keep
+> `HEALTH_OK` meaningful (it only ever applies to this one pool, by design).
 
 ---
 
