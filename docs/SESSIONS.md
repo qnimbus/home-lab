@@ -4,6 +4,46 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-23 — `victoria-logs-fluent-bit-deploy`
+
+### Goal
+Deploy cluster-wide log aggregation: evaluate Loki vs VictoriaLogs for the home-lab's observability stack, then scaffold and validate a complete VictoriaLogs + fluent-bit pipeline (Grafana integration, dashboards, and an external route) after switching away from an initially-built Loki + Alloy scaffold.
+
+### What we did
+- Explained what Loki would add on top of the existing kube-prometheus-stack (Grafana + Prometheus) — index-only-labels design, LogQL/Explore correlation — and the filesystem-on-`ceph-block` vs Backblaze B2 storage tradeoff; recommended filesystem given no in-cluster RGW (`cephObjectStores: []`) and lower stakes than the CNPG-backup use case that justified B2 previously.
+- Scaffolded a full Loki (`SingleBinary`, filesystem storage, `ceph-block` PVC) + Alloy (API-based `loki.source.kubernetes` log tailing, no hostPath mounts, plus `loki.source.kubernetes_events`) deployment, adapting the cluster's own `.archive/` prior-art config. Verified live chart versions/sources (`oci://ghcr.io/grafana/helm-charts/loki` 7.0.0; Alloy has no Grafana OCI mirror, used `ghcr.io/home-operations/charts-mirror/alloy` 1.10.0) and pulled full chart `values.yaml`/templates rather than guessing schema. Caught two real bugs via `helm template` dry-run: a missing `interval` field, and Loki's own `validate.yaml` guard requiring `write/read/backend.replicas: 0` explicitly even under `deploymentMode: SingleBinary`. Confirmed via a live `Node` get (after renewing the expired MCP ServiceAccount token) that the control-plane nodes carry no actual `NoSchedule` taint, so skipped an unnecessary toleration two other charts carry defensively.
+- At user's request, checked a previously-cloned reference repo (`tmp/home-ops-bykaj`); found its own `CLAUDE.md` claims a Loki+Alloy stack but the live `kubernetes/apps/observability/` tree actually runs VictoriaLogs+fluent-bit — a second signal alongside this repo's own `docs/POTENTIAL-DEPLOYMENTS.md` note that VictoriaLogs is "lighter than Loki." Explained VictoriaLogs' concrete upside (single binary, no deployment-mode/replication-factor/schema-config/compactor wiring, built-in full-text indexing, lower resource footprint, Loki-API ingestion compatibility), backed by what had just been hand-built for Loki; user chose to switch.
+- Removed the (never-committed) Loki+Alloy scaffold and built the VictoriaLogs+fluent-bit replacement: verified live chart versions (`victoria-logs-single` 0.13.8, `fluent-bit` 0.55.0), reused bykaj's proven fluent-bit classic-mode config (containerd parser, kubernetes-metadata-lifting filters, VictoriaLogs JSONLine output) almost verbatim, and confirmed via rendered-manifest inspection that the `victoria-logs-server:9428` service name fluent-bit targets matches what `fullnameOverride: victoria-logs` actually produces.
+- Verified the Grafana plugin needed for VictoriaLogs (`victoriametrics-logs-datasource`) via web search/fetch against Grafana's plugin catalog (confirmed signed, Grafana-13-compatible) and added it to the already-deployed `kube-prometheus-stack` Grafana's `plugins:` list — the one change touching a live, running app rather than new files.
+- Added a `grafana_datasource`-labelled ConfigMap (auto-discovered by the existing Grafana sidecar) and enabled dashboard/ServiceMonitor auto-discovery for both new charts, relying on the cluster's already-relaxed Prometheus selectors (`serviceMonitorSelectorNilUsesHelmValues: false`).
+- Added an `HTTPRoute` exposing VictoriaLogs' own query UI at `victorialogs.${DOMAIN_CLUSTER}` via the `envoy-internal` Gateway, following this repo's established per-app `httproute.yaml` pattern (not the chart's built-in `route:` value block, which is bykaj's approach) — same pattern already used for Grafana/Prometheus/Alertmanager.
+- Validated the full result with `task validate` (repo-wide schema check) and `helm template` dry-runs against the real production values for both charts at every stage; nothing staged or committed per the repo's no-autonomous-commit policy.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/victoria-logs.yaml` | New OCIRepository source for the `victoria-logs-single` chart (0.13.8) |
+| `kubernetes/flux/meta/repos/oci/fluent-bit.yaml` | New OCIRepository source for the `fluent-bit` chart (0.55.0) |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Registered the two new OCIRepository sources |
+| `kubernetes/apps/observability/kustomization.yaml` | Registered the `victoria-logs` and `fluent-bit` app `ks.yaml`s |
+| `kubernetes/apps/observability/victoria-logs/ks.yaml` | New Flux Kustomization (depends on `rook-ceph-cluster`, `kube-prometheus-stack`) |
+| `kubernetes/apps/observability/victoria-logs/app/kustomization.yaml` | New Kustomize entry-point for the app |
+| `kubernetes/apps/observability/victoria-logs/app/helmrelease.yaml` | New HelmRelease — `ceph-block` PVC, 14d retention, ServiceMonitor + dashboard auto-discovery |
+| `kubernetes/apps/observability/victoria-logs/app/datasource.yaml` | New Grafana datasource ConfigMap (sidecar-discovered) |
+| `kubernetes/apps/observability/victoria-logs/app/httproute.yaml` | New HTTPRoute exposing the query UI via `envoy-internal` |
+| `kubernetes/apps/observability/fluent-bit/ks.yaml` | New Flux Kustomization (depends on `kube-prometheus-stack`) |
+| `kubernetes/apps/observability/fluent-bit/app/kustomization.yaml` | New Kustomize entry-point for the app |
+| `kubernetes/apps/observability/fluent-bit/app/helmrelease.yaml` | New HelmRelease — DaemonSet log shipper, containerd parser, output to VictoriaLogs |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/helm/values.yaml` | Added `grafana.plugins: [victoriametrics-logs-datasource]` to the live Grafana deployment |
+
+### Key decisions
+- Switched from Loki+Alloy to VictoriaLogs+fluent-bit mid-session after building and validating the Loki scaffold first — driven by a reference-repo check the user requested plus a follow-up question about VictoriaLogs' upside; the comparison was grounded in a real, working Loki config rather than guesswork, so the earlier effort wasn't wasted.
+- The deciding factor was operational simplicity (single binary, no schema/compactor/replication-factor wiring) rather than any functional gap in Loki — both would have worked for this cluster's scale.
+- Used this repo's own hand-written `httproute.yaml` convention instead of the `victoria-logs-single` chart's built-in `server.route` value block (bykaj's approach), keeping the route's lifecycle independent of the Helm chart and consistent with how Grafana/Prometheus/Alertmanager are already exposed.
+- No `dependsOn` on `victoria-logs` itself from `fluent-bit`'s Kustomization — only on `kube-prometheus-stack` for the ServiceMonitor CRD — per the repo's existing dependsOn-strictness convention (only hard functional deps, not "nice to have ready first").
+
+---
+
 ## 2026-06-23 — `actions-runner-rbac-cilium-egress-hardening`
 
 ### Goal

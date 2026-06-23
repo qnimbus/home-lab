@@ -26,3 +26,5 @@ resources:
   - ./rook-ceph-cluster.yaml
   - ./snapshot-controller.yaml
   - ./volsync.yaml
+  - ./victoria-logs.yaml
+  - ./fluent-bit.yaml

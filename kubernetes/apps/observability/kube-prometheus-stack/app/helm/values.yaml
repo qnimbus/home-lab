@@ -63,6 +63,10 @@ grafana:
       searchNamespace: ALL
     datasources:
       enabled: true
+  # Required for the victoria-logs ConfigMap-provisioned datasource (sidecar.datasources)
+  # to load — signed plugin, not bundled with Grafana by default.
+  plugins:
+    - victoriametrics-logs-datasource
   grafana.ini:
     server:
       root_url: "https://grafana.${DOMAIN_CLUSTER}"
