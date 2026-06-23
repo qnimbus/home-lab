@@ -55,6 +55,15 @@ spec:
         - matchPattern: "*.pipelines.actions.githubusercontent.com"
         - matchPattern: "*.pkg.github.com"
         - matchPattern: "*.blob.core.windows.net" # see comment above
+        # broker.actions.githubusercontent.com (job-session negotiation) CNAMEs to a
+        # github.com "GLB" (Global Load Balancer) hostname, e.g.
+        # glb-c0e95bd587389a.github.com — confirmed via `dig`. Cilium's toFQDNs only
+        # allow-lists an IP if every name in the CNAME chain matches a rule, so the
+        # alias patterns above are not enough; the actual GLB target must match too.
+        # Without this, the listener pod registers with GitHub but can never open its
+        # job-polling session and gets recreated in a loop. Confirmed broken in prod
+        # 2026-06-23, fixed by adding this wildcard.
+        - matchPattern: "*.github.com"
       toPorts:
         - ports:
             - port: "443"
