@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-23 | `actions-runner-rbac-cilium-egress-hardening` | Audited GitOps repo, split ARC runner RBAC, added CiliumNetworkPolicy; fixed GLB CNAME gap + Cilium DNS-GC eviction |
 > | 2026-06-22 | `volsync-deploy-pvc-incident` | Deployed VolSync (Restic, NFS-direct, jitter); Helm deleted waha's live PVC on a wrong name assumption |
 > | 2026-06-22 | `tailscale-subnet-route-precedence-fix` | Fixed Tailscale LAN-hijack: advertised /23 in-cluster; added UniFi DHCP classless routes for routed clients |
 > | 2026-06-22 | `worker02-power-brick-rootcause` | Root-caused recurring talos-worker-02 hard-downs to a failing power brick via MemTest86 hardware isolation; explained CNPG local-storage rescheduling |
@@ -11,7 +12,6 @@
 > | 2026-06-20 | `csi-snapshot-controller-deploy` | Deployed CSI snapshot-controller; enabled Ceph VolumeSnapshotClass; verified snapshot→restore live |
 > | 2026-06-19 | `cloudflare-edge-cert-gap-and-legacy-dns-cleanup` | Fixed Cloudflare edge-cert two-level wildcard gap; found+cleaned up archived-cluster's orphaned tunnel DNS/TXT records |
 > | 2026-06-19 | `whoami-network-plumbing-fixes` | Deployed whoami smoke-test; fixed cloudflared SNI + ExternalDNS gaps; retargeted envoy-external to proxii.nl |
-> | 2026-06-18 | `rook-ceph-grafana-dashboards` | Confirmed Ceph Prometheus scraping already live; fixed MCP RBAC gap; added 9 ceph-mixin Grafana dashboards |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

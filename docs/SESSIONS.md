@@ -4,6 +4,41 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-06-23 — `actions-runner-rbac-cilium-egress-hardening`
+
+### Goal
+Audit the GitOps repo, remediate its two flagged security warnings (cluster-admin-bound auto-triggered runner, zero network policies) by splitting the GitHub Actions self-hosted runner into privileged/unprivileged groups and adding the cluster's first CiliumNetworkPolicy, then diagnose and fix two real Cilium `toFQDNs` bugs surfaced by deploying it.
+
+### What we did
+- Ran the `gitops-repo-audit` skill end-to-end (discovery, manifest validation, deprecated-API check, best-practices and security review). Found the repo clean overall — zero validation errors on real K8s/Flux manifests, zero deprecated APIs, no plaintext secrets or hardcoded credentials — but flagged two Warnings: the ARC self-hosted runner's ServiceAccount bound to `cluster-admin` despite being the target of an auto-triggered (`pull_request`) Renovate-PR-review workflow, and zero `NetworkPolicy`/`CiliumNetworkPolicy` resources anywhere despite Cilium already being the CNI.
+- Planned the fix in plan mode: dispatched two Explore agents (Cilium policy capabilities/enforcement mode, ARC `gha-runner-scale-set` architecture and actual RBAC usage) and one Plan agent in sequence. Research surfaced that `cluster-admin` was granted speculatively for *future* ops workflows with zero current consumers (confirmed via git log + `docs/SESSIONS.md`), and that the chart auto-provisions its own namespace-scoped Role (pods/exec/log/jobs/secrets, all create+delete) whenever `serviceAccountName` is left unset in kube mode — meaning omitting the ClusterRoleBinding alone would not have achieved "no RBAC."
+- Asked the user to decide two open design points before finalizing the plan: FQDN-allowlist breadth (chose GitHub's full documented self-hosted-runner list over the narrower exact-match set) and whether to drop now-dead `WebFetch`/`WebSearch` grants from the workflow's `allowedTools` (chose to remove them, since the network policy blocks arbitrary-URL egress anyway).
+- Implemented: new `runners/home-lab-readonly/` runner group (zero-RBAC ServiceAccount, ExternalSecrets reusing the existing 1Password items, HelmRelease with explicit `serviceAccountName` to suppress chart auto-RBAC, a `CiliumNetworkPolicy` scoped by ARC's `actions.github.com/scale-set-name` label rather than namespace-wide since the namespace also hosts the privileged group); added the matching Flux Kustomization to `ks.yaml`; repointed `renovate-pr-review.yml` at the new group; updated the existing privileged group's `rbac.yaml` comment to document the reservation. User staged and committed this independently (`3d8465d`).
+- User reported the new runner stuck in a crash/recreate loop. Diagnosed live via `pods_log`, `cilium-dbg policy get`/`monitor --type drop`/`fqdn cache list`, and disposable debug pods carrying the same Cilium identity: the listener could reach `api.github.com` but timed out on `broker.actions.githubusercontent.com` (ARC's job-session endpoint). Root cause: that hostname CNAMEs to a GitHub "GLB" target (`glb-c0e95bd587389a.github.com`, confirmed via `dig`) that matched none of the policy's `toFQDNs` rules — Cilium requires every name in a CNAME chain to satisfy a rule before allow-listing the resolved IP. Fixed by adding a `*.github.com` wildcard. User committed this independently (`d838e0b`) while I was still mid-diagnosis on a stale assumption that it was uncommitted — caught and corrected after the user flagged it.
+- User reported continued (but different) flakiness after that fix landed. Traced it to a second, genuinely separate Cilium issue: `dnsProxy.idleConnectionGracePeriod` defaults to `0s`, and Cilium's periodic FQDN-cache GC (~60s cadence) was evicting the broker IP-allow mapping the moment it looked idle — confirmed directly in `cilium-agent` logs (`"FQDN garbage collector work deleted entries"` naming that exact host every ~60s) even though the real DNS TTL (2701s) was nowhere near expired. Verified the correct Helm value path against the actual Cilium 1.19.5 chart schema (`helm show values`, not guessed) and set `dnsProxy.idleConnectionGracePeriod: 2m` in the cluster's single Cilium HelmRelease — a cluster-wide agent setting, not scoped to this one policy.
+- Researched whether `2m` is a sane value: checked both local reference repos (`home-ops-bykaj`, `home-ops.old` — neither tunes this, both run the chart default), Cilium's own docs (explicitly defers to "depends on your use case"), and a 3-year-old unresolved Cilium GitHub issue (`#25786`, reproduced through 1.18.x, closed by stale-bot with no maintainer guidance) confirming this is a known, never-fully-explained pain point community-wide, not something with an established correct number. Reported this honestly to the user along with the residual risk that some of the observed flakiness may have been amplified by the diagnostic debug pods' own identity churn.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab-readonly/rbac.yaml` | New zero-RBAC ServiceAccount for the unprivileged runner group |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab-readonly/externalsecret.yaml` | New ExternalSecrets (GitHub App registration + Anthropic key), reusing existing 1Password items |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab-readonly/helmrelease.yaml` | New `gha-runner-scale-set` HelmRelease with explicit `serviceAccountName` |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab-readonly/networkpolicy.yaml` | New CiliumNetworkPolicy (DNS + GitHub + Anthropic egress); later added `*.github.com` wildcard to fix the GLB CNAME gap |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab-readonly/kustomization.yaml` | New Kustomize entrypoint for the above |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/ks.yaml` | Added Flux Kustomization for the new runner group |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab/rbac.yaml` | Comment-only: documented `cluster-admin` as reserved for future ops workflows, none currently |
+| `.github/workflows/renovate-pr-review.yml` | `runs-on` repointed to `home-lab-readonly`; dropped dead `WebFetch`/`WebSearch` from `allowedTools` |
+| `kubernetes/apps/kube-system/cilium/app/helm/values.yaml` | Set `dnsProxy.idleConnectionGracePeriod: 2m` (uncommitted) |
+
+### Key decisions
+- Split into a new runner group rather than stripping `cluster-admin` from the existing one — it's reserved, has zero current consumers, and the actual risk was the auto-triggered job's exposure, not the privilege grant itself.
+- Scoped the CiliumNetworkPolicy by ARC's `scale-set-name` label, not the whole namespace, since `actions-runner-system` also hosts the still-privileged group.
+- Chose the broad GitHub FQDN allowlist per explicit user steer, with `*.blob.core.windows.net` flagged in the policy's own comment as the weakest link (a multi-tenant Azure domain) rather than silently included.
+- `dnsProxy.idleConnectionGracePeriod: 2m` is an evidence-based estimate from the one measured gap (~30s) plus margin over the GC's observed ~60s cadence — explicitly not a community-validated number, since none exists; flagged for monitoring rather than presented as definitively sufficient.
+
+---
+
 ## 2026-06-22 — `volsync-deploy-pvc-incident`
 
 ### Goal
