@@ -15,7 +15,7 @@ jobs:
   review:
     if: github.actor == 'renovate[bot]'
     runs-on: home-lab
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: write
@@ -28,8 +28,15 @@ jobs:
         # from OS-level env vars injected by Kubernetes. This step bridges the gap.
         run: echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" >> $GITHUB_ENV
 
+      - name: Check ANTHROPIC_API_KEY present
+        run: |
+          if [ -z "${ANTHROPIC_API_KEY}" ]; then
+            echo "ERROR: ANTHROPIC_API_KEY is not present in the runner environment"
+            exit 1
+          fi
+
       - uses: anthropics/claude-code-action@v1
-        timeout-minutes: 10
+        timeout-minutes: 30
         with:
           # ANTHROPIC_API_KEY is injected into the runner pod via ExternalSecret →
           # Kubernetes Secret → runner env; read from env rather than GitHub secrets.
