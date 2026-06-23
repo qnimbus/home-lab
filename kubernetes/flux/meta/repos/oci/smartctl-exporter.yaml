@@ -13,4 +13,4 @@ spec:
   url: oci://ghcr.io/prometheus-community/charts/prometheus-smartctl-exporter
   ref:
     # renovate: datasource=docker depName=ghcr.io/prometheus-community/charts/prometheus-smartctl-exporter
-    tag: "0.16.1"
+    tag: "0.17.1"
