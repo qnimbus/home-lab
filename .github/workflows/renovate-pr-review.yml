@@ -34,18 +34,17 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           allowed_bots: 'renovate' # Or '*' to allow all bots
-          # show_full_output is TEMPORARY for debugging the is_error/no-comment run on
-          # PRs #65/#66 — revert to false (the default) once the review posts cleanly.
-          # Safe with the secrets.* key (auto-masked); do not leave on long-term as it
-          # prints the full agent conversation including tool I/O.
-          show_full_output: true
           # Task: required to delegate to the pr-upgrade-reviewer subagent (its own
           # disallowedTools denylist + pr-reviewer-bash-guard.sh hook are the security
           # boundary). WebFetch/WebSearch: the agent's core job is fetching upstream
           # release notes/changelogs — these were removed earlier only because the
           # (now-reverted) CiliumNetworkPolicy would have blocked them; restored here.
+          # --model pins the Claude Code session model. PR review (read diff +
+          # release notes, assess upgrade risk) doesn't need Opus-tier; Sonnet 4.6
+          # is ~60% the cost ($3/$15 vs $5/$25 per 1M tok) at ample capability.
+          # Drop this flag to fall back to the action's Opus default.
           claude_args: |
-            --allowedTools "Read,WebFetch,WebSearch,Task,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --model claude-sonnet-4-6 --allowedTools "Read,WebFetch,WebSearch,Task,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
           prompt: |
             Review PR #${{ github.event.pull_request.number }} using the
             pr-upgrade-reviewer agent. Assess upgrade risk, breaking changes,
