@@ -44,6 +44,7 @@ This repository provisions and manages a bare-metal Talos Linux Kubernetes clust
 ├── 📁 docs/              # Cluster documentation (CLUSTER.md, QA.md, ROADMAP.md, CONVENTIONS.md, SESSIONS.md)
 ├── 📁 ops/               # just-module tooling, invoked via `just <module> <recipe>`
 │   ├── bootstrap/        # Helmfile bootstrap ladder (Cilium → CoreDNS → cert-manager → Flux) + `just bootstrap` pipeline
+│   ├── ceph/             # Rook-Ceph toolbox wrappers — status, crash-archive, ok-to-stop (`just ceph ...`)
 │   └── cnpg/             # CloudNativePG restore/DR recipes (`just cnpg ...`)
 ├── 📁 scripts/
 │   └── mcp.sh            # MCP server ServiceAccount lifecycle (setup/cleanup/renew-token)
