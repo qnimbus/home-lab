@@ -1,0 +1,22 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/observability.giantswarm.io/silence_v1alpha2.json
+apiVersion: observability.giantswarm.io/v1alpha2
+kind: Silence
+metadata:
+  name: ceph-node-nfsmount-diskspace-warning
+spec:
+  # Talos writes /etc/nfsmount.conf via a machine.files patch (NFS client defaults for
+  # VolSync); node-exporter's filesystem collector enumerates it as its own mountpoint,
+  # duplicating CephNodeDiskspaceWarning (fired twice for worker-02, 2026-06-23,
+  # byte-identical values). Previously fixed at the source by excluding the path via
+  # --collector.filesystem.mount-points-exclude (kube-prometheus-stack/app/helm/values.yaml);
+  # that exclude was removed in favor of this Silence once silence-operator existed, so the
+  # duplicate series and the alert are both back -- it now fires as "active, suppressed" in
+  # Alertmanager instead of not existing at all (extra series cardinality, counts toward any
+  # currently-firing tally) in exchange for the suppression living here instead of in exporter
+  # CLI flags.
+  matchers:
+    - name: alertname
+      value: CephNodeDiskspaceWarning
+    - name: mountpoint
+      value: /etc/nfsmount.conf

@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-06-24 | `silence-operator-deploy` | Deployed silence-operator for GitOps Alertmanager silences; seeded nfsmount.conf silence, dropped node-exporter exclude |
 > | 2026-06-23 | `victoria-logs-fluent-bit-deploy` | Deployed VictoriaLogs+fluent-bit for log aggregation, chosen over Loki; wired Grafana plugin, dashboards, route |
 > | 2026-06-23 | `actions-runner-rbac-cilium-egress-hardening` | Audited repo, split ARC runner RBAC; reverted unreliable CiliumNetworkPolicy; fixed leaked Anthropic key via secrets.* |
 > | 2026-06-22 | `volsync-deploy-pvc-incident` | Deployed VolSync (Restic, NFS-direct, jitter); Helm deleted waha's live PVC on a wrong name assumption |
@@ -11,7 +12,6 @@
 > | 2026-06-22 | `worker02-power-brick-rootcause` | Root-caused recurring talos-worker-02 hard-downs to a failing power brick via MemTest86 hardware isolation; explained CNPG local-storage rescheduling |
 > | 2026-06-21 | `cnpg-storj-to-b2-migration` | Migrated CNPG backups Storj→B2; root-caused dot-in-bucket-name WAL-archive bug; verified live recovery drill |
 > | 2026-06-20 | `csi-snapshot-controller-deploy` | Deployed CSI snapshot-controller; enabled Ceph VolumeSnapshotClass; verified snapshot→restore live |
-> | 2026-06-19 | `cloudflare-edge-cert-gap-and-legacy-dns-cleanup` | Fixed Cloudflare edge-cert two-level wildcard gap; found+cleaned up archived-cluster's orphaned tunnel DNS/TXT records |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
@@ -351,7 +351,7 @@ Sessions are opened and closed via user-initiated skills — Claude cannot invok
 
 > **Never read `docs/SESSIONS.md` in full.** It is a large, ever-growing document that will fill the context window. Instead, grep or search for only what is needed — e.g. `grep -A 50 "slug-name" docs/SESSIONS.md` to extract a specific session block, or `grep -n "keyword" docs/SESSIONS.md` to locate relevant lines before reading a narrow range. The summary table in this file (`CLAUDE.md`) is the right starting point for recent session context.
 >
-> `SESSIONS.md` holds sessions from **2026-05-22 onward**; older bootstrap/setup-era sessions (**2026-05-06 → 2026-05-21**) live in `docs/SESSIONS-ARCHIVE.md` (grep it the same way). When `SESSIONS.md` grows unwieldy again, roll the oldest sessions into the archive. New sessions are always appended to `SESSIONS.md`, never the archive.
+> `SESSIONS.md` holds sessions from **2026-06-18 onward**; older sessions (**2026-05-06 → 2026-06-13**, the bootstrap/setup era plus the Ceph migration and five-node rebuild stretch) live in `docs/SESSIONS-ARCHIVE.md` (grep it the same way). When `SESSIONS.md` grows unwieldy again, roll the oldest sessions into the archive. New sessions are always appended to `SESSIONS.md`, never the archive.
 
 ---
 

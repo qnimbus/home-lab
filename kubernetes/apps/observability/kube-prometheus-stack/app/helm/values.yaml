@@ -140,13 +140,6 @@ prometheusOperator:
       effect: NoSchedule
 
 prometheus-node-exporter:
-  # Talos writes /etc/nfsmount.conf via a machine.files patch (NFS client defaults for
-  # VolSync); it lives on the same EPHEMERAL-backed filesystem as /var but node-exporter's
-  # filesystem collector still enumerates it as its own mountpoint, duplicating every
-  # disk-space alert (CephNodeDiskspaceWarning fired twice for worker-02, 2026-06-23, with
-  # byte-identical values). Default regex extended (not replaced) with that one path.
-  extraArgs:
-    - --collector.filesystem.mount-points-exclude=^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/containers/storage/.+|etc/nfsmount\.conf)($|/)
   prometheus:
     monitor:
       # 10s scrape (overrides the 30s default) for pre-crash forensics on the M920Q
