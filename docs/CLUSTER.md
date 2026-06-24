@@ -426,23 +426,26 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 >
 > **worker-02 onboarded 2026-06-18.** Its Kingston `nvme0n1` had been mistakenly excluded since commit `36f6c77` (which misidentified it as the boot disk — the real system disk is `nvme1n1`). Wiped a stale `lvm2-pv` signature left over from a defunct cluster FSID (`vgchange -an` + `wipefs -a`, no reboot needed, node stayed live throughout) and added it to `storage.nodes`; `osd.8` joined cleanly, cluster reached `HEALTH_OK` with all 33 PGs `active+clean` within under a minute.
 >
-> **`ceph-block-single` (2026-06-23): `size=1`, no redundancy, opt-in only.** A second
-> `cephBlockPools` entry/StorageClass for disposable or trivially-regenerable data, trading away
-> Ceph-level replication for ~3x storage efficiency and lower write latency (one ack instead of
-> waiting on `min_size=2`). A single OSD failure loses any PVC on this class outright — there is
-> no degraded-but-available state. RBD is network-attached regardless of replica count, so this
-> does **not** pin a pod's pod-to-data locality either; CRUSH placement and pod scheduling remain
-> fully decoupled at any `size`. Not used by `waha` or any app whose data is worth protecting —
-> see [VolSync (PVC Backup)](#volsync-pvc-backup) for what already has redundancy/backup coverage.
-> Ceph's own `POOL_NO_REDUNDANCY` mon check fires for any `size=1` pool — expected, not a fault —
-> so `mon_warn_on_pool_no_redundancy: "false"` is set cluster-wide in `cephConfig.global` to keep
-> `HEALTH_OK` meaningful (it only ever applies to this one pool, by design).
+> **`ceph-block-single` retired 2026-06-24 (was `size=1`, no redundancy).** Briefly existed
+> (2026-06-23 → 2026-06-24) as a second `cephBlockPools` entry/StorageClass for disposable data,
+> trading replication for ~3x storage efficiency and lower write latency. **Removed permanently** —
+> a size=1 RBD pool is the worst of both worlds: it pays Ceph's full cost (RADOS/network latency
+> *and* operational coupling) while discarding redundancy, its only real benefit. The coupling
+> caused a concrete incident: single-copy PGs made `ceph osd ok-to-stop` return false for *every*
+> OSD, jamming Rook's one-at-a-time OSD rolling updates (operator looped "aborting OSD provisioning
+> after 20 minutes" every ~21min) and would have blocked all future OSD/Ceph upgrades on the same
+> gate. The pool was empty (0 PVCs/PVs) so removal was lossless; the cluster-wide
+> `mon_warn_on_pool_no_redundancy: "false"` override was dropped with it.
+> **For disposable / trivially-regenerable data, use `openebs-hostpath` instead** (see below):
+> node-local NVMe, no Ceph coupling, lower latency, and structurally incapable of the ok-to-stop
+> pathology. For data worth protecting, use the size=3 `ceph-block` pool. Full rationale lives in
+> the retirement note in `kubernetes/apps/rook-ceph/.../cluster/app/helmrelease.yaml`.
 
 ---
 
 ### OpenEBS · `v4.4.0` · `openebs`
 
-**Local hostpath storage.** Provides the `openebs-hostpath` StorageClass for single-node `ReadWriteOnce` PVCs backed by local NVMe (non-replicated). Managed by Flux HelmRelease.
+**Local hostpath storage.** Provides the `openebs-hostpath` StorageClass for single-node `ReadWriteOnce` PVCs backed by local NVMe (non-replicated). Managed by Flux HelmRelease. **This is the canonical choice for disposable or trivially-regenerable single-node data** — it superseded the retired size=1 `ceph-block-single` pool (no Ceph coupling, lower latency, can't stall OSD upgrades). When the data matters but the app can replicate itself, pair `openebs-hostpath` with app-layer redundancy (the CNPG pattern: Postgres streaming replication + barman PITR); reserve the size=3 `ceph-block` pool for data that needs storage-level redundancy.
 
 | Pod | Type | Role |
 |-----|------|------|

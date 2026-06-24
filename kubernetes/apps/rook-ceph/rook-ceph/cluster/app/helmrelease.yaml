@@ -31,9 +31,10 @@ spec:
           bdev_async_discard_threads: "1"
           # Warn earlier on low mon-store space (percent free).
           mon_data_avail_warn: "10"
-          # ceph-block-single (size=1) is intentionally unreplicated — suppress the
-          # POOL_NO_REDUNDANCY HEALTH_WARN it triggers by design, not by mistake.
-          mon_warn_on_pool_no_redundancy: "false"
+          # (Removed 2026-06-24) This suppressed POOL_NO_REDUNDANCY for the retired
+          # size=1 ceph-block-single pool — see the cephBlockPools note below. Default
+          # redundancy warning behaviour now applies; with no size=1 pool it never
+          # fires, so HEALTH_OK stays meaningful without the override.
         osd:
           # Default is 3; bump to 5 for NVMe workloads where the disk is not
           # the bottleneck and messenger threads can otherwise become the ceiling.
@@ -162,34 +163,29 @@ spec:
             csi.storage.k8s.io/node-stage-secret-name: rook-csi-rbd-node
             csi.storage.k8s.io/node-stage-secret-namespace: "{{ .Release.Namespace }}"
             csi.storage.k8s.io/fstype: ext4
-      # Unreplicated pool — zero Ceph-level redundancy; a single OSD failure loses
-      # any PVC on this class outright, with no degraded-but-available state like
-      # the size=3 pool above. For disposable/regenerable data only, traded for
-      # ~3x storage efficiency and lower write latency (one ack, not min_size=2).
-      # Not the cluster default — opt in by name. See docs/CLUSTER.md → Rook-Ceph.
-      - name: ceph-blockpool-single
-        spec:
-          failureDomain: host
-          replicated:
-            size: 1
-        storageClass:
-          enabled: true
-          name: ceph-block-single
-          isDefault: false
-          reclaimPolicy: Delete
-          allowVolumeExpansion: true
-          volumeBindingMode: Immediate
-          mountOptions: ["discard"]
-          parameters:
-            imageFormat: "2"
-            imageFeatures: layering,fast-diff,object-map,deep-flatten,exclusive-lock
-            csi.storage.k8s.io/provisioner-secret-name: rook-csi-rbd-provisioner
-            csi.storage.k8s.io/provisioner-secret-namespace: "{{ .Release.Namespace }}"
-            csi.storage.k8s.io/controller-expand-secret-name: rook-csi-rbd-provisioner
-            csi.storage.k8s.io/controller-expand-secret-namespace: "{{ .Release.Namespace }}"
-            csi.storage.k8s.io/node-stage-secret-name: rook-csi-rbd-node
-            csi.storage.k8s.io/node-stage-secret-namespace: "{{ .Release.Namespace }}"
-            csi.storage.k8s.io/fstype: ext4
+      # ─────────────────────────────────────────────────────────────────────────
+      # RETIRED 2026-06-24 — the size=1 `ceph-block-single` pool + StorageClass were
+      # removed permanently (prior config preserved in git history). Do not
+      # reintroduce a size=1 Ceph pool here.
+      #
+      # Why it's gone: a size=1 RBD pool is the worst of both worlds. It still pays
+      # Ceph's full cost — RADOS/network round-trip latency AND operational coupling
+      # — while discarding Ceph's only real benefit, redundancy. That coupling bit
+      # us: single-copy PGs made `ceph osd ok-to-stop <id>` return false for EVERY
+      # OSD, which jammed Rook's one-at-a-time OSD rolling updates (operator looped
+      # "aborting OSD provisioning after 20 minutes" every ~21min) and would have
+      # blocked all future OSD/Ceph upgrades on the same gate. The pool was empty
+      # (0 PVCs/PVs), so removal was lossless and restored ok-to-stop=true.
+      #
+      # What to use instead:
+      #   • Disposable / trivially-regenerable data → `openebs-hostpath` (LocalPV).
+      #     Node-local NVMe, no Ceph coupling, lower latency, and structurally
+      #     incapable of the ok-to-stop pathology above. This is the canonical
+      #     choice for throwaway single-node data.
+      #   • Data worth protecting → the size=3 `ceph-block` pool above.
+      #   • Best of all where the app can replicate itself → openebs-hostpath plus
+      #     app-layer redundancy (the CNPG pattern: Postgres streaming replication
+      #     + barman PITR on local disk).
     # Backed by the rook-ceph.rbd.csi.ceph.com driver via the external-snapshotter
     # (kubernetes/apps/system/snapshot-controller). Named explicitly rather than
     # the chart's own default ("ceph-block" — identical to the ceph-block
