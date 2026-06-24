@@ -1,7 +1,9 @@
 #!/bin/bash
 
-# Restore correct permissions for home directory
-sudo chown -R 1000:1000 /home/vscode
+# Fix permissions on mounted volumes (they're owned by root from the host)
+sudo chown -R vscode:vscode /home/vscode/.local
+sudo chown -R vscode:vscode /home/vscode/.claude
+sudo chown -R vscode:vscode /home/vscode/.kube
 
 # Update package lists
 sudo apt-get update

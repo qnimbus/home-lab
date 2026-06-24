@@ -3,6 +3,7 @@ services:
     image: mcr.microsoft.com/devcontainers/python:latest
     stdin_open: true
     tty: true
+    user: vscode:vscode
     volumes:
       - type: bind
         source: ..
