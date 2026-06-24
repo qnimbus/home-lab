@@ -1,7 +1,7 @@
 # GitOps Repository Audit <!-- omit from toc -->
 
 > **Living document** — re-run the audit commands in [How to Re-Audit](#how-to-re-audit) after significant changes and update the findings below.
-> Last audited: **2026-06-21** · Auditor: Claude Code (`gitops-repo-audit` skill) — fourth pass. `HEAD` (`0772f5a`) is unchanged from the prior pass and the working tree is clean, so no new commits to assess. Re-ran the full discovery/validation/API-compliance/security spot-check suite anyway rather than trusting the recorded output: resource counts unchanged (30 HelmReleases, 44 Kustomizations, 21 OCIRepositories), `kubeconform`/`kustomize build` clean (only the documented `Taskfile.yaml` false positive), `flux migrate --dry-run` reports no deprecated APIs, cosign coverage unchanged at 14/21 unverified, drift-detection opt-outs and `configMapGenerator` watch-label gaps both still zero, and the `dependsOn` graph still shows 0 cycles / 0 dangling across all 44 Kustomizations. Additionally hand-verified the two `kind: Secret` hits the unencrypted-secrets grep always flags (`envoy-gateway/config/gateway.yaml`'s `certificateRefs` and `flux/cluster/ks.yaml`'s `substituteFrom`) — both are reference fields pointing at existing Secret names, not embedded manifests, confirming the "no plaintext Secrets" finding. No findings changed.
+> Last audited: **2026-06-24** · Auditor: Claude Code (`gitops-repo-audit` skill) — fifth pass. The prior pass's recorded `HEAD` (`0772f5a`) does not resolve in this repo (likely a transcription slip — the doc's own findings were internally consistent with `ffe32a1`, "fix re-audit recipe bugs, refresh after snapshot-controller", which does resolve and matches the recorded 30/44/21 counts). Treating `ffe32a1` as the real prior baseline: 33 commits have landed since, adding three new apps (VolSync, VictoriaLogs, fluent-bit — a new log-aggregation pipeline + off-cluster PVC backup), splitting the actions-runner-controller into privileged (`home-lab`) and zero-permission (`home-lab-readonly`) runner groups, and a same-day add-then-retire of a `ceph-block-single` (size=1) StorageClass once it was found to jam Rook's rolling OSD updates. Re-ran the full discovery/validation/API-compliance/security spot-check suite: resource counts now 34 HelmReleases / 48 Kustomizations / 24 OCIRepositories (was 30/44/21), `kubeconform`/`kustomize build` clean (only the documented `Taskfile.yaml` false positive), `flux migrate --dry-run` reports no deprecated APIs, cosign coverage now 8/24 verified (was 7/21 — `volsync` arrived pre-verified; `fluent-bit` and `victoria-logs` did not), drift-detection opt-outs and `configMapGenerator` watch-label gaps both still zero, and the `dependsOn` graph still shows 0 cycles / 0 dangling across all 48 Kustomizations. Re-verified the same two `kind: Secret` false positives as prior passes (`envoy-gateway/config/gateway.yaml`'s `certificateRefs`, `flux/cluster/ks.yaml`'s `substituteFrom`) — no new plaintext-secret hits. One new finding: a stale in-repo comment (see I14).
 
 ## Contents <!-- omit from toc -->
 
@@ -29,11 +29,11 @@
 
 ## Resource Inventory
 
-| Kind | Count | Δ since 2026-06-18 |
+| Kind | Count | Δ since 2026-06-21 |
 |---|---|---|
-| HelmRelease | 30 | +2 (whoami — **disabled**, see note; snapshot-controller, `2349057`) |
-| Kustomization | 44 | +2 (whoami/ks.yaml — **disabled**, see note; snapshot-controller, `2349057`) |
-| OCIRepository | 21 | +1 (snapshot-controller, `2349057`) |
+| HelmRelease | 34 | +4 (volsync, victoria-logs, fluent-bit; actions-runner-controller split adds `home-lab-readonly`) |
+| Kustomization | 48 | +4 (one `ks.yaml` per new app above, plus `actions-runner-home-lab-readonly`) |
+| OCIRepository | 24 | +3 (volsync, victoria-logs, fluent-bit) |
 | HelmRepository | 4 | — |
 | Receiver | 1 | — |
 | Alert | 1 | — |
@@ -42,11 +42,11 @@
 
 > **Note on the whoami count**: `kubernetes/apps/default/whoami/ks.yaml` exists on disk (a static-scan inventory like `discover.sh` counts it), but `kubernetes/apps/default/kustomization.yaml` has it commented out of `resources:`. It is **not applied to the live cluster** — added as a connectivity smoke-test, then deliberately disabled (commit `a88ecf1`). Don't read the +1 as a live resource change.
 
-**Namespaces (app-declared via `namespace.yaml`)**: actions-runner-system, automation, database, external-secrets, network, observability, openebs, reloader, rook-ceph, snapshot-controller, system-upgrade, tailscale. **Bootstrap-managed** (created by the Helmfile bootstrap phase before Flux takes over, not by a GitOps `namespace.yaml`): kube-system, cert-manager, flux-system. `default` is a built-in namespace — whoami targets it directly via `targetNamespace`, no `namespace.yaml` needed.
+**Namespaces (app-declared via `namespace.yaml`)**: actions-runner-system, automation, database, external-secrets, network, observability, openebs, reloader, rook-ceph, snapshot-controller, system-upgrade, tailscale, volsync (new). **Bootstrap-managed** (created by the Helmfile bootstrap phase before Flux takes over, not by a GitOps `namespace.yaml`): kube-system, cert-manager, flux-system. `default` is a built-in namespace — whoami targets it directly via `targetNamespace`, no `namespace.yaml` needed.
 
-**Applications**: cilium · coredns · cert-manager · external-secrets · onepassword-connect · openebs · rook-ceph (operator + cluster) · envoy-gateway · cloudflared · external-dns (cloudflare + unifi) · tailscale-operator · actions-runner-controller · kube-prometheus-stack · smartctl-exporter · spegel · metrics-server · reloader · snapshot-controller · tuppr · cloudnative-pg (+ pgadmin + postgres-backup-local + plugin-barman-cloud) · waha · external-services (truenas + wan-failover) · flux-operator · flux-instance · flux-receiver · flux-alerts · whoami (disabled)
+**Applications**: cilium · coredns · cert-manager · external-secrets · onepassword-connect · openebs · rook-ceph (operator + cluster) · envoy-gateway · cloudflared · external-dns (cloudflare + unifi) · tailscale-operator · actions-runner-controller (split into `home-lab` privileged + `home-lab-readonly` zero-permission runner groups) · kube-prometheus-stack · smartctl-exporter · spegel · metrics-server · reloader · snapshot-controller · tuppr · cloudnative-pg (+ pgadmin + postgres-backup-local + plugin-barman-cloud) · waha · volsync (new — PVC backup) · victoria-logs (new — log storage) · fluent-bit (new — log shipper) · external-services (truenas + wan-failover) · flux-operator · flux-instance · flux-receiver · flux-alerts · whoami (disabled)
 
-> Longhorn is fully gone (superseded by Rook-Ceph, big-bang migration). `rook-ceph` (`ceph-block`) is now the default StorageClass with all 5 stateful consumers migrated.
+> Longhorn is fully gone (superseded by Rook-Ceph, big-bang migration). `rook-ceph` (`ceph-block`) is now the default StorageClass with all 5 stateful consumers migrated. A `ceph-block-single` (size=1) StorageClass was added (`ee1ada8`) for disposable, non-redundant PVCs, then retired the same week (`8d12fc0`) — its single-replica PGs made `ceph osd ok-to-stop` return false for every OSD, jamming Rook's one-at-a-time rolling OSD updates. The pool held 0 PVCs/PVs, so removal was lossless; `openebs-hostpath` is now documented as the canonical choice for disposable single-node data instead.
 
 ---
 
@@ -89,7 +89,7 @@ All Flux resources use current stable API versions. No migration required.
 | `cluster-settings` ConfigMap + `cluster-secrets` Secret carry `reconcile.fluxcd.io/watch: Enabled` | ✅ |
 | All OCI-sourced HelmReleases use `chartRef` (modern pattern); the 4 remaining `HelmRepository`+`chart.spec` HelmReleases (cilium, external-secrets, onepassword-connect, metrics-server) are pinned to upstreams with no official OCI artifact | ✅ |
 | No legacy `install.remediation.retries`-only pattern — global `cluster-apps` patch injects `strategy.name: RetryOnFailure` + remediation defaults for every HelmRelease | ✅ |
-| Zero `dependsOn` cycles or dangling references across all 44 Kustomizations (verified programmatically) | ✅ |
+| Zero `dependsOn` cycles or dangling references across all 48 Kustomizations (verified programmatically) | ✅ |
 | Multi-document `ks.yaml` for operator + CRD-instance Kustomizations (operator dry-run isolation) | ✅ |
 | Renovate tracks all pinned versions via `# renovate: datasource=...` annotations; all OCIRepository refs use immutable exact tags | ✅ |
 | Receiver deployed for webhook-triggered immediate reconciliation on Git push | ✅ |
@@ -99,6 +99,14 @@ All Flux resources use current stable API versions. No migration required.
 | New `ceph-grafana-dashboards` `configMapGenerator` (9 dashboard JSONs) correctly inherits the reactivity-watch label | ✅ — verified via `kustomize build`: Kustomize **merges** top-level `generatorOptions.labels` with a generator's own `options.labels` (doesn't override), so the rendered ConfigMap carries both `grafana_dashboard: "1"` and `reconcile.fluxcd.io/watch: Enabled` |
 | `ops/` repo restructure (`bootstrap/`, `cnpg/` → `ops/bootstrap/`, `ops/cnpg/`) left no broken references | ✅ — `.github/workflows/validate.yaml`'s scoping comment was updated in the same commit (`c8771da`) to reflect the new path; `values.yaml.gotmpl`'s relative `readFile` (previously hardcoded to the old 3-levels-deep nesting) was also fixed and verified via `helmfile template` |
 | `cloudflared` origin-cert verification (`noTLSVerify: true` → `false`) shipped together with a `reloader.stakater.com/auto` annotation | ✅ — correctly recognizes that `config.yaml` is mounted via `subPath`, which Kubernetes never live-updates; without Reloader this and future config edits would sit inert in Git until a manual restart |
+| New `victoria-logs`/`fluent-bit`/`volsync` Kustomizations all carry explicit, commented `dependsOn` reasoning rather than guessed ordering | ✅ — e.g. `fluent-bit`'s `ks.yaml` deliberately does *not* depend on `victoria-logs` ("the http output plugin retries on its own if it isn't up yet"), while `victoria-logs` *does* depend on `kube-prometheus-stack` for the ServiceMonitor/dashboard-sidecar CRDs it relies on — the dependency graph reflects actual coupling, not blanket caution |
+| `volsync`'s `MutatingAdmissionPolicy` (native CEL admission, GA in this cluster's K8s version) injects a random 0–30s jitter `initContainer` into every backup Job | ✅ — scoped to `volsync-src-` name-prefix + `app.kubernetes.io/created-by: volsync` label match, verified against VolSync's own shared (not fork-specific) controller code; spreads backup start times so a growing number of scheduled apps doesn't spike NFS/CPU simultaneously |
+| `components/volsync/pvc.yaml`'s `kustomize.toolkit.fluxcd.io/ssa: IfNotPresent` label correctly anticipates that `dataSourceRef` is immutable on existing PVCs | ✅ — lets Flux skip the generated PVC for apps retrofitted onto a pre-existing live PVC instead of erroring, while still creating fresh bootstrap-restore-enabled PVCs for genuinely new apps |
+| actions-runner-controller RBAC split: `home-lab` keeps the (deliberately reserved) `cluster-admin` binding; `home-lab-readonly` (used for automated Renovate-PR-review jobs) gets a `ServiceAccount` bound to nothing | ✅ — `rbac.yaml`'s comment documents a real gotcha: leaving `serviceAccountName` unset lets the `gha-runner-scale-set` chart auto-provision its own namespace-scoped Role (pods/exec/log, jobs, secrets — all with create+delete), silently reintroducing the privilege the split exists to remove |
+| 2026-06-23 Anthropic API key leak (PR-review job log, via an un-masked `${{ env.* }}` reference) was root-caused, the key rotated, and the workflow fixed to source it via `${{ secrets.* }}` (auto-masked by GitHub everywhere) within hours | ✅ — see `68fbc4d`; the dead `ExternalSecret`/pod-env injection paths that produced the leaked value were removed from both runner groups in the same commit, not left dangling |
+| `renovate-pr-review.yml`'s job condition keys off `pull_request.user.login` (the PR's actual creator) plus a fork-head check, instead of `github.actor` alone | ✅ (2026-06-24) — `github.actor` reflects whoever triggered the *current* event, which would flip to a human on `synchronize` if anyone but Renovate ever pushed to the branch; gating on the stable creator identity avoids that false-skip, and the fork-head check is cheap defense-in-depth even on a private repo |
+| `renovate-pr-review.yml` now skips the paid Claude review entirely for patch-only or unlabeled (e.g. digest) Renovate PRs, using the `type/major`/`type/minor` labels Renovate already applies via `renovate.json5` | ✅ (2026-06-24) — a pre-checkout step reads labels live via `gh pr view` rather than trusting the triggering event's label snapshot (Renovate adds labels in a follow-up API call after PR creation, so `opened` can fire before they land — `labeled` was added to the trigger `types:` to catch that race) |
+| `renovate-pr-review.yml` gained a `workflow_dispatch` input (`pr_number`) so the review can still be run by hand against any PR | ✅ (2026-06-24) — manual dispatch deliberately bypasses both the Renovate-actor/fork gate and the type-label gate; this is safe because `workflow_dispatch` is itself restricted by GitHub to users with write access to the repo, so there's no third-party-trigger risk left to additionally guard against on that path |
 
 ### Gaps
 
@@ -137,11 +145,11 @@ Was tracked as I6 (recommended `podAntiAffinity`). Implemented instead via `topo
 
 #### ✅ RESOLVED — Drift detection now cluster-wide default
 
-`driftDetection.mode: enabled` is in the global `cluster-apps` patch. All 30 HelmReleases have drift detection enabled (the disabled `whoami` and the newly added `snapshot-controller` both inherit it too).
+`driftDetection.mode: enabled` is in the global `cluster-apps` patch. All 34 HelmReleases have drift detection enabled, including the disabled `whoami` and the three newest additions (`volsync`, `victoria-logs`, `fluent-bit`) — re-verified this pass, zero opt-out labels found.
 
 #### ✅ RESOLVED — FluxInstance `cluster.size` now set to `medium`
 
-Was I1. `spec.cluster.size: medium` set in `flux-instance` values — appropriate for ~28 HelmReleases / ~42 Kustomizations (upstream guidance reserves `large` for fleets approaching a thousand apps).
+Was I1. `spec.cluster.size: medium` set in `flux-instance` values — appropriate then for ~28 HelmReleases / ~42 Kustomizations and still appropriate now at 34/48 (upstream guidance reserves `large` for fleets approaching a thousand apps).
 
 #### ✅ RESOLVED — Redundant `createNamespace: true` removed from 5 HelmReleases
 
@@ -184,7 +192,7 @@ Was I9 (found during a follow-up discussion, not the original audit pass). `flux
 
 ### OCI Supply Chain (Cosign Verification)
 
-21 OCIRepositories in use. 7 have `spec.verify.provider: cosign`:
+24 OCIRepositories in use. 8 have `spec.verify.provider: cosign`:
 
 | OCIRepository | Cosign |
 |---|---|
@@ -195,10 +203,12 @@ Was I9 (found during a follow-up discussion, not the original audit pass). `flux
 | external-dns | ✅ |
 | openebs | ✅ |
 | plugin-barman-cloud | ✅ |
+| **volsync** | ✅ (new, `02a856a`) |
 | cert-manager | ❌ |
 | cloudnative-pg | ❌ |
 | coredns | ❌ |
 | envoy-gateway | ❌ |
+| **fluent-bit** | ❌ (new, `02a856a`) |
 | gha-runner-scale-set-controller | ❌ |
 | gha-runner-scale-set | ❌ |
 | kube-prometheus-stack | ❌ |
@@ -206,11 +216,12 @@ Was I9 (found during a follow-up discussion, not the original audit pass). `flux
 | rook-ceph | ❌ |
 | rook-ceph-cluster | ❌ |
 | smartctl-exporter | ❌ |
-| **snapshot-controller** | ❌ (new, `2349057`) |
+| snapshot-controller | ❌ |
 | spegel | ❌ |
 | tuppr | ❌ |
+| **victoria-logs** | ❌ (new, `02a856a`) |
 
-14 of 21 repositories remain unverified, including the two Rook-Ceph sources added during the storage migration and the newest addition, `snapshot-controller` (piraeusdatastore/helm-charts) — its upstream publishes no cosign signature as of this chart version. `plugin-barman-cloud` is the lone recent addition that arrived pre-verified, a good sign the convention is sticking where upstreams support it. The remaining 14 should be assessed individually — some upstreams (e.g. cert-manager) publish cosign signatures; others may not.
+16 of 24 repositories remain unverified. Of the three sources added this pass, `volsync` arrived pre-verified (continuing the pattern set by `plugin-barman-cloud`), while `fluent-bit` and `victoria-logs` did not — worth re-checking periodically, since both are VictoriaMetrics-family/fluent ecosystem projects that may add cosign signing in a future chart release. The remaining unverified entries are unchanged from the prior pass and should still be assessed individually — some upstreams (e.g. cert-manager) publish cosign signatures; others may not.
 
 ### Network & RBAC
 
@@ -244,7 +255,7 @@ _None._
 | ~~I1~~ | ~~FluxInstance `cluster.size` unset (`cluster: {}`)~~ | ✅ Resolved — set to `medium` |
 | ~~I2~~ | ~~FluxInstance sync: SSH deploy key~~ | ✅ Resolved — GitHub App auth live (`provider: github`, `flux-github-app` secret); ROADMAP.md entry marked done |
 | ~~I3~~ | ~~No `retryInterval` on HelmReleases~~ | ✅ Resolved — `retryInterval: 2m` in the global `cluster-apps` patch + top-level Kustomizations |
-| I4 | 14 of 21 OCIRepositories without cosign (`rook-ceph`, `rook-ceph-cluster`, `snapshot-controller` among them; `plugin-barman-cloud` is the lone recent addition that arrived pre-verified) | Audit each upstream for cosign availability; add verification where supported |
+| I4 | 16 of 24 OCIRepositories without cosign (`rook-ceph`, `rook-ceph-cluster`, `snapshot-controller`, and the two newest, `fluent-bit`/`victoria-logs`, among them; `plugin-barman-cloud` and `volsync` are the only recent additions that arrived pre-verified) | Audit each upstream for cosign availability; add verification where supported |
 | ~~I5~~ | ~~Validation CI picks up non-K8s YAMLs~~ | ✅ Resolved — turned out CI/Task already scope `validate.sh` to `-d kubernetes`, never touching `Taskfile.yaml`/`talos/`; removed the dead `-e kubernetes/bootstrap` exclude (bootstrap moved to repo-root `bootstrap/` some time ago, so the flag pointed at a non-existent path) |
 | ~~I6~~ | ~~kustomize-controller co-location~~ | ✅ Resolved — `topologySpreadConstraints` + 2 replicas on helm/kustomize/notification-controller |
 | ~~I7~~ | ~~5 HelmReleases set redundant `createNamespace: true`~~ | ✅ Resolved — removed the now-empty `install:` block from all 5 |
@@ -253,6 +264,8 @@ _None._
 | ~~I10~~ | ~~`whoami` HelmRelease lacked `securityContext`/`defaultPodOptions` hardening~~ | ✅ Resolved — moved app to internal port 8080 (`WHOAMI_PORT_NUMBER`) + `targetPort: 8080` on the Service, enabling `runAsNonRoot`/`capabilities.drop: ["ALL"]` with no capability add-back |
 | ~~I11~~ | ~~This doc's own "How to Re-Audit" recipe used a stale `-e bootstrap` exclude after the `ops/` restructure (`c8771da`)~~ | ✅ Resolved — updated to `-e ops`; verified `ops/bootstrap/helmfile.d/*.yaml` no longer false-positive when scanning from repo root |
 | ~~I12~~ | ~~This doc's own "How to Re-Audit" recipe had two latent bugs in its spot-checks: the drift-detection check grepped individual `helmrelease.yaml` files for `driftDetection`, which never appears there (it's injected centrally by a `cluster-apps` patch in `kubernetes/flux/cluster/ks.yaml`) — would report 100% of HelmReleases as missing drift detection regardless of truth; previously masked by an unrelated `xargs -l` syntax bug that silently no-op'd instead of running. The cosign-coverage loop's glob also picked up the oci repos directory's own `kustomization.yaml` as a false `NO-VERIFY` entry~~ | ✅ Resolved — drift-detection check rewritten to look for the `drift-detection.flux.home.arpa/disabled` opt-out label instead (none found — all 29 HelmReleases genuinely inherit the global default, confirming the existing W2 finding was correct despite the broken check); cosign loop now excludes `kustomization.yaml` |
+| I13 | `home-lab-readonly`'s `CiliumNetworkPolicy` egress restriction was reverted (`b4f1e38`) after proving unreliable: `broker.actions.githubusercontent.com` CNAMEs through a GitHub GLB hostname, and Cilium never allocated a CIDR identity for the resolved IP (confirmed live via `cilium-dbg`, well past any agent-settling window). Network containment itself is **not** restored by the fix below — this remains an accepted residual risk | ⚠️ Narrowed, not resolved (2026-06-24) — `renovate-pr-review.yml` hardened so the open-egress runner now executes far less often: the job gates on `pull_request.user.login == 'renovate[bot]'` (stable across `synchronize`, unlike `github.actor`, which flips to a human if anyone else ever pushes to the branch) **and** rejects any PR whose head lives outside this repo (fork check — this repo is private, so this is defense-in-depth, not the primary control), **and** a new pre-checkout step skips the Claude review entirely unless the PR carries a `type/major` or `type/minor` label, reading labels live via `gh pr view` rather than the trigger event's snapshot (Renovate attaches labels in a follow-up call, so `opened` can race ahead of them — `labeled` was added to the trigger list to catch that). Patch-only and unlabeled (e.g. digest) PRs no longer invoke the AI reviewer — or even check out the repo — at all. If untrusted-input exposure grows further, revisit egress restriction via a non-FQDN mechanism (e.g. a static CIDR allowlist for GitHub's published IP ranges, or an explicit egress proxy) rather than retrying Cilium `toFQDNs` against a GLB-fronted hostname |
+| ~~I14~~ | ~~`kubernetes/apps/automation/waha/ks.yaml`'s comment described the VolSync PVC cutover as "step 3 (separate, deliberate, not yet done)", but `docs/ROADMAP.md`'s VolSync section says the canary cutover is "✅ DONE" — the live PVC was swapped, just via an incident rather than the deliberate procedure the comment described~~ | ✅ Resolved (2026-06-24) — comment rewritten to match the completed state recorded in ROADMAP.md |
 
 ---
 
