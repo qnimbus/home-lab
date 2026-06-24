@@ -130,7 +130,7 @@ apps:
         || { just log fatal "Helmfile sync failed" "stage" "apps"; exit 1; }
 
 [doc('Fetch SOPS age private key from 1Password and write to age.key (run before just bootstrap)')]
-age-key vault="homelab" item="SOPS age key" field="text":
+age-key vault="homelab" item="sops" field="SOPS_PRIVATE_KEY":
     KEY=$(op read "op://{{ vault }}/{{ item }}/{{ field }}"); \
     [[ -n "${KEY}" ]] || { just log fatal "1Password returned empty value" "stage" "age-key"; exit 1; }; \
     [[ "${KEY}" == AGE-SECRET-KEY-1* ]] || { just log fatal "Value is not an age private key" "stage" "age-key"; exit 1; }; \
