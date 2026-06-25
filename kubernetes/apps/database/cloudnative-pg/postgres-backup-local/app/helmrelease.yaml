@@ -18,6 +18,9 @@ spec:
           schedule: "@daily"
           timeZone: "${CLUSTER_TIMEZONE}"
           concurrencyPolicy: Forbid
+          # NAS (10.200.0.41) temporarily offline 2026-06-24 — — pauses the daily
+          # pg_dumpall job from hanging on the NFS mount.
+          suspend: false
           ttlSecondsAfterFinished: 43200
           successfulJobsHistory: 1
           failedJobsHistory: 1
