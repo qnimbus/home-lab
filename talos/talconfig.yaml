@@ -74,7 +74,7 @@ nodes:
   - hostname: "talos-worker-02"                     # Lenovo M920Q #2 (i5-8600T CPU @ 2.30GHz, 64GB, X520-DA2) — pure worker
     ipAddress: "10.60.0.205"
     installDiskSelector:
-      model: "CT1000P310SSD2"                        # Crucial P310 1TB 2230 — system disk; Kingston SNV3S1000G reserved for Longhorn storage
+      model: "CT1000P310SSD2"                        # Crucial P310 1TB 2230 — system disk; Crucial CT2000T500SSD8 2TB is the Rook-Ceph OSD disk (replaced Kingston SNV3S1000G 1TB 2026-06-25)
     machineSpec:
       secureboot: false
     talosImageURL: "${talosImageURL}"
@@ -217,8 +217,12 @@ nodes:
           downdelay: 200
           xmitHashPolicy: layer3+4
           deviceSelectors:
-            - hardwareAddr: "90:e2:ba:e8:e9:d0"   # enp2s0f0 — X520-DA2 port 0
-            - hardwareAddr: "90:e2:ba:e8:e9:d1"   # enp2s0f1 — X520-DA2 port 1
+            # 2026-06-25: swapped with cp-03's card for hardware-fault isolation — this MAC
+            # pair (was cp-03's) is now physically in cp-02's slot; cp-02's original card
+            # (ixgbe HW Init failed: -114, confirmed bad across reboot/cold-cycle/reseat)
+            # is now in cp-03's slot. See cp-03's matching comment below.
+            - hardwareAddr: "90:e2:ba:e8:ea:64"   # enp2s0f0 — X520-DA2 port 0 (ex-cp-03 card)
+            - hardwareAddr: "90:e2:ba:e8:ea:65"   # enp2s0f1 — X520-DA2 port 1 (ex-cp-03 card)
         dhcp: false
         addresses:
           - "10.200.0.202/24"
@@ -237,6 +241,30 @@ nodes:
       topology.kubernetes.io/zone: homelab-cp-03
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
+      # TEMPORARY 2026-06-25: the X520-DA2 card in this slot is confirmed faulty (ixgbe
+      # HW Init failed: -114 — reproduced across warm reboot, cold power-cycle, reseat, and
+      # now a different motherboard during fault isolation; no Intel NVM/firmware recovery
+      # path exists for retail X520 series). Falling back to the pre-2026-06-18 eno1.200
+      # VLAN-trunk storage path (1GbE) until a replacement card arrives — see the matching
+      # bond-storage comment below for the revert steps.
+      # Syntax notes (same gotchas as the original pre-bond config, commit 564e6f1):
+      # talhelper generates both a VLANConfig doc AND processes inline machine.network
+      # vlans[], causing "file exists" if both try to create the same VLAN subinterface —
+      # keep vlans: out of networkInterfaces and own it here instead. Use interface: eno1
+      # (explicit kernel name), not deviceSelector — a deviceSelector here creates a second
+      # alias for the same NIC, cascading into duplicate VLAN subinterfaces that overflow
+      # Cilium's BPF VLAN filter limit.
+      - |-
+        machine:
+          network:
+            interfaces:
+              - interface: eno1
+                vlans:
+                  - vlanId: 200
+                    dhcp: false
+                    addresses:
+                      - "10.200.0.203/24"
+                    mtu: 1500
     networkInterfaces:
       # Management — single Intel I219-LM RJ45 (driver: e1000e) — VLAN 60 (management) is
       # native/untagged on the switch port; address configured directly on the physical interface.
@@ -256,9 +284,13 @@ nodes:
       # hardwareAddr selectors used rather than driver: — see cp-01 comment above for why a
       # driver selector matches both ports at once and prevents the bond from forming.
       # bond-storage: consistent name across all nodes — the storage-VLAN fabric for Rook-Ceph
-      # (cluster_network on hostNetwork OSDs). Replaced the old eno1.200 VLAN-trunk storage path
-      # 2026-06-18 after adding this card; LACP confirmed (speedMbit: 20000 aggregate) and Ceph
-      # OSD/mon connectivity verified healthy post-cutover.
+      # (cluster_network on hostNetwork OSDs).
+      # TEMPORARILY DISABLED 2026-06-25 — no address assigned (left commented out) to avoid
+      # conflicting with the eno1.200 VLAN-trunk fallback above, which now claims
+      # 10.200.0.203/24 instead. This card (physically the original cp-02 card, moved here
+      # for fault isolation) is confirmed faulty. To revert once a replacement card is
+      # installed: remove the inline VLAN patch above, uncomment `addresses:` below, and
+      # update deviceSelectors to the replacement card's MACs.
       - interface: bond-storage
         bond:
           mode: 802.3ad
@@ -268,11 +300,11 @@ nodes:
           downdelay: 200
           xmitHashPolicy: layer3+4
           deviceSelectors:
-            - hardwareAddr: "90:e2:ba:e8:ea:64"   # enp2s0f0 — X520-DA2 port 0
-            - hardwareAddr: "90:e2:ba:e8:ea:65"   # enp2s0f1 — X520-DA2 port 1
+            - hardwareAddr: "90:e2:ba:e8:e9:d0"   # enp2s0f0 — X520-DA2 port 0 (ex-cp-02 card, faulty)
+            - hardwareAddr: "90:e2:ba:e8:e9:d1"   # enp2s0f1 — X520-DA2 port 1 (ex-cp-02 card, faulty)
         dhcp: false
-        addresses:
-          - "10.200.0.203/24"
+        # addresses:
+        #   - "10.200.0.203/24"
         mtu: 9000
 
 patches:

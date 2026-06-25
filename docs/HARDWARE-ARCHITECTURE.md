@@ -84,7 +84,7 @@ Design rules derived from the slot budget:
 | **M90q #1** | CP + OSD + worker | ✅ | **Crucial T500 2 TB** (CT2000T500SSD8) — OSD ✅ | **Kingston NV3 1 TB** (SNV3S1000G) — boot + etcd ✅ | *(vacant — now confirmed viable via M90q #2; see Growth Path)* |
 | **M90q #2** | CP + OSD + worker | ✅ | **Crucial T500 2 TB** — OSD ✅ | **WD SN740 256 GB** (SDDQNQD-256G-1001) — boot ✅ *(WLAN slot, 2230 form factor)* | *(vacant — reserved OSD bay)* |
 | **M920q #1** | OSD + light worker | — | **Crucial P310 2 TB** — OSD #4 ✅ *(installed 2026-06-13)* | **Goodram P44N 1 TB** — boot (WLAN slot) ✅ | — |
-| **M920q #2** | CP + light worker | ✅ | **Kingston NV3 1 TB** (SNV3S1000G) — boot + etcd ✅ | **Crucial P310 1 TB** (CT1000P310SSD2) — spare/scratch ✅ | — |
+| **M920q #2** | CP + light worker | ✅ | **Crucial T500 2 TB** (CT2000T500SSD8) — boot + etcd ✅ *(replaced Kingston NV3 1TB 2026-06-25; in live cluster this disk is actually the Rook-Ceph OSD, not boot — see [CLUSTER.md](CLUSTER.md#node-disk-inventory))* | **Crucial P310 1 TB** (CT1000P310SSD2) — spare/scratch ✅ | — |
 
 **Control plane / etcd: MS-A2 + M90q #1 + M920q #2** (3 members — kept at 3, not 5, for etcd write
 latency). Placement rationale:

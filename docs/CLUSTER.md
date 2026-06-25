@@ -417,14 +417,16 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 |-----|------|------|
 | `rook-ceph-operator` | Deployment | Watches `CephCluster`, `CephBlockPool`, etc. and manages the full Ceph lifecycle |
 | `rook-ceph-mon-{a,b,c}` | Deployment (3) | Ceph monitor daemons — provide quorum and cluster map; `hostNetwork` on the management subnet (`10.60.0.0/24`) |
-| `rook-ceph-osd-{0..8}` | Deployment (9) | 2 logical OSDs per NVMe on cp-01/cp-02/cp-03/worker-01 (`osdsPerDevice: 2`); 1 OSD on worker-02 (per-node override — its disk is half the others' size, see comment in the HelmRelease); `hostNetwork` with `cluster_network: 10.200.0.0/24` for replication traffic |
+| `rook-ceph-osd-{0..9}` | Deployment (10) | 2 logical OSDs per NVMe on all 5 nodes (`osdsPerDevice: 2`); `hostNetwork` with `cluster_network: 10.200.0.0/24` for replication traffic |
 | `rook-ceph-mgr-{a,b}` | Deployment (2) | Ceph manager — Prometheus metrics, dashboard, orchestration modules |
 | `rook-ceph-dashboard` | Service | Ceph dashboard UI (admin password from 1Password via ExternalSecret) |
 | CSI components | DaemonSets/Deployments | RBD CSI driver (`csi-rbdplugin`) + provisioner sidecars |
 
-> **Pool settings**: `size=3`, `min_size=2`, `deviceClass: nvme`. 9 OSDs across all 5 nodes (8.2 TiB raw) — cp-01/cp-02/cp-03/worker-01 each run 2 logical OSDs from a 2TB NVMe (`osdsPerDevice: 2`); worker-02 runs 1 OSD from its smaller 1TB NVMe. The `ceph-block` StorageClass is the cluster default — all new PVCs use it unless otherwise specified.
+> **Pool settings**: `size=3`, `min_size=2`, `deviceClass: nvme`. 10 OSDs across all 5 nodes (~9.1 TiB raw) — every node now runs 2 logical OSDs from a 2TB NVMe (`osdsPerDevice: 2`). The `ceph-block` StorageClass is the cluster default — all new PVCs use it unless otherwise specified.
 >
 > **worker-02 onboarded 2026-06-18.** Its Kingston `nvme0n1` had been mistakenly excluded since commit `36f6c77` (which misidentified it as the boot disk — the real system disk is `nvme1n1`). Wiped a stale `lvm2-pv` signature left over from a defunct cluster FSID (`vgchange -an` + `wipefs -a`, no reboot needed, node stayed live throughout) and added it to `storage.nodes`; `osd.8` joined cleanly, cluster reached `HEALTH_OK` with all 33 PGs `active+clean` within under a minute.
+>
+> **worker-02 OSD disk swapped 2026-06-25.** The Kingston SNV3S1000G 1TB was replaced with a Crucial CT2000T500SSD8 2TB, bringing worker-02 to parity with the other 4 nodes' OSD disk. The old `osd.8` is now permanently `down` (its backing device is gone) and the HelmRelease device selector now points at the new disk's by-id path — `osd.8` needs a manual `ceph osd purge` before Rook will cleanly provision the 2 new OSDs on the replacement disk.
 >
 > **`ceph-block-single` retired 2026-06-24 (was `size=1`, no redundancy).** Briefly existed
 > (2026-06-23 → 2026-06-24) as a second `cephBlockPools` entry/StorageClass for disposable data,
@@ -727,7 +729,7 @@ per-app boilerplate beyond a few `postBuild.substitute` variables.
 | talos-worker-01 | nvme1n1 | 1.0 TB | GoodRam IRDM PRO NANO (IRP-SSDPR-P44N-01T-30) | G4E004578 | Talos system disk (EPHEMERAL on nvme1n1p4) |
 | talos-worker-01 | nvme0n1 | 2.0 TB | Crucial CT2000P310SSD8 | 252450B1A33B | Rook-Ceph OSD |
 | talos-worker-02 | nvme1n1 | 1.0 TB | Crucial CT1000P310SSD2 | 25174FD70E4D | Talos system disk (EPHEMERAL on nvme1n1p4) |
-| talos-worker-02 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G | 50026B7383B9D0CC | Rook-Ceph OSD |
+| talos-worker-02 | nvme0n1 | 2.0 TB | Crucial CT2000T500SSD8 | 2545542DA3BA | Rook-Ceph OSD |
 
 All five nodes have Rook-Ceph OSD disks live and contributing to the `ceph-block` storage pool. The `ceph-block` StorageClass is the cluster default (3-replica, `min_size=2`).
 

@@ -118,22 +118,9 @@ spec:
           - name: talos-worker-01                      # M920q #1 — Crucial P310 2TB (CT2000P310SSD8, S/N 252450B1A33B; DRAM-less)
             devices:
               - name: /dev/disk/by-id/nvme-CT2000P310SSD8_252450B1A33B
-          - name: talos-worker-02                      # M920q #2 — Kingston NV3 1TB (SNV3S1000G, S/N 50026B7383B9D0CC); half the others' 2TB OSD disk
-            config:
-              # Override the cluster-wide osdsPerDevice:2 (storage.config above) for
-              # this node only. That default exists to spread replication traffic
-              # across both LACP links as independent TCP flows — worthwhile on the
-              # other 4 nodes' 2TB disks, but not here: this disk is half their size,
-              # so splitting it would still double the per-OSD-pod resource
-              # reservation (cpu/memory requests/limits below are per-pod) for a
-              # total contribution of only ~931GB raw either way. With 5 nodes and
-              # 8+ OSDs already in the mesh, the extra local flow diversity buys
-              # little; one OSD keeps this — the weakest host's — reservation lean
-              # and gives the full device queue depth to a single BlueStore instance
-              # instead of splitting it across two.
-              osdsPerDevice: "1"
+          - name: talos-worker-02                      # M920q #2 — Crucial T500 2TB (CT2000T500SSD8, S/N 2545542DA3BA); replaced Kingston NV3 1TB 2026-06-25, now matches the other 4 nodes' OSD disk
             devices:
-              - name: /dev/disk/by-id/nvme-KINGSTON_SNV3S1000G_50026B7383B9D0CC
+              - name: /dev/disk/by-id/nvme-CT2000T500SSD8_2545542DA3BA
     # Replicated RBD pool + its StorageClass. size=3 / failureDomain=host means
     # one replica per node — full host-level redundancy (usable capacity is
     # gated by the smallest host, ~1TB, until the cluster grows).
