@@ -110,7 +110,11 @@ resources:
         "--from-literal=githubAppPrivateKey=$(op read 'op://homelab/GitHub App/githubAppPrivateKey')" \
         --dry-run=client -o yaml | kubectl apply --server-side -f -
 
-[doc('Wipe any remaining stale Ceph LVM that the maintenance-mode wipe could not reach (dm-* blocked). Safe no-op on clean disks.')]
+# Wipes ALL configured OSD nodes in one pass — appropriate for a full cluster
+# bootstrap or re-bootstrap where every disk needs clearing. For day-2 use
+# (single replacement disk after an OSD failure), use 'just ceph osd-lvm-wipe
+# <node>' instead — it's scoped to one node and avoids touching other OSDs.
+[doc('Wipe stale Ceph LVM on ALL OSD nodes via privileged pods (bootstrap path). For a single replacement disk use just ceph osd-lvm-wipe <node> instead.')]
 live-osd-cleanup:
     just log info "Running stage..." "stage" "live-osd-cleanup"
     task talos:wipe-ceph-osds-live || just log warn "Live OSD LVM wipe failed or partially failed — check pod logs if OSDs do not provision" "stage" "live-osd-cleanup"

@@ -231,7 +231,8 @@ nodes:
   - hostname: "talos-cp-03"                       # Lenovo M90q #2 (i5-10500T, 6C/12T, 64GB, +X520-DA2 SFP+ 10GbE) — permanent CP
     ipAddress: "10.60.0.203"
     installDiskSelector:
-      model: "WD PC SN740 SDDQNQD-256G-1001"    # WD SN740 256GB (2230, WLAN slot) — boot disk; CT2000T500SSD8 (T500 2TB) is Ceph OSD
+      model: "KINGSTON SNV3S1000G"               # Kingston NV3 1TB — boot disk (replaced WD SN740 256GB 2026-06-28); CT2000T500SSD8 (T500 2TB) is Ceph OSD
+      # serial: "TBD"                            # add once disk is installed — needed to disambiguate from cp-02 which uses the same model
     machineSpec:
       secureboot: false
     talosImageURL: "${talosImageURL}"

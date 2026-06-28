@@ -405,7 +405,7 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 
 > **Topology spread**: helm-controller, kustomize-controller, and notification-controller share the pod label `app.kubernetes.io/part-of: flux` (injected via kustomize patch). 6 pods spread across 5 nodes via `DoNotSchedule`. A node failure causes leader-election failover within ~35 s (Flux lease duration). source-controller and flux-operator are intentionally excluded: source-controller's artifact HTTP server only starts on the leader so non-leader replicas are permanently NotReady; flux-operator manages the FluxInstance CR only and has no HA value.
 
-> **Reconciliation alerting (`flux-alerts`).** A Flux `Provider` (`alertmanager`, pointing at the in-cluster `kube-prometheus-stack-alertmanager` service) and an `Alert` (`flux-errors`, `eventSeverity: error` across all Kustomizations + HelmReleases) live in `flux-system` — see `kubernetes/apps/flux-system/flux-alerts/`. This forwards reconciliation failures into Alertmanager. ⚠️ **Outbound delivery is not yet wired**: Alertmanager has no receiver/route configured, so alerts currently terminate at its default `null` receiver and do not reach a human. See [REPO-AUDIT.md](REPO-AUDIT.md) finding **W1** and [ROADMAP.md → Alertmanager Receiver](ROADMAP.md#alertmanager-receiver).
+> **Reconciliation alerting (`flux-alerts`).** A Flux `Provider` (`alertmanager`, pointing at the in-cluster `kube-prometheus-stack-alertmanager` service) and an `Alert` (`flux-errors`, `eventSeverity: error` across all Kustomizations + HelmReleases) live in `flux-system` — see `kubernetes/apps/flux-system/flux-alerts/`. This forwards reconciliation failures into Alertmanager, where the `AlertmanagerConfig` in `kube-prometheus-stack` routes `severity=error` alerts to Pushover (priority 1, verified end-to-end).
 
 ---
 
@@ -453,7 +453,7 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 |-----|------|------|
 | `openebs-localpv-provisioner` | Deployment | Dynamically provisions hostpath PVs on the local node |
 
-> **Per-node capacity is uneven.** Each node's `local-hostpath` UserVolume (`talos/patches/node/machine-volumes-1tb.yaml`) fills the system disk after a 120GiB `EPHEMERAL` cap. cp-01, cp-02, worker-01, and worker-02 have ~1TB system disks → ~870-890 GiB available each. **cp-03's system disk is only 256GB → ~125 GiB available** — the patch is applied uniformly across all 5 nodes despite the size mismatch. `openebs-hostpath` (`WaitForFirstConsumer`, `openebs.io/local`) has no node-capacity awareness — the provisioner follows wherever the pod scheduled, with no fallback if that node is low on space. Avoid scheduling large `openebs-hostpath` PVCs (e.g. >50 GiB) without node anti-affinity away from cp-03; prefer `ceph-block` for anything sizeable.
+> **Per-node capacity**: each node's `local-hostpath` UserVolume (`talos/patches/node/machine-volumes-1tb.yaml`) fills the system disk after a 120GiB `EPHEMERAL` cap. All 5 nodes now have ~1TB system disks → ~870-890 GiB available each (cp-03 had a 256GB WD PC SN740 until 2026-06-28 when it was upgraded to a Kingston SNV3S1000G 1TB). `openebs-hostpath` (`WaitForFirstConsumer`, `openebs.io/local`) has no node-capacity awareness — the provisioner follows wherever the pod schedules with no fallback if that node runs low on space. Prefer `ceph-block` for large PVCs (>50 GiB) or anything that needs storage-level redundancy.
 
 ---
 
@@ -470,6 +470,8 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 | `kube-prometheus-stack-prometheus-node-exporter` | DaemonSet | 5 (one/node) | Exposes per-node hardware and OS metrics |
 | `kube-prometheus-stack-grafana` | Deployment | 1 | Visualisation/dashboards over Prometheus; admin password from 1Password via `ExternalSecret` |
 
+> **Alertmanager routing.** An `AlertmanagerConfig` in the `kube-prometheus-stack` namespace (wired via `alertmanagerSpec.alertmanagerConfiguration.name`, replacing the chart's default `config:`) routes `severity=critical` → Pushover priority 2 (retry 60s, expire 1h) and `severity=~"warning|error"` → Pushover priority 1. This handles both Prometheus rule alerts and Flux reconciliation failures (see flux-alerts above). Alertmanager silence management is handled by **silence-operator** (see below) — silences are declared as YAML in Git rather than via the Alertmanager UI.
+
 ---
 
 ### smartctl-exporter · `v0.16.1` (chart) · `observability`
@@ -479,6 +481,40 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 | Pod | Type | Replicas | Role |
 |-----|------|----------|------|
 | `smartctl-exporter` | DaemonSet | 5 (one/node) | Scrapes NVMe SMART data on each node; privileged access to block devices |
+
+---
+
+### VictoriaLogs · `v0.13.8` (chart) · `observability`
+
+**Log storage backend.** Single-binary log aggregation store that receives log streams from fluent-bit and exposes them via a query API. Installed via Flux HelmRelease from the VictoriaMetrics OCI registry (`ghcr.io/victoriametrics/helm-charts/victoria-logs-single`). A Grafana datasource plugin (`victoriametrics-datasource`) provides native query UI in Grafana; dashboards are loaded via the Grafana sidecar. Logs are persisted on a `ceph-block` PVC.
+
+| Pod | Type | Replicas | Role |
+|-----|------|----------|------|
+| `victoria-logs-victoria-logs-single-server` | StatefulSet | 1 | Log store; exposes VictoriaLogs HTTP API on port 9428 |
+
+> **Why VictoriaLogs over Loki.** Chosen for its simpler operational model: single binary (no Loki's compactor/distributor/ingester split), substantially lower memory footprint under the same workload, and a LogsQL query language that is easier to use ad-hoc than LogQL. The `victoria-logs` HelmRelease explicitly depends on `kube-prometheus-stack` (for the ServiceMonitor and Grafana dashboard-sidecar CRDs it requires), but `fluent-bit` is intentionally **not** declared a dependency — the HTTP output plugin retries autonomously if the store is not yet reachable.
+
+---
+
+### fluent-bit · `v0.55.0` (chart) · `observability`
+
+**Log shipper.** Per-node DaemonSet that collects container logs from the kubelet journal and forwards them to VictoriaLogs. Installed via Flux HelmRelease from the home-operations OCI mirror (`ghcr.io/home-operations/charts-mirror/fluent-bit`).
+
+| Pod | Type | Replicas | Role |
+|-----|------|----------|------|
+| `fluent-bit` | DaemonSet | 5 (one/node) | Tails `/var/log/containers/*.log` on each node; enriches records with Kubernetes metadata; forwards via HTTP to VictoriaLogs |
+
+---
+
+### silence-operator · `v0.20.1` (chart) · `observability`
+
+**GitOps Alertmanager silence management.** Watches `Silence` CRDs and synchronises them into Alertmanager, replacing ad-hoc UI-created silences with version-controlled YAML. Installed via Flux HelmRelease from the Giant Swarm OCI registry (`gsoci.azurecr.io/charts/giantswarm/silence-operator`). Silence definitions live in `kubernetes/apps/observability/silence-operator/silences/`.
+
+| Pod | Type | Replicas | Role |
+|-----|------|----------|------|
+| `silence-operator` | Deployment | 1 | Reconciles `Silence` CRD objects against the Alertmanager API |
+
+> **Live silences**: `ceph-node-nfsmount-diskspace-warning` — suppresses the `CephNodeDiskspaceWarning` duplicate-mountpoint false positive on `/dev/nvme*` caused by `nfsmount.conf` (the `nfsmount.conf` config file appears twice in `/proc/mounts` under node-exporter's mounts, which triggers the duplicate-mountpoint alert).
 
 ---
 
@@ -493,16 +529,19 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 
 ### Actions Runner Controller (ARC) · `v0.14.2` · `actions-runner-system`
 
-**GitHub Actions self-hosted runner pool.** ARC provisions ephemeral Kubernetes pod runners on demand via the scale set pattern. Two HelmReleases work together: the cluster-wide controller and the `home-lab` runner scale set scoped to this repository.
+**GitHub Actions self-hosted runner pool.** ARC provisions ephemeral Kubernetes pod runners on demand via the scale set pattern. Three HelmReleases work together: the cluster-wide controller, the `home-lab` privileged runner scale set, and the `home-lab-readonly` zero-permission scale set.
 
 | Component | Type | Replicas | Role |
 |-----------|------|----------|------|
 | `actions-runner-controller` (gha-rs-controller) | Deployment | 1 | Cluster-wide controller that manages scale sets and creates runner pods on demand |
 | `home-lab` listener | Pod (ephemeral) | 1 (scales to 0 when idle) | Listens for queued GitHub Actions jobs; spins up runner pods per job; each pod uses a 25 Gi `openebs-hostpath` work volume |
+| `home-lab-readonly` listener | Pod (ephemeral) | 0–3 (scales to 0 when idle) | Zero-permission runner for automated Renovate PR reviews; 10 Gi `openebs-hostpath` work volume |
 
-Runner pods are launched with `cluster-admin` RBAC and a Talos `ServiceAccount` (`os:admin`) mounted at `/var/run/secrets/talos.dev` — giving workflow steps direct `kubectl` and `talosctl` access. Authentication uses a GitHub App (App ID + Installation ID + private key) sourced from 1Password via `ExternalSecret`. Runners are labelled `home-lab` and match the `runs-on: home-lab` label in workflows.
+`home-lab` runner pods are launched with `cluster-admin` RBAC and a Talos `ServiceAccount` (`os:admin`) mounted at `/var/run/secrets/talos.dev` — giving workflow steps direct `kubectl` and `talosctl` access. Authentication uses a GitHub App (App ID + Installation ID + private key) sourced from 1Password via `ExternalSecret`. Runners are labelled `home-lab` and match the `runs-on: home-lab` label in workflows.
 
-> **Primary use**: automatic Renovate PR review via `claude-code-action` — the `pr-upgrade-reviewer` agent reviews every Renovate-opened PR without consuming GitHub-hosted runner minutes.
+`home-lab-readonly` runner pods use an explicit `actions-runner-readonly` `ServiceAccount` bound to **no** RBAC — this suppresses ARC's automatic namespace-scoped Role provisioning (`pods/exec`, `jobs`, `secrets` — create + delete), which would silently reintroduce the privilege the split exists to remove. Matched by `runs-on: home-lab-readonly`.
+
+> **Primary use**: automatic Renovate PR review via `claude-code-action` — the `pr-upgrade-reviewer` agent reviews every Renovate-opened major/minor PR on the zero-permission `home-lab-readonly` runner without consuming GitHub-hosted minutes. Patch-only and unlabeled PRs skip the review step entirely (read live labels via `gh pr view` before checkout to avoid the `opened`/`labeled` race).
 
 ---
 
@@ -724,7 +763,7 @@ per-app boilerplate beyond a few `postBuild.substitute` variables.
 | talos-cp-01 | nvme0n1 | 256 GB | YSR256GHLCA1-E5C-2 | 511240117089012580 | Spare / unused |
 | talos-cp-02 | nvme1n1 | 1.0 TB | Kingston SNV3S1000G | 50026B7383B9B35C | Talos system disk (EPHEMERAL on nvme1n1p4) |
 | talos-cp-02 | nvme0n1 | 2.0 TB | Crucial CT2000T500SSD8 | 25405348D601 | Rook-Ceph OSD |
-| talos-cp-03 | nvme1n1 | 256 GB | WD PC SN740 SDDQNQD-256G-1001 | 22176G805106 | Talos system disk (EPHEMERAL on nvme1n1p4) |
+| talos-cp-03 | nvme1n1 | 1.0 TB | Kingston SNV3S1000G | TBD | Talos system disk (EPHEMERAL on nvme1n1p4) — replaced 256 GB WD PC SN740; drive was previously the OSD disk on talos-worker-02 |
 | talos-cp-03 | nvme0n1 | 2.0 TB | Crucial CT2000T500SSD8 | 254053487747 | Rook-Ceph OSD |
 | talos-worker-01 | nvme1n1 | 1.0 TB | GoodRam IRDM PRO NANO (IRP-SSDPR-P44N-01T-30) | G4E004578 | Talos system disk (EPHEMERAL on nvme1n1p4) |
 | talos-worker-01 | nvme0n1 | 2.0 TB | Crucial CT2000P310SSD8 | 252450B1A33B | Rook-Ceph OSD |
