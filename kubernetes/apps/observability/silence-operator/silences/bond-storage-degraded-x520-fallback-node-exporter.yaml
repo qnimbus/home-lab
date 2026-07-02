@@ -1,0 +1,30 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/observability.giantswarm.io/silence_v1alpha2.json
+apiVersion: observability.giantswarm.io/v1alpha2
+kind: Silence
+metadata:
+  name: bond-storage-degraded-x520-fallback-node-exporter
+spec:
+  # TEMPORARY -- tied to the ongoing X520-DA2 hardware replacement, not a permanent policy.
+  # Remove this Silence (and its sibling, bond-storage-degraded-x520-fallback-ceph, which
+  # silences the same condition's rook-ceph-mgr copy of the alert) once replacement cards
+  # are installed and talos/talconfig.yaml's inline VLAN-200 patch is reverted
+  # (bond-storage `addresses:` uncommented on every node, cp-03's deviceSelector MACs
+  # fixed). Context and revert steps:
+  # .claude/agent-memory/cluster-doctor/project_cp02_storage_bond_ixgbe_failure.md
+  #
+  # Why it fires: cp-02's onboard X520 NIC failed HW init (2026-06-25) and cp-03 was
+  # physically replaced on 2026-07-01 with a unit that has no X520 card at all. Storage
+  # traffic on ALL 5 nodes was deliberately failed over from the `bond-storage` LACP bond to
+  # a VLAN 200 sub-interface on each node's onboard 1GbE management NIC, carrying the same
+  # 10.200.0.0/24 subnet Ceph expects -- so Ceph stays HEALTH_OK throughout. `bond-storage`
+  # is therefore intentionally left slaveless (0 of 2 configured slaves active) fleet-wide;
+  # this is a metrics-only condition with no storage-network impact.
+  #
+  # This is node-exporter's generic bonding-health rule
+  # (node_bonding_slaves - node_bonding_active != 0 for master="bond-storage").
+  matchers:
+    - name: alertname
+      value: NodeBondingDegraded
+    - name: master
+      value: bond-storage
