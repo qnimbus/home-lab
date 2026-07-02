@@ -1058,6 +1058,8 @@ Flux recreates the resource from the current Git state (which should already hav
 
 **Short answer:** Talos's `block.LVMActivationController` locks the entire LVM VG (physical disk + all logical volumes) as a unit. Neither `dmsetup remove --force` inside a privileged pod nor `talosctl wipe disk` can break that lock while the controller holds it. The fix is a two-step process: destroy the LVM PV header on the raw disk with `dd`, then reboot the node.
 
+> **This is now automated.** `task talos:wipe-ceph-osds-live` (the `live-osd-cleanup` bootstrap stage) detects when a node still holds active `ceph-*` dm devices — the wipe pod emits a `REBOOT_REQUIRED=1` sentinel — and reboots those nodes itself, **staggered one at a time and gated on each control-plane node's etcd rejoining before the next**, so quorum is preserved. Because this stage runs *before* Cilium/CoreDNS/workloads are installed, the reboot happens while there are no PVCs to multi-attach and no Ceph to degrade — the safe window. The manual sequence below is only a fallback for a running cluster (e.g. a single replacement disk day-2).
+
 **Detail:** When Talos boots with a disk that has Ceph LVM metadata (left over from a previous cluster), the `LVMActivationController` activates the Ceph VG and creates `dm-0`/`dm-1` device-mapper entries. It then holds these as a locked group in its internal state. This causes two failure modes:
 
 1. **`dmsetup remove --force` hangs** — the controller continuously tries to re-activate the VG while the pod is trying to remove the DM device. `--force` bypasses some checks but does not interrupt a held lock; the `find -exec dmsetup remove` call never returns.
@@ -1088,7 +1090,7 @@ talosctl -n <NODE_IP> ls /dev/disk/by-id | grep ceph    # should be empty
 talosctl -n <NODE_IP> get discoveredvolumes | grep nvme0n1  # still blank
 ```
 
-**Reboot safety:** cp-02 and worker-01 can be rebooted one at a time without risk. Rebooting cp-02 leaves 2/3 etcd members active (sufficient quorum); worker-01 is not an etcd member.
+**Reboot safety:** OSD nodes can be rebooted one at a time without risk, which is exactly what the automated stage does. Rebooting any single control-plane node (cp-01/02/03) leaves 2/3 etcd members active (sufficient quorum); the workers (worker-01/02) are not etcd members. The automated path additionally waits for the rebooted CP node's etcd to answer the member-list RPC again before moving to the next node, so quorum is never at risk even across multiple CP reboots in one pass.
 
 **v1.14 will fix this natively:** Talos v1.14 (in alpha as of 2026-06) adds `talosctl wipe lv <name>`, `talosctl wipe vg <name>`, and `talosctl wipe pv <name>` commands that go through the controller's own deactivation path instead of fighting it. Once v1.14 is stable, the `live-osd-cleanup` bootstrap step can be simplified to call these commands directly instead of deploying privileged pods. See [ROADMAP.md → Talos Config Audit](ROADMAP.md#talos-config-image-extensions--patch-audit) for the upgrade note.
 

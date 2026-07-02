@@ -501,16 +501,25 @@ tasks:
 
         echo "Results:"
         FAILED=0
+        REBOOT_NODES=""
         for i in $(seq 0 $((NODE_COUNT - 1))); do
           NODE=$(yq ".spec.values.cephClusterSpec.storage.nodes[${i}].name" "{{.ROOK_HELMRELEASE}}")
           SHORT=$(echo "${NODE}" | sed 's/talos-//')
+          LOGS=$(kubectl logs -n rook-ceph "wipe-osd-lvm-${SHORT}" 2>/dev/null || true)
           PHASE=$(kubectl get pod -n rook-ceph "wipe-osd-lvm-${SHORT}" \
             -o jsonpath='{.status.phase}' 2>/dev/null || echo "not-found")
+          # Queue a reboot whenever the wipe script emitted REBOOT_REQUIRED=1 — check this
+          # independently of pod phase. A disk with an active ceph-* dm holder is exactly
+          # the case that both needs the reboot and can make a late wipe step fail EBUSY;
+          # gating on Succeeded would skip the reboot in the one case it is required.
+          if printf '%s' "${LOGS}" | grep -q '^REBOOT_REQUIRED=1$'; then
+            REBOOT_NODES="${REBOOT_NODES} ${NODE}"
+          fi
           if [ "${PHASE}" = "Succeeded" ]; then
             echo "  ✓ ${NODE}"
           else
             echo "  ✗ ${NODE} (${PHASE})"
-            kubectl logs -n rook-ceph "wipe-osd-lvm-${SHORT}" 2>/dev/null | tail -5 || true
+            printf '%s' "${LOGS}" | tail -5
             FAILED=$((FAILED + 1))
           fi
         done
@@ -518,11 +527,56 @@ tasks:
         kubectl delete pod -n rook-ceph -l app=osd-lvm-wiper --ignore-not-found
         [ "${FAILED}" -gt 0 ] && \
           echo "WARNING: ${FAILED} node(s) failed LVM cleanup — OSDs may not provision on those nodes" >&2
-        echo "Done: live OSD LVM wipe complete."
+
+        # --- Reboot nodes whose disks still hold stale kernel DM entries ----------------
+        # The raw-device wipe destroys the on-disk LVM PV header, but the ceph-* dm devices
+        # Talos's LVMActivationController created at boot linger in the kernel DM table until
+        # the node reboots — Rook OSD-prepare must not run against a disk with stale dm-*
+        # holders. This is the safest possible moment to reboot: this stage runs before
+        # Cilium/CoreDNS/workloads exist, so there are no PVCs to multi-attach and no Ceph to
+        # degrade. Reboots are staggered one node at a time; each control-plane node's etcd is
+        # confirmed serving again before the next, preserving quorum (only cp-* run etcd).
+        # See QA.md → "Why does task talos:wipe-ceph-osds-live fail after a cluster reset?".
+        if [ -n "${REBOOT_NODES}" ]; then
+          echo "Rebooting node(s) with stale DM state:${REBOOT_NODES}"
+          for NODE in ${REBOOT_NODES}; do
+            IP=$(yq ".nodes[] | select(.hostname == \"${NODE}\") | .ipAddress" "{{.TALOS_DIR}}/talconfig.yaml")
+            IS_CP=$(yq ".nodes[] | select(.hostname == \"${NODE}\") | .controlPlane" "{{.TALOS_DIR}}/talconfig.yaml")
+            if [ -z "${IP}" ] || [ "${IP}" = "null" ]; then
+              echo "  ✗ ${NODE}: no ipAddress in talconfig — reboot manually (task talos:reboot-node IP=<ip>)" >&2
+              continue
+            fi
+            echo "  ${NODE} (${IP}): rebooting, waiting for it to return..."
+            # -e/-n target the node as its own endpoint so we never route through a peer that
+            # may itself be mid-reboot. --wait blocks until the boot sequence completes.
+            if ! talosctl -e "${IP}" -n "${IP}" reboot --wait --timeout 5m 2>&1; then
+              echo "  ✗ ${NODE}: reboot --wait did not confirm within timeout — verify manually" >&2
+              continue
+            fi
+            # Control-plane nodes: block until etcd answers the member-list RPC again (i.e. it
+            # rejoined and is serving) before touching the next node — the actual quorum guard.
+            if [ "${IS_CP}" = "true" ]; then
+              printf '    waiting for etcd to rejoin on %s' "${NODE}"
+              DEADLINE=$(($(date +%s) + 180))
+              until talosctl -e "${IP}" -n "${IP}" etcd members >/dev/null 2>&1; do
+                [ "$(date +%s)" -gt "${DEADLINE}" ] && { echo " — timeout (verify quorum manually)" >&2; break; }
+                printf '.'; sleep 5
+              done
+              echo ' ok'
+            fi
+            echo "  ✓ ${NODE} back up"
+          done
+          echo "Done: live OSD LVM wipe + stale-DM reboots complete."
+        else
+          echo "Done: live OSD LVM wipe complete (no nodes needed a reboot)."
+        fi
     preconditions:
       - which kubectl
       - which jq
       - which yq
+      - which talosctl
+      - test -f {{.TALOSCONFIG}}
+      - test -f {{.TALOS_DIR}}/talconfig.yaml
       - test -f {{.ROOT_DIR}}/kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml
       - test -f {{.ROOT_DIR}}/scripts/wipe-osd-lvm.sh
 
