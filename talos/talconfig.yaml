@@ -29,6 +29,18 @@ nodes:
     controlPlane: false
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
+      # TEMPORARY: bond-storage disabled — using VLAN 200 on eno1 (RJ45) for storage until SFP+ bonds are restored.
+      - |-
+        machine:
+          network:
+            interfaces:
+              - interface: eno1
+                vlans:
+                  - vlanId: 200
+                    dhcp: false
+                    addresses:
+                      - "10.200.0.204/24"
+                    mtu: 1500
     nodeLabels:
       topology.kubernetes.io/region: &region homelab
       topology.kubernetes.io/zone: homelab-worker-01
@@ -67,8 +79,8 @@ nodes:
             - hardwareAddr: "b4:96:91:10:95:cc"   # enp1s0f0 — X520-DA2 port 0
             - hardwareAddr: "b4:96:91:10:95:ce"   # enp1s0f1 — X520-DA2 port 1
         dhcp: false
-        addresses:
-          - "10.200.0.204/24"
+        # addresses:
+        #   - "10.200.0.204/24"
         mtu: 9000
 
   - hostname: "talos-worker-02"                     # Lenovo M920Q #2 (i5-8600T CPU @ 2.30GHz, 64GB, X520-DA2) — pure worker
@@ -81,6 +93,18 @@ nodes:
     controlPlane: false
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
+      # TEMPORARY: bond-storage disabled — using VLAN 200 on eno1 (RJ45) for storage until SFP+ bonds are restored.
+      - |-
+        machine:
+          network:
+            interfaces:
+              - interface: eno1
+                vlans:
+                  - vlanId: 200
+                    dhcp: false
+                    addresses:
+                      - "10.200.0.205/24"
+                    mtu: 1500
     nodeLabels:
       topology.kubernetes.io/region: *region
       topology.kubernetes.io/zone: homelab-worker-02
@@ -116,8 +140,8 @@ nodes:
             - hardwareAddr: "14:02:ec:6c:6c:7c"   # enp1s0f0 — X520-DA2 port 0
             - hardwareAddr: "14:02:ec:6c:6c:7d"   # enp1s0f1 — X520-DA2 port 1
         dhcp: false
-        addresses:
-          - "10.200.0.205/24"
+        # addresses:
+        #   - "10.200.0.205/24"
         mtu: 9000
 
   # MS-A2 management NIC: RTL8125 (r8169 driver) — verify: lspci -k | grep -A2 Ethernet
@@ -135,6 +159,18 @@ nodes:
       topology.kubernetes.io/zone: homelab-cp-01
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
+      # TEMPORARY: bond-storage disabled — using VLAN 200 on enp4s0 (RJ45) for storage until SFP+ bonds are restored.
+      - |-
+        machine:
+          network:
+            interfaces:
+              - interface: enp4s0
+                vlans:
+                  - vlanId: 200
+                    dhcp: false
+                    addresses:
+                      - "10.200.0.201/24"
+                    mtu: 1500
     networkInterfaces:
       # Management — single Intel I225/I226 RJ45 (enp4s0, driver: igc)
       # VLAN 60 (management) is native/untagged on the switch port; address configured directly
@@ -169,8 +205,8 @@ nodes:
             - hardwareAddr: "38:05:25:33:c9:75"   # enp5s0f0np0 — X710 port 0
             - hardwareAddr: "38:05:25:33:c9:76"   # enp5s0f1np1 — X710 port 1
         dhcp: false
-        addresses:
-          - "10.200.0.201/24"
+        # addresses:
+        #   - "10.200.0.201/24"
         mtu: 9000
 
   - hostname: "talos-cp-02"                       # Lenovo M90q #1 (i5-10500T, 6C/12T, 64GB, +X520-DA2 SFP+ 10GbE) — permanent CP
@@ -186,6 +222,18 @@ nodes:
       topology.kubernetes.io/zone: homelab-cp-02
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
+      # TEMPORARY: bond-storage disabled — using VLAN 200 on eno1 (RJ45) for storage until SFP+ bonds are restored.
+      - |-
+        machine:
+          network:
+            interfaces:
+              - interface: eno1
+                vlans:
+                  - vlanId: 200
+                    dhcp: false
+                    addresses:
+                      - "10.200.0.202/24"
+                    mtu: 1500
     networkInterfaces:
       # Management — single Intel I219-LM RJ45 (driver: e1000e) — VLAN 60 (management) is
       # native/untagged on the switch port; address configured directly on the physical interface.
@@ -224,15 +272,15 @@ nodes:
             - hardwareAddr: "90:e2:ba:e8:ea:64"   # enp2s0f0 — X520-DA2 port 0 (ex-cp-03 card)
             - hardwareAddr: "90:e2:ba:e8:ea:65"   # enp2s0f1 — X520-DA2 port 1 (ex-cp-03 card)
         dhcp: false
-        addresses:
-          - "10.200.0.202/24"
+        # addresses:
+        #   - "10.200.0.202/24"
         mtu: 9000
 
-  - hostname: "talos-cp-03"                       # Lenovo M90q #2 (i5-10500T, 6C/12T, 64GB, +X520-DA2 SFP+ 10GbE) — permanent CP
+  - hostname: "talos-cp-03"                       # Lenovo M90q #3 (i5-10500T, 6C/12T, 64GB) — permanent CP (replaced 2026-07-01 after hardware failure)
     ipAddress: "10.60.0.203"
     installDiskSelector:
-      model: "KINGSTON SNV3S1000G"               # Kingston NV3 1TB — boot disk (replaced WD SN740 256GB 2026-06-28); CT2000T500SSD8 (T500 2TB) is Ceph OSD
-      # serial: "TBD"                            # add once disk is installed — needed to disambiguate from cp-02 which uses the same model
+      model: "KINGSTON SNV3S1000G"               # Kingston NV3 1TB (nvme0n1) — boot disk; CT2000T500SSD8 (T500 2TB, nvme1n1) is Ceph OSD
+      serial: "50026B7383B9D0CC"                 # required: disambiguates from cp-02 which also uses KINGSTON SNV3S1000G
     machineSpec:
       secureboot: false
     talosImageURL: "${talosImageURL}"
@@ -242,19 +290,13 @@ nodes:
       topology.kubernetes.io/zone: homelab-cp-03
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
-      # TEMPORARY 2026-06-25: the X520-DA2 card in this slot is confirmed faulty (ixgbe
-      # HW Init failed: -114 — reproduced across warm reboot, cold power-cycle, reseat, and
-      # now a different motherboard during fault isolation; no Intel NVM/firmware recovery
-      # path exists for retail X520 series). Falling back to the pre-2026-06-18 eno1.200
-      # VLAN-trunk storage path (1GbE) until a replacement card arrives — see the matching
-      # bond-storage comment below for the revert steps.
-      # Syntax notes (same gotchas as the original pre-bond config, commit 564e6f1):
-      # talhelper generates both a VLANConfig doc AND processes inline machine.network
-      # vlans[], causing "file exists" if both try to create the same VLAN subinterface —
-      # keep vlans: out of networkInterfaces and own it here instead. Use interface: eno1
-      # (explicit kernel name), not deviceSelector — a deviceSelector here creates a second
-      # alias for the same NIC, cascading into duplicate VLAN subinterfaces that overflow
-      # Cilium's BPF VLAN filter limit.
+      # No X520 card installed yet — using tagged VLAN 200 on the onboard 1GbE RJ45 as a
+      # temporary storage path until a replacement X520 arrives.
+      # To revert once the X520 is installed: remove this inline patch, uncomment
+      # `addresses:` in bond-storage below, and update deviceSelectors with the new card's MACs.
+      # Syntax notes: use interface: eno1 (not deviceSelector) — a deviceSelector here creates
+      # a second alias for the same NIC, causing duplicate VLAN subinterfaces that overflow
+      # Cilium's BPF VLAN filter limit. Keep vlans: out of networkInterfaces for the same reason.
       - |-
         machine:
           network:
@@ -271,7 +313,7 @@ nodes:
       # native/untagged on the switch port; address configured directly on the physical interface.
       # Native/untagged VLAN 100 (10.100.0.0/24) for Intel AMT is handled by the ME firmware.
       - deviceSelector:
-          hardwareAddr: "88:a4:c2:cc:ce:ac"      # eno1 — onboard Intel NIC
+          hardwareAddr: "6c:24:08:47:73:5c"      # eno1 — onboard Intel NIC
         dhcp: false
         addresses:
           - "10.60.0.203/24"
@@ -286,12 +328,9 @@ nodes:
       # driver selector matches both ports at once and prevents the bond from forming.
       # bond-storage: consistent name across all nodes — the storage-VLAN fabric for Rook-Ceph
       # (cluster_network on hostNetwork OSDs).
-      # TEMPORARILY DISABLED 2026-06-25 — no address assigned (left commented out) to avoid
-      # conflicting with the eno1.200 VLAN-trunk fallback above, which now claims
-      # 10.200.0.203/24 instead. This card (physically the original cp-02 card, moved here
-      # for fault isolation) is confirmed faulty. To revert once a replacement card is
-      # installed: remove the inline VLAN patch above, uncomment `addresses:` below, and
-      # update deviceSelectors to the replacement card's MACs.
+      # DISABLED — no X520 card installed; eno1.200 VLAN patch above owns 10.200.0.203/24.
+      # To activate once the replacement X520 is installed: remove the inline VLAN patch above,
+      # uncomment `addresses:` below, and update deviceSelectors to the new card's MACs.
       - interface: bond-storage
         bond:
           mode: 802.3ad
@@ -301,8 +340,8 @@ nodes:
           downdelay: 200
           xmitHashPolicy: layer3+4
           deviceSelectors:
-            - hardwareAddr: "90:e2:ba:e8:e9:d0"   # enp2s0f0 — X520-DA2 port 0 (ex-cp-02 card, faulty)
-            - hardwareAddr: "90:e2:ba:e8:e9:d1"   # enp2s0f1 — X520-DA2 port 1 (ex-cp-02 card, faulty)
+            - hardwareAddr: "xx:xx:xx:xx:xx:xx"   # enp2s0f0 — X520-DA2 port 0 (TBD: replacement card)
+            - hardwareAddr: "xx:xx:xx:xx:xx:xx"   # enp2s0f1 — X520-DA2 port 1 (TBD: replacement card)
         dhcp: false
         # addresses:
         #   - "10.200.0.203/24"

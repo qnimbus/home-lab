@@ -453,7 +453,7 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 |-----|------|------|
 | `openebs-localpv-provisioner` | Deployment | Dynamically provisions hostpath PVs on the local node |
 
-> **Per-node capacity**: each node's `local-hostpath` UserVolume (`talos/patches/node/machine-volumes-1tb.yaml`) fills the system disk after a 120GiB `EPHEMERAL` cap. All 5 nodes now have ~1TB system disks → ~870-890 GiB available each (cp-03 had a 256GB WD PC SN740 until 2026-06-28 when it was upgraded to a Kingston SNV3S1000G 1TB). `openebs-hostpath` (`WaitForFirstConsumer`, `openebs.io/local`) has no node-capacity awareness — the provisioner follows wherever the pod schedules with no fallback if that node runs low on space. Prefer `ceph-block` for large PVCs (>50 GiB) or anything that needs storage-level redundancy.
+> **Per-node capacity**: each node's `local-hostpath` UserVolume (`talos/patches/node/machine-volumes-1tb.yaml`) fills the system disk after a 120GiB `EPHEMERAL` cap. All 5 nodes have ~1TB system disks → ~870-890 GiB available each. `openebs-hostpath` (`WaitForFirstConsumer`, `openebs.io/local`) has no node-capacity awareness — the provisioner follows wherever the pod schedules with no fallback if that node runs low on space. Prefer `ceph-block` for large PVCs (>50 GiB) or anything that needs storage-level redundancy.
 
 ---
 
@@ -763,8 +763,8 @@ per-app boilerplate beyond a few `postBuild.substitute` variables.
 | talos-cp-01 | nvme0n1 | 256 GB | YSR256GHLCA1-E5C-2 | 511240117089012580 | Spare / unused |
 | talos-cp-02 | nvme1n1 | 1.0 TB | Kingston SNV3S1000G | 50026B7383B9B35C | Talos system disk (EPHEMERAL on nvme1n1p4) |
 | talos-cp-02 | nvme0n1 | 2.0 TB | Crucial CT2000T500SSD8 | 25405348D601 | Rook-Ceph OSD |
-| talos-cp-03 | nvme1n1 | 1.0 TB | Kingston SNV3S1000G | TBD | Talos system disk (EPHEMERAL on nvme1n1p4) — replaced 256 GB WD PC SN740; drive was previously the OSD disk on talos-worker-02 |
-| talos-cp-03 | nvme0n1 | 2.0 TB | Crucial CT2000T500SSD8 | 254053487747 | Rook-Ceph OSD |
+| talos-cp-03 | nvme0n1 | 1.0 TB | Kingston SNV3S1000G | 50026B7383B9D0CC | Talos system disk (EPHEMERAL on nvme0n1p4) |
+| talos-cp-03 | nvme1n1 | 2.0 TB | Crucial CT2000T500SSD8 | 254053487747 | Rook-Ceph OSD |
 | talos-worker-01 | nvme1n1 | 1.0 TB | GoodRam IRDM PRO NANO (IRP-SSDPR-P44N-01T-30) | G4E004578 | Talos system disk (EPHEMERAL on nvme1n1p4) |
 | talos-worker-01 | nvme0n1 | 2.0 TB | Crucial CT2000P310SSD8 | 252450B1A33B | Rook-Ceph OSD |
 | talos-worker-02 | nvme1n1 | 1.0 TB | Crucial CT1000P310SSD2 | 25174FD70E4D | Talos system disk (EPHEMERAL on nvme1n1p4) |
