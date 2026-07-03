@@ -35,6 +35,17 @@ spec:
           # size=1 ceph-block-single pool — see the cephBlockPools note below. Default
           # redundancy warning behaviour now applies; with no size=1 pool it never
           # fires, so HEALTH_OK stays meaningful without the override.
+        mon:
+          # Ceph's default: every mon mirrors every OTHER mon's Paxos-replicated
+          # cluster/audit-log event to its own stderr, so each event is logged
+          # 2-3x across the 3-mon fleet instead of once. Confirmed live via
+          # `ceph config show-with-defaults mon.a` (mon_cluster_log_to_stderr=true,
+          # source=default — not something Rook sets, Ceph's own compiled default).
+          # Disabling cuts mon container log volume ~2-3x. Cluster/audit history
+          # remains available via `ceph log last` / `ceph crash ls` / the dashboard
+          # (those read the Paxos-backed cluster log service, not stderr) — this
+          # only removes it from `kubectl logs` / VictoriaLogs.
+          mon_cluster_log_to_stderr: "false"
         osd:
           # Default is 3; bump to 5 for NVMe workloads where the disk is not
           # the bottleneck and messenger threads can otherwise become the ceiling.
@@ -52,7 +63,10 @@ spec:
           # bluestore_rocksdb_options string (chart/Ceph default) is left untouched.
           # The invalid key above was live for a while and put rook-ceph-operator in
           # a failed-reconcile retry loop (~every 25-30s: set -> ENOENT -> delete ->
-          # retry), which was itself a major contributor to mon/mgr log volume.
+          # retry) — worth fixing regardless, but re-measured mon/mgr log volume
+          # after this landed and the operator went idle: it wasn't a major
+          # contributor to steady-state volume. See mon_cluster_log_to_stderr below
+          # for the actual driver of mon container log volume.
           bluestore_rocksdb_options_annex: "stats_dump_period_sec=0"
         mgr:
           # pg_autoscaler logs its _maybe_adjust/effective_target_ratio decision
