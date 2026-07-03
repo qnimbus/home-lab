@@ -4,6 +4,36 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-03 — `gitops-repo-audit-sixth-pass`
+
+### Goal
+Re-run the `gitops-repo-audit` skill for a sixth pass against the current repo state, refresh `docs/REPO-AUDIT.md`, and implement the one fix worth taking (explicit Gateway `tls.mode`).
+
+### What we did
+- Ran the full `gitops-repo-audit` skill workflow: discovery, manifest validation, API-compliance, best-practices, and security review, comparing against the fifth pass (baseline `e542cd3` → HEAD `7d8e377`, 26 commits).
+- `flux-schema` wasn't preinstalled in this devcontainer — fetched the v0.6.0 release binary fresh from GitHub and installed it to `~/.local/bin` to unblock `discover.sh`/`validate.sh`.
+- First discovery pass inflated to 1480 resources; root-caused to a gitignored `tmp/` scratch directory (two full reference-repo clones from prior kubesearch.dev research, e.g. `home-ops-bykaj`) that isn't part of the actual GitOps tree — excluded it (`-e tmp`) and re-ran, landing at the expected ~37 HelmReleases / 53 Kustomizations / 26 OCIRepositories.
+- Triaged all "invalid" validation hits: confirmed 61 (then 16 once properly scoped with `-e talos -e assets -e .archive -e ops`) were false positives — Talos machine-config YAML being scanned as if it were Kubernetes manifests, and `postBuild.substitute` placeholders (`${DOMAIN_CLUSTER}` etc.) that only resolve at apply time.
+- Found two new `Gateway` `cel violation` findings not seen in the fifth pass: `envoy-external`/`envoy-internal`'s HTTPS listeners omit `tls.mode` explicitly, relying on the Gateway API's implicit `Terminate` default — a `flux-schema` v0.6.0 CEL rule evaluates `self.mode` before the OpenAPI default applies, so it misfires on an otherwise-valid config. Also found the same v0.6.0 CEL ruleset misfiring on `envoy-external/internal-http-redirect` HTTPRoutes' single-entry `parentRefs` arrays (a real tool artifact, no repo-side fix available).
+- Found one genuine best-practices gap: `fluent-bit`'s commit `50fe449` ("enhance log filtering for tailscale-operator and localapi calls") ships its localapi noise-reduction `[FILTER]` block fully commented-out inside the live config string — the noise reduction the commit describes isn't actually happening at runtime. User confirmed this is fine as-is (kept as a commented reference for future use), so left unfixed by design.
+- Re-verified all previously-resolved invariants are still holding: zero `dependsOn` cycles/dangling refs (53 Kustomizations, checked programmatically), zero drift-detection opt-outs, zero `configMapGenerator` watch-label gaps, no plaintext secrets, no `insecure: true` sources, no hardcoded credentials.
+- Reviewed the three new apps added since the fifth pass in detail: `unpoller` (UniFi metrics via app-template), `grafana-operator` (external mode, correctly `dependsOn`s + explicit cross-Kustomization `healthChecks` on `kube-prometheus-stack`'s async `grafana-admin` `ExternalSecret`), and `silence-operator` (4 well-scoped `Silence` CRs, each with an inline revert condition).
+- At the user's request, implemented the one accepted recommendation: added `tls: { mode: Terminate }` explicitly to both Gateway HTTPS listeners in `kubernetes/apps/network/envoy-gateway/config/gateway.yaml`. Verified via `kustomize build` (unchanged output apart from the added field) and `flux-schema validate --verbose` (both Gateways now report `is valid`, CEL finding gone).
+- Updated `docs/REPO-AUDIT.md` as a sixth pass: refreshed resource counts, validation results, best-practices "What's Working Well"/"Gaps" tables, OCI cosign coverage table (8/26 verified), and the Recommendations tables (added W4 for the fluent-bit gap, opened then closed I15 for the Gateway fix, added the `flux-schema` install step and `-e tmp` exclusion to the "How to Re-Audit" recipe).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/REPO-AUDIT.md` | Sixth audit pass — refreshed inventory/validation/best-practices/security sections, added W4 (fluent-bit filter gap, left open by user choice) and I15 (Gateway `tls.mode`, resolved same session) |
+| `kubernetes/apps/network/envoy-gateway/config/gateway.yaml` | Added explicit `tls: { mode: Terminate }` to both `envoy-external` and `envoy-internal` HTTPS listeners |
+
+### Key decisions
+- User accepted the `fluent-bit` W4 finding as intentional (commented-out filter kept for future reference) rather than a bug to fix — left as-is per explicit instruction, documented in the audit doc as an open item rather than resolved.
+- Chose to fix I15 (explicit `tls.mode`) even though it's a functional no-op, because it's zero-risk, self-documenting, and eliminates a recurring validator false-positive in future audit passes.
+- No session had been opened before this work started — this record was produced retroactively via `/session-log`.
+
+---
+
 ## 2026-07-03 — `unpoller-grafana-operator-deploy`
 
 ### Goal

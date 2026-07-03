@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-07-03 | `gitops-repo-audit-sixth-pass` | Sixth gitops-repo-audit pass; found fluent-bit filter shipped disabled (kept as-is) and Gateway tls.mode CEL false-positive (fixed) |
 > | 2026-07-03 | `unpoller-grafana-operator-deploy` | Deployed unpoller (UniFi metrics) + grafana-operator (external mode); Renovate-tracked dashboard revisions; documented native-Grafana alternative in ROADMAP |
 > | 2026-06-24 | `silence-operator-deploy` | Deployed silence-operator for GitOps Alertmanager silences; seeded nfsmount.conf silence, dropped node-exporter exclude |
 > | 2026-06-23 | `victoria-logs-fluent-bit-deploy` | Deployed VictoriaLogs+fluent-bit for log aggregation, chosen over Loki; wired Grafana plugin, dashboards, route |
@@ -11,7 +12,6 @@
 > | 2026-06-22 | `volsync-deploy-pvc-incident` | Deployed VolSync (Restic, NFS-direct, jitter); Helm deleted waha's live PVC on a wrong name assumption |
 > | 2026-06-22 | `tailscale-subnet-route-precedence-fix` | Fixed Tailscale LAN-hijack: advertised /23 in-cluster; added UniFi DHCP classless routes for routed clients |
 > | 2026-06-22 | `worker02-power-brick-rootcause` | Root-caused recurring talos-worker-02 hard-downs to a failing power brick via MemTest86 hardware isolation; explained CNPG local-storage rescheduling |
-> | 2026-06-21 | `cnpg-storj-to-b2-migration` | Migrated CNPG backups Storj→B2; root-caused dot-in-bucket-name WAL-archive bug; verified live recovery drill |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 

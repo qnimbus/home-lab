@@ -29,6 +29,7 @@ spec:
         namespaces:
           from: All
       tls:
+        mode: Terminate
         certificateRefs:
           # WAN-safe — one level under their own zone root, covered by Cloudflare's
           # free Universal SSL at the edge:
@@ -75,6 +76,7 @@ spec:
         namespaces:
           from: All
       tls:
+        mode: Terminate
         certificateRefs:
           - kind: Secret
             name: vwn-app-tls
