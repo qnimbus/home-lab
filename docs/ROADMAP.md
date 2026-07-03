@@ -1127,6 +1127,56 @@ triggering a Renovate dry-run after the split (check the Dependency Dashboard is
 
 ---
 
+#### Grafana-Operator: Full Native Migration (Future)
+
+**Context:** the `unpoller` deployment (2026-07-03 session) needed a cleaner way to manage
+grafana.com-sourced dashboards than the `sidecar.dashboards` ConfigMap-label pattern, and evaluated
+`grafana-operator` (as bykaj's repo uses it) as the fix. Two integration modes exist; **this
+cluster adopted the low-risk one** — see below — and this entry documents the road not taken.
+
+**Mode adopted (done):** `grafana-operator` in **external mode** — a `Grafana` CR with
+`spec.external.url` pointing at the *existing* `kube-prometheus-stack-grafana` Service, reusing the
+existing `grafana-admin-secret` for auth. The operator only pushes `GrafanaDashboard`/
+`GrafanaDatasource` CRs into the already-running Grafana over its HTTP API — the Grafana
+Deployment, its `ceph-block` PVC, and its `grafana.db` (restored from NFS during the Phase 5
+storage migration — see [Grafana](#grafana) above) are completely untouched. See
+`kubernetes/apps/observability/grafana-operator/` and `kubernetes/apps/observability/unpoller/`.
+
+**Mode NOT adopted — bykaj's model:** bykaj runs Grafana **natively** under the operator — a
+`Grafana` CR that owns its own Deployment, its own PVC (`10Gi ceph-block` in their repo), its own
+`GF_SECURITY_ADMIN_USER`/`PASSWORD` secret, and the Grafana `config` (`grafana.ini`-equivalent)
+inline in `spec.config`. This is strictly more capable — the operator manages Grafana's full
+lifecycle, not just dashboard content pushed over an API — but adopting it here means:
+
+1. Disabling `kube-prometheus-stack`'s bundled Grafana (`grafana.enabled: false` in
+   `kube-prometheus-stack/app/helm/values.yaml`) — the *currently running* instance goes away.
+2. A brand-new Grafana comes up with an empty PVC. Anything only ever created via the Grafana UI
+   (as opposed to GitOps-managed ConfigMaps/CRDs) does not come back automatically — this includes
+   whatever drove the original NFS `grafana.db` restore. GitOps-managed content (ceph-mixin
+   dashboards, `node-exporter-full`, unpoller's `GrafanaDashboard` CRs) migrates cleanly since it's
+   already declarative.
+3. Re-pointing everything that currently targets `kube-prometheus-stack-grafana` — the
+   `envoy-internal` HTTPRoute (`grafana.${DOMAIN_CLUSTER}`), the Grafana `ServiceMonitor`, and any
+   `NetworkPolicy`/firewall rule scoped to that Service name — at the new operator-owned Service.
+4. A genuine stateful cutover on a live, working service, in the same risk class as the 2026-06-22
+   VolSync/waha PVC incident (session log) — a wrong assumption about what Helm does to an existing
+   PVC on a values change destroyed a live volume that time. Same blast-radius category here.
+
+**When to revisit:** if Grafana's own config/plugins/lifecycle ever need to be GitOps-managed as
+CRDs rather than Helm values — e.g. wanting `spec.config` drift-detection on `grafana.ini`, or
+needing more `Grafana` CRs for a second isolated instance. Nothing today requires this; external
+mode already satisfies the goal that prompted the evaluation (clean, Renovate-trackable dashboard
+management).
+
+**Migration cost:** high — stateful cutover, manual dashboard/datasource reconciliation for
+anything not already GitOps-managed, re-pointing 2+ existing resources at a new Service name, and a
+maintenance window (Grafana briefly unavailable during the swap).
+
+**Reference:** `bykaj/home-ops` `kubernetes/apps/observability/grafana/instance/grafana.yaml`
+(native `Grafana` CR) and `kubernetes/apps/observability/grafana/operator/helmrelease.yaml`.
+
+---
+
 #### Dedicated `envoy-services` Gateway (Future)
 
 A third Gateway alongside `envoy-external` and `envoy-internal`, purpose-built for LAN infrastructure proxying (Proxmox, PBS, NAS, home appliances). Currently deferred — all LAN services route through `envoy-internal` with TLS terminated at the gateway (see [CLUSTER.md → Scenario 4](CLUSTER.md#scenario-4--lan-resource-proxy-external-services)).

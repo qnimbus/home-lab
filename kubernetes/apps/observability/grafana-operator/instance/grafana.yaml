@@ -1,0 +1,22 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/grafana.integreatly.org/grafana_v1beta1.json
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: grafana
+  labels:
+    grafana.internal/instance: grafana
+spec:
+  # External mode: the operator manages dashboards/datasources over the Grafana HTTP API against
+  # the already-running kube-prometheus-stack Grafana. It does not own the Deployment, PVC, or
+  # grafana.ini config -- those stay exactly as kube-prometheus-stack deploys them today. See
+  # docs/ROADMAP.md -> "Grafana-Operator: Full Native Migration (Future)" for the alternative
+  # (operator-owned, native Grafana CR) considered and deliberately not adopted.
+  external:
+    url: http://kube-prometheus-stack-grafana.observability.svc.cluster.local
+    adminUser:
+      name: grafana-admin-secret
+      key: admin-user
+    adminPassword:
+      name: grafana-admin-secret
+      key: admin-password

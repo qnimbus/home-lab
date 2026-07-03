@@ -29,3 +29,4 @@ resources:
   - ./victoria-logs.yaml
   - ./fluent-bit.yaml
   - ./silence-operator.yaml
+  - ./grafana-operator.yaml

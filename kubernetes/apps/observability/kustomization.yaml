@@ -8,3 +8,5 @@ resources:
   - ./victoria-logs/ks.yaml
   - ./fluent-bit/ks.yaml
   - ./silence-operator/ks.yaml
+  - ./grafana-operator/ks.yaml
+  - ./unpoller/ks.yaml

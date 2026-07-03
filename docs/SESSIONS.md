@@ -4,6 +4,54 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-03 — `unpoller-grafana-operator-deploy`
+
+### Goal
+Deploy `unpoller` for UniFi controller metrics, add `grafana-operator` (external mode) for cleaner Renovate-trackable dashboard management, and align `node-exporter-full`'s dashboard provisioning with the same offline-reproducible pattern.
+
+### What we did
+- Researched `unpoller`: checked `kubesearch.dev` and the `tmp/home-ops-bykaj` reference repo, confirming the community-standard deployment is a plain `app-template` container (not a dedicated chart) and that it was already listed as a planned deployment in `docs/POTENTIAL-DEPLOYMENTS.md`.
+- Found the cluster's `external-dns-unifi` `ExternalSecret` already extracts a 1Password item named `unifi` with `UNIFI_HOST`/`UNIFI_API_KEY` — reused it directly for `unpoller`, avoiding any new 1Password item.
+- Initially planned dashboards as static `configMapGenerator` ConfigMaps (matching the existing ceph-mixin pattern, since this repo doesn't run grafana-operator) — downloaded and prepared JSON for 4 UniFi dashboards plus `node-exporter-full`, including a datasource-placeholder fix (`${DS_PROMETHEUS}`/`${DS_UNIFI_POLLER}` → the cluster's actual `Prometheus` datasource name) needed for the sidecar path.
+- User pivoted mid-implementation to grafana-operator for cleaner, typed dashboard config (`grafanaCom: {id, revision}`). Investigated two integration modes: bykaj's model (operator natively owns Grafana — its own Deployment/PVC/admin secret) vs. **external mode** (`Grafana` CR with `spec.external.url` pointing at the already-running `kube-prometheus-stack-grafana`, reusing the existing `grafana-admin-secret`). Verified the `External` Go struct fields directly from grafana-operator's source. Presented both with the concrete risk difference (external mode: zero-risk, no data migration; native mode: stateful cutover of a live Grafana with real dashboard history) — user chose external mode for the live deployment and asked for a thorough `ROADMAP.md` entry documenting the native-mode alternative.
+- Deployed `grafana-operator` (OCI chart `5.24.0`, confirmed via the GHCR tags API) in external mode, plus `unpoller`'s dashboards as `GrafanaDashboard` CRDs using `grafanaCom.{id,revision}` (fetched fresh from grafana.com, so the earlier local datasource-placeholder fix wasn't needed for these — the CRD's own `datasources:` mapping handles substitution).
+- Found and closed a bootstrap-ordering gap: `kube-prometheus-stack`'s `ks.yaml` has `wait: false`, so nothing guarantees `grafana-admin-secret` (created async by its `ExternalSecret`) exists before the new `Grafana` CR consumes it. Added an explicit cross-Kustomization `healthChecks` entry (on the `ExternalSecret`, not owned by this Kustomization) rather than touching kube-prometheus-stack's existing config.
+- At the user's explicit request, wired a Renovate `customDatasources` entry (`grafana-dashboard`, backed by grafana.com's `/revisions` API) plus a `loose`-versioning `packageRule`, reusing the existing generic `# renovate: datasource=... depName=...` regex manager — so `grafanaCom.revision` bumps now surface as real Renovate PRs.
+- Restructured `node-exporter-full` off the Helm `dashboards.default.gnetId/revision` fetch-by-ID mechanism onto a static `configMapGenerator` JSON file (matching ceph-mixin) — confirmed first that the existing `# renovate: depName=... dashboardId=... revisionId=...` comment wasn't actually wired to any live Renovate rule (no `datasource=` token, didn't match the one existing customManager regex), so no real automation was lost by the switch; motivated instead by removing Grafana's runtime dependency on reaching grafana.com at pod startup, and by git-diffable dashboard content.
+- Wrote a thorough `docs/ROADMAP.md` entry contrasting the adopted external-mode approach against bykaj's full-native-Grafana model, including concrete migration cost/blast-radius reasoning (referencing the 2026-06-22 VolSync/waha PVC incident as the same risk category).
+- Updated `docs/POTENTIAL-DEPLOYMENTS.md` to mark both `unpoller` and `grafana-operator` as deployed, with notes on scope (only `unpoller`'s dashboards use the CRD path so far; ceph-mixin/node-exporter-full remain on the sidecar pattern).
+- Flagged that no session had been opened for this work (caught only at the end) — this record was produced retroactively via `/session-log`.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/grafana-operator.yaml` | New `OCIRepository` source for the grafana-operator chart (`5.24.0`) |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Registered the new `OCIRepository` source |
+| `kubernetes/apps/observability/grafana-operator/ks.yaml` | New two-`Kustomization` Flux wiring (operator + external `Grafana` CR instance), with explicit `healthChecks` on the operator `HelmRelease`, the `Grafana` CR, and `kube-prometheus-stack`'s `grafana-admin` `ExternalSecret` |
+| `kubernetes/apps/observability/grafana-operator/operator/kustomization.yaml` | Kustomize entry-point for the operator |
+| `kubernetes/apps/observability/grafana-operator/operator/helmrelease.yaml` | New `HelmRelease` (`serviceMonitor.enabled: true`) |
+| `kubernetes/apps/observability/grafana-operator/instance/kustomization.yaml` | Kustomize entry-point for the `Grafana` CR |
+| `kubernetes/apps/observability/grafana-operator/instance/grafana.yaml` | New `Grafana` CR, `spec.external` mode against `kube-prometheus-stack-grafana`, reusing `grafana-admin-secret` |
+| `kubernetes/apps/observability/unpoller/ks.yaml` | New Flux `Kustomization`, `dependsOn` `kube-prometheus-stack` (ServiceMonitor CRD) and `grafana-operator-instance` (GrafanaDashboard CRD + target instance) |
+| `kubernetes/apps/observability/unpoller/app/kustomization.yaml` | New Kustomize entry-point |
+| `kubernetes/apps/observability/unpoller/app/externalsecret.yaml` | New `ExternalSecret`, reuses the existing `unifi` 1Password item (same one `external-dns-unifi` uses) |
+| `kubernetes/apps/observability/unpoller/app/helmrelease.yaml` | New `HelmRelease` (`app-template`), UniFi API-key auth, `/health` probes, 2m `ServiceMonitor` interval |
+| `kubernetes/apps/observability/unpoller/app/grafanadashboard.yaml` | New: 4 `GrafanaDashboard` CRDs (`grafanaCom.{id,revision}`, Renovate-tracked) |
+| `kubernetes/apps/observability/kustomization.yaml` | Registered `grafana-operator/ks.yaml` and `unpoller/ks.yaml` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/dashboards/node-exporter-full.json` | New: static dashboard JSON (grafana.com ID `1860`, revision `37`) |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/kustomization.yaml` | Added `configMapGenerator` entry for `node-exporter-full`, labelled `grafana_dashboard: "1"` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/helm/values.yaml` | Removed the `dashboards.default.node-exporter-full` `gnetId`/`revision` block (superseded by the static ConfigMap) |
+| `renovate.json5` | Added `customDatasources.grafana-dashboard` (grafana.com revisions API) and a `loose`-versioning `packageRule` scoped to it |
+| `docs/ROADMAP.md` | New "Grafana-Operator: Full Native Migration (Future)" entry under Researched Patterns, documenting the not-adopted alternative |
+| `docs/POTENTIAL-DEPLOYMENTS.md` | Marked `unpoller` and `grafana-operator` as deployed (✅), with scope notes |
+
+### Key decisions
+- **External mode over native Grafana CR**: chosen specifically to avoid a stateful cutover of the live, working Grafana instance (own PVC, own dashboard history restored from NFS post-Ceph-migration). Native mode remains a documented option in `docs/ROADMAP.md` if Grafana's own config/lifecycle ever needs CRD management.
+- **Only `unpoller` moved to `GrafanaDashboard` CRDs** — ceph-mixin and `node-exporter-full` stay on the ConfigMap-sidecar pattern for now, keeping this session's blast radius contained rather than migrating everything for consistency in one pass.
+- **`node-exporter-full` restructured to static ConfigMap despite being unrelated to the grafana-operator pivot** — agreed independently, on the grounds that the existing Renovate-tracking comment for it was already inert (regex mismatch), so the switch away from Helm's `gnetId` fetch-by-ID lost no real automation while gaining offline reproducibility and diffable content.
+
+---
+
 ## 2026-06-24 — `silence-operator-deploy`
 
 ### Goal

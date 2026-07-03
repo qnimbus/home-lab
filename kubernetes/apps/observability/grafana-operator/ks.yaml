@@ -1,0 +1,67 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: grafana-operator
+  namespace: flux-system
+spec:
+  targetNamespace: observability
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: grafana-operator
+  wait: true
+  prune: true
+  interval: 1h
+  path: ./kubernetes/apps/observability/grafana-operator/operator
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: grafana-operator
+      namespace: observability
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: grafana-operator-instance
+  namespace: flux-system
+spec:
+  targetNamespace: observability
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: grafana-operator
+  # Grafana CRD (grafana.integreatly.org/v1beta1) doesn't exist until the operator's
+  # HelmRelease installs it -- dependsOn blocks this Kustomization's dry-run until then.
+  # kube-prometheus-stack is also a hard dependency: this Grafana CR is external-mode,
+  # pointing at kube-prometheus-stack-grafana and reusing its grafana-admin-secret.
+  dependsOn:
+    - name: grafana-operator
+      namespace: flux-system
+    - name: kube-prometheus-stack
+      namespace: flux-system
+  # kube-prometheus-stack's own ks.yaml has wait: false, so it does not itself guarantee
+  # grafana-admin-secret (ExternalSecret-created) is synced before dependents proceed --
+  # healthCheck it explicitly here so a fresh bootstrap can't race the external Grafana CR
+  # against a Secret that doesn't exist yet.
+  healthChecks:
+    - apiVersion: grafana.integreatly.org/v1beta1
+      kind: Grafana
+      name: grafana
+      namespace: observability
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: grafana-admin
+      namespace: observability
+  wait: true
+  prune: true
+  interval: 1h
+  path: ./kubernetes/apps/observability/grafana-operator/instance
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system

@@ -88,14 +88,14 @@ Apps are grouped by functional area. Entries marked **✅ deployed** are already
 | App | Chart | Source | Notes |
 |-----|-------|--------|-------|
 | **kube-prometheus-stack** ✅ | `kube-prometheus-stack` v87.0.1 | `ghcr.io/prometheus-community/charts` | Prometheus + Alertmanager + node-exporter + kube-state-metrics; bundled Grafana enabled (`grafana.enabled: true`) |
-| **grafana-operator** | `grafana-operator` v5.23.0 | `ghcr.io/grafana/helm-charts` | Manages Grafana dashboards/datasources as CRDs — **not adopted**: Grafana instead runs inline via `kube-prometheus-stack`'s bundled chart, with ConfigMap-sidecar dashboard/datasource discovery |
+| **grafana-operator** ✅ | `grafana-operator` v5.24.0 | `ghcr.io/grafana/helm-charts` | Manages `GrafanaDashboard`/`GrafanaDatasource` CRDs against the **external**, already-running `kube-prometheus-stack` Grafana (`Grafana` CR in `spec.external` mode, reusing `grafana-admin-secret`) — deliberately *not* the full native-Grafana-CR model (see `docs/ROADMAP.md` → "Grafana-Operator: Full Native Migration (Future)"). ceph-mixin/node-exporter-full dashboards remain on the ConfigMap-sidecar pattern; only `unpoller`'s dashboards use the CRD path so far |
 | **victoria-logs** ✅ | `victoria-logs-single` v0.13.8 | `ghcr.io/victoriametrics/helm-charts` | Lightweight log aggregation; chosen over Loki |
 | **fluent-bit** ✅ | `fluent-bit` v0.55.0 | `ghcr.io/home-operations/charts-mirror` | Log forwarder (node → victoria-logs) |
 | **smartctl-exporter** ✅ | `prometheus-smartctl-exporter` v0.16.1 | `ghcr.io/prometheus-community/charts` | S.M.A.R.T. disk health metrics for Prometheus |
 | **blackbox-exporter** | `prometheus-blackbox-exporter` v11.10.0 | `ghcr.io/prometheus-community/charts` | HTTP/DNS/TCP/ICMP probing for external endpoints |
 | **gatus** | `app-template` v5.0.1 | `ghcr.io/bjw-s-labs/helm/app-template` | Status page with health checks; user-facing uptime dashboard |
 | **kromgo** | `app-template` v5.0.1 | `ghcr.io/bjw-s-labs/helm/app-template` | Prometheus metric badges for README/dashboards |
-| **unpoller** | `app-template` v5.0.1 | `ghcr.io/bjw-s-labs/helm/app-template` | Scrapes UniFi controller metrics into Prometheus |
+| **unpoller** ✅ | `app-template` v5.0.1 | `ghcr.io/bjw-s-labs/helm/app-template` | Scrapes UniFi controller metrics into Prometheus; dashboards via `grafana-operator` `GrafanaDashboard` CRDs (`grafanaCom.id`/`revision`, Renovate-tracked) |
 | **goldilocks** | `goldilocks` | `charts.fairwinds.com/stable` | Analyses actual usage and suggests resource requests/limits |
 | **goldilocks-vpa** | `vpa` | `charts.fairwinds.com/stable` | Vertical Pod Autoscaler (required by Goldilocks) |
 | **robusta** | `robusta` | `robusta-charts.storage.googleapis.com` | Kubernetes alert enrichment and automated remediation |

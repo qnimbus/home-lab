@@ -27,6 +27,19 @@ configMapGenerator:
       - pool-detail.json=./dashboards/pool-detail.json
       - rbd-overview.json=./dashboards/rbd-overview.json
       - rbd-details.json=./dashboards/rbd-details.json
+  # Full hardware dashboard: CPU/mem/disk/network + hwmon temperatures (node_hwmon_temp_celsius).
+  # Static JSON (not Helm's dashboards.gnetId/revision fetch-by-ID) for the same reason as the
+  # ceph-mixin dashboards above: no runtime dependency on grafana.com at Grafana pod startup, and
+  # content changes are visible in the git diff instead of hidden behind a bumped revision number.
+  # Source: https://grafana.com/grafana/dashboards/1860 revision 37 — no Renovate tracking (the
+  # whole file needs re-downloading on update, not a version string bump); refresh manually.
+  - name: node-exporter-grafana-dashboard
+    namespace: observability
+    options:
+      labels:
+        grafana_dashboard: "1"
+    files:
+      - node-exporter-full.json=./dashboards/node-exporter-full.json
 generatorOptions:
   labels:
     reconcile.fluxcd.io/watch: "Enabled"

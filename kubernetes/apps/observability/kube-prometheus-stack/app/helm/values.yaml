@@ -70,14 +70,6 @@ grafana:
   grafana.ini:
     server:
       root_url: "https://grafana.${DOMAIN_CLUSTER}"
-  dashboards:
-    default:
-      node-exporter-full:
-        # Full hardware dashboard: CPU/mem/disk/network + hwmon temperatures (node_hwmon_temp_celsius)
-        # renovate: depName="Node Exporter Full" dashboardId=1860 revisionId=37
-        gnetId: 1860
-        revision: 37
-        datasource: Prometheus
 
 # Talos runs without kube-proxy (Cilium replaces it with eBPF)
 kubeProxy:
