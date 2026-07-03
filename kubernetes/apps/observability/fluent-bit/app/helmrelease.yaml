@@ -65,6 +65,20 @@ spec:
           rename k_labels_app.kubernetes.io/name app
           rename k_labels_app app
           rename k_labels_k8s-app app
+          # tailscale-operator sets the "app" pod label to the owning Connector/Ingress/
+          # Service's Kubernetes UID (for selector uniqueness), not a readable name — see
+          # https://github.com/tailscale/tailscale/blob/main/cmd/k8s-operator/sts.go.
+          # Prefer its own parent-resource label when present; hard_rename overwrites the
+          # UID rename above, and is a no-op for every non-tailscale pod.
+          hard_rename k_labels_tailscale.com/parent-resource app
+
+        # tailscaled logs every mutating localapi call unconditionally (not gated by
+        # log level) — containerboot polls POST /localapi/v0/debug on every netmap
+        # change to keep subnet-router routes in sync. High-volume, zero signal.
+        # [FILTER]
+        #   name grep
+        #   match kubernetes.*
+        #   exclude log localapi: \[(POST|PATCH|DELETE|PUT)\] /localapi/v0/debug
 
       # Talos nodes run containerd only — no Docker, so the default cri/docker
       # multiline parser format doesn't match; this is containerd's raw log line format.
