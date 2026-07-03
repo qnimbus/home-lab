@@ -42,10 +42,23 @@ spec:
           # Default 600s: RocksDB dumps a full "DUMPING STATS" block (cumulative +
           # interval write/WAL/compaction stats) to each OSD's log every 10 minutes.
           # With 10 OSDs that's a multi-line block every ~minute cluster-wide, pure
-          # noise for day-to-day operation. 0 disables the periodic dump entirely;
-          # the underlying counters are still exposed via the OSD perf/prometheus
-          # exporter, so nothing operationally useful is lost.
-          rocksdb_stats_dump_period_sec: "0"
+          # noise for day-to-day operation. The underlying counters are still
+          # exposed via the OSD perf/prometheus exporter either way.
+          #
+          # `rocksdb_stats_dump_period_sec` is NOT a real Ceph config key (confirmed
+          # via `ceph config get osd rocksdb_stats_dump_period_sec` -> ENOENT). It's
+          # a RocksDB-internal option and must be embedded inside
+          # bluestore_rocksdb_options — set via the _annex key so the base
+          # bluestore_rocksdb_options string (chart/Ceph default) is left untouched.
+          # The invalid key above was live for a while and put rook-ceph-operator in
+          # a failed-reconcile retry loop (~every 25-30s: set -> ENOENT -> delete ->
+          # retry), which was itself a major contributor to mon/mgr log volume.
+          bluestore_rocksdb_options_annex: "stats_dump_period_sec=0"
+        mgr:
+          # pg_autoscaler logs its _maybe_adjust/effective_target_ratio decision
+          # trace at INFO on every scheduler pass (~every 2s) — pure chatter with
+          # the cluster this small. "error" keeps actual pg_autoscaler warnings.
+          mgr/pg_autoscaler/log_level: "error"
       crashCollector:
         disable: false
       csi:
