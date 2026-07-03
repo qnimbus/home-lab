@@ -39,6 +39,13 @@ spec:
           # Default is 3; bump to 5 for NVMe workloads where the disk is not
           # the bottleneck and messenger threads can otherwise become the ceiling.
           ms_async_op_threads: "5"
+          # Default 600s: RocksDB dumps a full "DUMPING STATS" block (cumulative +
+          # interval write/WAL/compaction stats) to each OSD's log every 10 minutes.
+          # With 10 OSDs that's a multi-line block every ~minute cluster-wide, pure
+          # noise for day-to-day operation. 0 disables the periodic dump entirely;
+          # the underlying counters are still exposed via the OSD perf/prometheus
+          # exporter, so nothing operationally useful is lost.
+          rocksdb_stats_dump_period_sec: "0"
       crashCollector:
         disable: false
       csi:
