@@ -10,6 +10,11 @@ connect:
         memory: 100Mi
       limits:
         memory: 100Mi
+    # Default "info" logs every request, including the readiness (10s) and
+    # liveness (30s) probes hitting both replicas — the dominant source of this
+    # namespace's log volume. "warn" keeps real failures (auth errors, upstream
+    # errors) visible while dropping routine successful-request access logs.
+    logLevel: warn
   sync:
     resources:
       requests:
@@ -17,3 +22,4 @@ connect:
         memory: 100Mi
       limits:
         memory: 100Mi
+    logLevel: warn
