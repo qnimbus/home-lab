@@ -4,6 +4,32 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-04 — `renovate-missing-datasource-fix`
+
+### Goal
+Debug the warnings and skipped-dependency noise reported by the Mend-hosted Renovate job run and fix the actual root cause.
+
+### What we did
+- User asked to debug via a `developer.mend.io` job log URL; `WebFetch` returned an empty Next.js SPA shell — confirmed via `curl` that the page requires an authenticated GitHub session (`"success":false,"userSession":null"` in the embedded `__NEXT_DATA__`), so it can't be read directly.
+- Used the repo's Dependency Dashboard GitHub issue (`#2`) as a proxy — it surfaced one collapsed `⚠️ WARN: Missing datasource!` line under "Repository Problems" with no file/package attribution.
+- Cross-referenced all 43 `# renovate:` annotations in the repo against each other's conventions and initially misdiagnosed the cause as `metrics-server`'s `HelmRelease` annotation (used `registryUrl=` instead of `datasource=`/`depName=`) — applied a fix based on this wrong hypothesis.
+- User then downloaded and shared the actual raw Bunyan/pino JSON-lines job log (1241 lines, 638KB). Filtering with `jq 'select(.level>=40)'` found the real cause: 4 identical warnings, all `datasourceName: "grafana-dashboard"` — unrelated to metrics-server. Reverted the incorrect metrics-server edit back to its original content.
+- Root-caused the real bug: Renovate namespaces custom datasources under a `custom.` prefix (`custom.<name>`) to avoid colliding with built-in datasource IDs. The repo's `grafanadashboard.yaml` annotations (4x, unpoller's UniFi dashboard revisions) referenced the bare `grafana-dashboard` name instead of `custom.grafana-dashboard`.
+- Fixed all 4 annotations in `grafanadashboard.yaml` and the corresponding `packageRules` `matchDatasources` entry in `renovate.json5` (both needed the prefix; the `customDatasources` definition block itself correctly keeps the bare key).
+- Audited the remaining ~195 `Skipping`/informational log lines with `jq` and classified all of them as benign/expected: digest-pin skips (repo doesn't digest-pin OCI charts), `pgadmin4`'s date-tag major-increment guard noise, Mend's `internalChecksFilter` gate holding 14 branches (matches the dashboard's "Pending Status Checks" section exactly), and `ignoreDeps` entries (1password/etcd/talosctl) working as intended. No other real bugs found in the run.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `renovate.json5` | Updated the Grafana-dashboard `packageRules` entry's `matchDatasources` to `custom.grafana-dashboard` |
+| `kubernetes/apps/observability/unpoller/app/grafanadashboard.yaml` | Fixed 4 dashboard-revision annotations to `datasource=custom.grafana-dashboard` |
+
+### Key decisions
+- Reverted the initial (wrong) `metrics-server.yaml` fix once the real job log revealed the actual cause, rather than leaving speculative-but-harmless cruft in the diff — the Dependency Dashboard's collapsed, unattributed warning line was not enough evidence to act on alone.
+- Treated the Mend job log's authentication wall as a hard blocker rather than attempting further scraping workarounds; relied on the Dependency Dashboard issue and then the user-supplied raw log file instead.
+
+---
+
 ## 2026-07-03 — `gitops-repo-audit-sixth-pass`
 
 ### Goal

@@ -81,7 +81,7 @@
     // versioning compares them numerically instead of failing to parse.
     {
       description: "Grafana dashboard revisions — numeric versioning",
-      matchDatasources: ["grafana-dashboard"],
+      matchDatasources: ["custom.grafana-dashboard"],
       versioning: "loose",
     },
 
