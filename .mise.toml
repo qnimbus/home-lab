@@ -3,7 +3,7 @@ JUST_UNSTABLE = "1"
 MINIJINJA_CONFIG_FILE = "{{config_root}}/.minijinja.toml"
 
 [tools]
-just = "1.54.0"
+just = "1.55.1"
 gum = "0.17.0"
 "aqua:mitsuhiko/minijinja" = "2.21.0"
 kubectl = "1.36.2"
