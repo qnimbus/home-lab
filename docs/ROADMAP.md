@@ -5,6 +5,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 ## Contents  <!-- omit from toc -->
 
 - [In Progress](#in-progress)
+  - [Renovate PR-Review Workflow: Cost/Bug Investigation, Re-enable](#renovate-pr-review-workflow-costbug-investigation-re-enable)
   - [CloudNativePG: Backup, PITR, and Per-App Provisioning](#cloudnative-pg-backup-pitr-and-per-app-provisioning)
   - [Postgres NFS Backup: Restore Drill](#postgres-nfs-backup-restore-drill)
   - [~~Longhorn Storage Network (Multus + Storage VLAN)~~ — ABANDONED](#longhorn-storage-network-multus--storage-vlan--abandoned-superseded-by-rook-ceph)
@@ -27,6 +28,16 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 ---
 
 ## In Progress
+
+### Renovate PR-Review Workflow: Cost/Bug Investigation, Re-enable
+
+**Status: disabled (2026-07-04).** `.github/workflows/renovate-pr-review.yml` (invokes the `pr-upgrade-reviewer` agent via `claude-code-action` on Renovate PRs) was racking up unexpected Claude usage costs. Disabled with `gh workflow disable renovate-pr-review.yml -R qnimbus/home-lab` while the cause is investigated — re-enable with `gh workflow enable renovate-pr-review.yml -R qnimbus/home-lab` once resolved.
+
+One contributing bug already found and fixed in the same session: on `workflow_dispatch` (manual) runs, the agent had no way to tell "local checkout" (the PR's own head commit) apart from live `main`, and on PR #71 falsely declared the PR "superseded" purely from local file contents already matching the PR's own change. Fixed in commit `f522e97` by grounding the agent explicitly — both the workflow's `prompt:` and the `pr-upgrade-reviewer` agent's own operational constraints now state that a local file read is never sufficient evidence about `main`'s state.
+
+**Still to investigate before re-enabling:**
+- What is actually driving the cost overrun — re-runs triggered per PR update, large `WebFetch`/`WebSearch` volume (fetching full release notes/changelogs per run), an unbounded retry loop, or something else not yet identified.
+- Whether the `f522e97` grounding fix is sufficient on its own, or should be paired with tighter guardrails (e.g. narrower `--allowedTools`, capping WebFetch/WebSearch calls per run, gating manual `workflow_dispatch` runs the same way automatic runs are label-gated).
 
 ### CloudNativePG: Backup, PITR, and Per-App Provisioning
 
