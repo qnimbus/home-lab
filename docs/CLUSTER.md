@@ -1372,6 +1372,176 @@ task talos:apply IP=10.60.0.201
 
 ---
 
+## Node Maintenance — Temporary Suspend / Rack Work
+
+How to safely take a node offline for physical work (unplugging, reseating, cabling, cooling swaps)
+and bring it back. The goal is a *graceful* suspend: workloads reschedule cleanly and Ceph does not
+needlessly rebalance while the node is briefly gone.
+
+### Mental model
+
+- **Kubernetes `drain` handles compute** (evict + reschedule pods).
+- **Ceph `noout` handles storage** (an OSD going down is *expected* — do not mark it `out`, do not rebalance).
+- **Rook bridges the two automatically.** With `managePodBudgets: true` / `osdMaintenanceTimeout: 30`
+  (see [Rook-Ceph](#rook-ceph--v1196-operator-chart--rook-ceph)), draining a node makes Rook set a
+  **host-scoped `noout`** on that node's OSDs for ~30 min, and clear it when the node returns. So for
+  short maintenance you drive only the Kubernetes side and let Rook manage Ceph.
+
+There is **no `ceph suspend` command** — `noout` is the mechanism. You only set it manually for work
+that may exceed Rook's ~30 min window (a manual `osd set noout` persists regardless of the timer).
+
+### Node IPs (mgmt)
+
+| Node | Mgmt IP | Role | etcd? |
+|------|---------|------|-------|
+| talos-cp-01 | 10.60.0.201 | control-plane | yes |
+| talos-cp-02 | 10.60.0.202 | control-plane | yes |
+| talos-cp-03 | 10.60.0.203 | control-plane | yes |
+| talos-worker-01 | 10.60.0.204 | worker | no |
+| talos-worker-02 | 10.60.0.205 | worker | no |
+
+### Procedure (worker node — example: talos-worker-01)
+
+```sh
+export KUBECONFIG=$(pwd)/kubeconfig
+
+# 1. Cordon + drain — also triggers Rook to auto-set host-scoped noout on this node's OSDs
+kubectl cordon talos-worker-01
+kubectl drain talos-worker-01 --ignore-daemonsets --delete-emptydir-data --timeout=10m
+
+# 2. ONLY if the work may exceed ~30 min, pin noout so it outlives Rook's timer:
+#    just ceph cmd osd set noout
+
+# 3. Verify before pulling power: HEALTH_WARN for 'noout'/'osds down' is EXPECTED; PGs must stay 'active'
+just ceph status
+
+# 4. Graceful shutdown — clean stop. NEVER use 'reset' / '--wipe' for a temp suspend (that erases the node).
+talosctl -n 10.60.0.204 shutdown
+
+#    --- unplug, do the rack work, plug back in, power on (front button or AMT/MeshCommander) ---
+
+# 5. After it boots and shows Ready:
+kubectl uncordon talos-worker-01          # cordon persists across reboot — MUST be cleared manually
+#    just ceph cmd osd unset noout         # only if you set it manually in step 2
+
+# 6. Verify recovery
+just ceph status                          # expect HEALTH_OK, all OSDs up/in, PGs active+clean
+kubectl get nodes
+```
+
+### Control-plane node (cp-01 / cp-02 / cp-03) — two extra rules
+
+CP nodes run **etcd** as well as OSDs, so:
+
+- **One at a time, only.** 3 CPs → etcd quorum is 2. Taking one down is safe; taking **two down
+  simultaneously loses quorum and freezes the Kubernetes API.** Confirm the other two are healthy
+  first: `talosctl -n <ip> etcd status` (or use the `talos-node-manager` agent).
+- **Let the Ceph PDB gate you.** Rook's PodDisruptionBudgets will **block the drain** if taking the
+  node down would drop Ceph below safe redundancy (e.g. another OSD host is already down). If the
+  drain hangs on a PDB, that is the cluster telling you it *cannot* safely lose that node right now —
+  investigate, don't `--force`.
+
+### Gotchas
+
+| Gotcha | Why | Do this |
+|--------|-----|---------|
+| Node returns `Ready,SchedulingDisabled`, accepts no pods | A cordon lives in the Node object (etcd), so it **survives the power cycle** | Always `kubectl uncordon <node>` after boot |
+| Use `shutdown`, never `reset` | `reset` (esp. `--wipe EPHEMERAL`) **erases the node**, including OSD store + node-local `openebs-hostpath` PVCs (no redundancy) | Plain `talosctl shutdown` preserves all on-disk data |
+| Manual `osd set noout` left set | Cluster-wide `noout` silently suppresses rebalancing long after the work is done | Only set it manually when needed; always `unset noout` and verify `HEALTH_OK` after |
+| Work ran past ~30 min with no manual noout | Rook lifts its auto-`noout` at `osdMaintenanceTimeout`; Ceph starts backfilling | Harmless (it re-balances back on return) but avoidable — set manual noout for long jobs |
+| AMT/SOL session left open | A lingering IDE-r/SOL session has previously pinned a node's NIC to 10 Mbps on next boot | Release AMT sessions cleanly before/after (worker-01, worker-02, cp-02 have AMT) |
+
+---
+
+## Full-Cluster Shutdown / Cold Start
+
+How to power the **entire** cluster down gracefully and bring it back, avoiding etcd corruption and
+Ceph data loss. This is *not* the single-node flow — you do **not** drain (nowhere to reschedule, and
+Ceph PDBs would block you). Instead you *freeze* Ceph with flags and gracefully halt every node.
+
+### Principles
+
+- **etcd corruption comes from unclean writes, not graceful stops.** `talosctl shutdown` cleanly stops
+  etcd per node; all three CPs re-form quorum automatically on return. The entire risk is abrupt power
+  loss → **`shutdown` only, never yank power, never `reset`/`--wipe`.**
+- **Ceph's danger is the cluster *reacting* to the stop** (marking OSDs down/out, re-replicating, hanging
+  client I/O). Pre-emptively freeze it with flags, release them once everything is back.
+- **Order: control-plane is the spine.** Workers down first / CPs last; on the way up, CPs first
+  (etcd + API + mon quorum) then workers.
+
+### Pre-flight (while healthy)
+
+```sh
+export KUBECONFIG=$(pwd)/kubeconfig
+kubectl get nodes                                  # start from a clean state
+just ceph status                                   # want HEALTH_OK, 10 OSDs up/in, PGs active+clean
+talosctl -n 10.60.0.201 etcd snapshot etcd-$(date +%F).db   # safety-net backup to workstation
+```
+
+Databases flush on SIGTERM during node shutdown, so no manual quiesce is needed. (To hard-quiesce
+writers, `flux suspend` the relevant Kustomizations first — otherwise Flux re-scales anything you
+`kubectl scale` down. Unnecessary for a graceful shutdown.)
+
+### Freeze Ceph (immediately before shutdown)
+
+```sh
+just ceph cmd osd set noout        # don't mark downed OSDs 'out' → no rebalance
+just ceph cmd osd set norecover    # don't start recovery
+just ceph cmd osd set norebalance  # don't move PGs around
+just ceph cmd osd set nobackfill   # don't backfill
+just ceph cmd osd set nodown       # don't flap OSDs 'down' during the staggered stop
+just ceph cmd osd set pause        # stop all client I/O so nothing is mid-write
+```
+
+Flags live in the mon/osdmap and **persist across the restart** — fine that the toolbox pod goes down too.
+
+### Shut down — workers first, control-plane last
+
+```sh
+talosctl -n 10.60.0.204,10.60.0.205 shutdown             # workers
+#   ... wait for both to power off ...
+talosctl -n 10.60.0.201,10.60.0.202,10.60.0.203 shutdown # control-plane (last)
+```
+
+### Cold start — control-plane first
+
+```sh
+# 1. Power on the 3 CPs (front button / AMT / WoL). Wait for etcd quorum + API:
+talosctl -n 10.60.0.201,10.60.0.202,10.60.0.203 health
+kubectl get nodes                  # cp-01/02/03 reach Ready
+
+# 2. Power on the 2 workers. Wait for all 5 Ready:
+kubectl get nodes
+
+# 3. Wait for Ceph to re-form (flags still set is expected):
+just ceph status                   # watch until all 10 OSDs are 'up'
+
+# 4. Once ALL OSDs up and all nodes Ready, release flags (unpause LAST):
+just ceph cmd osd unset nodown
+just ceph cmd osd unset nobackfill
+just ceph cmd osd unset norebalance
+just ceph cmd osd unset norecover
+just ceph cmd osd unset noout
+just ceph cmd osd unset pause      # resume client I/O only when the cluster is whole
+
+# 5. Verify
+just ceph status                   # HEALTH_OK, 10/10 OSDs up+in, PGs active+clean
+kubectl get nodes
+flux get kustomizations -A | grep -v True   # stragglers reconcile on their own
+```
+
+### Critical gotchas
+
+| Rule | Why |
+|------|-----|
+| **`shutdown`, never `reset`/`--wipe`** | `reset --wipe EPHEMERAL` erases node-local data — OSD stores *and* `openebs-hostpath` PVCs (no redundancy). Has destroyed data here before. |
+| **Don't unset `pause` until every OSD is `up`** | Resuming client I/O against a partially-returned cluster is the real inconsistency risk. Whole cluster first, *then* unpause. |
+| **If a node doesn't return, leave the flags set** | The frozen flags are protecting you — no premature rebalance. Fix the node, then release. Never `--force`. |
+| **Graceful only — if you had an *unclean* power loss** | etcd may come up with stale/dual peer URLs; recovery (member remove + promote) is in the [Bootstrap Runbook → Troubleshooting](#troubleshooting) table. |
+| **Release AMT/SOL sessions cleanly** | A lingering IDE-r/SOL session has pinned a node's NIC to 10 Mbps on next boot here. |
+
+---
+
 ## Secrets
 
 | Secret type | Mechanism | Location |
