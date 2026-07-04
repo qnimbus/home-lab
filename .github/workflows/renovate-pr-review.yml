@@ -104,3 +104,11 @@ jobs:
             Review PR #${{ github.event.pull_request.number || inputs.pr_number }} using
             the pr-upgrade-reviewer agent. Assess upgrade risk, breaking changes,
             and whether it is safe to merge. Post your findings as a PR comment.
+
+            Note: the local checkout in this workspace is the PR's own head commit
+            (or a test-merge of it), never the current main branch — a changed file
+            will already show the PR's proposed value when read locally, which is
+            expected and proves nothing about main. Never conclude a change is
+            "already on main" or that the PR is "superseded" from local file
+            contents; that can only be established via the GitHub API against an
+            explicit main ref.
