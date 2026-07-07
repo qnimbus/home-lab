@@ -5,7 +5,7 @@ tools: "*"
 model: sonnet
 memory: project
 cluster_state:
-  last_verified: "2026-06-18"
+  last_verified: "2026-06-23"
   versions:
     talos: "v1.13.2"
     kubernetes: "v1.36.1"
@@ -29,7 +29,7 @@ cluster_state:
       role: worker (temporary CP — competes for VIP until cp-02/cp-03 fully absorbed CP role)
       mgmt_ip: "10.60.0.204"
       storage_ip: "10.200.0.204"
-      hardware: "Lenovo M920Q #1, i5-8500T, 64GB"
+      hardware: "Lenovo M920Q #1, i5-8500T, 32GB"
     - hostname: talos-worker-02
       role: worker
       mgmt_ip: "10.60.0.205"
@@ -160,10 +160,10 @@ The cluster includes:
 - FluxCD GitOps (source-controller, kustomize-controller, helm-controller)
 - Cilium CNI (kube-proxy replacement mode)
 - CoreDNS (HelmRelease, not built-in)
-- kube-vip (ARP mode, VIP `10.60.0.2`)
+- Talos-native VIP (`10.60.0.2`) — NOT kube-vip. No kube-vip pod/DaemonSet exists anywhere in the cluster; the VIP is configured directly in `talconfig.yaml` per-CP-node and handled inside the Talos OS networking stack. See `reference_talos_native_vip.md` in persistent memory before searching kube-system for a kube-vip workload.
 - Spegel (peer-to-peer container image mirror, runs in kube-system)
 - cert-manager
-- Longhorn CSI (3-replica; see frontmatter for version)
+- Rook-Ceph (`ceph-block`, replicated 3x, size=3/min_size=2, host-network on the storage SFP+ bond — see frontmatter `rook-ceph` namespace). Longhorn was fully removed during the Rook-Ceph migration; do not reference Longhorn as live storage.
 - OpenEBS LocalPV
 - tuppr upgrade controller (`system-upgrade` namespace)
 - SOPS + age secrets (Talos secrets); External Secrets Operator + 1Password Connect (app secrets — live)
@@ -392,6 +392,7 @@ Use Talos diagnostics when Kubernetes symptoms indicate the node substrate may b
 - DNS / image pulls failing only on certain nodes
 - Node recently booted from ISO or reinstalled
 - Control-plane bootstrap incomplete
+- Network-heartbeat/latency alerts (e.g. Ceph `OSD_SLOW_PING_TIME_*`) on one specific node only, especially an AMT-equipped node (`worker-01`, `worker-02`, `cp-02`) that recently had a MeshCommander KVM/IDE-r/SOL session — check `speedMbit` in `talosctl get links -o yaml`, not just link state; the default table view hides speed/duplex entirely
 
 ### Talos read-only commands
 
@@ -520,46 +521,55 @@ Common causes on this cluster:
   kubectl -n flux-system logs deploy/source-controller | grep -i ssh
   ```
 
-### kube-vip / VIP issues
+### VIP issues (Talos-native, NOT kube-vip)
 
-kube-vip runs in ARP mode. All three CP nodes compete for the VIP `10.60.0.2`.
+There is no kube-vip pod or DaemonSet on this cluster — do not search kube-system for one. The
+VIP (`10.60.0.2`) is configured per-CP-node in `talconfig.yaml` under that node's management
+`networkInterfaces[].vip` and is handled entirely inside the Talos OS networking stack. See
+`reference_talos_native_vip.md` in persistent memory for the full explanation, including why
+KubePrism (port 7445) — not the VIP — handles in-cluster API resilience, so a VIP failover has a
+much smaller blast radius than generic kube-vip docs imply.
 
-Symptoms: kubectl intermittently unreachable, VIP not responding, ARP conflicts.
+Symptoms: kubectl/talosctl intermittently unreachable from outside the cluster, VIP not
+responding, ARP conflicts.
 
 Check:
 ```bash
-kubectl -n kube-system get pods -l app.kubernetes.io/name=kube-vip -o wide
-kubectl -n kube-system logs -l app.kubernetes.io/name=kube-vip
+talosctl get addresses          # shows which node currently holds the VIP
+talosctl dmesg | grep -i vip    # Talos VIP networking controller messages
+curl -k https://10.60.0.2:6443/healthz   # direct TCP/TLS probe to the VIP
 # From a machine on 10.60.0.0/24:
 arping -I <interface> 10.60.0.2
 arp -n | grep 10.60.0.2
 ```
 
 Common causes:
-- All kube-vip pods on remaining nodes crashed after a node went down — check pod status on each node.
-- ARP cache on the upstream switch is stale — VIP held by a node that is now down. Usually resolves within ARP TTL or after a gratuitous ARP. If urgent, clear ARP on the switch.
+- The CP node holding the VIP went down — another CP node's Talos VIP controller should claim it within the ARP TTL. Check `talosctl get addresses` on each remaining CP node.
+- ARP cache on the upstream switch is stale — VIP claimed by a new node but switch hasn't relearned the MAC. Usually resolves quickly via gratuitous ARP; clear switch ARP cache if urgent.
 - Network split: two nodes both claim the VIP (ARP conflict). Check switch logs for duplicate MAC/IP alerts.
 
-### Longhorn storage issues
+### Rook-Ceph storage issues
 
-This cluster runs Longhorn in 3-replica mode (all three nodes have dedicated storage disks; see frontmatter for version).
+This cluster runs Rook-Ceph (`ceph-block`, replicated 3x, `size=3`/`min_size=2`, default
+StorageClass) host-networked on the `10.200.0.0/24` SFP+ storage bond. Longhorn was fully removed
+(commit `8b27593`) — do not reference Longhorn storage classes or pods, they no longer exist.
 
 ```bash
-kubectl -n longhorn-system get pods -o wide
-kubectl -n longhorn-system get volumes
-kubectl -n longhorn-system get engines
-kubectl -n longhorn-system get replicas
+kubectl -n rook-ceph exec deploy/rook-ceph-tools -- ceph status
+kubectl -n rook-ceph exec deploy/rook-ceph-tools -- ceph health detail
+kubectl -n rook-ceph exec deploy/rook-ceph-tools -- ceph osd perf
+kubectl -n rook-ceph get pods -o wide
+kubectl -n rook-ceph get cephcluster -o yaml
 kubectl get pv,pvc -A
 kubectl get volumeattachments
-kubectl -n longhorn-system logs deploy/longhorn-manager
-kubectl -n longhorn-system logs ds/longhorn-csi-plugin
+kubectl -n rook-ceph logs -l app=rook-ceph-operator
 ```
 
 Common patterns:
-- **Volume stuck Attaching**: check `volumeattachments` and the CSI attacher logs. Often caused by a previous pod not cleanly releasing the volume. `kubectl describe volumeattachment <name>` for the error.
-- **Replica rebuild degraded**: with 2 replicas and `ReadWriteOnce`, losing one node means the volume degrades but remains available. Check replica status; rebuild is automatic when the node returns.
-- **CSI mount failure on ContainerCreating**: check kubelet logs via `talosctl logs kubelet --nodes <node-ip>` and Longhorn CSI plugin logs. Often a `iscsi_tcp` module or `iscsid` service not ready on that node.
-- **UI unreachable**: Longhorn manager pod health; check that the `longhorn-frontend` service has valid endpoints.
+- **`OSD_SLOW_PING_TIME_FRONT`/`_BACK` (`CephOSDTimeoutsPublicNetwork`/`ClusterNetwork` alerts)**: OSD heartbeat latency >1s on the public (`10.60.0.0/24`) or cluster (`10.200.0.0/24`) network. Check which OSD(s)/node(s) are implicated in `ceph health detail` before assuming a cluster-wide network problem — it is often isolated to one host's NIC. **On AMT-equipped nodes (`worker-01`, `worker-02`, `cp-02`), check for a PHY speed lock first** — see `reference_amt_phy_reset_blocked.md` in persistent memory; a node's management NIC can get pinned at 10 Mbps by Intel AMT after a SOL/IDE-r session, which looks exactly like a Ceph network incident but is actually a node-level NIC negotiation problem. Confirm with `talosctl get links -o yaml` (check `speedMbit`, not just link state) compared across nodes.
+- **Volume stuck Attaching**: check `volumeattachments` and the CSI attacher/plugin logs (`kubectl -n rook-ceph logs -l app=csi-rbdplugin`).
+- **Mon quorum or OSD down after a node re-IP**: see `project_rook_ceph_reip_mon_recovery` history — hostNetwork mons bind to a specific IP and need monmap surgery after a node address change.
+- **`HEALTH_WARN` that won't clear**: Ceph health flags can latch after the underlying cause resolves. Verify with `ceph osd perf` / `ceph daemon osd.<id> dump_historic_slow_ops` for *current* latency before assuming an active problem — don't trust the flag alone.
 
 ### Spegel (image mirror) issues
 
