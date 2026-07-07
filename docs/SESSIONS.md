@@ -108,6 +108,42 @@ Deploy `unpoller` for UniFi controller metrics, add `grafana-operator` (external
 
 ---
 
+## 2026-07-02 — `x520-nic-failure-vlan200-fallback`
+
+### Goal
+Root-cause cp-02's X520 storage NIC hardware failure, exhaust remediation options, and record the resulting fleet-wide `bond-storage` → VLAN-200 storage fallback (retroactively logged — this work was not captured in a session at the time).
+
+### What we did
+- 2026-06-25: investigated a "3 pending deployments" report; found 6 pods stuck (`automation/waha`, `database/pgadmin`, `observability/{alertmanager,grafana,prometheus,victoria-logs-server}`) on `FailedMount`/`FailedAttachVolume`/`Multi-Attach` errors against Rook-Ceph RBD PVCs.
+- Root-caused via `dmesg`: cp-02's dual-port Intel X520 (ixgbe) NIC failed HW/PCI probe on boot (`ixgbe 0000:02:00.0`/`.1: HW Init failed: -114`), leaving `bond-storage` mastered but slave-less. This caused Ceph OSD heartbeats over the storage network to flap, and separately left the RBD CSI nodeplugin pod on cp-02 holding stuck volume-operation locks from hung stage/unstage calls — producing duplicate `VolumeAttachment`s and `Multi-Attach`/`FailedMount` errors on unrelated nodes. Pods had been silently retrying for 361 failed mount attempts over 12h.
+- Confirmed node identity (ruled out misattribution) and checked cp-03 (identical M90q + X520-DA2 hardware) on a fresh reboot — its ixgbe ports probed cleanly, isolating the fault to cp-02's specific card rather than a systemic driver/Talos issue.
+- Escalated through 3 remediation attempts on cp-02 — warm reboot, full cold power-cycle, physical card reseat — all reproduced the identical `-114` failure, pointing to a genuine silicon/NVM-level fault rather than a transient firmware or seating issue. Concluded a Talos-level reset has no path to touch NIC firmware and would only reinstall the same failing combination.
+- Swapped the X520 card between cp-02 and cp-03's physical slots for fault isolation (cp-03's known-good card is now physically in cp-02; cp-02's bad card is now in cp-03).
+- 2026-07-01: cp-03's physical node was replaced entirely (unrelated hardware issue); the replacement unit shipped with no X520 card installed.
+- 2026-07-02: applied an inline VLAN-200 fallback patch across **all 5 nodes** — tags a VLAN 200 sub-interface on each node's onboard 1GbE management NIC carrying the existing `10.200.0.20{1..5}/24` storage address at MTU 1500, and comments out `bond-storage`'s `addresses:` so the bond stays configured but unaddressed fleet-wide. Applied uniformly even to cp-01/worker-01/worker-02, whose X520/X710 hardware is healthy, to keep every node on the same storage path during the outage. Verified `ceph -s` stayed `HEALTH_OK` with all 10 OSDs up/in throughout — same subnet, so Ceph's public/cluster network config needed no changes.
+- Added 3 GitOps-managed `silence-operator` Silences (2026-07-02/07-03) to suppress the expected `CephNodeNetworkBondDegraded`/`CephNodeNetworkPacketDrops` noise from the intentional fallback, each with a documented revert condition tied to replacement-card installation.
+- 2026-07-07: recorded the full incident (root cause, remediation attempts, differential cp-03 check, revert steps) into a new `cluster-doctor` agent-memory file, alongside 3 unrelated diagnoses from the same period, and corrected stale kube-vip/Longhorn references in the agent's own docs.
+- 2026-07-07 (this entry): found and fixed `docs/CLUSTER.md`'s stale NIC-topology section, which still described the pre-incident 2026-06-18 `bond-storage` cutover as current state with no mention of the failure or fallback — flagged independently three times (twice by `cluster-doctor` in its own memory, once in conversation) before being addressed.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | Fleet-wide VLAN-200 fallback patch on all 5 nodes; `bond-storage` addresses commented out; cp-02 deviceSelector MACs updated to the ex-cp-03 card; cp-03 deviceSelectors set to placeholder pending replacement card |
+| `kubernetes/apps/observability/silence-operator/silences/bond-storage-degraded-x520-fallback-ceph.yaml` | New: Silence for expected `CephNodeNetworkBondDegraded` noise |
+| `kubernetes/apps/observability/silence-operator/silences/bond-storage-degraded-x520-fallback-node-exporter.yaml` | New: Silence, node-exporter's copy of the same condition |
+| `kubernetes/apps/observability/silence-operator/silences/ceph-node-network-packet-drops-x520-fallback.yaml` | New: Silence for expected `CephNodeNetworkPacketDrops` noise |
+| `.claude/agent-memory/cluster-doctor/project_cp02_storage_bond_ixgbe_failure.md` | New: full root-cause chain, remediation attempts, differential cp-03 check, revert steps |
+| `.claude/agent-memory/cluster-doctor/MEMORY.md` | Indexed the new memory file |
+| `.claude/agents/cluster-doctor.md` | Corrected stale kube-vip → Talos-native VIP and Longhorn → Rook-Ceph references |
+| `docs/CLUSTER.md` | Added a dated note describing the current fleet-wide VLAN-200 fallback and revert conditions; hardware table kept as the target/normal-state reference |
+
+### Key decisions
+- Applied the VLAN-200 fallback to all 5 nodes rather than just the 2 affected ones — uniform topology during the outage was judged simpler to reason about and revert than a mixed bond/VLAN fleet.
+- Treated the repeated identical `-114` failure across reboot, cold power-cycle, and reseat as conclusive evidence of a hardware/NVM fault rather than continuing to chase software-level fixes — ruled out `talosctl reset` early since it cannot touch NIC firmware.
+- Left `docs/CLUSTER.md`'s hardware table showing the target/normal `bond-storage` topology rather than rewriting it to the fallback state, since the fallback is explicitly temporary — added a dated note instead so the table doesn't need a second rewrite once cards are replaced.
+
+---
+
 ## 2026-06-24 — `silence-operator-deploy`
 
 ### Goal
