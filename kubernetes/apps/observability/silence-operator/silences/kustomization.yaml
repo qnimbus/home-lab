@@ -3,7 +3,4 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ./bond-storage-degraded-x520-fallback-ceph.yaml
-  - ./bond-storage-degraded-x520-fallback-node-exporter.yaml
-  - ./ceph-node-network-packet-drops-x520-fallback.yaml
   - ./ceph-node-nfsmount-diskspace-warning.yaml

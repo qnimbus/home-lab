@@ -4,6 +4,41 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-07 — `x520-bond-storage-restore`
+
+### Goal
+Verify the newly reinstalled X520-DA2 card in cp-03, then migrate all 5 nodes back from the VLAN-200 storage fallback to LACP-bonded X520/X710 (`bond-storage`), keeping the VLAN-200 config as a commented-out fallback rather than deleting it.
+
+### What we did
+- Re-familiarized with the fleet-wide VLAN-200 fallback state via `docs/CLUSTER.md`, `docs/SESSIONS.md`, and the `cluster-doctor` agent's `project_cp02_storage_bond_ixgbe_failure.md` memory; confirmed commit `4e353c2` (prior session's doc fixes) was already in place and the tree was otherwise clean.
+- Delegated hardware verification of cp-03's newly installed X520-DA2 to the `talos-node-manager` agent: confirmed both ports (`enp2s0f0`/`enp2s0f1`) probed cleanly via `dmesg` (no `-114` HW Init failure, unlike the original faulty card), link-up at 10 Gbit/s, and retrieved their real MACs (`90:e2:ba:e8:ea:00`/`:01`) to replace the `xx:xx:xx:xx:xx:xx` placeholders. Flagged one non-blocking anomaly: `enp2s0f0` had more boot-time SFP+ link flap cycles (8x) than `enp2s0f1` (2x) before both settled to a stable `Up`.
+- Edited `talos/talconfig.yaml` across all 5 nodes: commented out each node's inline VLAN-200 patch (kept in place, not deleted, per explicit request for easy future fallback) and restored `bond-storage`'s `addresses:` block. cp-03 additionally got its placeholder MACs replaced with the verified real ones and its patch comments rewritten to reflect the resolved state.
+- Ran `task talos:genconfig` (talhelper) and spot-checked the generated per-node YAML to confirm `bond-storage` carried the storage IP with zero `vlanId` occurrences (i.e. the commented-out patches produced no live config).
+- Asked the user how to sequence the live rollout; per their choice, applied `task talos:apply IP=<ip>` to cp-03 first, confirmed via `talosctl get links` that `bond-storage` came up `MASTER`/`UP` with both slaves attached at MTU 9000, and confirmed `ceph -s` stayed `HEALTH_OK` before proceeding.
+- Applied to the remaining 4 nodes (cp-01, cp-02, worker-01, worker-02) in the same pass; all 5 applied without requiring a reboot. Verified all 5 `bond-storage` interfaces came up correctly. Ceph briefly showed a `HEALTH_WARN` (slow OSD heartbeats, back/front) — the same MAC-table/ARP-relearning pattern documented from the original 2026-06-18 cutover — which self-cleared to `HEALTH_OK` within ~30s.
+- Deactivated the 3 `silence-operator` Silences whose documented revert conditions (replacement card installed, fallback reverted) were now met — dropped their entries from `silences/kustomization.yaml` (so they no longer apply) but kept the files on disk, relabeled `INACTIVE`, for reference if the same fallback is ever needed again.
+- Updated `docs/CLUSTER.md`'s fallback note to describe the resolution (dates, verification steps, the cp-03 link-flap watch item) instead of describing an active incident.
+- Closed out the `cluster-doctor` agent memory (`project_cp02_storage_bond_ixgbe_failure.md` + its `MEMORY.md` index line) with a resolution section, so future diagnostics don't keep treating this as an open incident.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | Reverted all 5 nodes from VLAN-200 fallback to `bond-storage`; VLAN-200 patches commented out (not deleted); cp-03 deviceSelector MACs set to the real replacement card's addresses |
+| `kubernetes/apps/observability/silence-operator/silences/bond-storage-degraded-x520-fallback-ceph.yaml` | Marked `INACTIVE`; kept on disk, dropped from kustomization.yaml |
+| `kubernetes/apps/observability/silence-operator/silences/bond-storage-degraded-x520-fallback-node-exporter.yaml` | Marked `INACTIVE`; kept on disk, dropped from kustomization.yaml |
+| `kubernetes/apps/observability/silence-operator/silences/ceph-node-network-packet-drops-x520-fallback.yaml` | Marked `INACTIVE`; kept on disk, dropped from kustomization.yaml |
+| `kubernetes/apps/observability/silence-operator/silences/kustomization.yaml` | Dropped the 3 deleted Silences' resource entries |
+| `docs/CLUSTER.md` | Fallback note updated from active-incident to resolved, with verification detail and cp-03 watch item |
+| `.claude/agent-memory/cluster-doctor/project_cp02_storage_bond_ixgbe_failure.md` | Added a Resolution (2026-07-07) section; updated frontmatter description to RESOLVED |
+| `.claude/agent-memory/cluster-doctor/MEMORY.md` | Updated index line to reflect resolved status |
+
+### Key decisions
+- Kept the VLAN-200 patches commented out in `talconfig.yaml` rather than deleting them, per explicit user request — cheap insurance that preserves the non-obvious syntax notes (e.g. cp-03's `interface: eno1` vs `deviceSelector` gotcha) for a future NIC failure without cluttering the active config.
+- Sequenced the live rollout as cp-03-first rather than all-5-at-once (user's choice from an explicit prompt) — validated the newest hardware change in isolation before touching the 4 nodes that already had known-good X520s.
+- Deleted the 3 fallback Silences immediately rather than leaving them in place a while longer — their own documented revert conditions were unambiguously met, and stale Silences risk masking a real future recurrence of the same alert.
+
+---
+
 ## 2026-07-04 — `renovate-missing-datasource-fix`
 
 ### Goal

@@ -1,6 +1,6 @@
 ---
 name: cp02-storage-bond-ixgbe-failure
-description: cp-02 has an X520 (ixgbe) dual-port NIC that failed HW init at boot, downing bond-storage and causing stuck Ceph OSDs + CSI Multi-Attach across 6 workloads (2026-06-25)
+description: RESOLVED 2026-07-07 — cp-02's X520 (ixgbe) HW init failure (2026-06-25) triggered a fleet-wide VLAN-200 storage fallback; replacement X520 installed in cp-03 and bond-storage restored on all 5 nodes. Kept for historical incident detail and the watch-item on cp-03's enp2s0f0.
 metadata:
   type: project
 ---
@@ -161,3 +161,30 @@ this agent should fix unilaterally (Silence creation and git commits are user-ga
 Revert path once replacement X520 cards are installed: remove the inline VLAN-200 patches,
 uncomment the `bond-storage` `addresses:` blocks, and update cp-03's `bond-storage` deviceSelector
 MACs (currently placeholder `xx:xx:xx:xx:xx:xx`, no card installed).
+
+## Resolution (2026-07-07)
+
+A replacement X520-DA2 was physically installed in cp-03. Verified via `talosctl dmesg`/`get links`
+before migrating: both ports (`enp2s0f0`/`enp2s0f1`, MACs `90:e2:ba:e8:ea:00`/`:01`) probed cleanly
+— no `-114`/HW Init failure anywhere in the boot buffer, unlike the original faulty card. One
+non-blocking anomaly: `enp2s0f0` showed more boot-time SFP+ link flap cycles (8x) than its sibling
+`enp2s0f1` (2x) before both settled to a stable `Up 10Gbps` — held stable for 2h17m+ before the
+LACP migration, so treated as normal DAC/cold-insertion autoneg settling rather than a fault. Worth
+rechecking first if `CephNodeNetworkBondDegraded` ever reappears specifically on cp-03.
+
+`talos/talconfig.yaml` was reverted fleet-wide: VLAN-200 patches commented out (not deleted — kept
+for easy fallback per user request) on all 5 nodes, `bond-storage` `addresses:` restored, cp-03's
+placeholder deviceSelector MACs replaced with the real ones above. Applied live via
+`task talos:apply` per node (cp-03 first, verified bond formed + `ceph -s` stayed healthy, then the
+remaining 4). No reboots required for any node. Ceph briefly repeated the same
+`OSD_SLOW_PING_TIME_BACK`/`_FRONT`-style slow-heartbeat `HEALTH_WARN` seen during the original
+2026-06-18 cutover (MAC-table/ARP relearning after the interface change) — self-cleared to
+`HEALTH_OK` within ~30s, no PG degradation.
+
+The 3 fallback `silence-operator` Silences (`bond-storage-degraded-x520-fallback-ceph`,
+`-node-exporter`, `ceph-node-network-packet-drops-x520-fallback`) were deactivated, since their
+documented revert conditions were all met: dropped from `kustomization.yaml`'s resources list (so
+they no longer apply) but kept on disk, relabeled `INACTIVE`, in case the same VLAN-200 fallback is
+ever needed again. If `CephNodeNetworkBondDegraded`/`NodeBondingDegraded`/`CephNodeNetworkPacketDrops`
+fire again on any node going forward, treat it as a **real** condition, not fallback noise — these
+Silences are no longer wired into the Kustomization and won't suppress anything.

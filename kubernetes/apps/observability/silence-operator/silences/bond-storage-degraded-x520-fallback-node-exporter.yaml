@@ -5,12 +5,11 @@ kind: Silence
 metadata:
   name: bond-storage-degraded-x520-fallback-node-exporter
 spec:
-  # TEMPORARY -- tied to the ongoing X520-DA2 hardware replacement, not a permanent policy.
-  # Remove this Silence (and its sibling, bond-storage-degraded-x520-fallback-ceph, which
-  # silences the same condition's rook-ceph-mgr copy of the alert) once replacement cards
-  # are installed and talos/talconfig.yaml's inline VLAN-200 patch is reverted
-  # (bond-storage `addresses:` uncommented on every node, cp-03's deviceSelector MACs
-  # fixed). Context and revert steps:
+  # INACTIVE (2026-07-07) -- not referenced by kustomization.yaml, so this Silence is not
+  # applied. Kept for reference: the X520 replacement landed and bond-storage was restored
+  # fleet-wide, so this is no longer needed. Re-add to kustomization.yaml's resources list
+  # if the same VLAN-200 fallback (talos/talconfig.yaml) is ever re-enabled.
+  # Full incident/revert history:
   # .claude/agent-memory/cluster-doctor/project_cp02_storage_bond_ixgbe_failure.md
   #
   # Why it fires: cp-02's onboard X520 NIC failed HW init (2026-06-25) and cp-03 was
