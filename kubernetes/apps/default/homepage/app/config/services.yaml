@@ -1,0 +1,17 @@
+---
+# TrueNAS and WAN Failover aren't Kubernetes workloads (no backing pod), so they're listed here
+# with siteMonitor (HTTP check) rather than via gethomepage.dev/* annotations + pod-selector,
+# which would never resolve. Everything else on the dashboard is auto-discovered — see the
+# gethomepage.dev/* annotations on each app's own HTTPRoute.
+- Storage:
+    - TrueNAS:
+        icon: "mdi-nas"
+        href: "https://truenas.${DOMAIN_CLUSTER}"
+        description: "NAS storage & NFS/iSCSI targets"
+        siteMonitor: "https://truenas.${DOMAIN_CLUSTER}"
+- Network:
+    - WAN Failover:
+        icon: "mdi-router-network"
+        href: "https://wan-failover.${DOMAIN_CLUSTER}"
+        description: "Failover link status"
+        siteMonitor: "https://wan-failover.${DOMAIN_CLUSTER}"

@@ -4,6 +4,15 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: kube-prometheus-stack-prometheus
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: "Prometheus"
+    gethomepage.dev/description: "Metrics & alerting rules"
+    gethomepage.dev/group: "Observability"
+    gethomepage.dev/icon: "mdi-fire"
+    # Chart names the StatefulSet's pods app.kubernetes.io/name=prometheus, not
+    # kube-prometheus-stack-prometheus (this route's own name) — override the default guess.
+    gethomepage.dev/pod-selector: "app.kubernetes.io/name=prometheus"
 spec:
   parentRefs:
     - name: envoy-internal
@@ -21,6 +30,12 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: grafana
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: "Grafana"
+    gethomepage.dev/description: "Dashboards"
+    gethomepage.dev/group: "Observability"
+    gethomepage.dev/icon: "mdi-chart-areaspline"
 spec:
   parentRefs:
     - name: envoy-internal
@@ -38,6 +53,15 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: kube-prometheus-stack-alertmanager
+  annotations:
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/name: "Alertmanager"
+    gethomepage.dev/description: "Alert routing & silences"
+    gethomepage.dev/group: "Observability"
+    gethomepage.dev/icon: "mdi-bell-alert"
+    # Chart names the StatefulSet's pods app.kubernetes.io/name=alertmanager, not
+    # kube-prometheus-stack-alertmanager (this route's own name) — override the default guess.
+    gethomepage.dev/pod-selector: "app.kubernetes.io/name=alertmanager"
 spec:
   parentRefs:
     - name: envoy-internal

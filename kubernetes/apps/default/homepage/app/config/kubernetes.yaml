@@ -1,0 +1,4 @@
+---
+mode: cluster
+ingress: false # this cluster has no Ingress controller — Envoy Gateway only
+gateway: true # discover services via gethomepage.dev/* annotations on HTTPRoutes

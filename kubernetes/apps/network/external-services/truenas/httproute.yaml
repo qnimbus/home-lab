@@ -7,6 +7,9 @@ metadata:
   labels:
     app.kubernetes.io/name: *app
     app.kubernetes.io/instance: *app
+  # No gethomepage.dev/* annotations: TrueNAS is a physical NAS proxied in from here, not a
+  # Kubernetes workload — there's no pod for homepage's pod-selector to ever match. It's listed
+  # in homepage's services.yaml instead, with an HTTP siteMonitor check rather than pod status.
 spec:
   hostnames:
     - "truenas.${DOMAIN_CLUSTER}"

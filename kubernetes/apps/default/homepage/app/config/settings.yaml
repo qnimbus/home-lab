@@ -1,0 +1,21 @@
+---
+title: Home Lab
+color: slate
+useEqualHeights: true
+statusStyle: dot
+layout:
+  Observability:
+    style: row
+    columns: 4
+  Storage:
+    style: row
+    columns: 4
+  Database:
+    style: row
+    columns: 4
+  Automation:
+    style: row
+    columns: 4
+  Network:
+    style: row
+    columns: 4
