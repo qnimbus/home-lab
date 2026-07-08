@@ -24,11 +24,15 @@ spec:
             value: /
       # The router's embedded web UI validates the Host header against its own management IP
       # and rejects/misbehaves on wan-failover.${DOMAIN_CLUSTER} — rewrite it to what the router
-      # itself expects before forwarding.
+      # itself expects before forwarding. Must use RequestHeaderModifier, not URLRewrite: Envoy
+      # Gateway rejects URLRewrite.hostname when the value is an IP literal ("Hostname: ... cannot
+      # be an ip address"), which left this route unaccepted and serving a synthetic 500.
       filters:
-        - type: URLRewrite
-          urlRewrite:
-            hostname: "192.168.8.1"
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            set:
+              - name: Host
+                value: "192.168.8.1"
       backendRefs:
         - name: *app
           port: 80
