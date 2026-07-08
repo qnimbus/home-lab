@@ -1,7 +1,7 @@
 # GitOps Repository Audit <!-- omit from toc -->
 
 > **Living document** — re-run the audit commands in [How to Re-Audit](#how-to-re-audit) after significant changes and update the findings below.
-> Last audited: **2026-07-03** · Auditor: Claude Code (`gitops-repo-audit` skill) — sixth pass, baseline `e542cd3` (last commit to touch this doc) → `7d8e377` (HEAD), 26 commits. Notable arrivals: `unpoller` (UniFi metrics) + `grafana-operator` in external mode (dashboards/datasources managed via the Grafana HTTP API against the existing kube-prometheus-stack Grafana, no second Grafana instance), `silence-operator` fully live with 4 GitOps-managed Alertmanager silences (hardware-fallback noise suppression, each with a documented revert condition), a `cp-03` hardware replacement, and three same-day rook-ceph logging-volume tuning commits — one of which (`8c7162d`) shipped an invalid Ceph config key that was self-diagnosed via the week-old VictoriaLogs pipeline and corrected the same day (`76d5ada`), a good early proof-of-value for the log-aggregation investment. Re-ran the full discovery/validation/API-compliance/security suite: resource counts now 37 HelmReleases / 53 Kustomizations / 26 OCIRepositories (was 34/48/24), `flux migrate --dry-run` reports no deprecated APIs, drift-detection opt-outs and `configMapGenerator` watch-label gaps both still zero. `flux-schema` was not preinstalled in this container and had to be fetched fresh (v0.6.0, up from whatever version ran the fifth pass) — its newer Gateway API CEL rules surfaced two likely-false-positive `cel violation` findings not seen last pass (see Validation Results). One genuine new finding: a `fluent-bit` log filter that the commit message says was added is actually shipped fully commented-out, so the noise reduction it describes isn't happening (see W4 in Recommendations). Also discovered and excluded a `tmp/` scratch directory (gitignored, holding two full reference-repo clones from prior kubesearch.dev research) that inflated a naive discovery pass to 1480 resources — not part of this repo's actual GitOps tree, exclude it in any future ad-hoc scan.
+> Last audited: **2026-07-08** · Auditor: Claude Code (`gitops-repo-audit` skill) — seventh pass, baseline `7d8e377` (last commit to touch this doc) → `284d80f` (HEAD), 13 commits. This was a light pass: the delta between baselines is almost entirely Talos/hardware operations (the `cp-02` X520 NIC failure fully resolved — `cp-03` replacement's X520 verified good, all 5 nodes migrated back from the VLAN-200 fallback to the `bond-storage` LACP bond) plus routine `mise` tool bumps, not new GitOps application work. Only 7 files under `kubernetes/` changed: one chart version bump (`external-secrets` 2.6.0→2.7.0), the already-tracked `envoy-gateway` explicit `tls.mode` fix (I15, was already marked resolved), 3 `silence-operator` silences deactivated (X520 fallback no longer needed — cleanly done, removed from `kustomization.yaml`'s `resources:` list rather than deleted, each with an inline revert condition), and the `unpoller` `grafana-dashboard` → `custom.grafana-dashboard` Renovate datasource prefix fix (session `renovate-missing-datasource-fix`, already logged in `CLAUDE.md` before this audit ran). Re-ran the full discovery/validation/API-compliance/security suite: resource counts unchanged at 37 HelmReleases / 53 Kustomizations / 26 OCIRepositories, `flux migrate --dry-run` still reports no deprecated APIs, drift-detection opt-outs and `configMapGenerator` watch-label gaps both still zero, zero `dependsOn` cycles or dangling references across all 53 Kustomizations. `flux-schema` v0.6.0 was already on `PATH` this pass (no fetch needed). Validation still reports the same 14 known-false-positive "invalid" resources (13 HTTPRoute + 1 PersistentVolumeClaim, all `postBuild.substitute` placeholder artifacts or the `sectionName` CEL quirk) — no new validation regressions. One carried-over finding (W4, `fluent-bit` localapi filter still shipped commented-out) remains open, unchanged. One new observation: `.github/workflows/renovate-pr-review.yml` was disabled fleet-wide on 2026-07-04 (unexpected Claude usage costs, tracked in `docs/ROADMAP.md`) — this makes I13's open-egress residual risk currently moot (the workflow isn't running at all), but the finding should be re-assessed before the workflow is re-enabled, not closed. Also reconfirmed: `tmp/` (gitignored kubesearch.dev reference-repo clones) still inflates a naive scan from 270 to 1480 resources — continue excluding it.
 
 ## Contents <!-- omit from toc -->
 
@@ -29,16 +29,18 @@
 
 ## Resource Inventory
 
-| Kind | Count | Δ since 2026-06-24 |
+| Kind | Count | Δ since 2026-07-03 |
 |---|---|---|
-| HelmRelease | 37 | +3 (unpoller, grafana-operator, silence-operator) |
-| Kustomization | 53 | +5 (unpoller, grafana-operator + grafana-operator-instance, silence-operator + silence-operator-silences) |
-| OCIRepository | 26 | +2 (grafana-operator, silence-operator; unpoller reuses the shared `app-template` source) |
+| HelmRelease | 37 | — |
+| Kustomization | 53 | — |
+| OCIRepository | 26 | — |
 | HelmRepository | 4 | — |
 | Receiver | 1 | — |
 | Alert | 1 | — |
 | Provider | 1 | — |
 | ImageUpdateAutomation | 0 | — |
+
+No new applications this pass — see the header note for the (non-GitOps-shaped) delta.
 
 > **Note on the whoami count**: `kubernetes/apps/default/whoami/ks.yaml` exists on disk (a static-scan inventory like `discover.sh` counts it), but `kubernetes/apps/default/kustomization.yaml` has it commented out of `resources:`. It is **not applied to the live cluster** — added as a connectivity smoke-test, then deliberately disabled (commit `a88ecf1`). Don't read the +1 as a live resource change.
 
@@ -56,16 +58,15 @@
 
 All Flux CRDs and Kustomize overlays under `kubernetes/` validate cleanly against the Flux OpenAPI schemas. Kustomize build produces 0 errors across all overlays.
 
-With `-e talos -e assets -e .archive -e ops -e tmp` applied, `flux-schema validate` (v0.6.0 — see note below) reports 14 "invalid" resources, all confirmed false positives:
+With `-e talos -e assets -e .archive -e ops -e tmp` applied, `flux-schema validate` (v0.6.0) reports 14 "invalid" resources, all confirmed false positives, unchanged since the sixth pass:
 
 | Kind | Count | Cause |
 |---|---|---|
-| HTTPRoute | 13 | `postBuild.substitute` placeholders (`${DOMAIN_CLUSTER}`, `${DOMAIN_APP}`, `${DOMAIN_IO}`) in `hostnames` don't match the DNS-label regex until Flux resolves them at apply time — expected per the skill's own documented edge case |
-| PersistentVolumeClaim | 1 | Same cause — VolSync's `${VOLSYNC_CLAIM:=${APP}}` templated `metadata.name` |
+| HTTPRoute (`schema violation`) | 11 | `postBuild.substitute` placeholders (`${DOMAIN_CLUSTER}`, `${DOMAIN_APP}`, `${DOMAIN_IO}`) in `hostnames` don't match the DNS-label regex until Flux resolves them at apply time — expected per the skill's own documented edge case |
+| HTTPRoute (`cel violation`) | 2 | `envoy-external-http-redirect`/`envoy-internal-http-redirect` — "sectionName must be unique when parentRefs includes 2 or more references to the same parent". Both routes' rendered `parentRefs` array has exactly one entry with `sectionName: http` already set (confirmed via the merged validation bundle) — the rule misfires on a single-element array, a v0.6.0 CEL artifact, not a real duplicate-parentRef bug. No repo-side fix available (no equivalent explicit field to add); left as a known tool quirk |
+| PersistentVolumeClaim | 1 | Same `postBuild.substitute` cause — VolSync's `${VOLSYNC_CLAIM:=${APP}}` templated `metadata.name` |
 
-The 2 `Gateway` `cel violation` findings seen earlier this pass (`envoy-external`/`envoy-internal` omitting explicit `tls.mode`) were resolved same-day — see I15 in Recommendations, now closed.
-
-Also observed (not counted as "invalid" — `cel violation` against `envoy-external-http-redirect`/`envoy-internal-http-redirect` HTTPRoutes, "sectionName must be unique when parentRefs includes 2 or more references to the same parent"): both routes' rendered `parentRefs` array has exactly one entry with `sectionName: http` already set (confirmed via the merged validation bundle) — the rule is misfiring on a single-element array, another apparent v0.6.0 CEL artifact, not a real duplicate-parentRef bug. No repo-side fix available for this one (there's no equivalent explicit field to add); left as a known tool quirk.
+The `envoy-external`/`envoy-internal` `Gateway` `cel violation` findings (omitted explicit `tls.mode`) that appeared in the sixth pass are gone — I15 (explicit `mode: Terminate`) resolved them; not present in this pass's output.
 
 ### Non-Kubernetes Files — Expected False Positives
 
@@ -117,10 +118,12 @@ All Flux resources use current stable API versions. No migration required.
 | `unpoller`'s `ExternalSecret` uses `dataFrom.extract` + a `rewrite.regexp` prefix (`UNIFI_$1`) to map a single 1Password item's fields onto multiple `UP_UNIFI_DEFAULT_*` env vars | ✅ — same rewrite pattern already validated in the alertmanager/rook-ceph ExternalSecrets; correctly keeps the container's env-var contract independent of 1Password's internal field names |
 | Rook-Ceph mon/mgr log-volume tuning (`8c7162d`, `76d5ada`, `3b8966c`) shipped a bug (invalid `rocksdb_stats_dump_period_sec` config key causing a set→ENOENT→delete retry loop) that was root-caused via a VictoriaLogs log-volume query and fixed same-day | ✅ — early real-world payoff from the week-old log-aggregation pipeline; the fix (`bluestore_rocksdb_options_annex`) correctly avoids clobbering the chart/Ceph-default `bluestore_rocksdb_options` string |
 | `silence-operator`'s 4 `Silence` CRs are all scoped to specific `alertname` matchers with revert conditions documented inline (pointing at the underlying hardware root cause, e.g. `.claude/agent-memory/cluster-doctor/project_cp02_storage_bond_ixgbe_failure.md`) rather than broad label-based suppressions | ✅ — none of the silences risk masking an unrelated real alert; each is traceable back to a specific, temporary hardware condition |
+| The documented silence-deactivation pattern held up in practice: when the X520 fallback was reverted (`284d80f`), 3 of the 4 silences were removed from `silences/kustomization.yaml`'s `resources:` list — not deleted — with each file's `spec:` block gaining an `INACTIVE (date)` comment explaining why it's parked and when to re-add it | ✅ (2026-07-07) — confirms the revert-condition discipline praised in the sixth pass wasn't just aspirational; the actual revert followed the documented procedure exactly |
+| `unpoller`'s Renovate-tracked dashboard revisions consistently use the `custom.grafana-dashboard` datasource (matching the `customDatasources` key Renovate auto-prefixes with `custom.`), in both `renovate.json5`'s `packageRules.matchDatasources` and all 4 `# renovate: datasource=...` annotations in `grafanadashboard.yaml` | ✅ (2026-07-04, `c26f108`) — grepped for any lingering bare `datasource=grafana-dashboard` annotation; none found, so the fix was applied consistently rather than patching only the symptom that triggered the original "Missing datasource!" warning |
 
 ### Gaps
 
-#### 🆕 NEW — `fluent-bit` localapi noise filter is shipped disabled
+#### STILL OPEN — `fluent-bit` localapi noise filter is shipped disabled
 
 Commit `50fe449` ("enhance log filtering for tailscale-operator and localapi calls") added a
 well-reasoned comment explaining that `tailscaled`'s `containerboot` polls
@@ -133,7 +136,21 @@ reads as an accidental omission rather than a deliberate no-op: the companion `h
 change in the same section (tailscale-operator's `app` label handling), which *was* deliberately
 left disabled, has its own "Decided against it" rationale in the same follow-up commit
 (`45230c8`); the localapi block has no equivalent "why this stays off" note, only a description
-of the problem it's meant to fix. See W4 in Recommendations.
+of the problem it's meant to fix. Unchanged since the sixth pass (2026-07-03) — no commit has
+touched this file since. See W4 in Recommendations.
+
+#### 🆕 NEW (observation, not a gap) — `renovate-pr-review.yml` disabled fleet-wide
+
+`docs/ROADMAP.md` (commit `752e9e0`, 2026-07-04) records that
+`.github/workflows/renovate-pr-review.yml` was disabled via
+`gh workflow disable renovate-pr-review.yml` after racking up unexpected Claude usage costs; a
+root cause has not yet been identified. This directly affects **I13** below: the accepted residual
+risk described there (fork-check + label-gating on an open-egress ARC runner, since the Cilium
+`CiliumNetworkPolicy` egress restriction proved unreliable against GitHub's GLB-fronted
+`broker.actions.githubusercontent.com`) currently has **no live exposure at all**, because the
+workflow that carried it isn't running. This is not a fix — re-enabling the workflow without
+revisiting I13 would silently restore the exact risk it describes. Don't close I13; re-assess it
+as part of re-enabling this workflow.
 
 #### ✅ RESOLVED — 13 generated values ConfigMaps now carry the reactivity label
 
@@ -249,11 +266,10 @@ the fifth pass:
 | tuppr | ❌ |
 | victoria-logs | ❌ |
 
-18 of 26 repositories remain unverified. Both sources added this pass (`grafana-operator`,
-`silence-operator`) arrived unverified, continuing the pattern where only `app-template`-adjacent
-and a handful of security-focused projects (tailscale-operator, external-dns, openebs,
-plugin-barman-cloud, volsync) ship cosign signatures upstream. `unpoller` doesn't add a new
-OCIRepository — it's deployed via the shared, already-verified `app-template` chart. This remains
+18 of 26 repositories remain unverified — unchanged this pass (no new OCIRepository sources were
+added between the sixth and seventh audits), continuing the pattern where only
+`app-template`-adjacent and a handful of security-focused projects (tailscale-operator,
+external-dns, openebs, plugin-barman-cloud, volsync) ship cosign signatures upstream. This remains
 tracked as I4; no new action beyond periodic re-assessment of each upstream's cosign availability.
 
 ### Network & RBAC
@@ -298,7 +314,8 @@ _None._
 | ~~I10~~ | ~~`whoami` HelmRelease lacked `securityContext`/`defaultPodOptions` hardening~~ | ✅ Resolved — moved app to internal port 8080 (`WHOAMI_PORT_NUMBER`) + `targetPort: 8080` on the Service, enabling `runAsNonRoot`/`capabilities.drop: ["ALL"]` with no capability add-back |
 | ~~I11~~ | ~~This doc's own "How to Re-Audit" recipe used a stale `-e bootstrap` exclude after the `ops/` restructure (`c8771da`)~~ | ✅ Resolved — updated to `-e ops`; verified `ops/bootstrap/helmfile.d/*.yaml` no longer false-positive when scanning from repo root |
 | ~~I12~~ | ~~This doc's own "How to Re-Audit" recipe had two latent bugs in its spot-checks: the drift-detection check grepped individual `helmrelease.yaml` files for `driftDetection`, which never appears there (it's injected centrally by a `cluster-apps` patch in `kubernetes/flux/cluster/ks.yaml`) — would report 100% of HelmReleases as missing drift detection regardless of truth; previously masked by an unrelated `xargs -l` syntax bug that silently no-op'd instead of running. The cosign-coverage loop's glob also picked up the oci repos directory's own `kustomization.yaml` as a false `NO-VERIFY` entry~~ | ✅ Resolved — drift-detection check rewritten to look for the `drift-detection.flux.home.arpa/disabled` opt-out label instead (none found — all 29 HelmReleases genuinely inherit the global default, confirming the existing W2 finding was correct despite the broken check); cosign loop now excludes `kustomization.yaml` |
-| I13 | `home-lab-readonly`'s `CiliumNetworkPolicy` egress restriction was reverted (`b4f1e38`) after proving unreliable: `broker.actions.githubusercontent.com` CNAMEs through a GitHub GLB hostname, and Cilium never allocated a CIDR identity for the resolved IP (confirmed live via `cilium-dbg`, well past any agent-settling window). Network containment itself is **not** restored by the fix below — this remains an accepted residual risk | ⚠️ Narrowed, not resolved (2026-06-24) — `renovate-pr-review.yml` hardened so the open-egress runner now executes far less often: the job gates on `pull_request.user.login == 'renovate[bot]'` (stable across `synchronize`, unlike `github.actor`, which flips to a human if anyone else ever pushes to the branch) **and** rejects any PR whose head lives outside this repo (fork check — this repo is private, so this is defense-in-depth, not the primary control), **and** a new pre-checkout step skips the Claude review entirely unless the PR carries a `type/major` or `type/minor` label, reading labels live via `gh pr view` rather than the trigger event's snapshot (Renovate attaches labels in a follow-up call, so `opened` can race ahead of them — `labeled` was added to the trigger list to catch that). Patch-only and unlabeled (e.g. digest) PRs no longer invoke the AI reviewer — or even check out the repo — at all. If untrusted-input exposure grows further, revisit egress restriction via a non-FQDN mechanism (e.g. a static CIDR allowlist for GitHub's published IP ranges, or an explicit egress proxy) rather than retrying Cilium `toFQDNs` against a GLB-fronted hostname |
+| I13 | `home-lab-readonly`'s `CiliumNetworkPolicy` egress restriction was reverted (`b4f1e38`) after proving unreliable: `broker.actions.githubusercontent.com` CNAMEs through a GitHub GLB hostname, and Cilium never allocated a CIDR identity for the resolved IP (confirmed live via `cilium-dbg`, well past any agent-settling window). Network containment itself is **not** restored by the fix below — this remains an accepted residual risk | ⚠️ Narrowed, not resolved, and **currently not exercised at all** — `renovate-pr-review.yml` (the workflow this finding is about) was disabled fleet-wide 2026-07-04 after unexpected Claude usage costs (`docs/ROADMAP.md`), independent of this finding. While disabled: the label-gating/fork-check hardening from 2026-06-24 still stands (job gates on `pull_request.user.login == 'renovate[bot]'`, rejects out-of-repo PR heads, skips the Claude review entirely unless the PR carries `type/major`/`type/minor`). **Before re-enabling**: re-assess this finding — the open-egress exposure returns the moment the workflow runs again, and the root cause of the cost overrun (tracked in ROADMAP.md) is still unidentified. If untrusted-input exposure grows further, revisit egress restriction via a non-FQDN mechanism (e.g. a static CIDR allowlist for GitHub's published IP ranges, or an explicit egress proxy) rather than retrying Cilium `toFQDNs` against a GLB-fronted hostname |
+| I16 | `.github/workflows/renovate-pr-review.yml` disabled since 2026-07-04 (unexpected Claude usage costs) with root cause not yet identified (`docs/ROADMAP.md`) | Track via ROADMAP.md, not this doc — included here only because it changes I13's current risk status. No repo-file changes needed until re-enabled |
 | ~~I14~~ | ~~`kubernetes/apps/automation/waha/ks.yaml`'s comment described the VolSync PVC cutover as "step 3 (separate, deliberate, not yet done)", but `docs/ROADMAP.md`'s VolSync section says the canary cutover is "✅ DONE" — the live PVC was swapped, just via an incident rather than the deliberate procedure the comment described~~ | ✅ Resolved (2026-06-24) — comment rewritten to match the completed state recorded in ROADMAP.md |
 | ~~I15~~ | ~~`envoy-gateway/config/gateway.yaml`'s `envoy-external`/`envoy-internal` HTTPS listeners relied on the Gateway API's implicit `tls.mode: Terminate` default rather than setting it explicitly, which a newer `flux-schema` v0.6.0 CEL rule flagged as a false-positive `cel violation`~~ | ✅ Resolved (2026-07-03) — added `mode: Terminate` explicitly to both listeners' `tls:` blocks. Zero behavior change (`kustomize build` output unchanged apart from the added field); re-validated with `flux-schema validate --verbose` — both Gateways now report `is valid` with no CEL findings |
 
