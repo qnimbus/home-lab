@@ -32,13 +32,15 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 
 ### WAN Failover Router: Host Header Rewrite
 
-**Status: reverted to no filter (2026-07-08), stable but unfixed.** `wan-failover.${DOMAIN_CLUSTER}` (`kubernetes/apps/network/external-services/wan-failover/httproute.yaml`) proxies a physical router's web UI at a raw IP via a manually-managed `EndpointSlice`. The router's firmware validates the inbound `Host` header against its own IP and rejects/misbehaves on the proxied hostname.
+**Status: fix committed (2026-07-08), pending live verification.** `wan-failover.${DOMAIN_CLUSTER}` proxied a physical router's web UI at a raw IP via `HTTPRoute` + a manually-managed `EndpointSlice`. The router's firmware validates the inbound `Host` header against its own IP and rejects/misbehaves on the proxied hostname.
 
-Both standard Gateway API mechanisms for rewriting `Host` to an IP literal are blocked by Envoy Gateway: `URLRewrite.hostname` rejects IP literals outright (`"cannot be an ip address"`), and `RequestHeaderModifier` silently strips `Host` from its `set` list as a disallowed header, leaving the filter with nothing to apply. Either failure leaves the `HTTPRoute` `Accepted: False`, which has a second-order effect — `external-dns-unifi` (`sources: [gateway-httproute, service]`, `policy: sync`) only advertises DNS records for `Accepted` routes and actively deletes them otherwise, so a rejected filter doesn't just fail to fix the Host-header problem, it also takes down DNS resolution for the hostname entirely.
+Two Gateway-API-level fixes were tried and both failed in ways that made things worse, not just ineffective:
+- `URLRewrite.hostname` rejects IP literals outright (`"cannot be an ip address"`).
+- `RequestHeaderModifier` silently strips `Host` from its `set` list as a disallowed header, leaving the filter with nothing to apply.
 
-Reverted to no filter for now (routable, DNS-resolvable, likely still rejected by the router same as the original complaint — a known, non-blackout failure mode). Candidate real fixes, not yet attempted:
-- A small dedicated reverse-proxy pod (nginx/Caddy via `app-template`) between Envoy and the router — those don't share Envoy Gateway's `Host`-header restriction.
-- Envoy Gateway's `EnvoyPatchPolicy` (raw Envoy xDS JSONPatch escape hatch) to set `host_rewrite_literal` directly — needs the exact generated route name verified against live xDS config before attempting, not guessed.
+Either failure leaves the `HTTPRoute` `Accepted: False`, which has a second-order effect: `external-dns-unifi` (`sources: [gateway-httproute, service]`, `policy: sync`) only advertises DNS records for `Accepted` routes and actively deletes them otherwise — so a rejected filter doesn't just fail to fix the Host-header problem, it also takes down DNS resolution for the hostname entirely (this happened live, twice).
+
+**Resolved differently, at the user's direction**: bypass Envoy Gateway for this hostname entirely rather than fight its Host-rewrite restrictions. `kubernetes/apps/network/external-services/wan-failover/service.yaml` is now a single `Service` with no real endpoints, carrying `external-dns.alpha.kubernetes.io/target: 192.168.8.1` — this makes `external-dns-unifi`'s `service` source point the DNS record straight at the router's LAN IP instead of the Gateway's LB IP. The browser then connects directly to the router over plain HTTP (`http://wan-failover.${DOMAIN_CLUSTER}`, not `https://`) exactly as if it had typed `http://192.168.8.1` — no proxy, no TLS termination, no Host-header rewrite needed since there's no hop that changes it. `HTTPRoute`/`EndpointSlice` removed; the `envoy-gateway-config` `dependsOn` in `ks.yaml` removed too since this app no longer touches the Gateway at all. Considered and rejected: a small reverse-proxy sidecar (nginx/Caddy) that would do the rewrite itself — works, but judged too heavy for what this is.
 
 ### Renovate PR-Review Workflow: Cost/Bug Investigation, Re-enable
 

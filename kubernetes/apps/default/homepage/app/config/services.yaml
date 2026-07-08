@@ -12,6 +12,9 @@
 - Network:
     - WAN Failover:
         icon: "mdi-router-network"
-        href: "https://wan-failover.${DOMAIN_CLUSTER}"
+        # Plain http, not https: this hostname bypasses Envoy Gateway entirely (DNS points
+        # straight at the router's LAN IP — see network/external-services/wan-failover), and the
+        # router only serves plain HTTP with no TLS termination in front of it.
+        href: "http://wan-failover.${DOMAIN_CLUSTER}"
         description: "Failover link status"
-        siteMonitor: "https://wan-failover.${DOMAIN_CLUSTER}"
+        siteMonitor: "http://wan-failover.${DOMAIN_CLUSTER}"

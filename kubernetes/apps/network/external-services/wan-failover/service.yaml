@@ -6,9 +6,17 @@ metadata:
   labels:
     app.kubernetes.io/name: *app
     app.kubernetes.io/instance: *app
+  annotations:
+    # Bypasses Envoy Gateway entirely: the router firmware validates the inbound Host header
+    # against its own management IP, and Envoy Gateway has no supported way to rewrite Host to
+    # an IP literal (URLRewrite.hostname rejects IP literals; RequestHeaderModifier silently
+    # strips "Host" as disallowed — see docs/ROADMAP.md history). This Service carries no real
+    # endpoints; it exists only so external-dns points wan-failover.${DOMAIN_CLUSTER} straight
+    # at the router's LAN IP, same as browsing to http://192.168.8.1 directly — no proxy, no
+    # TLS, no Host rewrite needed.
+    external-dns.alpha.kubernetes.io/hostname: "wan-failover.${DOMAIN_CLUSTER}"
+    external-dns.alpha.kubernetes.io/target: "192.168.8.1"
 spec:
   ports:
     - name: http
       port: 80
-      protocol: TCP
-      targetPort: 80
