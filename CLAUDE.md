@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-07-08 | `resilience-audit-fmea` | Built resilience-audit skill (FMEA schema) for failure-mode/DR auditing; piloted on Rook-Ceph, found 3 critical gaps |
 > | 2026-07-08 | `victoria-logs-syslog-ingestion` | Added native syslog listener + LoadBalancer Service to VictoriaLogs for TrueNAS ingestion, chosen over routing through fluent-bit |
 > | 2026-07-08 | `metrics-server-oci-migration` | Migrated metrics-server to charts-mirror OCIRepository; cilium blocked, mirror lags v1.18.6 vs live v1.19.5 |
 > | 2026-07-07 | `x520-bond-storage-restore` | Verified cp-03's reinstalled X520, migrated all 5 nodes off VLAN-200 fallback back to bond-storage LACP, deactivated fallback silences (kept for reference) and updated docs |
@@ -11,7 +12,6 @@
 > | 2026-07-03 | `gitops-repo-audit-sixth-pass` | Sixth gitops-repo-audit pass; found fluent-bit filter shipped disabled (kept as-is) and Gateway tls.mode CEL false-positive (fixed) |
 > | 2026-07-03 | `unpoller-grafana-operator-deploy` | Deployed unpoller (UniFi metrics) + grafana-operator (external mode); Renovate-tracked dashboard revisions; documented native-Grafana alternative in ROADMAP |
 > | 2026-07-02 | `x520-nic-failure-vlan200-fallback` | cp-02's X520 failed (unrecoverable HW fault); fleet-wide bond-storage→VLAN-200 fallback; retroactively logged, fixed stale CLUSTER.md storage note |
-> | 2026-06-24 | `silence-operator-deploy` | Deployed silence-operator for GitOps Alertmanager silences; seeded nfsmount.conf silence, dropped node-exporter exclude |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
@@ -22,6 +22,8 @@ This repository provisions and manages a bare-metal Talos Linux Kubernetes clust
 > For a high-level overview of the cluster and FluxCD structure, see [CLUSTER.md](docs/CLUSTER.md).
 
 > For a periodic audit of Flux configuration quality, manifest validation, security posture, and open recommendations, see [REPO-AUDIT.md](docs/REPO-AUDIT.md). Re-run `gitops-repo-audit` skill after significant changes to refresh findings.
+>
+> For a per-component failure-mode/disaster-recovery catalog (FMEA: blast radius, detection, mitigation, recovery, tested status), see [RESILIENCE-AUDIT.md](docs/RESILIENCE-AUDIT.md). Run `/resilience-audit <component>` to audit a new component or refresh an existing one.
 > Keep `docs/CLUSTER.md` up to date as the cluster evolves: when adding new components, changing core infrastructure (CNI, DNS, storage, secrets strategy), or completing major bootstrap phases, update the relevant section. Keep entries concise and high-level — implementation details belong in code or `CLAUDE.md`.
 >
 > For pending and in-progress work items, see [ROADMAP.md](docs/ROADMAP.md). Update it when tasks are started, completed, or reprioritized.

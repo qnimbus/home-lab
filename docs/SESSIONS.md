@@ -4,6 +4,37 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-08 — `resilience-audit-fmea`
+
+### Goal
+Design a standard FMEA-based framework for auditing cluster components' failure modes, blast radius, mitigations, and recovery/DR readiness, and pilot it against Rook-Ceph.
+
+### What we did
+- User asked for a formal way to audit cluster deployments for threat/error/failure management (impact, mitigations, recovery) without knowing the exact terminology; identified this as **FMEA** (Failure Mode and Effects Analysis) paired with DR runbooks — distinct from security threat modeling.
+- Searched existing docs (`CLUSTER.md`, `ROADMAP.md`, `QA.md`) for prior DR content — found strong ad-hoc examples (the CNPG Postgres restore drill, live-tested twice) but no standard schema applied consistently across components.
+- Used `AskUserQuestion` to resolve two open design choices: where the catalog should live, and how broad the first pass should be. User chose a new project-local skill producing an audit-generated report (not a hand-maintained doc), starting with one fully-worked pilot component rather than a full sweep.
+- Distinguished the two existing skill patterns in this repo: `.agents/skills/gitops-repo-audit` (a heavier `SKILL.md` package, externally synced from an OCI catalog per `.agents/skills/catalog-lock.yaml` — "DO NOT EDIT") vs. `.claude/commands/*.md` (project-authored, single-file skills like `session-log`, `git-stage`) — chose the latter as the correct template.
+- Authored `.claude/commands/resilience-audit.md`: defines the FMEA schema (Failure Mode, Blast Radius, Detection, Existing Mitigation, Recovery Procedure, Tested, Severity), a Critical/Warning/Info severity heuristic, a discovery workflow (grep `CLUSTER.md`/`QA.md`/`ROADMAP.md`/`SESSIONS.md`, `ops/*/mod.just`), and edge-case guidance to link to existing runbooks rather than duplicate them.
+- Ran the new skill's workflow by hand as the pilot against Rook-Ceph — gathered topology/replication facts from `CLUSTER.md`, `ops/ceph/mod.just`, and recent session history (the X520 NIC failure/restore, the worker-02 OSD disk swap) — and wrote 8 failure-mode rows into `docs/RESILIENCE-AUDIT.md`.
+- Pilot surfaced 3 Critical gaps: concurrent 2-node/OSD loss (no tested recovery, and no off-Ceph backup for the `ceph-block`-backed apps — `volsync` currently only covers `waha`), mon-quorum loss (no runbook exists; the existing quorum runbook covers etcd, a different quorum), and unplanned/ungraceful power loss (only the graceful shutdown/cold-start path is documented).
+- Verified every `CLUSTER.md`/`QA.md` cross-reference anchor programmatically (simulated GitHub's markdown-slug algorithm in Python against the real headers) after an initial link used doubled hyphens and would have 404'd.
+- Wired the new doc into existing doc-index conventions: added rows to `docs/README.md` (agent-facing table + source-of-truth map) and a pointer line in `CLAUDE.md`, mirroring how `REPO-AUDIT.md`/`gitops-repo-audit` are already referenced.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.claude/commands/resilience-audit.md` | New — project-local skill defining the FMEA schema, severity heuristic, and audit workflow |
+| `docs/RESILIENCE-AUDIT.md` | New — audit-generated FMEA report; pilot pass on Rook-Ceph (8 failure modes, 3 Critical) + backlog of 9 other components |
+| `docs/README.md` | Added `RESILIENCE-AUDIT.md` to the agent-facing doc table and the source-of-truth map |
+| `CLAUDE.md` | Added a pointer to `RESILIENCE-AUDIT.md` alongside the existing `REPO-AUDIT.md` doc-link |
+
+### Key decisions
+- Chose a skill-generated report over a hand-maintained living doc (per explicit user choice) — keeps the FMEA catalog from silently drifting the way ad-hoc DR notes already had, scattered across `CLUSTER.md`/`ROADMAP.md`/`QA.md`.
+- Started with one fully-worked pilot component (Rook-Ceph, the cluster's stateful-storage backbone) rather than a shallow full-cluster pass, so the schema itself could be sanity-checked against a real, detail-rich component before rolling out further.
+- Modeled the skill on the repo's own `.claude/commands/*.md` single-file convention rather than the heavier `SKILL.md` + scripts/references/assets package used by `gitops-repo-audit` — that package is externally synced from an OCI catalog and not the right template for a hand-authored local skill.
+
+---
+
 ## 2026-07-08 — `victoria-logs-syslog-ingestion`
 
 ### Goal
