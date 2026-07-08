@@ -26,11 +26,18 @@ spec:
       # syslog-service.yaml's Service maps the conventional 514 -> 1514 externally.
       # useRemoteIP tags each record with the real sender IP, since syslog payloads
       # (esp. RFC3164) don't reliably carry a trustworthy hostname field.
+      # streamFields drops the default proc_id: PIDs churn on every service restart,
+      # so indexing on them creates a new stream each time for zero query value.
+      # log_source (also set on fluent-bit's output, see its helmrelease.yaml) lets
+      # every future syslog sender — not just TrueNAS — be filtered/grouped
+      # separately from Kubernetes pod logs by a single low-cardinality field.
       syslog:
         tcp:
           - name: syslog-tcp
             value: :1514
             useRemoteIP: true
+            streamFields: '["hostname","app_name","log_source"]'
+            extraFields: '{"log_source":"syslog"}'
     # Picked up by the kube-prometheus-stack Grafana sidecar once labelled —
     # chart leaves the label unset by default even with dashboards.enabled.
     dashboards:

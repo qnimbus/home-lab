@@ -108,13 +108,16 @@ spec:
 
       # _stream_fields become VictoriaLogs' indexed/groupable fields (its equivalent
       # of Loki labels); _msg_field/_time_field point at the fields this pipeline produces.
+      # extra_fields=log_source=kubernetes mirrors the log_source tag the victoria-logs
+      # syslog listener stamps on external senders, so the two pipelines can be told
+      # apart by one field instead of by the accidental absence of k_* fields.
       outputs: |-
         [OUTPUT]
           name http
           match kubernetes.*
           host victoria-logs-server.observability.svc.cluster.local
           port 9428
-          uri /insert/jsonline?_stream_fields=stream,k_namespace_name,k_pod_name,app&_msg_field=log&_time_field=date
+          uri /insert/jsonline?_stream_fields=stream,k_namespace_name,k_pod_name,app,log_source&_msg_field=log&_time_field=date&extra_fields=log_source=kubernetes
           format json_lines
           json_date_format iso8601
           compress gzip
