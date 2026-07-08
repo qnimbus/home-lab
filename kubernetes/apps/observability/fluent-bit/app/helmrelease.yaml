@@ -62,15 +62,20 @@ spec:
         [FILTER]
           name modify
           match kubernetes.*
-          rename k_labels_app.kubernetes.io/name app
-          rename k_labels_app app
-          rename k_labels_k8s-app app
+          rename k_labels_app.kubernetes.io/name app_name
+          rename k_labels_app app_name
+          rename k_labels_k8s-app app_name
+          # Renamed to app_name (not app) to match VictoriaLogs' own syslog-derived
+          # field name — one canonical "what produced this log" field across both
+          # the kubernetes and syslog ingestion pipelines. See log_source below for
+          # which pipeline a record came from.
+          #
           # tailscale-operator sets the "app" pod label to the owning Connector/Ingress/
           # Service's Kubernetes UID (for selector uniqueness), not a readable name — see
           # https://github.com/tailscale/tailscale/blob/main/cmd/k8s-operator/sts.go.
           # Considered overriding it with the operator's own parent-resource label
-          # (hard_rename k_labels_tailscale.com/parent-resource app) for readability, e.g.
-          # "app: subnet-router" instead of a UUID. Decided against it:
+          # (hard_rename k_labels_tailscale.com/parent-resource app_name) for readability,
+          # e.g. "app_name: subnet-router" instead of a UUID. Decided against it:
           #   - Connector is cluster-scoped (`kubectl get crd connectors.tailscale.com
           #     -o jsonpath='{.spec.scope}'` => Cluster), so its name — and thus this
           #     label — is guaranteed globally unique by the API server. No collision risk
@@ -79,22 +84,22 @@ spec:
           #   - But the operator uses the same parent-resource label for Ingress/Service-
           #     backed proxies too, and those parent types ARE namespaced. An Ingress
           #     named "foo" in ns a and a Service named "foo" in ns b would both render
-          #     app: foo if we made this change — not a functional break (VictoriaLogs
+          #     app_name: foo if we made this change — not a functional break (VictoriaLogs
           #     streams are still keyed on the full _stream_fields set, i.e. also
-          #     k_namespace_name + k_pod_name below), just ambiguous for an app-only
+          #     k_namespace_name + k_pod_name below), just ambiguous for an app_name-only
           #     filter/groupby.
           # Revisit if/when Ingress- or Service-based tailscale proxies are added and
           # collisions become plausible; k_labels_tailscale.com/parent-resource and
           # k_labels_tailscale.com/parent-resource-type remain queryable as-is either way.
-          # hard_rename k_labels_tailscale.com/parent-resource app
+          # hard_rename k_labels_tailscale.com/parent-resource app_name
 
         # tailscaled logs every mutating localapi call unconditionally (not gated by
         # log level) — containerboot polls POST /localapi/v0/debug on every netmap
         # change to keep subnet-router routes in sync. High-volume, zero signal.
-        # [FILTER]
-        #   name grep
-        #   match kubernetes.*
-        #   exclude log localapi: \[(POST|PATCH|DELETE|PUT)\] /localapi/v0/debug
+        [FILTER]
+          name grep
+          match kubernetes.*
+          exclude log localapi: \[(POST|PATCH|DELETE|PUT)\] /localapi/v0/debug
 
       # Talos nodes run containerd only — no Docker, so the default cri/docker
       # multiline parser format doesn't match; this is containerd's raw log line format.
@@ -117,7 +122,7 @@ spec:
           match kubernetes.*
           host victoria-logs-server.observability.svc.cluster.local
           port 9428
-          uri /insert/jsonline?_stream_fields=stream,k_namespace_name,k_pod_name,app,log_source&_msg_field=log&_time_field=date&extra_fields=log_source=kubernetes
+          uri /insert/jsonline?_stream_fields=stream,k_namespace_name,k_pod_name,app_name,log_source&_msg_field=log&_time_field=date&extra_fields=log_source=kubernetes
           format json_lines
           json_date_format iso8601
           compress gzip
