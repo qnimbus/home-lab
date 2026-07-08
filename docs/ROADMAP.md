@@ -492,6 +492,14 @@ Deliverable: a PR updating `schematic.yaml` and the relevant patch files with re
 
 ### Migrate Remaining HelmRepositories to `home-operations/charts-mirror`
 
+> **Status: partially done (2026-07-08).** `metrics-server` migrated — mirror had a matching `3.13.1`
+> tag. `cilium` is **blocked**: the mirror's newest published tag is `1.18.6`, while this cluster runs
+> `1.19.5` live (confirmed via `ghcr.io/v2/.../cilium/tags/list`, no pagination trick — that's genuinely
+> the full tag list). Migrating now would pin Flux's source below the running CNI version — on a
+> bare-metal cluster with no separate CNI fallback, that's a real downgrade risk, not a cosmetic
+> source-kind change. Re-check `charts-mirror`'s tag list next time cilium is bumped; migrate once a
+> tag ≥ the then-current version exists.
+
 Two of our Flux chart sources still use the traditional `HelmRepository` kind (HTTP `index.yaml` polling). Every other chart source in the cluster has already been converted to `OCIRepository`. Migrating the two remaining outliers makes the source strategy uniform and unlocks cosign verification.
 
 **Background — what the mirror is:**
@@ -511,56 +519,71 @@ Two of our Flux chart sources still use the traditional `HelmRepository` kind (H
 | Upstream availability | Chart unavailable if upstream repo is down | Mirror caches last-pushed artifact |
 | Source kind uniformity | Breaks the all-OCI convention | All sources become `OCIRepository` |
 
-**Current state — two HTTP sources remain:**
+**Current state:**
 
 | Chart | Current source | Current kind | Mirror equivalent |
 |-------|---------------|--------------|-------------------|
-| `cilium` | `https://helm.cilium.io` | `HelmRepository` | `oci://ghcr.io/home-operations/charts-mirror/cilium` |
-| `metrics-server` | `https://kubernetes-sigs.github.io/metrics-server` | `HelmRepository` | `oci://ghcr.io/home-operations/charts-mirror/metrics-server` |
+| `cilium` | `https://helm.cilium.io` | `HelmRepository` | `oci://ghcr.io/home-operations/charts-mirror/cilium` — **blocked, mirror lags at `1.18.6` vs our live `1.19.5`** |
+| `metrics-server` | ✅ migrated 2026-07-08 | `OCIRepository` | `oci://ghcr.io/home-operations/charts-mirror/metrics-server` |
 
-Already on the mirror (no action needed): `external-dns`, `openebs`.  
+Already on the mirror (no action needed): `external-dns`, `openebs`, `metrics-server`.
 Already on their own OCI registries (fine as-is): `cert-manager` (quay.io/jetstack), `kube-prometheus-stack` (ghcr.io/prometheus-community), `coredns` (ghcr.io/coredns), `spegel` (ghcr.io/spegel-org), `envoy-gateway` (mirror.gcr.io/envoyproxy).
 
-**Steps to implement:**
+**Steps taken for `metrics-server` (same steps apply to `cilium` once its mirror tag catches up):**
 
-For each of the two charts (`cilium`, `metrics-server`):
-
-1. Delete (or replace) `kubernetes/flux/meta/repos/helm/<chart>.yaml` with an `OCIRepository`:
+1. Replaced `kubernetes/flux/meta/repos/helm/metrics-server.yaml` with an `OCIRepository` at
+   `kubernetes/flux/meta/repos/oci/metrics-server.yaml`:
    ```yaml
    apiVersion: source.toolkit.fluxcd.io/v1
    kind: OCIRepository
    metadata:
-     name: cilium          # (or metrics-server)
+     name: metrics-server
      namespace: flux-system
    spec:
      interval: 1h
      layerSelector:
        mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
        operation: copy
-     url: oci://ghcr.io/home-operations/charts-mirror/cilium
      ref:
-       # renovate: datasource=docker depName=ghcr.io/home-operations/charts-mirror/cilium
-       tag: "<current-version>"
+       # renovate: datasource=docker depName=ghcr.io/home-operations/charts-mirror/metrics-server
+       tag: "3.13.1"
+     url: oci://ghcr.io/home-operations/charts-mirror/metrics-server
      verify:
        provider: cosign
+       matchOIDCIdentity:
+         - issuer: https://token.actions.githubusercontent.com
+           subject: ^https://github.com/home-operations/
    ```
-2. Update the chart's `HelmRelease` to reference the new `OCIRepository` source kind:
+2. **Important — this repo's OCI-sourced HelmReleases use `spec.chartRef`, not `spec.chart.spec.sourceRef`.**
+   The original plan here assumed the same `chart.spec.sourceRef.kind: OCIRepository` shape used for
+   `HelmRepository` sources, but every existing OCI-sourced `HelmRelease` in this cluster (e.g.
+   `tailscale-operator`, `tuppr`, `silence-operator`) uses the top-level `chartRef` field instead — and
+   the version pin lives entirely on the `OCIRepository`'s `ref.tag`, not on the `HelmRelease`:
    ```yaml
    spec:
-     chart:
-       spec:
-         sourceRef:
-           kind: OCIRepository   # was: HelmRepository
-           name: cilium
+     chartRef:
+       kind: OCIRepository
+       name: metrics-server
+       namespace: flux-system
+     interval: 1h
+     valuesFrom: [...]
    ```
-3. Update the `kustomization.yaml` in `flux/meta/repos/helm/` to remove the old file; add the new file to `flux/meta/repos/oci/`.
-4. Verify Flux reconciles cleanly: `flux get helmreleases -A | grep cilium`
-5. Confirm Renovate picks up the new `datasource=docker` annotation on the next Dependency Dashboard refresh.
+3. Updated `kustomization.yaml` in `flux/meta/repos/helm/` to drop the old file; added the new file to
+   `flux/meta/repos/oci/kustomization.yaml`.
+4. Validated with `kustomize build` against both repo dirs and the app's own kustomization — all built
+   cleanly before committing.
 
-**Important — cilium is bootstrapped via Helmfile:**  
-`cilium` is deployed during `just bootstrap` via `ops/bootstrap/helmfile.d/01-apps.yaml` — not by Flux. The `HelmRepository` in `flux/meta/repos/helm/cilium.yaml` is only used if cilium is also reconciled by Flux post-bootstrap. Check whether the cilium HelmRelease in `kube-system` references this source before touching it; if the Flux HelmRelease is active, migrate it. If only the Helmfile bootstrap uses cilium, the `HelmRepository` source is effectively unused and can be removed outright.
+**cilium — why it's genuinely blocked, not just deferred:** confirmed live that the `cilium` Flux
+`HelmRelease` (`kubernetes/apps/kube-system/cilium/app/helmrelease.yaml`) is real and active — not a
+Helmfile-bootstrap leftover — via `kubectl get helmrelease cilium -n kube-system` showing
+`Ready: True, "Helm upgrade succeeded ... chart cilium@1.19.5"` against live `cilium` pods. So this
+source is genuinely in use and migrating it is a live-CNI version change, not a no-op source swap.
+Queried `ghcr.io/v2/home-operations/charts-mirror/cilium/tags/list` directly (with an anonymous pull
+token) and confirmed the full, unpaginated tag list stops at `1.18.6` — no `1.19.x` published yet.
 
-**Dependencies:** None — each migration is independently deployable. Low risk: Flux will switch the source on next reconcile; no pod restarts required.
+**Dependencies:** None — each migration is independently deployable. Low risk for `metrics-server`
+(done). `cilium` specifically carries live-CNI-downgrade risk until the mirror catches up — do not
+migrate by copying the version-mismatch pattern above; re-verify the mirror's tag list first.
 
 ---
 

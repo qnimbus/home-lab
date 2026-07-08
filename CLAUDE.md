@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-07-08 | `metrics-server-oci-migration` | Migrated metrics-server to charts-mirror OCIRepository; cilium blocked, mirror lags v1.18.6 vs live v1.19.5 |
 > | 2026-07-07 | `x520-bond-storage-restore` | Verified cp-03's reinstalled X520, migrated all 5 nodes off VLAN-200 fallback back to bond-storage LACP, deactivated fallback silences (kept for reference) and updated docs |
 > | 2026-07-04 | `renovate-missing-datasource-fix` | Debugged Renovate job log's Missing datasource! warning; root-caused to grafana-dashboard custom datasource missing `custom.` prefix, fixed both spots |
 > | 2026-07-03 | `gitops-repo-audit-sixth-pass` | Sixth gitops-repo-audit pass; found fluent-bit filter shipped disabled (kept as-is) and Gateway tls.mode CEL false-positive (fixed) |
@@ -11,7 +12,6 @@
 > | 2026-07-02 | `x520-nic-failure-vlan200-fallback` | cp-02's X520 failed (unrecoverable HW fault); fleet-wide bond-storage→VLAN-200 fallback; retroactively logged, fixed stale CLUSTER.md storage note |
 > | 2026-06-24 | `silence-operator-deploy` | Deployed silence-operator for GitOps Alertmanager silences; seeded nfsmount.conf silence, dropped node-exporter exclude |
 > | 2026-06-23 | `victoria-logs-fluent-bit-deploy` | Deployed VictoriaLogs+fluent-bit for log aggregation, chosen over Loki; wired Grafana plugin, dashboards, route |
-> | 2026-06-23 | `actions-runner-rbac-cilium-egress-hardening` | Audited repo, split ARC runner RBAC; reverted unreliable CiliumNetworkPolicy; fixed leaked Anthropic key via secrets.* |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 

@@ -30,3 +30,4 @@ resources:
   - ./fluent-bit.yaml
   - ./silence-operator.yaml
   - ./grafana-operator.yaml
+  - ./metrics-server.yaml

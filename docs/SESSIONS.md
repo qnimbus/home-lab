@@ -4,6 +4,36 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-08 — `metrics-server-oci-migration`
+
+### Goal
+Execute the roadmap's "quick win" item — migrate the remaining HTTP `HelmRepository` chart sources (`cilium`, `metrics-server`) to the `home-operations/charts-mirror` `OCIRepository` pattern.
+
+### What we did
+- Reviewed `docs/ROADMAP.md`'s "Migrate Remaining HelmRepositories" item; confirmed two outliers still on HTTP `HelmRepository`: `cilium` and `metrics-server`.
+- Verified `cilium`'s Flux `HelmRelease` is genuinely live (not a Helmfile-bootstrap leftover, which the roadmap had left ambiguous) via `kubectl get helmrelease cilium -n kube-system` — `Ready: True`, `chart cilium@1.19.5`, matching the live `cilium` pods.
+- Queried the `ghcr.io/home-operations/charts-mirror` registry API directly (anonymous pull token) for both charts' tag lists. Found `cilium`'s mirror tops out at `1.18.6` against the cluster's live `1.19.5` — migrating would pin Flux's source below the running CNI version, a genuine downgrade risk on bare metal with no CNI fallback, so **cilium was left on `HelmRepository`**. `metrics-server`'s mirror had an exact `3.13.1` match, so it was migrated.
+- Migrated `metrics-server`: created the new `OCIRepository` source file, removed the old `HelmRepository` file, updated both `kustomization.yaml` index files under `kubernetes/flux/meta/repos/`.
+- Found and corrected a bug in the roadmap's own migration plan: OCI-sourced `HelmRelease`s in this repo use the top-level `spec.chartRef` field, not `spec.chart.spec.sourceRef` as the roadmap's original steps assumed — confirmed by cross-referencing existing OCI-sourced HelmReleases (`tailscale-operator`, `tuppr`, `silence-operator`). Updated `metrics-server`'s `HelmRelease` accordingly, moving the version pin onto the `OCIRepository`'s `ref.tag`.
+- Validated every changed Kustomization builds cleanly (`kustomize build` against `flux/meta/repos/oci/`, `flux/meta/repos/helm/`, and the `metrics-server` app directory).
+- Updated `docs/ROADMAP.md`'s migration section to reflect actual state: `metrics-server` done, `cilium` blocked with the tag-list evidence and the exact command to re-check, and corrected the `chartRef` guidance for whoever picks up `cilium` later.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/ROADMAP.md` | Documented `metrics-server` migration done; `cilium` blocked (mirror lags at `1.18.6` vs live `1.19.5`); corrected `chartRef` guidance |
+| `kubernetes/apps/kube-system/metrics-server/app/helmrelease.yaml` | Switched from `chart.spec.sourceRef` (HelmRepository) to `chartRef` (OCIRepository) |
+| `kubernetes/flux/meta/repos/helm/kustomization.yaml` | Removed `metrics-server.yaml` entry |
+| `kubernetes/flux/meta/repos/helm/metrics-server.yaml` | Deleted — HelmRepository source removed |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added `metrics-server.yaml` entry |
+| `kubernetes/flux/meta/repos/oci/metrics-server.yaml` | New OCIRepository source, pinned `3.13.1`, cosign-verified |
+
+### Key decisions
+- Did not migrate `cilium` despite being in scope: the mirror's published tags stop at `1.18.6` while the cluster runs `1.19.5` live. Migrating would pin Flux's source below the running CNI version — deferred until the mirror catches up, not abandoned.
+- Corrected the roadmap's own migration steps (`chartRef` vs `chart.spec.sourceRef`) against the convention already used elsewhere in the repo, rather than following the pre-written (and incorrect) plan verbatim.
+
+---
+
 ## 2026-07-07 — `x520-bond-storage-restore`
 
 ### Goal

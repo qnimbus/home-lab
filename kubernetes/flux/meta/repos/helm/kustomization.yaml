@@ -6,4 +6,3 @@ resources:
   - ./cilium.yaml
   - ./external-secrets.yaml
   - ./onepassword-connect.yaml
-  - ./metrics-server.yaml
