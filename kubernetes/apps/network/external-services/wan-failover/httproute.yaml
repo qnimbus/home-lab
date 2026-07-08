@@ -22,6 +22,13 @@ spec:
         - path:
             type: PathPrefix
             value: /
+      # The router's embedded web UI validates the Host header against its own management IP
+      # and rejects/misbehaves on wan-failover.${DOMAIN_CLUSTER} — rewrite it to what the router
+      # itself expects before forwarding.
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            hostname: "192.168.8.1"
       backendRefs:
         - name: *app
           port: 80
