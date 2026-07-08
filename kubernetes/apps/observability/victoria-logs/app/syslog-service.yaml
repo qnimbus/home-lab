@@ -1,0 +1,28 @@
+---
+# Dedicated LoadBalancer entry point for external syslog senders (e.g. TrueNAS).
+# Kept separate from the chart-managed victoria-logs-server Service so the
+# unauthenticated HTTP insert/query API (port 9428) stays cluster-internal only —
+# this Service exposes just the syslog port to the LAN.
+apiVersion: v1
+kind: Service
+metadata:
+  name: victoria-logs-syslog
+  annotations:
+    # external-dns-unifi watches plain Services (sources: [gateway-httproute, service]);
+    # this publishes a stable record so TrueNAS points at a hostname, not the LB IP,
+    # which can change if the Service is ever recreated.
+    external-dns.alpha.kubernetes.io/hostname: "victorialogs-syslog.${DOMAIN_CLUSTER}"
+spec:
+  type: LoadBalancer
+  # Restrict to TrueNAS's known IP (see apps/network/external-services/truenas).
+  loadBalancerSourceRanges:
+    - 10.10.0.41/32
+  selector:
+    app: server
+    app.kubernetes.io/instance: victoria-logs
+    app.kubernetes.io/name: victoria-logs-single
+  ports:
+    - name: syslog-tcp
+      port: 514
+      protocol: TCP
+      targetPort: syslog-tcp

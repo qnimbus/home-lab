@@ -4,6 +4,35 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-08 — `victoria-logs-syslog-ingestion`
+
+### Goal
+Design and implement a pattern for ingesting external (non-Kubernetes) syslog sources — starting with TrueNAS — into the existing VictoriaLogs + fluent-bit log stack.
+
+### What we did
+- Reviewed the current fluent-bit → VictoriaLogs pipeline (`fluent-bit` DaemonSet tailing `/var/log/containers/*.log`, HTTP `jsonline` output to `victoria-logs-server:9428`) to understand what an external-source pattern should reuse vs. bypass.
+- Researched community/upstream practice for syslog ingestion into VictoriaLogs: confirmed VictoriaLogs ships a native syslog listener (`-syslog.listenAddr.tcp/udp/unix`, RFC3164/5424, TLS/mTLS, customizable stream fields) rather than requiring a shipper like fluent-bit or Vector as an intermediary. kubesearch.dev turned up no concrete home-lab precedent for this specific combination, so this is first-principles reasoning from upstream docs rather than a copied pattern.
+- Pulled and rendered the pinned `victoria-logs-single` chart (v0.13.8) locally with `helm template`/`helm show values` to verify the exact `server.syslog.tcp[]` values schema, confirm the chart auto-wires syslog ports into its Service/StatefulSet, and confirm the server container runs as non-root (`uid 1000`) — meaning it cannot bind the privileged `:514` port directly.
+- Found TrueNAS's real IP (`10.10.0.41`) via the existing `kubernetes/apps/network/external-services/truenas/endpoint.yaml`, avoiding a round-trip to the user for it.
+- Implemented: added a `server.syslog.tcp` listener on `:1514` (`useRemoteIP: true`) to the `victoria-logs` `HelmRelease`; added a new standalone `victoria-logs-syslog` `LoadBalancer` Service mapping external port `514` → `1514`, scoped via `loadBalancerSourceRanges` to TrueNAS's IP; wired the new file into `kustomization.yaml`.
+- Validated the full app-directory `Kustomization` builds cleanly with `kubectl kustomize`.
+- Left TrueNAS-side configuration (System → Advanced Settings → Syslog: server `<LB-IP>:514`, TCP, RFC 5424/3164) and post-apply verification (fetching the actual assigned LB IP, confirming Cilium enforces `loadBalancerSourceRanges`) as follow-ups for after Flux reconciles.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/observability/victoria-logs/app/helmrelease.yaml` | Added `server.syslog.tcp` listener (`:1514`, `useRemoteIP: true`) for external syslog ingestion |
+| `kubernetes/apps/observability/victoria-logs/app/kustomization.yaml` | Added `syslog-service.yaml` to resources |
+| `kubernetes/apps/observability/victoria-logs/app/syslog-service.yaml` | New — dedicated `LoadBalancer` Service, port `514` → `1514`, restricted to TrueNAS's IP |
+
+### Key decisions
+- Chose VictoriaLogs' native syslog listener over routing TrueNAS through fluent-bit: fluent-bit's value-add (the `kubernetes` enrichment filter) doesn't apply to a non-k8s source, so adding it would just be an extra hop with no benefit.
+- Used a separate standalone Service for the syslog port instead of switching the chart-managed Service to `LoadBalancer`, so the unauthenticated HTTP insert/query API (port 9428) stays cluster-internal rather than landing on the LAN.
+- Listener binds the unprivileged `:1514` internally (container is non-root, uid 1000) with the Service translating the conventional `514` externally, rather than trying to grant `CAP_NET_BIND_SERVICE`.
+- Restricted `loadBalancerSourceRanges` to TrueNAS's specific `/32` instead of leaving the listener open to the whole management VLAN.
+
+---
+
 ## 2026-07-08 — `metrics-server-oci-migration`
 
 ### Goal

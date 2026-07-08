@@ -6,3 +6,4 @@ resources:
   - ./helmrelease.yaml
   - ./datasource.yaml
   - ./httproute.yaml
+  - ./syslog-service.yaml
