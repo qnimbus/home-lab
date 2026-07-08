@@ -17,22 +17,18 @@ spec:
     - name: envoy-internal
       namespace: network
       sectionName: https
+  # Router's embedded web UI validates the Host header against its own management IP and
+  # rejects/misbehaves on wan-failover.${DOMAIN_CLUSTER}. Envoy Gateway blocks both standard
+  # Gateway API mechanisms for rewriting Host to an IP literal: URLRewrite.hostname rejects IP
+  # literals outright, and RequestHeaderModifier silently strips "Host" as a disallowed header
+  # (leaving the route Accepted: False either way, which also makes external-dns-unifi delete
+  # the DNS record — gateway-httproute source only advertises Accepted routes, policy: sync).
+  # No filter for now: still routable/DNS-resolvable while a real fix is designed. See ROADMAP.
   rules:
     - matches:
         - path:
             type: PathPrefix
             value: /
-      # The router's embedded web UI validates the Host header against its own management IP
-      # and rejects/misbehaves on wan-failover.${DOMAIN_CLUSTER} — rewrite it to what the router
-      # itself expects before forwarding. Must use RequestHeaderModifier, not URLRewrite: Envoy
-      # Gateway rejects URLRewrite.hostname when the value is an IP literal ("Hostname: ... cannot
-      # be an ip address"), which left this route unaccepted and serving a synthetic 500.
-      filters:
-        - type: RequestHeaderModifier
-          requestHeaderModifier:
-            set:
-              - name: Host
-                value: "192.168.8.1"
       backendRefs:
         - name: *app
           port: 80

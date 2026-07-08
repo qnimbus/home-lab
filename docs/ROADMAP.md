@@ -5,6 +5,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 ## Contents  <!-- omit from toc -->
 
 - [In Progress](#in-progress)
+  - [WAN Failover Router: Host Header Rewrite](#wan-failover-router-host-header-rewrite)
   - [Renovate PR-Review Workflow: Cost/Bug Investigation, Re-enable](#renovate-pr-review-workflow-costbug-investigation-re-enable)
   - [CloudNativePG: Backup, PITR, and Per-App Provisioning](#cloudnative-pg-backup-pitr-and-per-app-provisioning)
   - [Postgres NFS Backup: Restore Drill](#postgres-nfs-backup-restore-drill)
@@ -28,6 +29,16 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 ---
 
 ## In Progress
+
+### WAN Failover Router: Host Header Rewrite
+
+**Status: reverted to no filter (2026-07-08), stable but unfixed.** `wan-failover.${DOMAIN_CLUSTER}` (`kubernetes/apps/network/external-services/wan-failover/httproute.yaml`) proxies a physical router's web UI at a raw IP via a manually-managed `EndpointSlice`. The router's firmware validates the inbound `Host` header against its own IP and rejects/misbehaves on the proxied hostname.
+
+Both standard Gateway API mechanisms for rewriting `Host` to an IP literal are blocked by Envoy Gateway: `URLRewrite.hostname` rejects IP literals outright (`"cannot be an ip address"`), and `RequestHeaderModifier` silently strips `Host` from its `set` list as a disallowed header, leaving the filter with nothing to apply. Either failure leaves the `HTTPRoute` `Accepted: False`, which has a second-order effect — `external-dns-unifi` (`sources: [gateway-httproute, service]`, `policy: sync`) only advertises DNS records for `Accepted` routes and actively deletes them otherwise, so a rejected filter doesn't just fail to fix the Host-header problem, it also takes down DNS resolution for the hostname entirely.
+
+Reverted to no filter for now (routable, DNS-resolvable, likely still rejected by the router same as the original complaint — a known, non-blackout failure mode). Candidate real fixes, not yet attempted:
+- A small dedicated reverse-proxy pod (nginx/Caddy via `app-template`) between Envoy and the router — those don't share Envoy Gateway's `Host`-header restriction.
+- Envoy Gateway's `EnvoyPatchPolicy` (raw Envoy xDS JSONPatch escape hatch) to set `host_rewrite_literal` directly — needs the exact generated route name verified against live xDS config before attempting, not guessed.
 
 ### Renovate PR-Review Workflow: Cost/Bug Investigation, Re-enable
 
