@@ -31,3 +31,4 @@ resources:
   - ./silence-operator.yaml
   - ./grafana-operator.yaml
   - ./metrics-server.yaml
+  - ./node-feature-discovery.yaml

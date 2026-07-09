@@ -1,0 +1,29 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: intel-device-plugins-gpu
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: intel-device-plugins-gpu
+      # renovate: datasource=helm depName=intel-device-plugins-gpu repository=https://intel.github.io/helm-charts/
+      version: "0.36.0"
+      sourceRef:
+        kind: HelmRepository
+        name: intel
+        namespace: flux-system
+  values:
+    # Lets one iGPU serve several concurrent transcode sessions; no consumer
+    # exists yet (Plex/Jellyfin not deployed) — tune down if a single heavy
+    # consumer ends up wanting the whole device.
+    sharedDevNum: 4
+    logLevel: 2
+    # Auto-creates the NodeFeatureRule that labels UHD 630 nodes with
+    # intel.feature.node.kubernetes.io/gpu=true (requires NFD's CRDs — see
+    # dependsOn in ../../ks.yaml).
+    nodeFeatureRule: true
+    nodeSelector:
+      intel.feature.node.kubernetes.io/gpu: "true"

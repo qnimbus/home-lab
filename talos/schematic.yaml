@@ -8,4 +8,5 @@ customization:
       - siderolabs/amd-ucode          # CPU microcode — loads only on AMD nodes (MS-A2)
       - siderolabs/iscsi-tools        # Required for Longhorn iSCSI initiator
       - siderolabs/util-linux-tools   # Provides lsblk, blkid for storage debugging
-      # - siderolabs/i915-ucode       # Intel GPU firmware (optional for headless servers)
+      - siderolabs/i915               # Intel iGPU driver + firmware (UHD 630) — enables gpu.intel.com/i915
+                                       # via NFD + Intel device plugin; inert on cp-01 (AMD, no Intel iGPU PCI ID)

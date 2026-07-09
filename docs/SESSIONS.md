@@ -4,6 +4,45 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-09 — `intel-igpu-quicksync-passthrough`
+
+### Goal
+Expose the Intel iGPUs (UHD 630) on `cp-02`, `cp-03`, `worker-01`, `worker-02` to Kubernetes as a schedulable `gpu.intel.com/i915` resource, for future Plex/Jellyfin hardware transcode.
+
+### What we did
+- User asked how to do Intel iGPU passthrough on Talos (found a Proxmox-specific blog that didn't apply to bare metal); researched via WebSearch/WebFetch — confirmed the Talos-native path is a system extension (`siderolabs/i915`) plus Node Feature Discovery (NFD) plus the Intel Device Plugins Operator/GPU plugin, cross-checked against two independent homelab write-ups (Stonegarden, Jonathan Gazeley) and `siderolabs/extensions` source.
+- Confirmed hardware scope from `docs/HARDWARE-ARCHITECTURE.md`: `cp-02`/`cp-03`/`worker-01`/`worker-02` all have Intel UHD 630 (full Quick Sync); `cp-01` (AMD MS-A2, Radeon 610M) already documented as too weak for HW transcode — excluded, consistent with existing docs.
+- Found and fixed a real latent bug: `talos/schematic.yaml` had a commented-out, non-existent `siderolabs/i915-ucode` extension name — the real extension is `siderolabs/i915` (bundles driver + firmware). Corrected in place; since this repo uses one shared schematic for all 5 nodes, the driver simply won't bind on `cp-01` (no Intel iGPU PCI ID), mirroring how `intel-ucode`/`amd-ucode` already coexist.
+- User picked the full NFD + Intel Device Plugins Operator approach over a simpler hostPath mount (chosen via `AskUserQuestion`), since it scales to future GPU consumers beyond Plex.
+- Used `EnterPlanMode` given the live-cluster/reboot impact; ran an `Explore` subagent to pull concrete repo conventions (rook-ceph's multi-doc `ks.yaml` operator+CRD-instance pattern, app-template v5 file layout, HelmRepository vs OCIRepository usage, CONVENTIONS.md drift-detection/comment rules) before writing the plan.
+- Added two new Flux sources (`node-feature-discovery` OCIRepository from `registry.k8s.io/nfd/charts`, `intel` HelmRepository from `intel.github.io/helm-charts`) and two new apps: `node-feature-discovery` (single Kustomization) and `intel-device-plugins` (multi-doc `ks.yaml`: operator HelmRelease + GPU-plugin HelmRelease, the latter `dependsOn` both the operator and NFD). Verified chart versions live via ArtifactHub (both Intel charts at `0.36.0`, NFD at `0.18.3`) rather than trusting stale blog-post version numbers.
+- Validated all new/changed YAML with `yq` and `kustomize build` before touching the live cluster.
+- Rolled the new schematic out: `task talos:iso` (registered new schematic ID `631787e1...`), `task talos:genconfig`, then `task talos:upgrade-node` one node at a time (`cp-02` → `cp-03` → `worker-01` → `worker-02`), checking `kubectl get nodes`, `talosctl etcd members`, and `ceph -s` between each — Ceph dipped to `HEALTH_WARN` transiently after each OSD-host reboot (expected, `size=3`/`min_size=2`) and self-healed within ~30s each time. Confirmed `i915` loaded in `/proc/modules` on all 4 nodes post-rollout.
+- Mid-rollout, user noticed the AMT KVM console (MeshCommander) went blank on `cp-02`, then asked if it was iGPU-related after seeing the same on `worker-01`. Diagnosed as a plausible, well-reasoned side effect: AMT KVM redirection taps the iGPU's frame buffer directly, and once `i915` binds and Talos (headless, no display manager) blanks/powers down the display, AMT's video feed has nothing left to capture — correlated exactly with the documented AMT-capable node set (`cp-02`, `worker-01`, `worker-02`). Flagged that AMT power control/IDE-R should be unaffected (separate out-of-band channel), but this is unverified since it can't be checked from this session.
+- All Flux-managed manifests are staged locally but deliberately not committed/pushed (repo rule: only `/git-stage`/`/git-commit` on explicit request) — GPU resource verification (node labels, `gpu.intel.com/i915` allocatable) is blocked until that happens.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/schematic.yaml` | Fixed stale/nonexistent `siderolabs/i915-ucode` comment → active `siderolabs/i915` extension |
+| `talos/talenv.yaml` | `talosImageURL` updated to new schematic ID via `task talos:iso` |
+| `talos/.schematic-id` | Local bookkeeping file updated (new schematic ID) |
+| `kubernetes/flux/meta/repos/oci/node-feature-discovery.yaml` | New — OCIRepository, `registry.k8s.io/nfd/charts/node-feature-discovery` @ 0.18.3 |
+| `kubernetes/flux/meta/repos/helm/intel.yaml` | New — HelmRepository, `https://intel.github.io/helm-charts/` |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Registered new NFD OCIRepository |
+| `kubernetes/flux/meta/repos/helm/kustomization.yaml` | Registered new Intel HelmRepository |
+| `kubernetes/apps/node-feature-discovery/` | New app — NFD HelmRelease (`ks.yaml`, `app/{namespace,kustomization,helmrelease}.yaml`); worker DaemonSet tolerates control-plane taint so cp-02/cp-03 get labeled |
+| `kubernetes/apps/intel-device-plugins/` | New app — multi-doc `ks.yaml` (operator + gpu Kustomizations), `namespace.yaml`, `operator/app/helmrelease.yaml` (intel-device-plugins-operator), `gpu/app/helmrelease.yaml` (intel-device-plugins-gpu, `sharedDevNum: 4`, `nodeFeatureRule: true`) |
+| `kubernetes/apps/kustomization.yaml` | Registered both new app directories |
+
+### Key decisions
+- Single shared `schematic.yaml` (not per-node) for the `i915` extension — matches the existing `intel-ucode`/`amd-ucode` coexistence pattern; simpler than introducing per-node schematics for one inert extension on `cp-01`.
+- Chose the NFD + Intel Device Plugins Operator route (schedulable `gpu.intel.com/i915` resource) over a simpler hostPath mount, per explicit user choice — scales to future GPU consumers, at the cost of more moving parts (NFD, operator, two HelmReleases).
+- `sharedDevNum: 4` on the GPU plugin is a placeholder guess (no consumer deployed yet) — flagged as tunable once Plex/Jellyfin actually lands.
+- Did not deploy Plex/Jellyfin itself — scope was limited to exposing the resource and proving it's allocatable, since no consumer exists in this cluster yet.
+
+---
+
 ## 2026-07-08 — `resilience-audit-fmea`
 
 ### Goal
