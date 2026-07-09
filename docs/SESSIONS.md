@@ -9,6 +9,27 @@ A running record of work done, files modified, and decisions made across Claude 
 ### Goal
 Verify whether frequent `CephNodeDiskspaceWarning` alerts are genuine disk pressure or nuisance false positives, and fix the root cause if the latter.
 
+### What we did
+- Checked repo history first: found an existing, already-silenced false-positive cause (`/etc/nfsmount.conf` duplicate mountpoint, `silence-operator` `Silence` CR) and a prior 2026-06-24 investigation that found nothing firing at the time — established this as a distinct, unrelated issue rather than the cause of "frequent" alerts.
+- Dispatched a `cluster-doctor` agent to pull the live `PrometheusRule`, Alertmanager/Prometheus alert history, `node_filesystem_*` metrics, and cluster reboot events. Root-caused: the stock ceph-mixin `CephNodeDiskspaceWarning` rule (from the `rook-ceph-cluster` chart, unmodified) has no `for:` debounce, so a single noisy `predict_linear` evaluation fires when node-exporter's 2-day trailing regression window is starved to under an hour of history right after a node reboot — a normal small post-boot free-space dip extrapolates into a wildly steep, wrong predicted-fill slope. Confirmed via two firings (`cp-01` 2026-07-02, `cp-03` 2026-07-09) both landing within an hour of fleet-wide maintenance reboots; all 5 nodes healthy at 12-27% disk usage with no real fill trend.
+- Follow-up round with the same agent verified specifics before designing a fix: the `for:` field is literally absent from the raw `PrometheusRule` YAML (not an explicit `0s`); `node_boot_time_seconds` is scraped and its live values matched the reboot timeline exactly; the cluster's node-exporter scrape interval is currently a temporary 10s (not the 30s default), which would make a `count_over_time` data-completeness guard fragile since its threshold is scrape-interval-coupled; and — correcting an earlier claim of "no lighter override path" — the `rook-ceph-cluster` chart natively exposes a per-rule `prometheusRuleOverrides.<AlertName>` merge-overwrite mechanism, so no vendored mixin copy was needed.
+- Implemented the fix: `for: 5m` plus a `node_boot_time_seconds` guard (suppresses the alert for a node's first 30 minutes post-boot) via `prometheusRuleOverrides` on the `rook-ceph-cluster` HelmRelease.
+- User asked whether the temporary 10s node-exporter scrape-interval diagnostic override (in place since 2026-06-10 for M920Q pre-crash forensics) should also be reverted. Cross-checked `docs/ROADMAP.md` independently of the stale in-repo comment and confirmed the underlying hard-down bug was root-caused and fixed 2026-06-22 (failing external power brick, replaced, stable 2+ weeks) — agreed and reverted to the chart's 30s default.
+- Validated both changes with `task validate` (repo-wide schema check) — passed clean.
+- `/git-commit` failed on a local GPG signing/agent communication error (`Couldn't sign message (signer): communication with agent failed`) unrelated to the change itself; did not bypass with `--no-gpg-sign` per repo policy — provided the drafted commit message for the user to run manually, which they did (`46449a9`).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` | Added `prometheusRuleOverrides.CephNodeDiskspaceWarning` (`for: 5m` + `node_boot_time_seconds` post-boot guard) |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/helm/values.yaml` | Reverted the 10s node-exporter scrape-interval diagnostic override back to the chart's 30s default |
+
+### Key decisions
+- Chose `for: 5m` + a `node_boot_time_seconds` uptime guard over a `count_over_time` data-completeness guard — the latter's threshold would be silently invalidated whenever the cluster's temporary 10s scrape interval reverts to 30s, with no forcing function to catch the drift.
+- Verified the M920Q hard-down (the original reason for the 10s scrape override) was independently confirmed resolved in `docs/ROADMAP.md` before agreeing to revert it, rather than trusting the stale in-repo diagnostic comment's framing alone.
+- Left the existing `ceph-node-nfsmount-diskspace-warning` `Silence` untouched — confirmed distinct and unrelated; it still doubles every genuine firing of this alert but isn't the root trigger investigated here.
+- Declined to bypass the GPG signing failure with `--no-gpg-sign`; handed the commit message to the user to commit manually instead.
+
 ---
 
 ## 2026-07-09 — `intel-igpu-quicksync-passthrough`

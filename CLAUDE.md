@@ -4,7 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
-> | 2026-07-09 | `ceph-diskspace-alert-tuning` | _in progress_ |
+> | 2026-07-09 | `ceph-diskspace-alert-tuning` | Traced CephNodeDiskspaceWarning noise to reboot-starved predict_linear; added rule override, reverted 10s scrape diag |
 > | 2026-07-09 | `intel-igpu-quicksync-passthrough` | Added siderolabs/i915 extension + NFD + Intel Device Plugins Operator/GPU plugin for cp-02/cp-03/worker-01/worker-02; rolled out live, all healthy |
 > | 2026-07-08 | `resilience-audit-fmea` | Built resilience-audit skill (FMEA schema) for failure-mode/DR auditing; piloted on Rook-Ceph, found 3 critical gaps |
 > | 2026-07-08 | `victoria-logs-syslog-ingestion` | Added native syslog listener + LoadBalancer Service to VictoriaLogs for TrueNAS ingestion, chosen over routing through fluent-bit |
@@ -12,7 +12,6 @@
 > | 2026-07-07 | `x520-bond-storage-restore` | Verified cp-03's reinstalled X520, migrated all 5 nodes off VLAN-200 fallback back to bond-storage LACP, deactivated fallback silences (kept for reference) and updated docs |
 > | 2026-07-04 | `renovate-missing-datasource-fix` | Debugged Renovate job log's Missing datasource! warning; root-caused to grafana-dashboard custom datasource missing `custom.` prefix, fixed both spots |
 > | 2026-07-03 | `gitops-repo-audit-sixth-pass` | Sixth gitops-repo-audit pass; found fluent-bit filter shipped disabled (kept as-is) and Gateway tls.mode CEL false-positive (fixed) |
-> | 2026-07-03 | `unpoller-grafana-operator-deploy` | Deployed unpoller (UniFi metrics) + grafana-operator (external mode); Renovate-tracked dashboard revisions; documented native-Grafana alternative in ROADMAP |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
