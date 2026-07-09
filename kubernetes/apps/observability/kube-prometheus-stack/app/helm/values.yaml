@@ -134,17 +134,12 @@ prometheusOperator:
 prometheus-node-exporter:
   prometheus:
     monitor:
-      # 10s scrape (overrides the 30s default) for pre-crash forensics on the M920Q
-      # nodes: cp-02 has gone hard-down several times leaving no post-reboot evidence,
-      # so the last samples before a hang must be dense and land on durable (ceph-block)
-      # Prometheus storage off the dying node. Scoped to node-exporter only — not the
-      # cluster-wide interval — to keep the extra series churn contained.
-      # DIAGNOSTIC (2026-06-10): this 3x sample density is the costly knob — REVERT to
-      # 30s (delete this line) once the cp-02 hard-down is root-caused. With no kernel-log
-      # capture possible on these UKI nodes (netconsole arg is ignored under systemd-boot,
-      # Talos #11145), these dense vitals are the primary pre-crash record. The 15s rule
-      # eval interval and the temperature alerts themselves are permanent and stay.
-      interval: 10s
+      # (Reverted 2026-07-09) The 10s diagnostic scrape override for M920Q pre-crash
+      # forensics is gone now that the underlying hard-down mystery was root-caused
+      # (2026-06-22, failing external power brick, since replaced and stable — see
+      # ROADMAP.md's "cp-02 Thermal Stability" entry) and confirmed stable for 2+
+      # weeks. Back to the chart's 30s default. This also removes a footgun for any
+      # future alert tuned against sample density/count assumptions.
       metricRelabelings:
         # Drop the super-I/O chip's unconnected thermistor input on the M920Q nodes.
         # "Thermistor 7" (sensor temp5) reads ~127-128°C when the thermistor pin is

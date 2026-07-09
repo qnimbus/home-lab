@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-07-09 | `ceph-diskspace-alert-tuning` | _in progress_ |
 > | 2026-07-09 | `intel-igpu-quicksync-passthrough` | Added siderolabs/i915 extension + NFD + Intel Device Plugins Operator/GPU plugin for cp-02/cp-03/worker-01/worker-02; rolled out live, all healthy |
 > | 2026-07-08 | `resilience-audit-fmea` | Built resilience-audit skill (FMEA schema) for failure-mode/DR auditing; piloted on Rook-Ceph, found 3 critical gaps |
 > | 2026-07-08 | `victoria-logs-syslog-ingestion` | Added native syslog listener + LoadBalancer Service to VictoriaLogs for TrueNAS ingestion, chosen over routing through fluent-bit |

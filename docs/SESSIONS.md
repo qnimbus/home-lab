@@ -4,6 +4,13 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-09 — `ceph-diskspace-alert-tuning`
+
+### Goal
+Verify whether frequent `CephNodeDiskspaceWarning` alerts are genuine disk pressure or nuisance false positives, and fix the root cause if the latter.
+
+---
+
 ## 2026-07-09 — `intel-igpu-quicksync-passthrough`
 
 ### Goal

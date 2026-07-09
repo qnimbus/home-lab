@@ -17,6 +17,24 @@ spec:
     monitoring:
       enabled: true
       createPrometheusRules: true
+      prometheusRuleOverrides:
+        # Stock ceph-mixin rule has no `for:`, so a single noisy 30s evaluation
+        # fires it — confirmed via two false positives (2026-07-02, 2026-07-09)
+        # that both landed within an hour of a fleet-wide node reboot: with only
+        # ~1h of post-boot node-exporter history feeding the 2-day trailing
+        # regression window, a normal small post-boot free-space dip extrapolates
+        # into a wildly steep (and wrong) predicted-fill slope. All 5 nodes sit at
+        # 12-27% disk usage with no real fill trend. `for: 5m` requires ~10
+        # consecutive bad evaluations (rule group evals every 30s), which neither
+        # incident would have cleared. The `node_boot_time_seconds` clause
+        # suppresses the alert directly for a node's first 30 minutes post-boot,
+        # targeting the actual root mechanism rather than just debouncing it.
+        CephNodeDiskspaceWarning:
+          for: 5m
+          expr: |
+            predict_linear(node_filesystem_free_bytes{device=~"/.*"}[2d], 3600 * 24 * 5)
+              * on(cluster, instance) group_left(nodename) node_uname_info < 0
+            and on(instance) (time() - node_boot_time_seconds > 1800)
     # Built-in toolbox pod — gives us the `ceph` CLI in-cluster for status,
     # `ceph osd tree`, `ceph -s`, etc. Reach it with:
     #   kubectl -n rook-ceph exec -it deploy/rook-ceph-tools -- ceph status
