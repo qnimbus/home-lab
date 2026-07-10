@@ -51,20 +51,31 @@ spec:
           # and capped the loop to 5 alerts as defense-in-depth for large groups. Only
           # range/len/if (core Go template builtins) are used here -- deliberately avoiding
           # any assumption about which extra funcs Alertmanager's template funcmap exposes.
+          #
+          # Content-emitting lines ({{ $alert.Annotations.X }}, "Showing 5 of...", "Alert
+          # description not available") are deliberately un-indented to this block's base
+          # column. Go templates only trim whitespace adjacent to a `{{-`/`-}}` tag, not the
+          # YAML indentation itself -- any extra leading spaces on these lines become literal
+          # text in the rendered message. With >1 alert in a group, that literal indentation
+          # shows up before every alert after the first (the very first line's leading
+          # whitespace gets silently trimmed by Pushover since it's leading for the whole
+          # message, masking the bug for single-alert groups). Control-only lines (if/else/
+          # end/range) can stay nested for readability -- their surrounding whitespace is
+          # trimmed away by their own `{{-`.
           message: |-
             {{- if gt (len .Alerts) 5 }}
-              Showing 5 of {{ len .Alerts }} alerts in this group:
+            Showing 5 of {{ len .Alerts }} alerts in this group:
             {{- end }}
             {{- range $i, $alert := .Alerts }}
               {{- if lt $i 5 }}
                 {{- if ne $alert.Annotations.description "" }}
-                  {{ $alert.Annotations.description }}
+            {{ $alert.Annotations.description }}
                 {{- else if ne $alert.Annotations.summary "" }}
-                  {{ $alert.Annotations.summary }}
+            {{ $alert.Annotations.summary }}
                 {{- else if ne $alert.Annotations.message "" }}
-                  {{ $alert.Annotations.message }}
+            {{ $alert.Annotations.message }}
                 {{- else }}
-                  Alert description not available
+            Alert description not available
                 {{- end }}
               {{- end }}
             {{- end }}
@@ -89,20 +100,31 @@ spec:
           # and capped the loop to 5 alerts as defense-in-depth for large groups. Only
           # range/len/if (core Go template builtins) are used here -- deliberately avoiding
           # any assumption about which extra funcs Alertmanager's template funcmap exposes.
+          #
+          # Content-emitting lines ({{ $alert.Annotations.X }}, "Showing 5 of...", "Alert
+          # description not available") are deliberately un-indented to this block's base
+          # column. Go templates only trim whitespace adjacent to a `{{-`/`-}}` tag, not the
+          # YAML indentation itself -- any extra leading spaces on these lines become literal
+          # text in the rendered message. With >1 alert in a group, that literal indentation
+          # shows up before every alert after the first (the very first line's leading
+          # whitespace gets silently trimmed by Pushover since it's leading for the whole
+          # message, masking the bug for single-alert groups). Control-only lines (if/else/
+          # end/range) can stay nested for readability -- their surrounding whitespace is
+          # trimmed away by their own `{{-`.
           message: |-
             {{- if gt (len .Alerts) 5 }}
-              Showing 5 of {{ len .Alerts }} alerts in this group:
+            Showing 5 of {{ len .Alerts }} alerts in this group:
             {{- end }}
             {{- range $i, $alert := .Alerts }}
               {{- if lt $i 5 }}
                 {{- if ne $alert.Annotations.description "" }}
-                  {{ $alert.Annotations.description }}
+            {{ $alert.Annotations.description }}
                 {{- else if ne $alert.Annotations.summary "" }}
-                  {{ $alert.Annotations.summary }}
+            {{ $alert.Annotations.summary }}
                 {{- else if ne $alert.Annotations.message "" }}
-                  {{ $alert.Annotations.message }}
+            {{ $alert.Annotations.message }}
                 {{- else }}
-                  Alert description not available
+            Alert description not available
                 {{- end }}
               {{- end }}
             {{- end }}
