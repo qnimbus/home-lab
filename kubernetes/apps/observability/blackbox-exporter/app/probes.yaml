@@ -3,6 +3,20 @@
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
+  name: devices
+spec:
+  module: icmp
+  prober:
+    url: blackbox-exporter.observability.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      static:
+        - gw-adam.iot.${DOMAIN_IO}
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
   name: nas-nfs
 spec:
   # tcp_connect, not icmp: a host can answer ping while nfsd itself is wedged or
@@ -40,8 +54,8 @@ kind: Probe
 metadata:
   name: postgres
 spec:
-  # Not ${NAS_HOST}: this cluster's Postgres is CloudNativePG, in-cluster — not
-  # TrueNAS-hosted like bykaj's. PG_HOST points at the cluster's -rw Service,
+  # Not ${NAS_HOST}: this cluster's Postgres is CloudNativePG, in-cluster.
+  # PG_HOST points at the cluster's -rw Service,
   # same DNS name already used by postgres-backup-local and pgadmin.
   module: tcp_connect
   interval: 30s

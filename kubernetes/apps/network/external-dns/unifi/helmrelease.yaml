@@ -17,6 +17,7 @@ spec:
       - "${DOMAIN_CLUSTER}"
       - "${DOMAIN_APPS}"
       - "${DOMAIN_PROXII}"
+      - "${DOMAIN_IO}"
       - "home.arpa"
     fullnameOverride: *app
     logLevel: &logLevel info
