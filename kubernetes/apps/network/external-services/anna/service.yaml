@@ -7,17 +7,16 @@ metadata:
     app.kubernetes.io/name: *app
     app.kubernetes.io/instance: *app
   annotations:
-    # Plugwise Anna gateway — a physical LAN device, not a Kubernetes workload. This
+    # Plugwise Anna thermostat — a physical LAN device, not a Kubernetes workload. This
     # Service carries no real endpoints; it exists only so external-dns points
-    # gw-anna.iot.${DOMAIN_IO} straight at the device's LAN IP, same pattern as
-    # wan-failover. Not a DNSEndpoint: external-dns-cloudflare also watches the `crd`
-    # source and shares ${DOMAIN_IO} in its domainFilters, so a DNSEndpoint here would
-    # get published as a public, proxied Cloudflare record pointing at a private IP.
-    # The Service source is cloudflare-exempt (it has no `service` source enabled),
-    # which is what keeps this record UniFi-local.
+    # gw-anna.iot.${DOMAIN_IO} straight at the device's LAN IP. type: ExternalName
+    # means no ClusterIP is ever allocated (unlike a plain ClusterIP Service, which
+    # always gets one regardless of endpoints). Not a DNSEndpoint: external-dns-cloudflare
+    # also watches the `crd` source and shares ${DOMAIN_IO} in its domainFilters, so a
+    # DNSEndpoint here would get published as a public, proxied Cloudflare record
+    # pointing at a private IP. The Service source is cloudflare-exempt (it has no
+    # `service` source enabled), which is what keeps this record UniFi-local.
     external-dns.alpha.kubernetes.io/hostname: "gw-anna.iot.${DOMAIN_IO}"
-    external-dns.alpha.kubernetes.io/target: "10.30.0.72"
 spec:
-  ports:
-    - name: http
-      port: 80
+  type: ExternalName
+  externalName: "10.30.0.72"
