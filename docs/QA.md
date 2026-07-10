@@ -1123,3 +1123,39 @@ talosctl -n <NODE_IP> get discoveredvolumes | grep nvme0n1  # still blank
 **Detail — why a dot in a bucket name breaks HTTPS:** S3-style virtual-hosted addressing puts the bucket name in the hostname (`bucket.s3.region.example.com`). A wildcard TLS certificate (`*.s3.region.example.com`) only matches one DNS label — a bucket name containing a dot turns part of the bucket name into what looks like an extra hostname label, breaking certificate/hostname validation for any code path that constructs (even transiently) a virtual-hosted-style request, even when the configured `endpointURL` is otherwise path-style.
 
 **Encountered 2026-06-21** during the Storj → Backblaze B2 backup migration (see [ROADMAP.md → CloudNativePG: Backup, PITR, and Per-App Provisioning](ROADMAP.md#cloudnative-pg-backup-pitr-and-per-app-provisioning)).
+
+---
+
+## Autoscaling (KEDA)
+
+### pgadmin's homepage tile shows "Not Found" when it's scaled to zero — is the KEDA HTTP Add-on broken?
+
+**Short answer:** No. That's homepage's Kubernetes-mode pod-status widget correctly reporting "no pod exists right now" — a cosmetic side effect of scale-to-zero, not an HTTP-level failure anywhere in the request path.
+
+**Detail:** homepage discovers pgadmin via `gethomepage.dev/*` annotations on its `HTTPRoute` (`mode: cluster`, `gateway: true` in `kubernetes.yaml`) and shows pod/container status by querying the Kubernetes API directly for pods matching pgadmin's label selector — it does not make an HTTP request through the Gateway for this widget. When the `ScaledObject` has scaled pgadmin to 0 replicas, there is no pod to find, so the tile shows "Not Found." This is unrelated to whether the actual request path (Envoy Gateway → `HTTPRoute` → KEDA HTTP Add-on interceptor → pgadmin) is working.
+
+**Verified working, twice, from inside the cluster (2026-07-10)** while pgadmin was at 0 replicas:
+- Direct to the interceptor Service (`keda-add-ons-http-interceptor-proxy.keda.svc.cluster.local:8080`) with the correct `Host` header — `302 Found` (pgadmin's normal redirect to `/login`) plus an `X-Keda-Http-Cold-Start: true` response header, and the pod scaled 0→1.
+- Through the full external path (HTTPS + SNI straight at the `envoy-internal` Gateway Service, exactly what a browser hits) — same result.
+
+Both confirm the interceptor → KEDA → scale-up chain works end-to-end. The homepage tile's "Not Found" only reflects the pod-count check, not a routing bug — clicking the tile's actual link still works correctly.
+
+**Cold-start feedback:** by default the interceptor silently holds the first request open until pgadmin's pod becomes ready, which can look like a hung page with no explanation if the cold start takes more than a couple of seconds. `kubernetes/apps/database/pgadmin/app/interceptorroute.yaml` addresses this with `coldStart.placeholder` — an immediate "Starting pgAdmin…" page, auto-refreshing until pgadmin is ready. See the next entry for a real gotcha this combination hits with the wrong `scalingMetric`.
+
+---
+
+### Why did the KEDA HTTP Add-on stop scaling pgadmin back up after adding a `coldStart.placeholder`?
+
+**Short answer:** with `scalingMetric.concurrency` (the initial config), yes — `coldStart.placeholder` serves its static response *before* the request registers as demand long enough for KEDA to notice, so pgadmin never scales back up and the placeholder shows forever. Switching to `scalingMetric.requestRate` fixes it completely, with no other changes — confirmed by reading the interceptor's actual source (not guessed) and verified live.
+
+**Detail — why `concurrency` breaks:** the interceptor's request pipeline (`interceptor/proxy.go` in `kedacore/http-add-on`, chart v0.15.0) wraps handlers outermost-first as `Routing → Counting → Placeholder → (proxy to backend)`. `Counting` (`pkg/queue/queue.go`, `Memory.Increase`/`Decrease`) tracks **two independent counters per host**: an in-flight `concurrency` gauge and a separate monotonic `requestCount` that only ever goes up. `Placeholder` sits inside `Counting`: with no ready endpoint, it writes its response and returns in microseconds, so `concurrency` is back to 0 before the scaler's external component ever samples it — that component *polls* each interceptor's queue counts on a fixed ticker (`KEDA_HTTP_SCALER_STREAM_INTERVAL_MS`, chart default **200ms**; see `scaler/queue_pinger.go`), and a microsecond-wide gauge blip essentially never lands inside a 200ms window. `ScaledObject.status.conditions[Active]` never flips `True`, and pgadmin stays at 0 replicas indefinitely.
+
+**Why `requestRate` doesn't have this problem:** the scaler computes `RequestRate` as a delta of the *monotonic* `requestCount` between two polls (`scaler/queue_pinger.go`'s `aggregatedCount`/`prevPodCounts`). `Counting` increments `requestCount` on every request — including placeholder-served ones, since `Counting` runs *before* `Placeholder` short-circuits — and nothing ever decrements it. A request that comes and goes in microseconds still shows up as `+1` at the very next poll, regardless of how briefly it was "in flight." Switching `kubernetes/apps/database/pgadmin/app/interceptorroute.yaml`'s `scalingMetric` from `concurrency` to `requestRate` (identical `coldStart.placeholder`, no other changes) fixed it.
+
+**Verified live (2026-07-10), from a genuinely cold, idle state** (75s wait to flush the `requestRate` window of prior test traffic, confirmed `ScaledObject.status.conditions[Active] == False` and 0 pods first): a single request got the placeholder (`HTTP 503` in ~5ms — proving it wasn't held), and `Active` flipped `True` within seconds, with a `Ready` pod at ~35s.
+
+**A heavier alternative was tried first and abandoned:** `coldStart.fallback` (route to a separate, always-on Service after `timeouts.readiness` elapses) also works, since a fallback-bound request is genuinely held — and counted — until the timeout, unlike a placeholder. It was dropped once `requestRate` proved sufficient, since a fallback requires deploying and permanently running a second workload (e.g. a small nginx pod) just to serve a static page — the `requestRate` fix needs zero extra infrastructure. `fallback` is still the right tool if a route genuinely can't tolerate the placeholder's "instant response with no proxying" semantics (e.g. it needs to preserve method/body for the eventual retry), or if `concurrency` scaling is required for a workload that doesn't have `requestRate` as a genuine option — see the CRD's `scalingMetric` docs, both may be set simultaneously and KEDA scales on whichever demands more replicas.
+
+**Encountered 2026-07-10**, same session as the `pgadmin` scale-to-zero deployment (see `docs/dra-gpu-migration-plan.md`'s sibling doc `docs/keda-nfs-scaler-plan.md` for the broader KEDA context).
+
+**Related:** [CONVENTIONS.md → Drift Detection → Ignore rules](CONVENTIONS.md#ignore-rules-preferred-over-full-opt-out) (KEDA `ScaledObject`s need a `driftDetection.ignore` override or Flux reverts the scale-to-zero); `docs/keda-nfs-scaler-plan.md` for the (currently unrelated, NFS-specific) KEDA scaling pattern this cluster may adopt later.
