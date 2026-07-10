@@ -11,7 +11,7 @@ metadata:
 addressType: IPv4
 endpoints:
   - addresses:
-      - 10.10.0.41
+      - "${NAS_LAN_HOST}"
     conditions:
       ready: true
 ports:

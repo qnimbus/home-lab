@@ -358,6 +358,8 @@ Group all LAN services under `kubernetes/apps/network/external-services/` — on
 
 > **Live external-services**: `truenas` (TrueNAS web UI) and `wan-failover` are both deployed under this pattern today — useful as working reference examples when adding a new LAN proxy.
 
+> **TrueNAS is dual-homed** — Storage VLAN (`10.200.0.41`, `${NAS_HOST}` in `cluster-secrets`) for NFS/SMB, general LAN (`10.10.0.41`, `${NAS_LAN_HOST}`) for its webui and as the source IP it sends syslog from. NFS is Storage-VLAN-only; SMB listens on both. Pick the variable matching the interface the consumer actually needs, not by habit — see `docs/CONVENTIONS.md` → "Cluster-wide secrets".
+
 > **TLS passthrough (end-to-end HTTPS):** requires a `TLS: Passthrough` listener on `envoy-internal` and a `TLSRoute` instead of an `HTTPRoute`. A future dedicated `envoy-services` gateway avoids adding this listener to `envoy-internal` — see [ROADMAP.md → Dedicated envoy-services Gateway](../docs/ROADMAP.md).
 
 ### Checklist for any new endpoint

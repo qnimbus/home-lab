@@ -16,7 +16,7 @@ spec:
   type: LoadBalancer
   # Restrict to TrueNAS's known IP (see apps/network/external-services/truenas).
   loadBalancerSourceRanges:
-    - 10.10.0.41/32
+    - "${NAS_LAN_HOST}/32"
   selector:
     app: server
     app.kubernetes.io/instance: victoria-logs

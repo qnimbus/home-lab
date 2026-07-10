@@ -204,15 +204,27 @@ plaintext (domain names, tunnel IDs, internal host IPs). Use `sops set '<file>' 
 to add or update a single key without decrypting the rest of the file to a terminal/transcript.
 
 Current keys: `CLUSTER_ACME_EMAIL`, `DOMAIN_IO`, `DOMAIN_APP`, `DOMAIN_CASA`, `DOMAIN_PROXII`,
-`DOMAIN_CLUSTER`, `DOMAIN_APPS`, `CLOUDFLARE_TUNNEL_ID`, `NAS_HOST` (TrueNAS host IP), `PG_HOST`
-(in-cluster CloudNativePG `-rw` Service DNS name, `postgres-v17-rw.database.svc.cluster.local`) —
-both added for `blackbox-exporter`'s reachability `Probe`s, see `docs/keda-nfs-scaler-plan.md`.
+`DOMAIN_CLUSTER`, `DOMAIN_APPS`, `CLOUDFLARE_TUNNEL_ID`, `NAS_HOST` (TrueNAS Storage VLAN IP,
+`10.200.0.0/24`), `NAS_LAN_HOST` (TrueNAS LAN/management-interface IP — TrueNAS is dual-homed;
+NFS is Storage-VLAN-only, SMB listens on both, but the webui and syslog sender identity are
+LAN-only), `PG_HOST` (in-cluster CloudNativePG `-rw` Service DNS name,
+`postgres-v17-rw.database.svc.cluster.local`) — `NAS_HOST`/`PG_HOST` added for
+`blackbox-exporter`'s reachability `Probe`s, `NAS_LAN_HOST` added for the `truenas` external-service
+EndpointSlice and the `victoria-logs` syslog `LoadBalancer`'s source-range restriction. See
+`docs/keda-nfs-scaler-plan.md`.
+
+**Two IPs, two variables — do not conflate them.** `NAS_HOST` (`10.200.0.41`) is reachable only
+from the Storage VLAN and is what NFS/iSCSI/Ceph-adjacent consumers must use. `NAS_LAN_HOST`
+(`10.10.0.41`) is TrueNAS's general-LAN identity — used where the cluster reaches TrueNAS as a
+LAN peer (its webui, or as the source IP TrueNAS sends syslog from) rather than as a storage
+target. When adding a new TrueNAS consumer, pick based on *which interface TrueNAS actually
+uses for that protocol*, not by habit — SMB, uniquely, listens on both.
 
 `components/volsync/` and `postgres-backup-local`'s NFS mounts, plus `postgres-backup-local`/
 `pgadmin`'s Postgres host references, were migrated to `${NAS_HOST}`/`${PG_HOST}` — no hardcoded
-`10.200.0.41` or `postgres-v17-rw.database.svc.cluster.local` remain in `kubernetes/`.
-`VOLSYNC_NFS_SERVER` was removed from `cluster-settings.yaml` entirely (it duplicated `NAS_HOST`);
-the Component's templates reference `${NAS_HOST}` directly now.
+`10.200.0.41`, `10.10.0.41`, or `postgres-v17-rw.database.svc.cluster.local` remain in
+`kubernetes/`. `VOLSYNC_NFS_SERVER` was removed from `cluster-settings.yaml` entirely (it
+duplicated `NAS_HOST`); the Component's templates reference `${NAS_HOST}` directly now.
 
 ---
 
