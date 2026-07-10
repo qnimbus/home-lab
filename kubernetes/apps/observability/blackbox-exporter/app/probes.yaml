@@ -13,6 +13,7 @@ spec:
       static:
         - gw-adam.iot.${DOMAIN_IO}
         - gw-anna.iot.${DOMAIN_IO}
+        - homeassistant.lan.home.${DOMAIN_IO}
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
 apiVersion: monitoring.coreos.com/v1
