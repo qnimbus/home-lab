@@ -4,6 +4,29 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-10 — `homepage-truenas-sitemonitor-fix`
+
+### Goal
+Diagnose recurring `httpProxy` errors in the `homepage` pod's logs and fix the underlying TrueNAS `siteMonitor` misconfiguration.
+
+### What we did
+- Checked pod `homepage-c97c96fdd-7wksf` — `1/1 Running`, 0 restarts, healthy; logs showed a recurring `ERR_FR_REDIRECTION_FAILURE` from `<httpProxy>` calling `https://truenas.cluster.vwn.io/`.
+- Traced the cause: `services.yaml`'s `siteMonitor` hits TrueNAS through the `envoy-internal` gateway (`network/external-services/truenas/httproute.yaml`), which terminates TLS and forwards plain HTTP to the TrueNAS backend (`10.10.0.41:8080`). TrueNAS's nginx redirects `/` → `/ui/` using the scheme of the connection it actually receives (HTTP), so it emits an absolute `http://` `Location` header even though the original client request was HTTPS. Node's `undici` fetch (used server-side by homepage) refuses to follow a same-origin HTTPS→HTTP downgrade redirect and errors on every check; browsers tolerate it fine, so the clickable `href` was never affected.
+- Verified the fix hypothesis empirically: `kubectl exec`'d into the homepage pod and curled `http://truenas.network.svc.cluster.local:8080/` directly — got a same-scheme `302 → /ui/` followed by `200 OK`, confirming a same-scheme redirect resolves cleanly.
+- Repointed `siteMonitor` at the in-cluster Service DNS directly (`http://truenas.network.svc.cluster.local:8080`), bypassing the Envoy TLS-termination hop that triggers the downgrade; left `href` untouched since browser-facing access already works.
+- User committed and pushed the change independently (commit `8afca88`).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/default/homepage/app/config/services.yaml` | TrueNAS `siteMonitor` changed from `https://truenas.${DOMAIN_CLUSTER}` (via Envoy, triggers downgrade-redirect error) to `http://truenas.network.svc.cluster.local:8080` (direct in-cluster Service DNS) |
+
+### Key decisions
+- Left `href` as `https://truenas.${DOMAIN_CLUSTER}` rather than also repointing it — the failure is specific to `undici`'s strict redirect handling used by homepage's server-side `siteMonitor` fetch, not a problem for browser navigation, so only the health-check URL needed to change.
+- Used the in-cluster Service DNS (`truenas.network.svc.cluster.local:8080`) rather than fully bypassing Envoy the way `wan-failover` does (raw LAN IP via `external-dns` target) — TrueNAS's HTTPRoute/TLS termination is still needed for legitimate browser access, unlike WAN Failover's router which has no TLS awareness at all.
+
+---
+
 ## 2026-07-09 — `ceph-diskspace-alert-tuning`
 
 ### Goal
