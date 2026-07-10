@@ -23,7 +23,7 @@ letting Kubernetes retry a doomed mount over and over.
 repo's default storage path is **Ceph (`ceph-block`)**, not NFS. A grep across `kubernetes/apps`
 turns up exactly **one** NFS consumer in the entire live tree —
 `kubernetes/apps/database/cloudnative-pg/postgres-backup-local` — and it's a CronJob writing
-`pg_dumpall` backups to TrueNAS (`10.200.0.41:/mnt/tank/Cluster/cloudnative-pg`), not a
+`pg_dumpall` backups to TrueNAS (`${NAS_HOST}:/mnt/tank/Cluster/cloudnative-pg`), not a
 long-running Deployment. A CronJob that fails once when NFS is down and retries on its next
 schedule doesn't have the crash-loop failure mode this pattern exists to prevent — KEDA's
 `scaleTargetRef.kind: Deployment` doesn't even apply to it.
@@ -121,11 +121,11 @@ spec:
    to `kubernetes/flux/vars/cluster-secrets.sops.yaml` (SOPS-encrypted, not `cluster-settings.yaml`,
    since a NAS host IP is treated as sensitive here) and is available as `${NAS_HOST}` in any app
    Kustomization via the existing `postBuild.substituteFrom` wiring — see `docs/CONVENTIONS.md` →
-   "Cluster-wide secrets". `blackbox-exporter`'s Probes (Prerequisite 2) use it. The two pre-existing
-   NFS consumers (`postgres-backup-local`, `components/volsync`'s `VOLSYNC_NFS_SERVER`) still
-   hardcode `10.200.0.41` in plaintext — not retroactively migrated to `${NAS_HOST}`, since that
-   was out of scope for the change that introduced the variable. A future `ScaledObject`'s
-   `prometheus` trigger query should use `${NAS_HOST}` too, not a hardcoded IP.
+   "Cluster-wide secrets". `blackbox-exporter`'s Probes (Prerequisite 2) use it, and the two
+   pre-existing NFS consumers (`postgres-backup-local`, `components/volsync`) were retroactively
+   migrated too — `VOLSYNC_NFS_SERVER` was removed from `cluster-settings.yaml` since it just
+   duplicated `NAS_HOST` in plaintext. A future `ScaledObject`'s `prometheus` trigger query should
+   use `${NAS_HOST}` as well, not a hardcoded IP.
 5. **A `components/keda/` directory.** Doesn't exist yet. Only `components/volsync/` exists today
    as this repo's first (and so far only) Kustomize Component. `docs/ROADMAP.md`'s
    "Researched Patterns" section already flags `namespace` as the next Component to build before

@@ -18,8 +18,8 @@ spec:
           schedule: "@daily"
           timeZone: "${CLUSTER_TIMEZONE}"
           concurrencyPolicy: Forbid
-          # NAS (10.200.0.41) temporarily offline 2026-06-24 — — pauses the daily
-          # pg_dumpall job from hanging on the NFS mount.
+          # NAS temporarily offline 2026-06-24 — pauses the daily pg_dumpall
+          # job from hanging on the NFS mount.
           suspend: false
           ttlSecondsAfterFinished: 43200
           successfulJobsHistory: 1
@@ -32,7 +32,7 @@ spec:
               tag: "17"
             command: ["/backup.sh"]
             env:
-              POSTGRES_HOST: postgres-v17-rw.database.svc.cluster.local
+              POSTGRES_HOST: "${PG_HOST}"
               POSTGRES_PORT: "5432"
               POSTGRES_CLUSTER: "TRUE"
               POSTGRES_DB: postgres
@@ -89,7 +89,7 @@ spec:
     persistence:
       backups:
         type: nfs
-        server: 10.200.0.41
+        server: "${NAS_HOST}"
         path: /mnt/tank/Cluster/cloudnative-pg
         globalMounts:
           - path: /backups

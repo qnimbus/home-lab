@@ -208,9 +208,11 @@ Current keys: `CLUSTER_ACME_EMAIL`, `DOMAIN_IO`, `DOMAIN_APP`, `DOMAIN_CASA`, `D
 (in-cluster CloudNativePG `-rw` Service DNS name, `postgres-v17-rw.database.svc.cluster.local`) —
 both added for `blackbox-exporter`'s reachability `Probe`s, see `docs/keda-nfs-scaler-plan.md`.
 
-Note: `VOLSYNC_NFS_SERVER` (`components/volsync/`) and `postgres-backup-local`'s hardcoded NAS IP
-predate this convention and still hardcode `10.200.0.41` in plaintext — not retroactively migrated
-as part of adding `NAS_HOST`, since that was out of scope for the change that introduced it.
+`components/volsync/` and `postgres-backup-local`'s NFS mounts, plus `postgres-backup-local`/
+`pgadmin`'s Postgres host references, were migrated to `${NAS_HOST}`/`${PG_HOST}` — no hardcoded
+`10.200.0.41` or `postgres-v17-rw.database.svc.cluster.local` remain in `kubernetes/`.
+`VOLSYNC_NFS_SERVER` was removed from `cluster-settings.yaml` entirely (it duplicated `NAS_HOST`);
+the Component's templates reference `${NAS_HOST}` directly now.
 
 ---
 

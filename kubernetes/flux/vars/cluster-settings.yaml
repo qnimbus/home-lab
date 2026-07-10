@@ -12,7 +12,7 @@ data:
   # VolSync defaults — single source of truth for every consumer of components/volsync.
   # Variable names must match the ${VAR:=default} tokens in that Component's templates
   # exactly, or Flux's substitution simply won't override the inline fallback.
-  VOLSYNC_NFS_SERVER: "10.200.0.41"
+  # NAS host itself is NAS_HOST, in cluster-secrets (not duplicated here).
   VOLSYNC_NFS_PATH: "/mnt/tank/Cluster/volsync"
   VOLSYNC_STORAGECLASS: "ceph-block"
   VOLSYNC_SNAPSHOTCLASS: "ceph-block-snapshot"

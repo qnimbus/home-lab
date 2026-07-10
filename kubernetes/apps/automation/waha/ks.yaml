@@ -23,7 +23,7 @@ spec:
   postBuild:
     substitute:
       APP: *app
-      # NAS (10.200.0.41) temporarily offline 2026-06-24
+      # NAS temporarily offline 2026-06-24
       # This toggle pauses the hourly ReplicationSource
       # so VolSync stops attempting NFS-backed Restic backups.
       VOLSYNC_PAUSED: "false"

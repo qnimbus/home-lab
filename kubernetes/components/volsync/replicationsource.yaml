@@ -33,5 +33,5 @@ spec:
       - mountPath: repository
         volumeSource:
           nfs:
-            server: "${VOLSYNC_NFS_SERVER:=10.200.0.41}"
+            server: "${NAS_HOST}"
             path: "${VOLSYNC_NFS_PATH:=/mnt/tank/Cluster/volsync}"
