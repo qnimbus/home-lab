@@ -15,7 +15,11 @@
         # refuses to follow a https->http downgrade redirect and errors — browsers tolerate it
         # fine on the href above, so only siteMonitor needs to route around it.
         siteMonitor: "http://truenas.network.svc.cluster.local:8080"
-- Network:
+- Infrastructure:
+    - UniFi:
+        href: https://gateway.home.${DOMAIN_NET}
+        icon: unifi.png
+        description: UniFi UDM Pro Max
     - WAN Failover:
         icon: "mdi-router-network"
         # Plain http, not https: this hostname bypasses Envoy Gateway entirely (DNS points
@@ -24,3 +28,12 @@
         href: "http://wan-failover.${DOMAIN_CLUSTER}"
         description: "Failover link status"
         siteMonitor: "http://wan-failover.${DOMAIN_CLUSTER}"
+    - Cloudflared:
+        href: https://dash.cloudflare.com/
+        icon: cloudflare-zero-trust.png
+        description: Cloudflared Tunnel
+        widget:
+          type: cloudflared
+          accountid: {{HOMEPAGE_VAR_CLOUDFLARE_ACCOUNT_ID}}
+          tunnelid: {{HOMEPAGE_VAR_CLOUDFLARE_TUNNEL_ID}}
+          key: {{HOMEPAGE_VAR_CLOUDFLARE_API_TOKEN}}

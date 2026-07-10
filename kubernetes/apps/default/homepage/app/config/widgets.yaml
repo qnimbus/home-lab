@@ -1,4 +1,7 @@
 ---
+- unifi_console:
+    url: https://udm.{{HOMEPAGE_VAR_DOMAIN_APP}}/
+    key: {{HOMEPAGE_VAR_UNIFI_API_KEY}} # required if using API key instead of username/password
 - kubernetes:
     cluster:
       show: true
@@ -11,3 +14,16 @@
       cpu: true
       memory: true
       showLabel: true
+- search:
+    provider: custom
+    showSearchSuggestions: true
+    url: https://kagi.com/search?token={{HOMEPAGE_VAR_KAGI_SESSION_TOKEN}}&q=
+    suggestionUrl: https://kagi.com/api/autosuggest?token={{HOMEPAGE_VAR_KAGI_SESSION_TOKEN}}&q=
+    target: _blank
+    # focus: true # Optional, will set focus to the search bar on page load
+- openmeteo:
+    label: Home
+    latitude: {{HOMEPAGE_VAR_LATITUDE}}
+    longitude: {{HOMEPAGE_VAR_LONGITUDE}}
+    units: metric
+    cache: 5 # Time in minutes to cache API responses, to stay within limits

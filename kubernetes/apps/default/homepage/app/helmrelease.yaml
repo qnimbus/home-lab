@@ -26,6 +26,10 @@ spec:
               TZ: "${CLUSTER_TIMEZONE}"
               LOG_LEVEL: "info"
               HOMEPAGE_ALLOWED_HOSTS: "homepage.${DOMAIN_CLUSTER}"
+              HOMEPAGE_VAR_DOMAIN_APP: "${DOMAIN_APP}"
+            envFrom:
+              - secretRef:
+                  name: &secret homepage-secret
             resources:
               requests:
                 cpu: 10m
