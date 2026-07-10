@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-07-10 | `adam-anna-unifi-dns-records` | Added UniFi DNS records for Plugwise Adam/Anna via Service+external-dns; found crd-source cross-publishing risk, reverted; fixed ClusterIP waste with ExternalName |
 > | 2026-07-10 | `blackbox-exporter-nfs-probes` | Deployed blackbox-exporter with NAS/CNPG Probes for KEDA nfs-scaler; moved NAS_HOST/PG_HOST to cluster-secrets |
 > | 2026-07-10 | `homepage-truenas-sitemonitor-fix` | Traced homepage httpProxy errors to TrueNAS https->http downgrade redirect via Envoy; repointed siteMonitor at in-cluster Service DNS |
 > | 2026-07-09 | `bykaj-patterns-keda-deploy` | Researched bykaj's DRA/KEDA patterns, wrote adoption plans for both, deployed KEDA operator (v2.20.1, operator-only) |
@@ -11,7 +12,6 @@
 > | 2026-07-09 | `intel-igpu-quicksync-passthrough` | Added siderolabs/i915 extension + NFD + Intel Device Plugins Operator/GPU plugin for cp-02/cp-03/worker-01/worker-02; rolled out live, all healthy |
 > | 2026-07-08 | `resilience-audit-fmea` | Built resilience-audit skill (FMEA schema) for failure-mode/DR auditing; piloted on Rook-Ceph, found 3 critical gaps |
 > | 2026-07-08 | `victoria-logs-syslog-ingestion` | Added native syslog listener + LoadBalancer Service to VictoriaLogs for TrueNAS ingestion, chosen over routing through fluent-bit |
-> | 2026-07-08 | `metrics-server-oci-migration` | Migrated metrics-server to charts-mirror OCIRepository; cilium blocked, mirror lags v1.18.6 vs live v1.19.5 |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 

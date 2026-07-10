@@ -4,6 +4,34 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-10 — `adam-anna-unifi-dns-records`
+
+### Goal
+Add GitOps-managed local DNS records (via UniFi/UDM) for the Plugwise Adam gateway and Anna thermostat, and fix both — plus `wan-failover` — to stop allocating unnecessary ClusterIPs.
+
+### What we did
+- Added a UniFi-only DNS record for the Plugwise Adam gateway (`gw-adam.iot.vwn.io` → `10.30.0.71`) as a backend-less `Service` with `external-dns.alpha.kubernetes.io` annotations, mirroring the existing `wan-failover` pattern. Added `${DOMAIN_IO}` to `external-dns-unifi`'s `domainFilters` so the annotation is honored, and a `blackbox-exporter` icmp probe for the device. Committed as `93f94e0`.
+- Explored converting the record to a `DNSEndpoint` CRD (the pattern `cloudflared` already uses) plus adding the `crd` source to `external-dns-unifi`, at the user's request, to get a more declarative pattern for future devices. Found — by reading `external-dns`'s actual Go source (`source/service.go`, `source/gateway_httproute.go`, `endpoint/domain_filter.go`) rather than assuming — that this causes bidirectional cross-publishing with no clean fix: `external-dns-cloudflare` already watches `crd` + `${DOMAIN_IO}`, so a `DNSEndpoint` here would get published as a public, Cloudflare-proxied record pointing at a private IP; conversely `external-dns-unifi` would pick up `cloudflared`'s tunnel `DNSEndpoint` via the shared `${DOMAIN_PROXII}` filter. Confirmed both `--label-filter` and `--regex-domain-exclusion` are instance-global (apply to every source: service, httproute, crd — not scopable to just `crd`), and that `--regex-domain-exclusion` additionally discards the plain `domainFilters` list entirely once set (`Match()` switches to regex-only mode), which would have silently broadened `external-dns-cloudflare` to match nearly everything. Reverted to the `Service` pattern.
+- Investigated the user's follow-up idea of dedicated `iot.vwn.io`/`home.vwn.io` subdomains, reasoning by analogy to the existing `DOMAIN_CLUSTER` (`cluster.vwn.io`) precedent. Determined via the domain-filter suffix-matching logic that a dedicated var alone doesn't isolate anything: `external-dns-cloudflare`'s existing bare `vwn.io` filter entry already suffix-matches any subdomain regardless of variable naming. `DOMAIN_CLUSTER`'s actual isolation comes from `--gateway-name=envoy-external` scoping cloudflare's `gateway-httproute` source away from `envoy-internal` routes — a mechanism the `crd` source has no equivalent of. Called `advisor` twice during this investigation; both calls confirmed reverting to `Service` (not a filter scheme) was the correct call.
+- User asked why the live `adam`/`anna` Services (`anna` added manually by the user, mirroring `adam`) both show a `ClusterIP`. Diagnosed: default `type: ClusterIP` always allocates an IP from the Service CIDR regardless of endpoints. Fixed `adam`, `anna`, and `wan-failover` (same latent issue) by switching to `type: ExternalName` with `spec.externalName` holding the target IP directly — Kubernetes' native "resolves outside the cluster" type, which allocates no ClusterIP at all. Dropped the now-redundant `target` annotation and the meaningless `ports` field. Verified via `kubectl explain service.spec.externalName` (RFC-1123 hostname field, no explicit IP-literal rejection) and `kubectl apply --dry-run=server` against the live cluster — including an in-place dry-run against the already-live `adam`/`anna`/`wan-failover` objects to confirm the `ClusterIP → ExternalName` type change is accepted — before finalizing.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/network/external-services/adam/service.yaml` | New (committed `93f94e0`), then converted `ClusterIP` → `ExternalName` |
+| `kubernetes/apps/network/external-services/adam/kustomization.yaml` | New (committed `93f94e0`) |
+| `kubernetes/apps/network/external-services/ks.yaml` | Added `adam` Flux Kustomization (committed `93f94e0`); `anna` Kustomization added separately by the user (`963ffa3`) |
+| `kubernetes/apps/network/external-dns/unifi/helmrelease.yaml` | Added `${DOMAIN_IO}` to `domainFilters` (committed `93f94e0`); `crd` source added then reverted (uncommitted at revert) |
+| `kubernetes/apps/observability/blackbox-exporter/app/probes.yaml` | Added `devices` icmp `Probe` for `gw-adam.iot.${DOMAIN_IO}` (committed `93f94e0`) |
+| `kubernetes/apps/network/external-services/anna/service.yaml` | Converted `ClusterIP` → `ExternalName` (uncommitted; file itself added by the user outside this session) |
+| `kubernetes/apps/network/external-services/wan-failover/service.yaml` | Converted `ClusterIP` → `ExternalName` for consistency (uncommitted) |
+
+### Key decisions
+- Local-only device DNS records stay on the `Service` + `external-dns` annotation pattern, not `DNSEndpoint` CRDs — the `crd` source has no per-instance scoping mechanism (unlike `gateway-httproute`'s `--gateway-name`), so any shared domain filter between `external-dns-unifi` and `external-dns-cloudflare` causes cross-publishing with no clean fix short of a cluster-wide label-filter migration.
+- `type: ExternalName` (not `ClusterIP` + target annotation) is now the standard shape for any future external/device DNS-only `Service` in this repo — avoids unnecessary ClusterIP allocation for free, and external-dns's `Service` source reads `spec.externalName` natively.
+
+---
+
 ## 2026-07-10 — `blackbox-exporter-nfs-probes`
 
 ### Goal
