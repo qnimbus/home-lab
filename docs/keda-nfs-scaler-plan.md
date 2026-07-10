@@ -2,9 +2,10 @@
 
 > **Status**: 📐 Planning — not scheduled. No `ScaledObject` exists yet.
 > **Foundation**: KEDA the operator was deployed 2026-07-09 (`kubernetes/apps/system/keda/`, chart
-> v2.20.1, operator-only — no scalers). **Still missing:** a blackbox/NFS-probing Prometheus
-> exporter (planned-only entry in `docs/POTENTIAL-DEPLOYMENTS.md`, `prometheus-blackbox-exporter`
-> v11.10.0) and a real NFS-backed long-running workload to protect — see Prerequisites below.
+> v2.20.1, operator-only — no scalers). `blackbox-exporter` (v11.15.1) + a `Probe` targeting the
+> NAS's NFS port were deployed 2026-07-10 (`kubernetes/apps/observability/blackbox-exporter/`) —
+> both prerequisites for the `probe_success` metric this pattern needs are now in place. **Still
+> missing:** a real NFS-backed long-running workload to protect — see Prerequisites below.
 
 ---
 
@@ -81,7 +82,7 @@ spec:
     - type: prometheus
       metadata:
         serverAddress: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-        query: probe_success{instance=~"10.200.0.41:2049"}
+        query: probe_success{instance=~"${NAS_HOST}:2049"}
         threshold: "1"
         ignoreNullValues: "0"
 ```
@@ -95,21 +96,36 @@ spec:
    the first live reconcile: chart v2.20.1 is tested upstream against Kubernetes v1.33–v1.35; this
    cluster runs v1.36.1, one minor ahead — watch `kubectl -n keda get helmrelease keda` go `Ready`
    after this is pushed.
-2. **A working NFS/NAS health probe.** Not deployed. `docs/POTENTIAL-DEPLOYMENTS.md` names
-   `prometheus-blackbox-exporter` v11.10.0 as the intended source. Needs a `Probe` or
-   `ServiceMonitor`-adjacent CR (blackbox-exporter's own CRD or a static scrape config) targeting
-   the NAS's NFS port specifically — TCP probe module, not HTTP.
+2. **A working NFS/NAS health probe.** ✅ Deployed (`kubernetes/apps/observability/blackbox-exporter/`,
+   chart v11.15.1 via `ghcr.io/prometheus-community/charts`). Uses a `monitoring.coreos.com/v1`
+   `Probe` CR (`app/probes.yaml`, `tcp_connect` module) rather than the chart's own
+   `serviceMonitor.targets` — Probe is the idiomatic prometheus-operator CRD for this and needed no
+   `dependsOn: kube-prometheus-stack` since its CRDs are pre-installed cluster-wide via
+   `ops/bootstrap/helmfile.d/00-crds.yaml` (see `docs/CONVENTIONS.md` → "CRD bootstrap pattern").
+   Also added an SMB probe (445) on the same NAS host, and a Postgres probe (5432) — but pointed at
+   this cluster's own CloudNativePG `-rw` Service (`${PG_HOST}`), **not** the NAS, since Postgres
+   here runs in-cluster (bykaj's `${DB_HOST}` was similarly distinct from their `${NAS_HOST}`).
+   Both host variables come from `cluster-secrets.sops.yaml` (see `docs/CONVENTIONS.md` →
+   "Cluster-wide secrets"), not hardcoded values — metric `probe_success{instance="<nas-ip>:2049"}`
+   is exactly what a future `ScaledObject`'s `prometheus` trigger would query. A companion
+   `PrometheusRule` (`BlackboxProbeFailed`, generic across all three probes) also alerts
+   independently of KEDA. **Not yet live-verified**: this is unpushed/uncommitted at time of
+   writing — `helm template` and `kustomize build` both pass, but `probe_success` hasn't been
+   observed in a real Prometheus after reconcile.
 3. **Confirmed Prometheus query surface.** This cluster's Prometheus lives at
    `kube-prometheus-stack-prometheus.observability.svc.cluster.local` (verified via
    `kubernetes/apps/observability/kube-prometheus-stack/app/httproute.yaml`), **not**
    `prometheus-operated.observability.svc.cluster.local` like bykaj's — the two repos name the
    in-cluster Prometheus Service differently. Use the confirmed name, don't copy bykaj's literally.
-4. **A NAS host variable convention.** bykaj uses a shared `${NAS_HOST}` substitution. This repo
-   has no equivalent today — the one existing NFS consumer
-   (`postgres-backup-local/app/helmrelease.yaml`) hardcodes `server: 10.200.0.41` inline. Decide
-   whether to introduce a shared `NAS_HOST`-style variable (cluster secrets or `talenv.yaml`-style)
-   before building a reusable Component, or keep hardcoding per-app — a reusable
-   `components/keda/nfs-scaler/` Component is much cleaner with the former.
+4. **A NAS host variable convention.** ✅ Resolved — matches bykaj directly now. `NAS_HOST` was added
+   to `kubernetes/flux/vars/cluster-secrets.sops.yaml` (SOPS-encrypted, not `cluster-settings.yaml`,
+   since a NAS host IP is treated as sensitive here) and is available as `${NAS_HOST}` in any app
+   Kustomization via the existing `postBuild.substituteFrom` wiring — see `docs/CONVENTIONS.md` →
+   "Cluster-wide secrets". `blackbox-exporter`'s Probes (Prerequisite 2) use it. The two pre-existing
+   NFS consumers (`postgres-backup-local`, `components/volsync`'s `VOLSYNC_NFS_SERVER`) still
+   hardcode `10.200.0.41` in plaintext — not retroactively migrated to `${NAS_HOST}`, since that
+   was out of scope for the change that introduced the variable. A future `ScaledObject`'s
+   `prometheus` trigger query should use `${NAS_HOST}` too, not a hardcoded IP.
 5. **A `components/keda/` directory.** Doesn't exist yet. Only `components/volsync/` exists today
    as this repo's first (and so far only) Kustomize Component. `docs/ROADMAP.md`'s
    "Researched Patterns" section already flags `namespace` as the next Component to build before
@@ -124,9 +140,11 @@ spec:
 
 - [ ] Confirm KEDA v2.19.0 is actually available and current on `ghcr.io/home-operations/charts-mirror`
       (re-check `docs/POTENTIAL-DEPLOYMENTS.md`'s version pin against upstream at implementation time).
-- [ ] Confirm `prometheus-blackbox-exporter`'s TCP probe module config for NFS (port 2049) — verify
-      it can be configured as a plain TCP-connect check without protocol-specific NFS payload
-      validation (a false-positive on this probe is broad-blast-radius; see Risk section).
+- [x] Confirm `prometheus-blackbox-exporter`'s TCP probe module config for NFS (port 2049) — deployed
+      as a plain `tcp_connect` check (handshake only, no NFS-protocol payload validation). Structural
+      validation done (`helm template`, `kustomize build`); **live `probe_success` behavior against a
+      real NAS outage is still unverified** — see Risk section for why a false-positive here is
+      broad-blast-radius.
 - [ ] Decide the NAS-host variable convention (see Prerequisite 4) before writing any reusable
       Component — retrofitting a hardcoded value into a shared Component later means editing every
       consumer.

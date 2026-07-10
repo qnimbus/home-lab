@@ -92,7 +92,7 @@ Apps are grouped by functional area. Entries marked **✅ deployed** are already
 | **victoria-logs** ✅ | `victoria-logs-single` v0.13.8 | `ghcr.io/victoriametrics/helm-charts` | Lightweight log aggregation; chosen over Loki |
 | **fluent-bit** ✅ | `fluent-bit` v0.55.0 | `ghcr.io/home-operations/charts-mirror` | Log forwarder (node → victoria-logs) |
 | **smartctl-exporter** ✅ | `prometheus-smartctl-exporter` v0.16.1 | `ghcr.io/prometheus-community/charts` | S.M.A.R.T. disk health metrics for Prometheus |
-| **blackbox-exporter** | `prometheus-blackbox-exporter` v11.10.0 | `ghcr.io/prometheus-community/charts` | HTTP/DNS/TCP/ICMP probing for external endpoints |
+| **blackbox-exporter** ✅ | `prometheus-blackbox-exporter` v11.15.1 | `ghcr.io/prometheus-community/charts` | HTTP/ICMP/TCP probing via `monitoring.coreos.com/v1` `Probe` CRs; probes TrueNAS NFS/SMB (`${NAS_HOST}`) and the in-cluster CloudNativePG `-rw` Service (`${PG_HOST}`), both from `cluster-secrets` — NFS feeds the future KEDA nfs-scaler `probe_success` query, see `docs/keda-nfs-scaler-plan.md` |
 | **gatus** | `app-template` v5.0.1 | `ghcr.io/bjw-s-labs/helm/app-template` | Status page with health checks; user-facing uptime dashboard |
 | **kromgo** | `app-template` v5.0.1 | `ghcr.io/bjw-s-labs/helm/app-template` | Prometheus metric badges for README/dashboards |
 | **unpoller** ✅ | `app-template` v5.0.1 | `ghcr.io/bjw-s-labs/helm/app-template` | Scrapes UniFi controller metrics into Prometheus; dashboards via `grafana-operator` `GrafanaDashboard` CRDs (`grafanaCom.id`/`revision`, Renovate-tracked) |

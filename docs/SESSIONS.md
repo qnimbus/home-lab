@@ -4,6 +4,47 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-10 — `blackbox-exporter-nfs-probes`
+
+### Goal
+Deploy `prometheus-blackbox-exporter` to fill the last gap in the KEDA nfs-scaler plan, and wire up reachability probes for the NAS and in-cluster Postgres.
+
+### What we did
+- Surveyed which live deployments would benefit from a KEDA nfs-scaler (probe-driven scale-to-zero on NAS outage): confirmed only two NFS consumers exist repo-wide (`postgres-backup-local` CronJob, `waha`'s VolSync ReplicationSource), both Job-based and already tolerant of NAS outages — the pattern only becomes relevant once a long-running Deployment (e.g. future Plex/Jellyfin) mounts NFS directly.
+- Answered a dependency question: confirmed `blackbox-exporter` was the only missing piece (KEDA operator, Prometheus, and prometheus-operator CRDs were all already live); explained `tmp/home-ops-bykaj/.doco-cd.truenas.yaml` and `docker/truenas/` as bykaj's non-Kubernetes GitOps mechanism (doco-cd + Compose) for host-level exporters running directly on their TrueNAS box, unrelated to this cluster's needs.
+- Deployed `blackbox-exporter` (chart v11.15.1, pulled and `helm template`-verified locally before writing manifests) mirroring the existing `smartctl-exporter` app structure: OCIRepository, Flux Kustomization (no `dependsOn` needed — `Probe`/`PrometheusRule` CRDs are pre-installed cluster-wide via `00-crds.yaml`), `configMapGenerator`-based values, `fullnameOverride` for a clean Service name.
+- Added `monitoring.coreos.com/v1` `Probe` CRs (NFS/SMB against the NAS, Postgres against this cluster's own CloudNativePG `-rw` Service) instead of the chart's `serviceMonitor.targets` — Probe is the idiomatic prometheus-operator CRD and keeps targets out of Helm values. Added a generic `BlackboxProbeFailed` `PrometheusRule`.
+- Verified before declaring done: confirmed via `kube-prometheus-stack`'s values that all `*SelectorNilUsesHelmValues` are `false` (Probes/rules discovered cluster-wide, no `release:` label needed) — this was the first `Probe` CR in the repo and could have been silently ignored. An advisor pass separately raised a concern that Flux's `${VAR}` substitution might also mangle the `PrometheusRule`'s `{{ $labels.instance }}` template syntax; checked Flux's official docs directly rather than trusting either intuition — confirmed substitution only expands braced `${VAR}`, bare `$var` is untouched by design, so no fix was needed.
+- At the user's request, moved the NAS host out of plaintext: added `NAS_HOST` to `cluster-secrets.sops.yaml` via `sops set` (never decrypting the rest of the file to a transcript), then added `PG_HOST` (`postgres-v17-rw.database.svc.cluster.local`) for the Postgres probe once the user clarified it should target this cluster's own CloudNativePG, not the NAS — resolving an open question about whether TrueNAS even serves Postgres.
+- Found and fixed an unrelated gap while verifying the SOPS file's MAC: a `.decrypted~cluster-secrets.sops.yaml` temp file appeared untracked in `git status`. Added `.decrypted~*` to `.gitignore` and deleted the stray file. The user later clarified the actual source (VS Code's SOPS extension keeps a live decrypted scratch copy while the file is open in the editor) — the gitignore fix covers it regardless of cause.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/blackbox-exporter.yaml` | New OCIRepository, chart v11.15.1 |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added `blackbox-exporter.yaml` resource |
+| `kubernetes/apps/observability/blackbox-exporter/ks.yaml` | New Flux Kustomization, `targetNamespace: observability` |
+| `kubernetes/apps/observability/blackbox-exporter/app/kustomization.yaml` | New — `configMapGenerator` values, resources for helmrelease/probes/prometheusrule |
+| `kubernetes/apps/observability/blackbox-exporter/app/helmrelease.yaml` | New HelmRelease, `chartRef` + `valuesFrom` |
+| `kubernetes/apps/observability/blackbox-exporter/app/helm/values.yaml` | New — modules (`http_2xx`/`icmp`/`tcp_connect`), `fullnameOverride`, `selfMonitor` ServiceMonitor, resource limits |
+| `kubernetes/apps/observability/blackbox-exporter/app/helm/kustomizeconfig.yaml` | New — `nameReference` for the generated ConfigMap hash |
+| `kubernetes/apps/observability/blackbox-exporter/app/probes.yaml` | New — 3 `Probe` CRs: NFS (`${NAS_HOST}:2049`), SMB (`${NAS_HOST}:445`), Postgres (`${PG_HOST}:5432`) |
+| `kubernetes/apps/observability/blackbox-exporter/app/prometheusrule.yaml` | New — generic `BlackboxProbeFailed` alert across all probes |
+| `kubernetes/apps/observability/kustomization.yaml` | Added `blackbox-exporter/ks.yaml` resource |
+| `kubernetes/flux/vars/cluster-secrets.sops.yaml` | Added `NAS_HOST` and `PG_HOST` keys via `sops set` |
+| `.gitignore` | Added `.decrypted~*` |
+| `docs/keda-nfs-scaler-plan.md` | Marked blackbox-exporter prerequisite and NAS-host-variable prerequisite as resolved; updated illustrative `ScaledObject` query to use `${NAS_HOST}` |
+| `docs/POTENTIAL-DEPLOYMENTS.md` | Marked `blackbox-exporter` deployed, updated notes |
+| `docs/CONVENTIONS.md` | New "Cluster-wide secrets (cluster-secrets)" subsection documenting the `sops set` workflow and current key list |
+
+### Key decisions
+- Used `monitoring.coreos.com/v1` `Probe` CRs rather than the chart's own `serviceMonitor.targets` — Probe is the idiomatic prometheus-operator mechanism and keeps target definitions out of Helm values, separate from the exporter's own deployment config.
+- No `dependsOn: kube-prometheus-stack` on the new Kustomization — per `docs/CONVENTIONS.md`'s documented CRD bootstrap pattern, `monitoring.coreos.com/v1` CRDs are pre-installed cluster-wide via `00-crds.yaml` before Flux ever reconciles, so a raw `Probe`/`PrometheusRule` manifest doesn't need a runtime dependency on the chart that would otherwise install those CRDs.
+- `NAS_HOST`/`PG_HOST` went into `cluster-secrets.sops.yaml` (SOPS-encrypted), not `cluster-settings.yaml` (plaintext ConfigMap) — explicit user preference to avoid internal host references sitting in plaintext Git history, even though pre-existing consumers (`postgres-backup-local`, `VOLSYNC_NFS_SERVER`) still hardcode the same IP and weren't retroactively migrated (out of scope for this change).
+- Postgres probe targets this cluster's own CloudNativePG `-rw` Service (`${PG_HOST}`), not the NAS — bykaj's equivalent used a separate `${DB_HOST}` distinct from `${NAS_HOST}` too; this cluster runs Postgres in-cluster via CloudNativePG, not NAS-hosted.
+
+---
+
 ## 2026-07-10 — `homepage-truenas-sitemonitor-fix`
 
 ### Goal

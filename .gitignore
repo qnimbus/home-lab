@@ -21,3 +21,4 @@ known_hosts
 flux-deploy-key*
 flux-deploy-key
 docs/*.json
+.decrypted~*

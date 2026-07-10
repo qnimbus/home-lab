@@ -1,0 +1,44 @@
+---
+# fullnameOverride keeps the Service name short (blackbox-exporter, not
+# blackbox-exporter-prometheus-blackbox-exporter) since the chart's fullname
+# helper only collapses the chart name when the release name already contains
+# it verbatim.
+fullnameOverride: blackbox-exporter
+
+config:
+  modules:
+    http_2xx:
+      prober: http
+      timeout: 5s
+      http:
+        valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+        follow_redirects: true
+        preferred_ip_protocol: "ip4"
+    icmp:
+      prober: icmp
+      timeout: 5s
+      icmp:
+        preferred_ip_protocol: "ip4"
+    tcp_connect:
+      prober: tcp
+      timeout: 5s
+      tcp:
+        preferred_ip_protocol: "ip4"
+
+# Per-target scraping goes through a monitoring.coreos.com/v1 Probe (./probes.yaml)
+# instead of the chart's own serviceMonitor.targets — Probe is the idiomatic
+# prometheus-operator CRD for blackbox-style probing and keeps target definitions
+# out of Helm values. selfMonitor covers the exporter's own health/metrics.
+serviceMonitor:
+  enabled: false
+  selfMonitor:
+    enabled: true
+    interval: 60s
+    scrapeTimeout: 30s
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 64Mi

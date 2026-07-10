@@ -1,0 +1,53 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: nas-nfs
+spec:
+  # tcp_connect, not icmp: a host can answer ping while nfsd itself is wedged or
+  # the export is unmounted. A TCP handshake on 2049 reflects the service, not
+  # just the box. This is also the exact metric a future KEDA nfs-scaler
+  # ScaledObject would poll (probe_success{instance="${NAS_HOST}:2049"}) — see
+  # docs/keda-nfs-scaler-plan.md.
+  module: tcp_connect
+  interval: 30s
+  prober:
+    url: blackbox-exporter.observability.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      static:
+        - "${NAS_HOST}:2049"
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: nas-smb
+spec:
+  module: tcp_connect
+  interval: 30s
+  prober:
+    url: blackbox-exporter.observability.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      static:
+        - "${NAS_HOST}:445"
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: postgres
+spec:
+  # Not ${NAS_HOST}: this cluster's Postgres is CloudNativePG, in-cluster — not
+  # TrueNAS-hosted like bykaj's. PG_HOST points at the cluster's -rw Service,
+  # same DNS name already used by postgres-backup-local and pgadmin.
+  module: tcp_connect
+  interval: 30s
+  prober:
+    url: blackbox-exporter.observability.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      static:
+        - "${PG_HOST}:5432"

@@ -1,0 +1,17 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/prometheusrule_v1.json
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: blackbox-exporter-rules
+spec:
+  groups:
+    - name: blackbox-exporter.rules
+      rules:
+        - alert: BlackboxProbeFailed
+          expr: probe_success == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Blackbox probe against {{ $labels.instance }} has failed for 5 minutes."

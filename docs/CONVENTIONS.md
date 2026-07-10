@@ -195,6 +195,23 @@ named `myapp`:
 - To add a new cluster-wide value, add it to `cluster-settings.yaml` and document it in the table above.
 - Variable substitution does **not** apply to Kustomizations labeled `substitution.flux.home.arpa/disabled: "true"` — check before adding `${…}` syntax to resources managed by such a Kustomization.
 
+### Cluster-wide secrets (cluster-secrets)
+
+`kubernetes/flux/vars/cluster-secrets.sops.yaml` is the SOPS-encrypted counterpart to
+`cluster-settings.yaml` — same `postBuild.substituteFrom` injection into every child Kustomization
+(see `flux/cluster/ks.yaml`), same `${VAR_NAME}` syntax, but for values that shouldn't sit in Git as
+plaintext (domain names, tunnel IDs, internal host IPs). Use `sops set '<file>' '["stringData"]["KEY"]' '"value"'`
+to add or update a single key without decrypting the rest of the file to a terminal/transcript.
+
+Current keys: `CLUSTER_ACME_EMAIL`, `DOMAIN_IO`, `DOMAIN_APP`, `DOMAIN_CASA`, `DOMAIN_PROXII`,
+`DOMAIN_CLUSTER`, `DOMAIN_APPS`, `CLOUDFLARE_TUNNEL_ID`, `NAS_HOST` (TrueNAS host IP), `PG_HOST`
+(in-cluster CloudNativePG `-rw` Service DNS name, `postgres-v17-rw.database.svc.cluster.local`) —
+both added for `blackbox-exporter`'s reachability `Probe`s, see `docs/keda-nfs-scaler-plan.md`.
+
+Note: `VOLSYNC_NFS_SERVER` (`components/volsync/`) and `postgres-backup-local`'s hardcoded NAS IP
+predate this convention and still hardcode `10.200.0.41` in plaintext — not retroactively migrated
+as part of adding `NAS_HOST`, since that was out of scope for the change that introduced it.
+
 ---
 
 ## CRD bootstrap pattern — raw monitoring and gateway manifests

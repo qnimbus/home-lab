@@ -34,3 +34,4 @@ resources:
   - ./node-feature-discovery.yaml
   - ./keda.yaml
   - ./keda-add-ons-http.yaml
+  - ./blackbox-exporter.yaml
