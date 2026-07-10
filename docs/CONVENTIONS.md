@@ -109,6 +109,7 @@ Common `ignore` scenarios:
 | Controller | Path to ignore | Why |
 |---|---|---|
 | HPA | `/spec/replicas` on `Deployment`/`StatefulSet` | HPA owns the replica count |
+| KEDA `ScaledObject` | `/spec/replicas` on `Deployment`/`StatefulSet` | Same as HPA — a `ScaledObject` scales its target by creating a native HPA under the hood, even though nothing in the app's own manifests looks like one. Skip this and Flux reverts the workload back to the chart's static replica count on the next reconcile/drift check, silently undoing scale-to-zero within the HelmRelease's `interval`. Required on **every** KEDA-scaled HelmRelease, not just ones that look autoscaling-related — see `kubernetes/apps/database/pgadmin/app/helmrelease.yaml` for a live example (paired with `scaledobject.yaml` in the same app) |
 | VPA | `/spec/*/resources/requests` on `Deployment` | VPA mutates resource requests at runtime |
 | Kubernetes auto-assign | `/spec/ports/*/nodePort` on `Service` | Kubernetes assigns nodePort; Flux would clear and re-assign a different port |
 | Mutating webhook | `/metadata/annotations` or `/metadata/labels` on target resource | Webhook injects annotations Flux doesn't know about |

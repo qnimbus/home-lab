@@ -32,3 +32,5 @@ resources:
   - ./grafana-operator.yaml
   - ./metrics-server.yaml
   - ./node-feature-discovery.yaml
+  - ./keda.yaml
+  - ./keda-add-ons-http.yaml

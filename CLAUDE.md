@@ -5,6 +5,7 @@
 > | Date | Session | Summary |
 > |------|---------|---------|
 > | 2026-07-10 | `homepage-truenas-sitemonitor-fix` | Traced homepage httpProxy errors to TrueNAS https->http downgrade redirect via Envoy; repointed siteMonitor at in-cluster Service DNS |
+> | 2026-07-09 | `bykaj-patterns-keda-deploy` | Researched bykaj's DRA/KEDA patterns, wrote adoption plans for both, deployed KEDA operator (v2.20.1, operator-only) |
 > | 2026-07-09 | `ceph-diskspace-alert-tuning` | Traced CephNodeDiskspaceWarning noise to reboot-starved predict_linear; added rule override, reverted 10s scrape diag |
 > | 2026-07-09 | `intel-igpu-quicksync-passthrough` | Added siderolabs/i915 extension + NFD + Intel Device Plugins Operator/GPU plugin for cp-02/cp-03/worker-01/worker-02; rolled out live, all healthy |
 > | 2026-07-08 | `resilience-audit-fmea` | Built resilience-audit skill (FMEA schema) for failure-mode/DR auditing; piloted on Rook-Ceph, found 3 critical gaps |

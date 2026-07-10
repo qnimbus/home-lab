@@ -27,6 +27,42 @@ Diagnose recurring `httpProxy` errors in the `homepage` pod's logs and fix the u
 
 ---
 
+## 2026-07-09 — `bykaj-patterns-keda-deploy`
+
+### Goal
+Study bykaj's Plex/Jellyfin GPU (DRA) and NFS-scaler (KEDA) patterns, write standalone adoption plans for both, and deploy the KEDA operator as the first concrete step.
+
+### What we did
+- Inspected bykaj's `plex`/`jellyfin` Kustomizations (`tmp/home-ops-bykaj/kubernetes/apps/media/`) directly — multi-doc `ks.yaml` (operator + tools Kustomizations), `components/gpu` DRA `ResourceClaimTemplate`, `components/keda/nfs-scaler` `ScaledObject`, `components/volsync` backup pattern — and reported findings.
+- Explained the difference between bykaj's DRA GPU scheduling and this repo's classic device-plugin GPU scheduling in plain terms, with an upgrade-path suggestion.
+- Forked a background agent to write a standalone DRA migration plan (`docs/dra-gpu-migration-plan.md`); a second fork corrected a factual error it introduced (wrongly claimed Plex/Jellyfin were current GPU consumers — verified via grep that no workload requests `gpu.intel.com` today).
+- A second forked agent, dispatched to write the KEDA plan, misresolved its own directive and re-touched the DRA plan instead. Caught by comparing its self-reported task description against the user's actual `/fork` args; reported the mismatch transparently rather than assuming the KEDA plan existed. Relaunched with a more explicit, self-contained prompt after the user confirmed — it produced `docs/keda-nfs-scaler-plan.md`, finding that KEDA and a blackbox/NFS-probe exporter were both undeployed, and that this repo's only NFS consumer (`postgres-backup-local`) is a CronJob the nfs-scaler pattern doesn't apply to (Ceph-first cluster, not NFS-first).
+- User then asked to actually deploy KEDA. Verified the newest chart tag on the mirror (`ghcr.io/home-operations/charts-mirror/keda`, `2.20.1`, matching bykaj's pin) via the GHCR tags API, and checked KEDA's own docs/compatibility page — v2.20 is tested upstream against Kubernetes v1.33–v1.35, one minor behind this cluster's v1.36.1.
+- Built the KEDA operator deployment by mirroring this repo's existing `reloader`/`snapshot-controller`/`volsync` pattern (small system operator, own namespace, inline Helm `values:`, no ConfigMap indirection) rather than the tuppr/metrics-server `ConfigMapGenerator` pattern: new `OCIRepository` (cosign-verified) + `ks.yaml` + `app/{namespace,kustomization,helmrelease}.yaml`, wired into both parent `kustomization.yaml` files.
+- Validated with `kustomize build` against the new app dir, `apps/system`, `flux/meta/repos/oci`, and the full `apps` tree — all clean.
+- Updated `docs/POTENTIAL-DEPLOYMENTS.md`, `docs/ROADMAP.md`, and `docs/keda-nfs-scaler-plan.md` to reflect KEDA-the-operator now being deployed (scoped explicitly as operator-only — no `ScaledObject` created, since no real consumer exists yet).
+- Nothing committed or pushed (repo rule: only `/git-stage`/`/git-commit` on explicit request).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/dra-gpu-migration-plan.md` | New — standalone 5-phase DRA GPU migration plan |
+| `docs/keda-nfs-scaler-plan.md` | New — standalone KEDA nfs-scaler adoption plan; status banner later updated to reflect the operator's deployment |
+| `docs/ROADMAP.md` | Added "Researched Patterns" entries for DRA and KEDA nfs-scaler; updated KEDA section to note the operator is now deployed and flag the Kubernetes v1.36.1 vs. KEDA's tested-ceiling v1.35 gap |
+| `docs/POTENTIAL-DEPLOYMENTS.md` | `keda` row marked ✅ deployed, version bumped v2.19.0 → v2.20.1 |
+| `kubernetes/flux/meta/repos/oci/keda.yaml` | New — `OCIRepository` for KEDA chart v2.20.1, cosign-verified |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Wired in `keda.yaml` |
+| `kubernetes/apps/system/keda/` | New — `ks.yaml` + `app/{namespace,kustomization,helmrelease}.yaml` deploying the KEDA operator (Prometheus ServiceMonitors enabled for operator/metric-server/webhooks) |
+| `kubernetes/apps/system/kustomization.yaml` | Wired in `keda/ks.yaml` |
+
+### Key decisions
+- Deployed KEDA operator-only, no `ScaledObject` — the nfs-scaler pattern this whole research thread was about has no real target in this cluster yet (one NFS consumer, and it's a CronJob).
+- Followed the `reloader`/`snapshot-controller`/`volsync` small-operator convention (inline values, dedicated namespace) over the `tuppr`/`metrics-server` `ConfigMapGenerator` convention — KEDA's values are small enough not to need the indirection.
+- Proceeded with chart v2.20.1 despite it being upstream-tested only through Kubernetes v1.35 (cluster runs v1.36.1) — flagged as a first-reconcile risk to watch rather than a blocker, since `kustomize build` validation can't catch an API-server-level incompatibility.
+- When a forked agent misresolved its own task directive (re-touched the DRA plan instead of writing the KEDA plan), reported the mismatch to the user directly instead of fabricating that the KEDA plan existed, and only proceeded once the user explicitly confirmed.
+
+---
+
 ## 2026-07-09 — `ceph-diskspace-alert-tuning`
 
 ### Goal

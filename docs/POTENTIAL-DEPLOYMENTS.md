@@ -77,7 +77,7 @@ Apps are grouped by functional area. Entries marked **✅ deployed** are already
 | **reloader** ✅ | `reloader` v2.2.11 | `ghcr.io/stakater/charts` | Rolls pods automatically on ConfigMap/Secret change |
 | **reflector** | `reflector` v10.0.45 | `ghcr.io/emberstack/helm-charts` | Mirrors Secrets/ConfigMaps across namespaces (e.g. wildcard TLS cert) — not adopted; the one live Certificate (envoy-gateway gateway TLS) is managed in place instead |
 | **descheduler** | `descheduler` v0.36.0 | `ghcr.io/home-operations/charts-mirror` | Rebalances pods across nodes after drift |
-| **keda** | `keda` v2.19.0 | `ghcr.io/home-operations/charts-mirror` | Event-driven autoscaling (Kafka, RabbitMQ, cron, etc.) |
+| **keda** ✅ | `keda` v2.20.1 | `ghcr.io/home-operations/charts-mirror` | Event-driven autoscaling (Kafka, RabbitMQ, cron, etc.); deployed operator-only, no `ScaledObject`s yet — see `docs/keda-nfs-scaler-plan.md` |
 | **intel-gpu-resource-driver** | `intel-gpu-resource-driver` v0.10.1 | `ghcr.io/intel/intel-resource-drivers-for-kubernetes` | GPU resource allocation for Intel iGPUs (transcoding) |
 | **tuppr** ✅ | `tuppr` v0.1.36 | `ghcr.io/home-operations/charts` | Talos upgrade planner/automation |
 

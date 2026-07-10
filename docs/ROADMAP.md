@@ -1054,7 +1054,8 @@ pattern described above (see `kubernetes/apps/automation/waha/ks.yaml` for a con
 - The `namespace` Component is next highest priority: bundles namespace creation + cluster-secrets
   per-app, so apps never need separate namespace manifests or per-namespace secret wiring
 - Add a Component only when the same boilerplate appears in 3+ apps — don't create early
-- KEDA scalers if/when KEDA is deployed
+- KEDA scalers once a real consumer exists (KEDA itself is deployed, operator-only) — see
+  [KEDA NFS-Scaler (Future)](#keda-nfs-scaler-future) below
 
 ---
 
@@ -1221,6 +1222,60 @@ maintenance window (Grafana briefly unavailable during the swap).
 
 **Reference:** `bykaj/home-ops` `kubernetes/apps/observability/grafana/instance/grafana.yaml`
 (native `Grafana` CR) and `kubernetes/apps/observability/grafana/operator/helmrelease.yaml`.
+
+---
+
+#### Intel GPU: Device-Plugin → DRA Migration (Future)
+
+bykaj schedules Intel iGPU access via DRA (`ResourceClaimTemplate`, `resource.k8s.io/v1`) instead of
+this cluster's device-plugin extended-resource model (`gpu.intel.com/i915`, NFD-labeled nodeSelector).
+DRA is GA as of Kubernetes 1.34 (this cluster runs v1.36.1) and is strictly more expressive — device
+sharing via `adminAccess`, richer selection criteria — but the current device-plugin setup (deployed
+2026-07-09, `intel-igpu-quicksync-passthrough` session) is freshly rolled out and healthy across all
+4 GPU nodes.
+
+**When to revisit:** once multiple GPU workloads need to contend for/share the same physical iGPU
+(e.g. a maintenance job needing co-access without displacing a transcode session) — not urgent
+before then. Note: no workload in this repo requests the GPU yet (Plex/Jellyfin are only planned,
+per `docs/POTENTIAL-DEPLOYMENTS.md` — not deployed).
+
+**Full phased plan (research → dual-run → first consumer on DRA → any remaining consumers →
+decommission device-plugin):** see [dra-gpu-migration-plan.md](dra-gpu-migration-plan.md).
+
+**Reference:** `bykaj/home-ops` `kubernetes/components/gpu/resourceclaimtemplate.yaml`,
+`kubernetes/apps/media/{plex,jellyfin}/ks.yaml`.
+
+---
+
+#### KEDA NFS-Scaler (Future)
+
+**KEDA the operator is deployed** (2026-07-09, `kubernetes/apps/system/keda/`, chart v2.20.1 via
+`ghcr.io/home-operations/charts-mirror`, own `keda` namespace, Prometheus metrics/ServiceMonitors
+enabled for the metric-server/operator/webhooks components). No `ScaledObject` exists yet — this
+was a scoped, operator-only deployment; the nfs-scaler pattern below still has no real consumer.
+
+**Compatibility note (unverified until first live reconcile):** chart v2.20.1 is the newest tag on
+the mirror and is tested upstream against Kubernetes v1.33–v1.35; this cluster runs v1.36.1, one
+minor ahead of KEDA's stated tested ceiling. `kustomize build` validated cleanly but cannot catch
+an API-server-level incompatibility — watch the `HelmRelease` go `Ready` on the first reconcile
+after this is pushed, and check `kubectl -n keda get helmrelease keda` / pod logs if it doesn't.
+
+bykaj's `components/keda/nfs-scaler/` scales an NFS-backed Deployment to `0` replicas whenever a
+Prometheus blackbox probe shows the NAS's NFS export is unreachable, then restores the original
+replica count once it recovers — avoids crash-looping pods during a NAS reboot/network blip. A
+blackbox-exporter (needed for the NFS-reachability probe) is still not deployed (planned-only entry
+in `docs/POTENTIAL-DEPLOYMENTS.md`), and this repo's only current NFS consumer
+(`postgres-backup-local`) is a CronJob the pattern doesn't apply to — this cluster is Ceph-first,
+not NFS-first.
+
+**When to revisit:** once a real NFS-backed Deployment exists (most likely a media app like
+Plex/Jellyfin using an NFS media mount, per `docs/POTENTIAL-DEPLOYMENTS.md` — not committed).
+
+**Full phased plan (verify KEDA/blackbox-exporter prerequisites → pilot on one workload → expand →
+promote to a reusable Component):** see [keda-nfs-scaler-plan.md](keda-nfs-scaler-plan.md).
+
+**Reference:** `bykaj/home-ops` `kubernetes/components/keda/nfs-scaler/scaledobject.yaml`,
+`kubernetes/apps/media/{plex,jellyfin}/ks.yaml`.
 
 ---
 
