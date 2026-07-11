@@ -4,6 +4,43 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-11 — `firefly-iii-deployment`
+
+### Goal
+Research, plan, and implement a GitOps deployment of Firefly III (personal finance manager) on the shared CNPG Postgres cluster, with least-privilege database credentials, internal-only exposure, and the Data Importer companion app.
+
+### What we did
+- Researched Firefly III's Kubernetes requirements directly from the official `firefly-iii/kubernetes` repo and both `.env.example` files (core app + Data Importer) after `kubesearch.dev`'s SPA and unauthenticated `gh search code` failed to surface usable community examples — confirmed native `pgsql` support, required env vars (`APP_KEY`, `STATIC_CRON_TOKEN`, `DB_*`, `TRUSTED_PROXIES`), the upload-storage PVC, and that the Data Importer needs a Personal Access Token that can only be generated from the UI after first login (no `APP_KEY` of its own).
+- Explored this repo's existing patterns (`pgadmin`, `waha`, the shared `cloudnative-pg` cluster) via an Explore subagent to ground the design in proven conventions rather than inventing new ones.
+- Used `AskUserQuestion` to settle four design decisions up front: dedicated least-privilege CNPG credentials (vs. reusing the shared superuser like `pgadmin`), a new `finance` namespace, internal-only exposure via `envoy-internal`, and deploying the Data Importer alongside the core app now rather than later.
+- Verified via web research that CNPG's `Database`/role CRDs cannot reference a `Cluster` in another namespace (open upstream feature request) — this shaped where the DB-provisioning manifests had to be applied, though not where they had to live in git.
+- Implemented the full deployment: added a `firefly` role to the shared `postgres-v17` `Cluster` (`spec.managed.roles`), a `Database` CRD, ExternalSecrets, an app-template v5 HelmRelease with a `ceph-block` upload PVC, an internal `HTTPRoute`, an hourly `CronJob` hitting the recurring-transactions cron endpoint, and a second app-template release for the Data Importer.
+- Validated every new/changed Kustomize overlay individually and the full repo tree with `task validate` (kubeconform) — all passed, with the same "skipped" behavior for CRDs (ExternalSecret, HTTPRoute, `Database`) that kubeconform already shows for existing apps like `pgadmin`.
+- Iterated twice on user feedback after the initial implementation: (1) relocated the DB-provisioning files from `database/cloudnative-pg/firefly-iii-db/` into `finance/firefly-iii/db/` so all Firefly-related config lives in one place, exploiting the fact that a Flux Kustomization's git path and its `targetNamespace` are independent; while restructuring, also deleted two dead `app`-level `kustomization.yaml` files that nothing referenced. (2) Consolidated three separate 1Password items down to one (`firefly-iii`), removing the dual-`dataFrom.extract`/rewrite pattern that had been copied from `pgadmin` since it was no longer needed.
+- Discussed, but did not adopt, an init-container/sidecar SQL-provisioning pattern seen in other homelab repos — walked through the tradeoffs (portability and colocation vs. loss of drift detection, broader superuser-credential exposure, no declarative teardown) before confirming the CNPG CRD approach.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/cluster.yaml` | Added `spec.managed.roles` entry for a least-privilege `firefly` role |
+| `kubernetes/apps/kustomization.yaml` | Registered the new `./finance` category namespace |
+| `kubernetes/apps/finance/namespace.yaml` | New `finance` namespace |
+| `kubernetes/apps/finance/kustomization.yaml` | Lists the `firefly-iii` and `firefly-iii-importer` `ks.yaml` files |
+| `kubernetes/apps/finance/firefly-iii/ks.yaml` | Multi-doc Flux Kustomization: `firefly-iii-db` (targets `database`, `wait: true`) + `firefly-iii` (targets `finance`) |
+| `kubernetes/apps/finance/firefly-iii/db/{kustomization,externalsecret,database}.yaml` | CNPG `Database` CRD + ExternalSecret producing the role's basic-auth secret, extracted from the single `firefly-iii` 1Password item |
+| `kubernetes/apps/finance/firefly-iii/app/{kustomization,externalsecret,helmrelease,httproute,cronjob}.yaml` | Core Firefly III app-template v5 deployment, `ceph-block` upload PVC, internal `HTTPRoute`, hourly cron `CronJob` hitting in-cluster Service DNS |
+| `kubernetes/apps/finance/firefly-iii-importer/ks.yaml` | Flux Kustomization for the Data Importer, depends on `firefly-iii` |
+| `kubernetes/apps/finance/firefly-iii-importer/app/{kustomization,externalsecret,helmrelease,httproute}.yaml` | Data Importer app-template v5 deployment, talks to Firefly III over in-cluster Service DNS |
+
+### Key decisions
+- Chose CNPG's declarative `Database`/`managed.roles` CRDs over both reusing the shared superuser (pgadmin's pattern) and an init-container SQL-provisioning approach seen elsewhere: least-privilege, continuously reconciled with drift detection, and a clean `ensure: absent` teardown path — at the cost of the provisioning manifests needing to target the `database` K8s namespace.
+- Decoupled git layout from Kubernetes namespace: the DB-provisioning files live under `finance/firefly-iii/db/` in git (colocated with the rest of the app) but their Flux Kustomization sets `targetNamespace: database`, satisfying both the user's "keep it together" preference and CNPG's same-namespace `Cluster` reference constraint.
+- Consolidated all secrets into one `firefly-iii` 1Password item at the user's request, picking field names (`DB_USERNAME`, `DB_PASSWORD`, etc.) that map 1:1 to every consumer's needs so no `dataFrom` rewrite rules were needed.
+- Internal-only exposure (`envoy-internal`) chosen as the sensible default for a financial application; the CronJob and Data Importer both call Firefly III over in-cluster Service DNS rather than through the Gateway, applying the same hairpin/downgrade lesson learned in `homepage-truenas-sitemonitor-fix`.
+- The Data Importer's `FIREFLY_III_ACCESS_TOKEN` starts as a placeholder in the shared 1Password item — the real Personal Access Token can only be generated from Firefly III's own UI after first login, so this is a required manual follow-up step, not an oversight.
+
+---
+
 ## 2026-07-11 — `repo-audit-and-pr-review-fix`
 
 ### Goal

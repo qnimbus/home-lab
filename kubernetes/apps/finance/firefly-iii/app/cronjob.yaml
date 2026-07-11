@@ -1,0 +1,49 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/batch/cronjob_v1.json
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: firefly-iii-cron
+spec:
+  # Firefly III recommends hitting the cron endpoint at least once a day to fire
+  # recurring transactions, bills, and auto-budgets; hourly keeps them close to on-time.
+  schedule: "0 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: cron
+              image: curlimages/curl:8.11.1
+              command:
+                - /bin/sh
+                - -c
+                - 'curl -fsS "http://firefly-iii.finance.svc.cluster.local:8080/api/v1/cron/$CRON_TOKEN"'
+              env:
+                - name: CRON_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: firefly-iii-secret
+                      key: STATIC_CRON_TOKEN
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  memory: 64Mi

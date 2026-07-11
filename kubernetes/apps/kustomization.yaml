@@ -18,5 +18,6 @@ resources:
   - ./automation
   - ./database
   - ./default
+  - ./finance
   - ./node-feature-discovery
   - ./intel-device-plugins
