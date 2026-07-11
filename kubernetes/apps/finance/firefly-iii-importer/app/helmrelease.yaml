@@ -6,6 +6,14 @@ metadata:
   name: firefly-iii-importer
 spec:
   interval: 1h
+  # KEDA (scaledobject.yaml) scales this Deployment's replicas directly; without
+  # this, Flux's drift detection reverts it back to the chart's desired replica
+  # count on the next reconcile/drift check, undoing scale-to-zero within the hour.
+  driftDetection:
+    ignore:
+      - paths: ["/spec/replicas"]
+        target:
+          kind: Deployment
   chartRef:
     kind: OCIRepository
     name: app-template

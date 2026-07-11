@@ -3,12 +3,15 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: ReferenceGrant
 metadata:
-  name: pgadmin-httproute-to-interceptor
+  name: httproute-to-keda-interceptor
 spec:
   from:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       namespace: database
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: finance
   to:
     - group: ""
       kind: Service

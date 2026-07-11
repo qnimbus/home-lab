@@ -1,0 +1,21 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/keda.sh/scaledobject_v1alpha1.json
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: firefly-iii-importer
+spec:
+  scaleTargetRef:
+    name: firefly-iii-importer
+  minReplicaCount: 0
+  maxReplicaCount: 1
+  # Idle window before scaling to 0 once request activity stops — the importer is
+  # a human-triggered, on-demand tool (run a bank import, then walk away), not a
+  # service anything else depends on staying warm, so a generous window avoids
+  # reloading on every short pause. Tune freely.
+  cooldownPeriod: 1800
+  triggers:
+    - type: external-push
+      metadata:
+        scalerAddress: keda-add-ons-http-external-scaler.keda:9090
+        interceptorRoute: firefly-iii-importer

@@ -18,6 +18,10 @@ spec:
   hostnames:
     - "firefly-importer.${DOMAIN_CLUSTER}"
   rules:
+    # Routed through the KEDA HTTP Add-on interceptor (not the importer's Service
+    # directly) so it can hold first-request traffic while the importer scales up
+    # from 0 — see interceptorroute.yaml/scaledobject.yaml in this directory.
     - backendRefs:
-        - name: firefly-iii-importer
+        - name: keda-add-ons-http-interceptor-proxy
+          namespace: keda
           port: 8080
