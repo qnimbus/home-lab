@@ -4,6 +4,29 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-11 — `repo-audit-and-pr-review-fix`
+
+### Goal
+Run an incremental seventh-pass GitOps repo audit, then diagnose and fix the cost/observability issues behind the disabled `renovate-pr-review.yml` GitHub Action.
+
+### What we did
+- Ran the `gitops-repo-audit` skill as an incremental "seventh pass" against the existing `docs/REPO-AUDIT.md` (diffing the prior sixth-pass baseline, `7d8e377`→`284d80f`, rather than a full re-audit): confirmed validation, deprecated-API, and dependency-graph checks all clean, resource counts unchanged since the sixth pass. Split the HTTPRoute validation row into schema-violation vs. CEL-violation counts, confirmed the silence-deactivation pattern and grafana-dashboard datasource fix held up, and added a new finding (**I16**) documenting that `renovate-pr-review.yml` had been disabled since 2026-07-04 for unexpected Claude usage costs — which changes existing finding **I13**'s risk status from resolved to "not currently exercised, must be re-assessed before re-enabling." Committed as `90cfdc7`.
+- Investigated the disabled `renovate-pr-review.yml` workflow. Authenticated `gh` mid-session and pulled real run history (`gh run list`/`gh run view --json jobs`/`--log`) instead of reasoning from the YAML alone. This overturned the ROADMAP's leading hypothesis: the visually-obvious concurrency-cancel bursts (multiple runs at the same timestamp) cost nothing — they were killed before `Set up job` finished, or skipped by the `type/major|minor` label gate before reaching `claude-code-action`.
+- Found two real root causes instead: (1) the `synchronize` trigger caused the `renovate/major-kube-prometheus-stack` PR to be fully re-reviewed **7 times in under 5 hours** as Renovate rebased it repeatedly, with no dedup against whether the actual dependency version had changed; (2) the action's default logging prints `Claude Code initialized` and then goes **completely silent** until the process exits — confirmed identical on both a normal 3-minute successful run and the 16-minute run that immediately preceded the 2026-07-04 `gh workflow disable`, making it impossible to tell legitimate slow work from a stuck loop after the fact.
+- Fixed `.github/workflows/renovate-pr-review.yml`: dropped `synchronize` from the `pull_request` trigger types (kept `opened`/`reopened`/`labeled`, with a `workflow_dispatch` escape hatch for re-reviewing a PR that meaningfully changed), updated the concurrency-cancel comment to match, and added `show_full_output: true` to the `claude-code-action` step for full turn-by-turn tool-call tracing on future runs.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/REPO-AUDIT.md` | Seventh audit pass — updated resource-inventory deltas, validation results, gaps, best practices, cosign coverage, and recommendations (new **I16**); committed `90cfdc7` |
+| `.github/workflows/renovate-pr-review.yml` | Dropped `synchronize` trigger, updated concurrency comment, added `show_full_output: true` (uncommitted) |
+
+### Key decisions
+- Dropped `synchronize` entirely rather than building a real dedup check (e.g. comparing the diff's target version against the last posted `<!-- pr-upgrade-reviewer-report -->` comment) — simpler, at the cost of requiring a manual `workflow_dispatch` re-run if a rebase ever carries a genuine content change.
+- Root-caused from actual `gh run` timestamps/logs rather than the workflow YAML in isolation — the ROADMAP's original "concurrency duplication" hypothesis looked right from `gh run list`'s status column alone but was disproven by checking step-level timing.
+
+---
+
 ## 2026-07-10 — `adam-anna-unifi-dns-records`
 
 ### Goal

@@ -3,7 +3,13 @@ name: Auto-review Renovate PRs
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, labeled]
+    # synchronize deliberately excluded: Renovate rebases long-lived PRs repeatedly
+    # (e.g. 7 pushes to a single major-bump PR within 5 hours has been observed),
+    # and each push would otherwise re-run the full paid Claude review from scratch
+    # with no dedup against "did the actual dependency version change". A rebase
+    # alone doesn't need a fresh review; trigger one manually via workflow_dispatch
+    # if the PR content meaningfully changed.
+    types: [opened, reopened, labeled]
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -16,7 +22,8 @@ on:
         required: true
         type: number
 
-# Cancel any in-progress review for the same PR when a new commit or label arrives.
+# Cancel any in-progress review for the same PR if opened/reopened/labeled fires again
+# (e.g. the labeled-after-opened race below) before the first run finishes.
 concurrency:
   group: renovate-review-${{ github.event.pull_request.number || inputs.pr_number }}
   cancel-in-progress: true
@@ -89,6 +96,16 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           allowed_bots: 'renovate' # Or '*' to allow all bots
+          # Without this, the job log prints "Claude Code initialized" and then goes
+          # completely silent until the process exits — confirmed on both a normal
+          # 3-minute run and the 16-minute run that preceded this workflow's 2026-07-04
+          # disable. Same log either way, no way to tell legitimate slow work from a
+          # stuck loop. This trades that blind spot for a full turn-by-turn tool-call
+          # trace in the log. allowedTools below is read-only-ish (Read/WebFetch/
+          # WebSearch/Task + three narrow `gh pr` Bash subcommands), so the risk of
+          # this echoing a secret is low, but it's still worth knowing before grepping
+          # a log dump.
+          show_full_output: true
           # Task: required to delegate to the pr-upgrade-reviewer subagent (its own
           # disallowedTools denylist + pr-reviewer-bash-guard.sh hook are the security
           # boundary). WebFetch/WebSearch: the agent's core job is fetching upstream
