@@ -4,6 +4,32 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-12 — `firefly-fsgroup-fix-cnpg-backup-tasks`
+
+### Goal
+Fix Firefly III's silent attachment-upload failure (missing `fsGroup`) and add generalized `just cnpg dump`/`restore` tasks for point-in-time per-database backups.
+
+### What we did
+- Diagnosed a Firefly III bug: uploading an attachment showed a success toast, but viewing it afterward showed "This attachment could not be found." Root-caused (via live cluster inspection) to a missing `fsGroup`/`securityContext` on the `firefly-iii` app-template controller — the `ceph-block`-backed `upload` PVC stayed `root:root`-owned while the container ran as non-root `www-data` (uid/gid 33), so writes silently failed even though the DB attachment row was created. Confirmed with a direct `Permission denied` on a `touch` test as uid 33, an almost-empty PVC, and Firefly's own startup log warning about the non-writable upload directory.
+- Fixed by adding `defaultPodOptions.securityContext` (`runAsUser`/`runAsGroup`/`fsGroup: 33`, `fsGroupChangePolicy: OnRootMismatch`) to `kubernetes/apps/finance/firefly-iii/app/helmrelease.yaml`, mirroring the existing `pgadmin` pattern. Committed (`e00c651`) and pushed to `origin/main` by the user.
+- Follow-up: user asked how to take a complete, quickly-restorable point-in-time backup of Firefly III (accounts/config/attachments) before real usage begins. Investigated existing backup infra: `postgres-v17` is a shared 3-instance CNPG cluster with continuous WAL archiving (barman-cloud) — whole-cluster PITR, too heavy for a single-app checkpoint — while the `firefly-iii` attachments PVC is already covered by an hourly VolSync restic backup to NAS (added in `0cab9d6`). Recommended `pg_dump` over scaling the app down, since PostgreSQL's MVCC gives `pg_dump` a consistent snapshot without downtime.
+- Generalized that into two new `just` recipes in `ops/cnpg/mod.just`: `dump <db> [file]` (`pg_dump -Fc` a single database via `kubectl exec` into the CNPG primary, defaulting output to `~/cnpg-backups/<db>-<timestamp>.dump`) and `restore <db> <file>` (DESTRUCTIVE, `gum`-confirmed, `pg_restore --clean --if-exists` into an existing database only, terminating other backends first). Both resolve the live primary pod via the existing `cnpg.io/cluster=postgres-v17,role=primary` label selector rather than a hardcoded pod name.
+- While building those, spotted and fixed a related latent bug in the older `nfs-restore-from-backup` recipe: it hardcoded the primary pod name (`postgres-v17-1`) in three `kubectl exec` calls against the live cluster, which would silently target the wrong (non-primary) pod after a CNPG failover/switchover. Replaced all three with a `LIVE_POD` variable resolved via the same label selector `nfs-restore-drill` already used correctly.
+- Verified the new/edited recipes with `just cnpg` (recipe listing) and a `bash -n` syntax check extracted from each script block.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/finance/firefly-iii/app/helmrelease.yaml` | Added `defaultPodOptions.securityContext` (`fsGroup: 33`) so the `ceph-block` upload PVC is writable by non-root `www-data`; committed as `e00c651` |
+| `ops/cnpg/mod.just` | Added `dump`/`restore` recipes for per-database `pg_dump`/`pg_restore` backups; fixed `nfs-restore-from-backup` to resolve the live primary pod via label selector instead of hardcoded `postgres-v17-1` (uncommitted) |
+
+### Key decisions
+- Chose `pg_dump`/`pg_restore` over CNPG's whole-cluster barman PITR for the new backup recipes — `postgres-v17` is shared across apps, so a cluster-wide restore would affect every database, not just the one being rolled back.
+- Defaulted `dump` output to `~/cnpg-backups/` (outside the repo) rather than a repo-local directory, to avoid any risk of a binary dump landing in Git.
+- Resolved the CNPG primary pod dynamically via the `cnpg.io/cluster=postgres-v17,role=primary` label in both new recipes and the fixed `nfs-restore-from-backup` recipe, rather than hardcoding `postgres-v17-1`, since the operator can move the primary role during failover/switchover.
+
+---
+
 ## 2026-07-12 — `alertmanager-ha-replicas`
 
 ### Goal

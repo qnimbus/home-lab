@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-07-12 | `firefly-fsgroup-fix-cnpg-backup-tasks` | Fixed Firefly III attachment uploads via fsGroup on ceph-block PVC; added `just cnpg dump`/`restore` tasks, fixed hardcoded pod name in nfs-restore-from-backup |
 > | 2026-07-12 | `alertmanager-ha-replicas` | Root-caused Alertmanager's "Cluster Status: disabled" to single-replica gossip omission; moved to replicas:3 + podAntiAffinity:soft |
 > | 2026-07-11 | `firefly-iii-deployment` | Deployed Firefly III + Data Importer via CNPG Database/role CRDs, ceph-block PVC, internal HTTPRoute; consolidated to one 1Password item |
 > | 2026-07-11 | `repo-audit-and-pr-review-fix` | Ran 7th gitops audit pass; root-caused pr-review Action's cost & silent-log issues via gh run history, fixed both |
@@ -11,7 +12,6 @@
 > | 2026-07-10 | `blackbox-exporter-nfs-probes` | Deployed blackbox-exporter with NAS/CNPG Probes for KEDA nfs-scaler; moved NAS_HOST/PG_HOST to cluster-secrets |
 > | 2026-07-10 | `homepage-truenas-sitemonitor-fix` | Traced homepage httpProxy errors to TrueNAS https->http downgrade redirect via Envoy; repointed siteMonitor at in-cluster Service DNS |
 > | 2026-07-09 | `bykaj-patterns-keda-deploy` | Researched bykaj's DRA/KEDA patterns, wrote adoption plans for both, deployed KEDA operator (v2.20.1, operator-only) |
-> | 2026-07-09 | `ceph-diskspace-alert-tuning` | Traced CephNodeDiskspaceWarning noise to reboot-starved predict_linear; added rule override, reverted 10s scrape diag |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
