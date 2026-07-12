@@ -10,6 +10,13 @@ crds:
 
 alertmanager:
   alertmanagerSpec:
+    # 3 replicas so a single control-plane node loss doesn't drop alert delivery. Alertmanager's
+    # gossip protocol (port 9094) syncs silences/notification state and dedupes across replicas.
+    replicas: 3
+    # "soft" (preferredDuringScheduling) spreads replicas across nodes by hostname without
+    # blocking scheduling if a CP node is down/cordoned — "hard" would guarantee spread but could
+    # leave a replica Pending during single-node maintenance on this 3-node, no-worker cluster.
+    podAntiAffinity: soft
     # Replaces the chart's inline `config:` (which only has a 'null' receiver) with our own
     # AlertmanagerConfig as the literal root config — not a discovered sub-route. This sidesteps
     # alertmanagerConfigSelector's default OnNamespace matcher strategy entirely (which would

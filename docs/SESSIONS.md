@@ -4,6 +4,29 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-12 — `alertmanager-ha-replicas`
+
+### Goal
+Diagnose why Alertmanager's Status page showed "Cluster Status: disabled" and, on request, move Alertmanager to a genuinely fault-tolerant 3-replica deployment.
+
+### What we did
+- Root-caused the "Cluster Status: disabled" banner: confirmed via `kubectl` that the `alertmanager-kube-prometheus-stack-alertmanager` StatefulSet ran a single replica (chart default, unset in `values.yaml`), and that the Prometheus Operator omits Alertmanager's gossip `--cluster.listen-address` flag whenever `replicas <= 1` — expected behavior, not a misconfiguration. Clarified that "Cluster Status" refers to Alertmanager's own memberlist/gossip HA layer, unrelated to the Kubernetes cluster.
+- Analysed the true cost of `replicas: 3` before changing anything: read the live pod's resource requests (`200Mi` memory, no CPU request, no limits), computed the storage cost accounting for `ceph-block`'s `size=3` replication (3 PVCs × 1Gi × 3x Ceph replication = 9Gi raw vs 3Gi today), and checked headroom via `kubectl top nodes` and `CephCluster` status (~9.27 TiB free) — concluded compute/storage/network cost is negligible.
+- Identified the real gap: `alertmanagerSpec.podAntiAffinity` was unset (chart default `""`, i.e. disabled), so `replicas: 3` alone would not guarantee node-spread — verified this by checking the live `alertmanagers.monitoring.coreos.com` CRD schema (only a generic `affinity` field exists on the CRD; `podAntiAffinity`/`podAntiAffinityTopologyKey` are chart-level convenience values that expand into the affinity block at render time).
+- Implemented `replicas: 3` + `podAntiAffinity: soft` together in `values.yaml`, choosing `soft` (`preferredDuringScheduling`) over `hard` because this is a 3-node, no-dedicated-worker cluster where a `hard` constraint could leave a replica `Pending` during single-node CP maintenance.
+- Change is uncommitted, pending `/git-stage` + `/git-commit` per repo convention (never committed autonomously).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/observability/kube-prometheus-stack/app/helm/values.yaml` | Added `alertmanager.alertmanagerSpec.replicas: 3` and `podAntiAffinity: soft` |
+
+### Key decisions
+- Chose `podAntiAffinity: soft` over `hard` — `hard` guarantees per-node spread but risks a `Pending` replica during single-CP-node maintenance on a 3-node, no-worker cluster; `soft` gets the same steady-state spread without that availability risk.
+- Verified the chart's `podAntiAffinity` values-key against the live CRD schema rather than assuming from memory, since the CRD only exposes a generic `affinity` field — the chart template expands the convenience key at render time.
+
+---
+
 ## 2026-07-11 — `firefly-iii-deployment`
 
 ### Goal
