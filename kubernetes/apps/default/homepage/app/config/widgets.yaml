@@ -4,7 +4,7 @@
     key: {{HOMEPAGE_VAR_UNIFI_API_KEY}} # required if using API key instead of username/password
 - kubernetes:
     cluster:
-      show: true
+      show: false
       cpu: true
       memory: true
       showLabel: true
