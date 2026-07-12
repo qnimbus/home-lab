@@ -6,6 +6,11 @@ metadata:
   name: subnet-router
 spec:
   hostname: k8s-subnet-router
+  # Advertise as an exit node so tailnet clients can route all traffic
+  # through this cluster. Advertising alone isn't enough — exit nodes must
+  # also be approved per-device in the Tailscale admin console (or via an
+  # autoApprovers ACL rule) before clients can select them.
+  exitNode: true
   subnetRouter:
     advertiseRoutes:
       # Advertise the /23 supernet, not the /24 LAN, to avoid hijacking LAN
@@ -20,4 +25,5 @@ spec:
       #      https://github.com/tailscale/tailscale/issues/6231
       #      https://github.com/tailscale/tailscale/issues/7947
       #      https://tailscale.com/docs/reference/troubleshooting/network-configuration/lan-traffic-overlapping-subnets
+      - "10.10.0.0/23"
       - "10.60.0.0/23"
