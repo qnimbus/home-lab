@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-07-14 | `external-secrets-1password-inventory` | Built docs/EXTERNAL-SECRETS.yaml cataloging all 18 1Password items (ESO + bootstrap-tier) with consumers and field imports; confirmed no secret values exposed |
 > | 2026-07-12 | `firefly-fsgroup-fix-cnpg-backup-tasks` | Fixed Firefly III attachment uploads via fsGroup on ceph-block PVC; added `just cnpg dump`/`restore` tasks, fixed hardcoded pod name in nfs-restore-from-backup |
 > | 2026-07-12 | `alertmanager-ha-replicas` | Root-caused Alertmanager's "Cluster Status: disabled" to single-replica gossip omission; moved to replicas:3 + podAntiAffinity:soft |
 > | 2026-07-11 | `firefly-iii-deployment` | Deployed Firefly III + Data Importer via CNPG Database/role CRDs, ceph-block PVC, internal HTTPRoute; consolidated to one 1Password item |
@@ -11,7 +12,6 @@
 > | 2026-07-10 | `adam-anna-unifi-dns-records` | Added UniFi DNS records for Plugwise Adam/Anna via Service+external-dns; found crd-source cross-publishing risk, reverted; fixed ClusterIP waste with ExternalName |
 > | 2026-07-10 | `blackbox-exporter-nfs-probes` | Deployed blackbox-exporter with NAS/CNPG Probes for KEDA nfs-scaler; moved NAS_HOST/PG_HOST to cluster-secrets |
 > | 2026-07-10 | `homepage-truenas-sitemonitor-fix` | Traced homepage httpProxy errors to TrueNAS https->http downgrade redirect via Envoy; repointed siteMonitor at in-cluster Service DNS |
-> | 2026-07-09 | `bykaj-patterns-keda-deploy` | Researched bykaj's DRA/KEDA patterns, wrote adoption plans for both, deployed KEDA operator (v2.20.1, operator-only) |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
@@ -24,6 +24,8 @@ This repository provisions and manages a bare-metal Talos Linux Kubernetes clust
 > For a periodic audit of Flux configuration quality, manifest validation, security posture, and open recommendations, see [REPO-AUDIT.md](docs/REPO-AUDIT.md). Re-run `gitops-repo-audit` skill after significant changes to refresh findings.
 >
 > For a per-component failure-mode/disaster-recovery catalog (FMEA: blast radius, detection, mitigation, recovery, tested status), see [RESILIENCE-AUDIT.md](docs/RESILIENCE-AUDIT.md). Run `/resilience-audit <component>` to audit a new component or refresh an existing one.
+>
+> For a living inventory of every 1Password vault item this repo depends on (ExternalSecret consumers, wildcard vs. explicit field imports, bootstrap-time `op read` calls), see [EXTERNAL-SECRETS.yaml](docs/EXTERNAL-SECRETS.yaml). Re-derive it after adding/removing an ExternalSecret using the grep commands documented at the bottom of that file.
 > Keep `docs/CLUSTER.md` up to date as the cluster evolves: when adding new components, changing core infrastructure (CNI, DNS, storage, secrets strategy), or completing major bootstrap phases, update the relevant section. Keep entries concise and high-level — implementation details belong in code or `CLAUDE.md`.
 >
 > For pending and in-progress work items, see [ROADMAP.md](docs/ROADMAP.md). Update it when tasks are started, completed, or reprioritized.

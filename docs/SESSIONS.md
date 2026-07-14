@@ -4,6 +4,35 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-14 — `external-secrets-1password-inventory`
+
+### Goal
+Build a living inventory of every 1Password vault item this repo depends on, tracking which fields are pulled via wildcard vs. explicit import, and assess whether committing it to a (currently private) public-ish GitOps repo would leak anything sensitive.
+
+### What we did
+- Enumerated every `ExternalSecret` manifest in the repo (`grep -rl "kind: ExternalSecret" kubernetes/`, 20 files) plus the single `ClusterSecretStore` (`onepassword`, vault `homelab`), and read each one to extract: consumer name/namespace, `dataFrom.extract` wildcard imports vs. `data[].remoteRef` explicit field picks, `rewrite` regexps, and which fields are actually consumed in `target.template`.
+- Found a second, independent secrets mechanism outside ESO: bootstrap-time `op read` calls in `ops/bootstrap/mod.just`'s `resources` recipe, which seed `sops-age`, `onepassword-connect-secrets`, and `flux-github-app` before ESO itself exists (chicken-and-egg — ESO needs its own 1Password Connect credentials before it can reconcile anything). Noted `ops/bootstrap/resources.yaml.j2` is a superseded/unused declarative draft of the same secrets (not invoked by any task).
+- Cross-referenced each `ExternalSecret`'s real `targetNamespace` from its owning `ks.yaml` rather than assuming from directory convention — caught that `firefly-iii`'s `app` Kustomization targets `finance` while its `db` Kustomization targets `database`.
+- Confirmed the `GitHub App` 1Password item is used by both mechanisms: seeded once at bootstrap, then continuously reconciled by the `flux-github-app` `ExternalSecret` once ESO is running.
+- Verified the shared `components/volsync` Kustomize component (backing the `volsync-restic` item) is consumed by three apps (`waha`, `pgadmin`, `firefly-iii`) via `postBuild.substitute.APP`, each producing its own `<app>-volsync` Secret instance.
+- Wrote `docs/EXTERNAL-SECRETS.yaml`: 18 distinct 1Password items, each with mechanism (`boot`/`eso`/`boot+eso`), import mode, known/raw field names, and every consumer manifest path — plus a "How to keep this up to date" section documenting the exact grep/`op` commands to re-derive it. Validated the file parses with `python3 -c "import yaml; yaml.safe_load(...)"`.
+- Called `advisor()` for a review pass: confirmed field-extraction accuracy across all wildcard items (rewrite regexp + template consumption reverse-mapped correctly) and full file coverage; flagged that the `known_fields` description didn't match its contents (listed raw 1Password source names, not template-consumed names) — fixed the header comment to clarify these are inferred via rewrite, not verified against the live vault. Also flagged one loose end (`cluster-secrets`/`substituteFrom` in `kubernetes/flux/cluster/ks.yaml`) to confirm wasn't a hidden 1Password path — verified via grep it's a plain SOPS-encrypted file (`cluster-secrets.sops.yaml`), out of scope.
+- Added a one-line pointer to the new doc in `CLAUDE.md`'s doc index, following the existing convention for `QA.md`/`CLUSTER.md`/etc.
+- User asked whether committing this to a (public) GitOps repo would expose sensitive information. Confirmed via `gh repo view` the repo is currently **private**. Grepped the new file for secret-shaped content (PEM headers, long base64/hex, token prefixes) — none found; it contains only item names, field *labels* (not values), the vault name, namespaces, and manifest paths, all of which are already present in plaintext in the existing `ExternalSecret` manifests. Flagged the one real (minor) consideration: the doc aggregates `HomeLab Access Token`/`HomeLab Credentials File` as the items that seed 1Password Connect's own vault access, making that pair easier to spot than before — an OpSec/aggregation tradeoff, not a credential leak, since SOPS encryption and 1Password vault ACLs are the actual controls and neither is weakened.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/EXTERNAL-SECRETS.yaml` | New — living inventory of all 18 1Password vault items referenced by the repo (ESO + bootstrap-tier), with consumers, import mode, and a re-derivation runbook (uncommitted) |
+| `CLAUDE.md` | Added doc-index pointer to `EXTERNAL-SECRETS.yaml` (uncommitted) |
+
+### Key decisions
+- Structured the inventory as YAML (not Markdown) since it's fundamentally per-item structured data (mechanism, import mode, fields, consumers) that benefits from being diffable and greppable; used extensive header/footer comments for the human-facing methodology instead of a separate doc.
+- Documented `known_fields` as inferred (from rewrite regexps + template usage) rather than verified against the live vault, and said so explicitly in the file — avoids the doc silently going stale if 1Password item fields are renamed without a corresponding manifest change.
+- Left the repo's actual visibility/exposure decision to the user — this session only assessed and reported risk, since making the repo public isn't a decision Claude should make unilaterally.
+
+---
+
 ## 2026-07-12 — `firefly-fsgroup-fix-cnpg-backup-tasks`
 
 ### Goal
