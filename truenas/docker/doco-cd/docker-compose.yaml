@@ -9,7 +9,9 @@ services:
     cap_drop:
       - ALL
     environment:
-      HTTP_PORT: 8080
+      # 18080, not the 8080 default: avoids colliding with other self-hosted
+      # apps' common default port on this host.
+      HTTP_PORT: 18080
       LOG_LEVEL: info
       TZ: Europe/Amsterdam
       # Read-only deploy key placed manually on the host filesystem — see
@@ -22,6 +24,11 @@ services:
           reference: refs/heads/main
           interval: 500
           target: truenas
+    ports:
+      # Bound to the management LAN IP only (10.10.0.41 = NAS_LAN_HOST), not
+      # 0.0.0.0 — keeps the health/API listener off the storage VLAN
+      # (10.200.0.0/24) entirely, not just unreachable from the internet.
+      - "10.10.0.41:18080:18080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - data:/data

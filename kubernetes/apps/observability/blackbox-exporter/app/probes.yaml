@@ -67,3 +67,24 @@ spec:
     staticConfig:
       static:
         - "${PG_HOST}:5432"
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: doco-cd
+spec:
+  # http_2xx, not tcp_connect: doco-cd exposes a real health endpoint (the same
+  # one its own Docker healthcheck uses) — this catches a wedged-but-listening
+  # process that a bare TCP handshake would miss.
+  # ${NAS_LAN_HOST}, not ${NAS_HOST}: doco-cd's listener is bound to the
+  # management LAN interface only (see truenas/docker/doco-cd/docker-compose.yaml),
+  # not published on the storage VLAN.
+  module: http_2xx
+  interval: 30s
+  prober:
+    url: blackbox-exporter.observability.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      static:
+        - "http://${NAS_LAN_HOST}:18080/v1/health"
