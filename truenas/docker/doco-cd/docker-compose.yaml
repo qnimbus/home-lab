@@ -1,0 +1,37 @@
+---
+services:
+  app:
+    container_name: doco-cd
+    image: ghcr.io/kimdre/doco-cd:${DOCO_CD_VERSION}
+    restart: unless-stopped
+    # Only talks to the Docker API over the bind-mounted socket; the daemon (not
+    # this container) performs privileged operations, so it needs no capabilities.
+    cap_drop:
+      - ALL
+    environment:
+      HTTP_PORT: 8080
+      LOG_LEVEL: info
+      TZ: Europe/Amsterdam
+      # Read-only deploy key placed manually on the host filesystem — see
+      # truenas/README.md for the bootstrap step. Never committed to git.
+      SSH_PRIVATE_KEY_FILE: /run/secrets/id_ed25519
+      # No WEBHOOK_SECRET/API_SECRET: this stack uses polling only (below) and
+      # the REST API is unused — both endpoints stay disabled by omission.
+      POLL_CONFIG: |
+        - url: git@github.com:qnimbus/home-lab.git
+          reference: refs/heads/main
+          interval: 500
+          target: truenas
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - data:/data
+      # Deploy key bind-mounted read-only from the host — see truenas/README.md.
+      - /mnt/tank/Tools/doco-cd/.ssh/id_ed25519:/run/secrets/id_ed25519:ro
+    healthcheck:
+      test: ["CMD", "/doco-cd", "healthcheck"]
+      interval: 30s
+      retries: 3
+      start_period: 15s
+      timeout: 5s
+volumes:
+  data: {}

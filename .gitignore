@@ -16,6 +16,9 @@ tmp/
 kubeconfig
 age.key
 .env
+# Exception: these hold only Renovate-tracked image version pins, no secrets —
+# doco-cd needs them present on TrueNAS after cloning (see truenas/README.md).
+!truenas/docker/*/.env
 .mcp.json
 known_hosts
 flux-deploy-key*

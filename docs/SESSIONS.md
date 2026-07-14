@@ -4,6 +4,45 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-14 — `doco-cd-truenas-compose-gitops`
+
+### Goal
+Add doco-cd (a lightweight Docker Compose GitOps agent) to manage `node-exporter` and `smartctl-exporter` on TrueNAS, entirely outside the Flux/Kubernetes tree, with their metrics wired into the existing Prometheus stack.
+
+### What we did
+- Explored `tmp/home-ops-bykaj/`'s reference implementation (`.doco-cd.truenas.yaml`, `docker/truenas/`) in parallel with this repo's existing conventions (app-directory layout, SOPS rules, ExternalSecret pattern, YAML comment style) via two Explore agents.
+- Researched doco-cd's actual configuration surface directly from `doco.cd` docs (GitHub wiki is deprecated) since the bykaj reference left several gaps: confirmed `POLL_CONFIG`/`SSH_PRIVATE_KEY_FILE`/`WEBHOOK_SECRET` env vars, the `.doco-cd.<target>.yaml` discovery convention (`target: truenas` → loads `.doco-cd.truenas.yaml`), and the full per-app deployment config schema (`working_dir`, `reference`, `compose_files`, etc.).
+- Used `AskUserQuestion` to settle four design decisions before planning: bootstrap doco-cd manually via SSH once (chicken-and-egg, unavoidable); authenticate to GitHub via a dedicated read-only SSH deploy key rather than a PAT or 1Password Connect (which can't reach a bare-metal host); trigger via polling, not webhooks (no inbound port, matches Flux's own pull model); manage `node-exporter` + `smartctl-exporter` to start, mirroring bykaj.
+- Ran a Plan agent to turn this into a concrete design, then personally verified its key technical claims against the live repo before trusting them: confirmed `prometheus.prometheusSpec.scrapeConfigSelectorNilUsesHelmValues: false` is already set (so a new `ScrapeConfig` needs no extra selector wiring), confirmed the `ScrapeConfig` CRD is already installed via `kube-prometheus-stack-crds` in `ops/bootstrap/helmfile.d/00-crds.yaml`, and confirmed the `${NAS_HOST}` substitution pattern via `blackbox-exporter/app/probes.yaml`.
+- Caught and fixed a real bug in the sub-agent's proposed Renovate annotation placement: this repo's shared custom regex manager (`renovate.json5`) only correctly extracts a version from a line where the annotated value is a **bare** string (verified against every existing usage — `talenv.yaml`, `talosupgrade.yaml`, every Helm chart's `tag:` field) — it cannot isolate a tag out of a combined `image: repo:tag` line, since Docker Compose has no split `repository:`/`tag:` field like Helm. Fixed by giving each compose stack a sibling `.env` file (`DOCO_CD_VERSION=0.94.0` etc.) referenced via `${VAR}` in the compose file, matching the bare-value-line pattern Renovate already parses correctly elsewhere.
+- Implemented: root-level `.doco-cd.truenas.yaml`; new top-level `truenas/` directory (`README.md` + `docker/{doco-cd,node-exporter,smartctl-exporter}/{docker-compose.yaml,.env}`), placed there rather than bykaj's flat `docker/truenas/` to match this repo's existing domain-grouped top-level layout; two `ScrapeConfig` objects in `kubernetes/apps/observability/kube-prometheus-stack/app/scrapeconfig-truenas.yaml`, added to that Kustomization's `resources:`; documentation additions to `CLAUDE.md` (repository layout tree) and `docs/CLUSTER.md` (new "Non-Kubernetes Infrastructure" section).
+- Validated everything: all three compose files render correctly via `docker compose config` (had to first install `docker-compose` — Debian trixie's repos don't carry `docker-compose-plugin`, that's Docker Inc.'s own apt repo, so installed the Debian-native `docker-compose` package instead, which provides both `docker compose` and `docker-compose` invocations); confirmed `.doco-cd.truenas.yaml` and the new Kubernetes manifests parse as valid YAML; built the `kube-prometheus-stack` Kustomization with the mise-installed `kustomize` binary directly (mise's `eval`-based shell activation was blocked by the session's shell-injection guard) and confirmed both `ScrapeConfig` objects render correctly namespaced.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.doco-cd.truenas.yaml` | New — doco-cd deployment manifest listing the two managed stacks (repo root, required by doco-cd's discovery rules) |
+| `truenas/README.md` | New — overview, bootstrap runbook, and note distinguishing this from the in-cluster `smartctl-exporter` DaemonSet |
+| `truenas/docker/doco-cd/docker-compose.yaml` | New — the doco-cd agent itself (polling mode, SSH deploy key auth) |
+| `truenas/docker/doco-cd/.env` | New — `DOCO_CD_VERSION`, Renovate-tracked |
+| `truenas/docker/node-exporter/docker-compose.yaml` | New — host metrics exporter, host network mode |
+| `truenas/docker/node-exporter/.env` | New — `NODE_EXPORTER_VERSION`, Renovate-tracked |
+| `truenas/docker/smartctl-exporter/docker-compose.yaml` | New — disk SMART health exporter, privileged |
+| `truenas/docker/smartctl-exporter/.env` | New — `SMARTCTL_EXPORTER_VERSION`, Renovate-tracked |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/scrapeconfig-truenas.yaml` | New — two `ScrapeConfig` objects scraping the TrueNAS `node-exporter`/`smartctl-exporter` endpoints |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/kustomization.yaml` | Added `scrapeconfig-truenas.yaml` to `resources:` |
+| `CLAUDE.md` | Added `truenas/` entry to the Repository Layout tree |
+| `docs/CLUSTER.md` | Added "Non-Kubernetes Infrastructure — TrueNAS Docker Compose (doco-cd)" section |
+
+### Key decisions
+- Root-level `.doco-cd.truenas.yaml` is forced by doco-cd's own discovery rules, but the compose stacks themselves live under a new top-level `truenas/` directory (not bykaj's flat `docker/truenas/`) to match this repo's existing domain-grouped layout (`kubernetes/`, `talos/`, `ops/`).
+- Polling over webhooks: no inbound port needs to be exposed from TrueNAS and no GitHub webhook to register/maintain, consistent with Flux's own pull-based reconciliation elsewhere in this repo.
+- SSH deploy key (read-only, repo-scoped) over a PAT or 1Password Connect: 1Password Connect only reaches in-cluster `ExternalSecret`s, not a bare-metal Docker host, so the secret path here is deliberately manual and outside the cluster's normal secrets pipeline.
+- `ScrapeConfig` CRD chosen over a raw `additionalScrapeConfigs` Secret: the selector is already open (`scrapeConfigSelectorNilUsesHelmValues: false`), so it's zero extra plumbing and stays GitOps-diffable, unlike a literal `prometheus.yml` snippet in a Secret.
+- doco-cd is intentionally omitted from `.doco-cd.truenas.yaml` — it doesn't manage its own redeploy, avoiding a self-referential restart loop (matches the upstream reference pattern).
+
+---
+
 ## 2026-07-14 — `external-secrets-1password-inventory`
 
 ### Goal

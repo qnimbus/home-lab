@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-07-14 | `doco-cd-truenas-compose-gitops` | Added doco-cd to GitOps-manage node-exporter/smartctl-exporter on TrueNAS outside Flux; wired Prometheus ScrapeConfig, fixed Renovate tag-pinning gap |
 > | 2026-07-14 | `external-secrets-1password-inventory` | Built docs/EXTERNAL-SECRETS.yaml cataloging all 18 1Password items (ESO + bootstrap-tier) with consumers and field imports; confirmed no secret values exposed |
 > | 2026-07-12 | `firefly-fsgroup-fix-cnpg-backup-tasks` | Fixed Firefly III attachment uploads via fsGroup on ceph-block PVC; added `just cnpg dump`/`restore` tasks, fixed hardcoded pod name in nfs-restore-from-backup |
 > | 2026-07-12 | `alertmanager-ha-replicas` | Root-caused Alertmanager's "Cluster Status: disabled" to single-replica gossip omission; moved to replicas:3 + podAntiAffinity:soft |
@@ -11,7 +12,6 @@
 > | 2026-07-11 | `repo-audit-and-pr-review-fix` | Ran 7th gitops audit pass; root-caused pr-review Action's cost & silent-log issues via gh run history, fixed both |
 > | 2026-07-10 | `adam-anna-unifi-dns-records` | Added UniFi DNS records for Plugwise Adam/Anna via Service+external-dns; found crd-source cross-publishing risk, reverted; fixed ClusterIP waste with ExternalName |
 > | 2026-07-10 | `blackbox-exporter-nfs-probes` | Deployed blackbox-exporter with NAS/CNPG Probes for KEDA nfs-scaler; moved NAS_HOST/PG_HOST to cluster-secrets |
-> | 2026-07-10 | `homepage-truenas-sitemonitor-fix` | Traced homepage httpProxy errors to TrueNAS https->http downgrade redirect via Envoy; repointed siteMonitor at in-cluster Service DNS |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
@@ -65,6 +65,8 @@ This repository provisions and manages a bare-metal Talos Linux Kubernetes clust
 │   ├── flux/             # Flux system config, GitRepository, Kustomizations
 │   │   └── meta/repos/   # HelmRepository, OCIRepository, GitRepository sources
 │   └── apps/             # Application deployments — see GitOps Conventions for layout
+├── 📁 truenas/           # Docker Compose stacks run on TrueNAS via doco-cd — NOT Flux-managed, see truenas/README.md
+│   └── docker/           # One subdir per compose stack; listed in .doco-cd.truenas.yaml (repo root)
 └── 📁 assets/            # Downloaded ISOs (gitignored)
 ```
 

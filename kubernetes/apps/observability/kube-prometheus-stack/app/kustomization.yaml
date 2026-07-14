@@ -52,3 +52,4 @@ resources:
   - ./externalsecret.yaml
   - ./alertmanagerconfig.yaml
   - ./prometheusrules
+  - ./scrapeconfig-truenas.yaml

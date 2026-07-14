@@ -1,0 +1,18 @@
+---
+services:
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:${NODE_EXPORTER_VERSION}
+    restart: always
+    network_mode: host
+    command:
+      - "--path.rootfs=/host/root"
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.udev.data=/host/root/run/udev/data"
+      - "--web.listen-address=0.0.0.0:9100"
+      - >-
+        --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - /:/host/root:ro
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro

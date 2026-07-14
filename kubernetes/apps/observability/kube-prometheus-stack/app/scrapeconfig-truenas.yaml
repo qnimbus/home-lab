@@ -1,0 +1,36 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/scrapeconfig_v1alpha1.json
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: ScrapeConfig
+metadata:
+  name: truenas-node-exporter
+  namespace: observability
+spec:
+  # No selector/label wiring needed: prometheus.prometheusSpec.scrapeConfigSelectorNilUsesHelmValues
+  # is already false (helm/values.yaml) — Prometheus watches every ScrapeConfig cluster-wide.
+  staticConfigs:
+    - targets:
+        - "${NAS_LAN_HOST}:9100"
+      labels:
+        # Distinct from the in-cluster smartctl/node-exporter DaemonSets' own job
+        # names — this target is the standalone TrueNAS host, not a Talos node.
+        job: truenas-node-exporter
+        instance: truenas
+  scrapeInterval: 30s
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/scrapeconfig_v1alpha1.json
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: ScrapeConfig
+metadata:
+  name: truenas-smartctl-exporter
+  namespace: observability
+spec:
+  staticConfigs:
+    - targets:
+        - "${NAS_LAN_HOST}:9633"
+      labels:
+        job: truenas-smartctl-exporter
+        instance: truenas
+  # SMART scans are slow — matches the in-cluster smartctl-exporter's own scrape timeout.
+  scrapeInterval: 60s
+  scrapeTimeout: 30s

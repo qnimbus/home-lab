@@ -1216,6 +1216,25 @@ flowchart TD
 
 ---
 
+## Non-Kubernetes Infrastructure — TrueNAS Docker Compose (doco-cd)
+
+**Outside the Flux tree.** TrueNAS (`${NAS_HOST}` / `${NAS_LAN_HOST}`) is a bare-metal box Flux cannot reach — everything above this section is Kubernetes; this section is not. Docker Compose workloads on TrueNAS are GitOps-managed instead by [doco-cd](https://github.com/kimdre/doco-cd), a small agent that runs on TrueNAS itself, polls this repo (`git@github.com:qnimbus/home-lab.git`, `target: truenas`, 180s interval) via a dedicated read-only SSH deploy key, and runs `docker compose up -d` against every `working_dir` listed in `.doco-cd.truenas.yaml` (repo root).
+
+Polling was chosen over webhooks: no inbound port needs to be exposed from TrueNAS, no GitHub webhook to register/maintain — consistent with Flux's own pull-based reconciliation model elsewhere in this repo. Auth is a repo-scoped SSH deploy key rather than 1Password Connect, which only reaches in-cluster `ExternalSecret`s, not a bare-metal Docker host — the private key is placed on the TrueNAS filesystem manually and never committed to git.
+
+Managed stacks (source: `truenas/docker/`):
+
+| Stack | Image | Purpose |
+|-------|-------|---------|
+| `node-exporter` | `quay.io/prometheus/node-exporter` | Host metrics for the TrueNAS box, scraped by `kube-prometheus-stack` |
+| `smartctl-exporter` | `quay.io/prometheuscommunity/smartctl-exporter` | Disk SMART health, scraped by `kube-prometheus-stack` |
+
+`doco-cd` itself is bootstrapped once, manually (chicken-and-egg — it can't deploy itself from git) and is not listed in `.doco-cd.truenas.yaml`. Both metrics endpoints are pulled into Prometheus via `ScrapeConfig` objects in `kubernetes/apps/observability/kube-prometheus-stack/app/scrapeconfig-truenas.yaml` — the only part of this feature that *is* Flux-managed.
+
+Full bootstrap runbook, directory layout, and the note distinguishing this from the existing in-cluster `smartctl-exporter` DaemonSet: see **[truenas/README.md](../truenas/README.md)**.
+
+---
+
 ## GitOps Repository Audit
 
 For a periodic audit of the repository's Flux configuration quality, schema validation results, security posture, and open recommendations, see **[REPO-AUDIT.md](REPO-AUDIT.md)**.
