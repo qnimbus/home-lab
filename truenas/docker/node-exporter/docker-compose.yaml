@@ -10,6 +10,7 @@ services:
       - "--path.sysfs=/host/sys"
       - "--path.udev.data=/host/root/run/udev/data"
       - "--web.listen-address=0.0.0.0:9100"
+      - "--no-collector.hwmon"
       - >-
         --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
     volumes:
