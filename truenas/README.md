@@ -16,10 +16,13 @@ no manual `docker compose up -d` needed after the initial bootstrap below.
 
 ## Layout
 
+`node-exporter/` is a two-service stack, not one — see below.
+
 ```
 truenas/docker/
 ├── doco-cd/            # the agent itself — NOT listed in .doco-cd.truenas.yaml (doesn't manage its own redeploy)
 ├── node-exporter/       # host metrics, scraped by kube-prometheus-stack
+│   └── sensors-textfile/ # sidecar: hwmon temps/fans via textfile collector (--collector.hwmon is permanently disabled — see docker-compose.yaml)
 └── smartctl-exporter/   # disk SMART health, scraped by kube-prometheus-stack
 ```
 

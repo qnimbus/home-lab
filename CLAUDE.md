@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-07-17 | `node-exporter-hwmon-crash-fix` | Root-caused node-exporter TrueNAS crash to hwmon panic; added textfile-collector sidecar for sensors |
 > | 2026-07-14 | `doco-cd-truenas-compose-gitops` | Added doco-cd to GitOps-manage node-exporter/smartctl-exporter on TrueNAS outside Flux; wired Prometheus ScrapeConfig, fixed Renovate tag-pinning gap |
 > | 2026-07-14 | `external-secrets-1password-inventory` | Built docs/EXTERNAL-SECRETS.yaml cataloging all 18 1Password items (ESO + bootstrap-tier) with consumers and field imports; confirmed no secret values exposed |
 > | 2026-07-12 | `firefly-fsgroup-fix-cnpg-backup-tasks` | Fixed Firefly III attachment uploads via fsGroup on ceph-block PVC; added `just cnpg dump`/`restore` tasks, fixed hardcoded pod name in nfs-restore-from-backup |
@@ -11,7 +12,6 @@
 > | 2026-07-11 | `firefly-iii-deployment` | Deployed Firefly III + Data Importer via CNPG Database/role CRDs, ceph-block PVC, internal HTTPRoute; consolidated to one 1Password item |
 > | 2026-07-11 | `repo-audit-and-pr-review-fix` | Ran 7th gitops audit pass; root-caused pr-review Action's cost & silent-log issues via gh run history, fixed both |
 > | 2026-07-10 | `adam-anna-unifi-dns-records` | Added UniFi DNS records for Plugwise Adam/Anna via Service+external-dns; found crd-source cross-publishing risk, reverted; fixed ClusterIP waste with ExternalName |
-> | 2026-07-10 | `blackbox-exporter-nfs-probes` | Deployed blackbox-exporter with NAS/CNPG Probes for KEDA nfs-scaler; moved NAS_HOST/PG_HOST to cluster-secrets |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 

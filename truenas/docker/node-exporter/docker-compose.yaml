@@ -10,10 +10,47 @@ services:
       - "--path.sysfs=/host/sys"
       - "--path.udev.data=/host/root/run/udev/data"
       - "--web.listen-address=0.0.0.0:9100"
+      # Permanent mitigation, not a temporary workaround — the hwmon
+      # collector's udev/sysfs sensor-enumeration path panics client_golang's
+      # registry aggregation on every scrape (nil pointer deref in
+      # prometheus.processMetric), taking down ALL node_exporter metrics, not
+      # just hwmon's. Confirmed via container logs; fixed by this flag.
+      # Sensor data is reintroduced out-of-process by the sensors-textfile
+      # sidecar below, which emits node_hwmon_* metrics itself — never remove
+      # this flag while that sidecar runs, or the two producers of the same
+      # metric names/label sets will collide and break the scrape.
       - "--no-collector.hwmon"
+      - "--collector.textfile.directory=/textfile"
       - >-
         --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
     volumes:
       - /:/host/root:ro
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
+      - textfile:/textfile:ro
+
+  # Replacement data source for the disabled hwmon collector above — see that
+  # flag's comment. Writes node_hwmon_* text-exposition output that
+  # node-exporter's textfile collector reads and folds into its own
+  # /metrics, so no separate Prometheus ScrapeConfig is needed for this data.
+  sensors-textfile:
+    build:
+      context: sensors-textfile
+    restart: always
+    # Reads read-only sysfs files already populated by the host kernel's
+    # hwmon drivers and writes to the shared textfile volume — no raw device
+    # ioctl access needed (unlike smartctl-exporter's documented ioctl
+    # requirement), so this runs fully unprivileged.
+    cap_drop:
+      - ALL
+    environment:
+      # Re-scan interval. Shorter than Prometheus's 30s scrape interval
+      # (scrapeconfig-truenas.yaml) so a scrape never reads data staler than
+      # one interval.
+      INTERVAL: "15"
+    volumes:
+      - /sys:/sys:ro
+      - textfile:/textfile
+
+volumes:
+  textfile: {}

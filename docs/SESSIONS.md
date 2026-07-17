@@ -4,6 +4,39 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-17 — `node-exporter-hwmon-crash-fix`
+
+### Goal
+Root-cause the `TargetDown` alert on TrueNAS's `node-exporter` and land a durable fix that keeps hardware sensor monitoring working without touching the buggy code path.
+
+### What we did
+- Queried Alertmanager's v2 API (`kubectl get --raw .../proxy/api/v2/alerts`) to list firing alerts: `TargetDown` (`truenas-node-exporter`, warning) and the expected always-firing `Watchdog` heartbeat.
+- Diagnosed `TargetDown` by querying Prometheus's target API (scrape error: `EOF`) and reproducing directly with `curl` (TCP connects, "empty reply from server") — ruled out network/host-down causes by comparing against healthy siblings on the same TrueNAS host (`smartctl-exporter:9633` returns 200 OK, `doco-cd:18080/v1/health` probe is up), and confirmed the compose file/version pin hadn't drifted in Git since the 2026-07-14 deploy.
+- Root-caused from user-supplied container logs: `node_exporter` panics on every scrape with a nil-pointer dereference inside `prometheus.processMetric`, triggered by the `hwmon` collector's udev/sysfs enumeration — Go's `net/http` per-connection panic recovery silently drops the connection without a response, which is why it looked like a network problem rather than a crash. Explained why the fault was state-dependent (hwmon re-enumerates on every scrape) rather than present from initial deploy — it took ~2.5 days to manifest.
+- Fixed immediately by adding `--no-collector.hwmon` to `truenas/docker/node-exporter/docker-compose.yaml`; user applied and restarted manually on TrueNAS, confirmed via `docker logs` (no panic, `hwmon` absent from "Enabled collectors") and end-to-end via `curl` (200 OK) and Prometheus target health flipping to `up` / alert clearing. This landed as commit `6efae87`.
+- `WebSearch`ed for a known upstream node_exporter bug matching the exact panic — found no exact match, but a multi-year history of `hwmon`-specific crash reports across versions/architectures, which informed the decision to permanently avoid the in-process collector rather than gamble on a version bump that couldn't be confidently verified without days of quiet monitoring.
+- Used plan mode to design a durable replacement: two parallel Explore agents (truenas/doco-cd GitOps conventions; Renovate + custom-Dockerfile conventions) followed by a Plan agent to validate a textfile-collector sidecar design.
+- Plan agent's key finding, personally verified against the live repo before trusting it: the existing `hardware-temperatures` PrometheusRule and the "Node Exporter Full" Grafana dashboard's `group_left` join both hard-depend on node_exporter's real `node_hwmon_*` metric names and its device-path-derived `chip` label scheme (e.g. `platform_coretemp_0`) — so the sidecar had to reproduce that scheme exactly rather than invent its own.
+- Implemented the `sensors-textfile` sidecar: a minimal Alpine `Dockerfile` (no packages — pure busybox) plus `entrypoint.sh` that walks `/sys/class/hwmon` directly every 15s (bypassing `lm-sensors` entirely), reproduces node_exporter's own chip-id derivation algorithm, and atomically writes `node_hwmon_{temp_celsius,fan_rpm,chip_names,sensor_label}` in Prometheus text-exposition format. Wired `node-exporter`'s `--collector.textfile.directory` and a shared `textfile` named volume into the same compose project — no new `.doco-cd.truenas.yaml` entry needed since it's a second service in the existing `working_dir`.
+- Validated: `docker compose config` parsed the compose file cleanly; `entrypoint.sh` passed `dash -n` syntax check; manually sourced and ran the `collect()` function against this devcontainer's own `/sys/class/hwmon` (power-supply chips only) to confirm correct chip-id derivation and valid atomic Prometheus output, since no Docker daemon was available here to build/run the actual image.
+- Updated `truenas/README.md`'s layout diagram to reflect `node-exporter/` as a two-service stack.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `truenas/docker/node-exporter/docker-compose.yaml` | Disabled hwmon collector — root-cause fix (committed `6efae87`); added `sensors-textfile` sidecar service + shared `textfile` volume (staged) |
+| `truenas/docker/node-exporter/sensors-textfile/Dockerfile` | New — minimal Alpine image, no added packages |
+| `truenas/docker/node-exporter/sensors-textfile/entrypoint.sh` | New — reads `/sys/class/hwmon` directly, emits node_exporter-compatible `node_hwmon_*` metrics |
+| `truenas/README.md` | Updated layout diagram for the two-service `node-exporter` stack |
+
+### Key decisions
+- Chose a textfile-collector sidecar over re-enabling `hwmon` on a different node_exporter version: the crash trigger was state-dependent (2.5 days to manifest), so a version bump couldn't be confidently verified without days of quiet monitoring, and `hwmon` has a long history of collector-specific crash reports across versions/architectures.
+- Sidecar reads `/sys/class/hwmon` directly instead of shelling out to `lm-sensors` — avoids an unpinned `apk` package version (no Renovate datasource for apk packages) and was required anyway to reproduce node_exporter's own device-path-based chip-id algorithm, which `lm-sensors`' human-readable names don't match.
+- Deployed as a second service inside the existing `truenas/docker/node-exporter/` compose project rather than a new top-level stack, so it could share a Docker named volume with `node-exporter` — confirmed against doco-cd's own source that `.doco-cd.truenas.yaml` maps one entry to one `working_dir` (compose project), not per-service, so no new registry entry was needed.
+- Metric names/labels deliberately mirror node_exporter's real `hwmon` output (`node_hwmon_temp_celsius`, `chip="platform_coretemp_0"`-style IDs) rather than following generic textfile-collector advice to avoid the `node_` prefix, because this repo already has a fleet-wide `hardware-temperatures` PrometheusRule and a Grafana dashboard join depending on that exact scheme — verified directly against the live files before committing to the design.
+
+---
+
 ## 2026-07-14 — `doco-cd-truenas-compose-gitops`
 
 ### Goal
