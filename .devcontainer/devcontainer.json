@@ -7,8 +7,8 @@
   "containerUser": "vscode",
 
   "features": {
-    "ghcr.io/devcontainers/features/git:1.3.8": {},
-    "ghcr.io/devcontainers/features/node:2.1.0": {}
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/node:2": {}
   },
   "postCreateCommand": "bash .devcontainer/postCreateCommand.sh",
   "postStartCommand": "bash .devcontainer/postStartCommand.sh",

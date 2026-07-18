@@ -4,6 +4,8 @@ set shell := ['bash', '-euo', 'pipefail', '-c']
 cluster_yaml := justfile_dir() + "/kubernetes/apps/database/cloudnative-pg/cluster/app/cluster.yaml"
 ks_yaml      := justfile_dir() + "/kubernetes/apps/database/cloudnative-pg/ks.yaml"
 live_primary_label := "cnpg.io/cluster=postgres-v17,role=primary"
+pitr_scratch_name := "postgres-v17-pitr-scratch"
+pitr_scratch_primary_label := "cnpg.io/cluster=" + pitr_scratch_name + ",role=primary"
 
 [private]
 default:
@@ -71,6 +73,185 @@ undo-restore:
     yq -i 'del(.spec.bootstrap, .spec.externalClusters)' "{{ cluster_yaml }}"
     gum log -t rfc3339 -s -l info "Reverted — review with 'git diff', then commit via /git-stage + /git-commit."
 
+[doc('List Backup CRs for postgres-v17, newest first — phase=completed entries are valid PITR recovery points for pitr-restore')]
+pitr-list-backups:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Backup CRs carry .spec.cluster.name, not a cnpg.io/cluster label — filter via jq.
+    mapfile -t rows < <(kubectl get backups.postgresql.cnpg.io -n database -o json \
+        | jq -r '.items | map(select(.spec.cluster.name == "postgres-v17")) | sort_by(.status.startedAt) | reverse | .[]
+            | "\(.metadata.name)\t\(.status.phase // "-")\t\(.status.startedAt // "-")\t\(.status.stoppedAt // "-")\t\(.status.error // "-")"')
+
+    if [ "${#rows[@]}" -eq 0 ]; then
+        gum log -t rfc3339 -s -l warn "No Backup CRs found for cluster postgres-v17"
+        exit 0
+    fi
+
+    printf '%-32s %-12s %-26s %-26s %s\n' "NAME" "PHASE" "STARTED" "STOPPED" "ERROR"
+    printf '%s\n' "${rows[@]}" | awk -F'\t' '{printf "%-32s %-12s %-26s %-26s %s\n", $1, $2, $3, $4, $5}'
+
+[doc('Prompt for a completed Backup CR and recover it (optionally forwarding to a specific target time) into a disposable single-instance scratch cluster — never archives WAL back to the live S3 prefix, never touches postgres-v17 itself. Follow with `just cnpg pitr-dump`, then `just cnpg pitr-cleanup`.')]
+pitr-restore:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if kubectl get cluster {{ pitr_scratch_name }} -n database >/dev/null 2>&1; then
+        gum log -t rfc3339 -s -l warn "Scratch cluster '{{ pitr_scratch_name }}' already exists." stage guard
+        gum confirm "Delete it now and continue?" || exit 0
+        kubectl delete cluster {{ pitr_scratch_name }} -n database --wait=true --timeout=120s
+    fi
+
+    gum log -t rfc3339 -s -l info "Fetching completed Backup CRs for postgres-v17..." stage discover
+    mapfile -t backups < <(kubectl get backups.postgresql.cnpg.io -n database -o json \
+        | jq -r '.items[] | select(.spec.cluster.name == "postgres-v17" and .status.phase == "completed") | "\(.metadata.name)\t\(.status.startedAt)\t\(.status.stoppedAt)"')
+    if [ "${#backups[@]}" -eq 0 ]; then
+        gum log -t rfc3339 -s -l error "No completed Backup CRs found — nothing to recover from. Run 'just cnpg pitr-list-backups' to check." stage discover
+        exit 1
+    fi
+
+    choice=$(printf '%s\n' "${backups[@]}" \
+        | awk -F'\t' '{printf "%-32s started=%-26s stopped=%-26s\n", $1, $2, $3}' \
+        | gum choose --header "Select a backup to recover from:")
+    if [ -z "${choice}" ]; then
+        gum log -t rfc3339 -s -l warn "No backup selected — aborting" stage discover
+        exit 0
+    fi
+    backup_name=$(awk '{print $1}' <<< "${choice}")
+    stopped_at=$(printf '%s\n' "${backups[@]}" | awk -F'\t' -v n="${backup_name}" '$1 == n {print $3}')
+
+    # Default target = just after this backup's own end, so with no forwarding
+    # you reproduce exactly that backup's state and nothing replayed afterward.
+    default_target=$(date -u -d "${stopped_at} + 30 seconds" +"%Y-%m-%d %H:%M:%S.%6N+00:00")
+    target_time=$(gum input \
+        --header "Recovery target time (UTC) — accept the default to recover exactly this backup, or move it later to fast-forward WAL replay past it:" \
+        --value "${default_target}")
+    if [ -z "${target_time}" ]; then
+        gum log -t rfc3339 -s -l warn "No target time provided — aborting" stage target
+        exit 0
+    fi
+
+    current_server=$(yq '(select(.metadata.name == "cloudnative-pg-cluster") | .spec.postBuild.substitute.CNPG_V17_CURRENT_CLUSTER)' "{{ ks_yaml }}")
+    if [ -z "${current_server}" ] || [ "${current_server}" = "null" ]; then
+        gum log -t rfc3339 -s -l error "Could not read CNPG_V17_CURRENT_CLUSTER from {{ ks_yaml }}" stage target
+        exit 1
+    fi
+    image_name=$(yq '.spec.imageName' "{{ cluster_yaml }}")
+
+    gum log -t rfc3339 -s -l warn \
+        "About to kubectl apply a disposable Cluster '{{ pitr_scratch_name }}' in namespace 'database': recovers backup '${backup_name}' (serverName '${current_server}') to target time '${target_time}'. This is an out-of-band apply, outside Flux/Git. It has no spec.plugins/isWALArchiver, so it can never write back into the live archive. It never touches the live postgres-v17 cluster." stage warn
+    gum confirm "Apply this scratch recovery cluster?" || exit 0
+
+    kubectl apply -f - <<MANIFEST
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Cluster
+    metadata:
+      name: {{ pitr_scratch_name }}
+      namespace: database
+    spec:
+      instances: 1
+      imageName: ${image_name}
+      enableSuperuserAccess: true
+      superuserSecret:
+        name: cloudnative-pg-secret
+      bootstrap:
+        recovery:
+          source: postgres-v17-source
+          recoveryTarget:
+            targetTime: "${target_time}"
+      externalClusters:
+        - name: postgres-v17-source
+          plugin:
+            name: barman-cloud.cloudnative-pg.io
+            parameters:
+              barmanObjectName: cloudnative-pg-backup
+              serverName: ${current_server}
+      resources:
+        requests:
+          cpu: 100m
+          memory: 512Mi
+        limits:
+          memory: 1Gi
+      storage:
+        size: 20Gi
+        storageClass: openebs-hostpath
+    MANIFEST
+
+    gum log -t rfc3339 -s -l info "Waiting for {{ pitr_scratch_name }} to become healthy (pulling base backup + replaying WAL)..." stage wait
+    kubectl wait cluster {{ pitr_scratch_name }} -n database --for=condition=Ready --timeout=5m
+
+    gum log -t rfc3339 -s -l info "Scratch cluster ready. Next: 'just cnpg pitr-dump' to extract a database, then 'just cnpg pitr-cleanup' when done." stage done
+
+[doc('Prompt for a database inside the postgres-v17-pitr-scratch recovery cluster and pg_dump it locally — run after `just cnpg pitr-restore`. Defaults to ~/cnpg-backups/<db>-pitr-<timestamp>.dump if FILE is omitted.')]
+pitr-dump file="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if ! kubectl get cluster {{ pitr_scratch_name }} -n database >/dev/null 2>&1; then
+        gum log -t rfc3339 -s -l error "No scratch cluster '{{ pitr_scratch_name }}' found — run 'just cnpg pitr-restore' first" stage guard
+        exit 1
+    fi
+
+    POD=$(kubectl get pod -n database -l "{{ pitr_scratch_primary_label }}" -o jsonpath='{.items[0].metadata.name}')
+    if [ -z "${POD}" ]; then
+        gum log -t rfc3339 -s -l error "No primary pod found for {{ pitr_scratch_name }} — is it still recovering?" stage guard
+        exit 1
+    fi
+
+    mapfile -t dbs < <(kubectl exec -n database "${POD}" -c postgres -- psql -U postgres -At -c \
+        "select datname from pg_database where datname not in ('postgres','template0','template1') order by 1;")
+    if [ "${#dbs[@]}" -eq 0 ]; then
+        gum log -t rfc3339 -s -l error "No user databases found on the recovered instance" stage discover
+        exit 1
+    fi
+
+    DB=$(printf '%s\n' "${dbs[@]}" | gum choose --header "Select a database to dump from the recovered instance:")
+    if [ -z "${DB}" ]; then
+        gum log -t rfc3339 -s -l warn "No database selected — aborting" stage discover
+        exit 0
+    fi
+
+    FILE="{{ file }}"
+    if [ -z "${FILE}" ]; then
+        FILE="${HOME}/cnpg-backups/${DB}-pitr-$(date +%Y%m%d-%H%M%S).dump"
+    fi
+    # just runs module recipes with cwd set to the module's own directory
+    # (ops/cnpg/), not the invoker's shell — resolve relative paths against
+    # invocation_directory() so a bare filename means what the user expects.
+    case "${FILE}" in
+        /*) ;;
+        *) FILE="{{ invocation_directory() }}/${FILE}" ;;
+    esac
+    mkdir -p "$(dirname "${FILE}")"
+
+    gum log -t rfc3339 -s -l info "Dumping '${DB}' from recovered instance ${POD} to ${FILE}..." stage dump
+    kubectl exec -n database "${POD}" -c postgres -- pg_dump -U postgres -Fc -d "${DB}" > "${FILE}"
+
+    SIZE=$(du -h "${FILE}" | cut -f1)
+    gum log -t rfc3339 -s -l info "Dump complete: ${FILE} (${SIZE}). Restore into the live cluster with 'just cnpg restore ${DB} ${FILE}', then run 'just cnpg pitr-cleanup'." stage done
+
+[doc('Delete the postgres-v17-pitr-scratch recovery cluster and its PVCs/pods — leaves any pg_dump files already extracted (e.g. ~/cnpg-backups/) untouched.')]
+pitr-cleanup:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if ! kubectl get cluster {{ pitr_scratch_name }} -n database >/dev/null 2>&1; then
+        gum log -t rfc3339 -s -l info "No scratch cluster '{{ pitr_scratch_name }}' found — nothing to clean up" stage guard
+        exit 0
+    fi
+
+    gum confirm "Delete scratch cluster '{{ pitr_scratch_name }}' and its PVCs/pods? (pg_dump files already extracted are untouched)" || exit 0
+
+    kubectl delete cluster {{ pitr_scratch_name }} -n database --wait=true --timeout=120s
+    kubectl delete pvc,pods -n database -l "cnpg.io/cluster={{ pitr_scratch_name }}" --ignore-not-found --wait=true --timeout=60s
+
+    remaining=$(kubectl get pvc,pods -n database -l "cnpg.io/cluster={{ pitr_scratch_name }}" --no-headers 2>/dev/null | wc -l)
+    if [ "${remaining}" -gt 0 ]; then
+        gum log -t rfc3339 -s -l warn "Some resources still remain — check manually: kubectl get pvc,pods -n database -l cnpg.io/cluster={{ pitr_scratch_name }}" stage cleanup
+    else
+        gum log -t rfc3339 -s -l info "Scratch cluster and all artifacts removed" stage done
+    fi
+
 [doc('Dump a single database on postgres-v17 to a local pg_dump custom-format file — e.g. `just cnpg dump firefly`. Defaults to ~/cnpg-backups/<db>-<timestamp>.dump if FILE is omitted.')]
 dump db file="":
     #!/usr/bin/env bash
@@ -81,6 +262,13 @@ dump db file="":
     if [ -z "${FILE}" ]; then
         FILE="${HOME}/cnpg-backups/${DB}-$(date +%Y%m%d-%H%M%S).dump"
     fi
+    # just runs module recipes with cwd set to the module's own directory
+    # (ops/cnpg/), not the invoker's shell — resolve relative paths against
+    # invocation_directory() so a bare filename means what the user expects.
+    case "${FILE}" in
+        /*) ;;
+        *) FILE="{{ invocation_directory() }}/${FILE}" ;;
+    esac
     mkdir -p "$(dirname "${FILE}")"
 
     POD=$(kubectl get pod -n database -l "{{ live_primary_label }}" -o jsonpath='{.items[0].metadata.name}')
@@ -111,6 +299,14 @@ restore db file:
 
     DB="{{ db }}"
     FILE="{{ file }}"
+
+    # just runs module recipes with cwd set to the module's own directory
+    # (ops/cnpg/), not the invoker's shell — resolve relative paths against
+    # invocation_directory() so a bare filename means what the user expects.
+    case "${FILE}" in
+        /*) ;;
+        *) FILE="{{ invocation_directory() }}/${FILE}" ;;
+    esac
 
     if [ ! -f "${FILE}" ]; then
         gum log -t rfc3339 -s -l error "File not found: ${FILE}"

@@ -12,6 +12,9 @@ sudo apt-get update
 # sudo apt-get install -y gnupg ca-certificates iputils-ping dnsutils trash-cli tree libgtk2.0-0 libgtk-3-0 libgbm-dev libnotify-dev libnss3 libxss1 libasound2 libxtst6 xauth xvfb nmap
 sudo apt-get install -y netcat-openbsd nmap iputils-ping dnsutils
 
+# Provide the Docker CLI and Compose plugin without enabling nested Docker daemon support.
+sudo apt-get install -y docker.io docker-compose
+
 # Install chezmoi to ~/.local/bin if not already present
 # if ! command -v chezmoi &>/dev/null; then
 #     sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
