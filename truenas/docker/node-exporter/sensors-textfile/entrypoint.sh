@@ -15,6 +15,15 @@
 # and the "Node Exporter Full" dashboard's hwmon panels/joins without any
 # changes there. This is only safe as long as node-exporter's own hwmon
 # collector stays disabled on this host — see --no-collector.hwmon.
+#
+# Version coupling: chip_id() below was verified against node_exporter
+# v1.11.1's hwmonName()/cleanMetricName() (../.env NODE_EXPORTER_VERSION).
+# If that version is bumped and node_exporter's own chip-naming algorithm
+# ever changes upstream, this script's output would drift out of sync with
+# it silently — hardware-temps.yaml's chip=~"..." regexes just stop matching,
+# no error anywhere, the Grafana hwmon panels for this host quietly go blank.
+# Re-verify chip_id()'s output against a real hwmon.prom capture whenever
+# NODE_EXPORTER_VERSION changes.
 set -eu
 
 OUT_DIR="/textfile"
@@ -32,6 +41,7 @@ clean() {
 # Chip id for a /sys/class/hwmon/hwmonN dir, matching node_exporter's own
 # device-path-derived identifier (e.g. "platform_coretemp_0",
 # "pci0000:00_0000:00:18_3") instead of the raw (often ambiguous) `name` file.
+# See the version-coupling note at the top of this file before touching this.
 chip_id() {
   hwmon="$1"
   if [ -e "$hwmon/device" ]; then

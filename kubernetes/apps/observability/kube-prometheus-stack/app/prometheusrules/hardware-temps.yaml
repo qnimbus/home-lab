@@ -109,3 +109,35 @@ spec:
               nct6683 PCH/board sensor is {{ $value | printf "%.0f" }}°C on
               {{ $labels.instance }} — at/above the ~72°C board temperature that
               tripped the BIOS hardware shutdown on 2026-06-01. Intervene now.
+
+        # ── Textfile-collector staleness (sensors-textfile sidecar) ────────────
+        # Moving hwmon collection out of node-exporter's own process (it panics
+        # there — see truenas/docker/node-exporter/docker-compose.yaml's
+        # --no-collector.hwmon comment) traded a LOUD failure mode for a SILENT
+        # one: if the sensors-textfile sidecar dies, crash-loops, or hangs,
+        # node-exporter stays `up` and keeps serving hwmon.prom's last-written
+        # values forever — the CPU/NVMe/VRM alerts above would then evaluate
+        # against frozen, increasingly stale numbers during an actual thermal
+        # event. node_textfile_mtime_seconds is updated by node-exporter itself
+        # on every successful re-read of the file, so a growing gap between it
+        # and wall-clock time means the sidecar stopped writing, not a scrape
+        # problem. Threshold: the sidecar re-scans every 15s (INTERVAL env var
+        # in its docker-compose.yaml) — 90s is 6x that, well past scrape
+        # jitter but well before a real thermal runaway could hide behind
+        # stale data.
+        # file="/textfile/hwmon.prom" — node-exporter's textfile collector
+        # labels this with the FULL path it read (--collector.textfile.directory
+        # + filename), not the bare filename. Verified live: 2026-07-18.
+        - alert: NodeHwmonTextfileStale
+          expr: |
+            time() - node_textfile_mtime_seconds{file="/textfile/hwmon.prom"} > 90
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: hwmon textfile-collector data is stale on {{ $labels.instance }}
+            description: >-
+              node-exporter hasn't seen a fresh hwmon.prom from the
+              sensors-textfile sidecar in over 90s on {{ $labels.instance }} —
+              the CPU/NVMe/VRM temperature alerts above are now evaluating
+              against frozen data. Check the sensors-textfile container.

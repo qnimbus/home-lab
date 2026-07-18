@@ -4,6 +4,33 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-18 — `hwmon-textfile-staleness-alert`
+
+### Goal
+Verify the hwmon textfile-collector sidecar is working correctly in production end-to-end, then close a silent-failure gap (identified via advisor review) with a staleness alert and clarifying version-coupling comments.
+
+### What we did
+- Responded to user-pasted TrueNAS `docker logs` (post context-compaction) by verifying live production state directly rather than trusting the log snippet alone: confirmed via `git` that the earlier `chmod 644` permission fix (from the prior session) was committed at `HEAD`/`origin` (commit `dd7c810`), and that local `main` was 1 commit behind `origin/main` (unrelated Renovate helmfile bump `846cb1a`).
+- Queried node-exporter's live `/metrics` (`curl 10.10.0.41:9100/metrics`) and Prometheus's target/query APIs to confirm end-to-end health: `node_textfile_scrape_error 0`, 49 `node_hwmon_*` metric lines, target `health: up`, and `node_hwmon_temp_celsius` queryable through Prometheus itself — confirmed the AMD `k10temp` chip id (`pci0000:00_0000:00:18_3`) exactly matches the existing `hardware-temperatures` PrometheusRule's regex, so the CPU alerts cover the TrueNAS host automatically with no further changes.
+- Investigated a transient `gzip: invalid checksum` scrape error caught mid-check: a fresh target query showed it had self-healed on the very next 30s scrape cycle, and reproducing Prometheus's exact gzip-accepting scrape request via `curl` returned a clean stream — concluded it was a one-off transport blip, not a sidecar/code bug.
+- Ran the `advisor` tool (Opus 4.8) for independent review of the full arc — the original hwmon panic, the textfile-collector redesign, and the live cluster + TrueNAS configuration. Key finding: the redesign converted a loud failure mode (hwmon panic → node_exporter dies → `TargetDown` fires) into a silent one — if `sensors-textfile` dies or hangs, node-exporter stays healthy and keeps serving `hwmon.prom`'s last-written values forever, so a real thermal event could hide behind frozen data. Also flagged a silent version-coupling risk in the hand-reproduced chip-id algorithm.
+- Implemented the staleness alert in `hardware-temps.yaml`: `NodeHwmonTextfileStale`, firing when `node_textfile_mtime_seconds` hasn't advanced in >90s (6x the sidecar's 15s scan interval). While writing it, caught and fixed a real bug before it shipped: the initial expression matched `file="hwmon.prom"`, but production's actual label value is the full path `file="/textfile/hwmon.prom"` — the wrong label would have made the alert permanently silent (zero matching series), exactly the failure mode it exists to catch. Verified the corrected expression against live Prometheus data (~18s, well under threshold).
+- Added the version-coupling comment block to `entrypoint.sh`'s header (noting the chip-id algorithm was verified against node_exporter v1.11.1, tracked via `.env`) plus a pointer from `chip_id()` itself, so a future `NODE_EXPORTER_VERSION` bump has an explicit trigger to re-verify chip-naming parity.
+- Validated both edits: the PrometheusRule parses via PyYAML with the new 7th rule present; `entrypoint.sh` still passes `dash -n` syntax check after the comment additions.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/observability/kube-prometheus-stack/app/prometheusrules/hardware-temps.yaml` | Added `NodeHwmonTextfileStale` alert rule (staged) |
+| `truenas/docker/node-exporter/sensors-textfile/entrypoint.sh` | Added version-coupling comments to header and `chip_id()` (staged) |
+
+### Key decisions
+- Chose `file="/textfile/hwmon.prom"` (full path) over the bare filename for the staleness alert's label match — verified against live production data rather than assuming node_exporter's textfile collector labels with just the filename; the wrong assumption would have shipped a permanently-silent alert.
+- Threshold set to 90s (6x the sidecar's 15s scan interval) — chosen to comfortably exceed normal scrape/collection jitter while still catching a hung/dead sidecar well before a real thermal event could hide behind stale data.
+- Documented the chip-id algorithm's version coupling directly in the script rather than treating it as accepted risk — a future node_exporter bump on this host could silently break dashboard/alert matching with no error surfaced anywhere, so the mitigation is a code comment creating an explicit re-verification trigger, not a technical guardrail (none exists that's low-effort enough to be worth building).
+
+---
+
 ## 2026-07-17 — `node-exporter-hwmon-crash-fix`
 
 ### Goal
