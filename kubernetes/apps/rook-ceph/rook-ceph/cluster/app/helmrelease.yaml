@@ -35,6 +35,22 @@ spec:
             predict_linear(node_filesystem_free_bytes{device=~"/.*"}[2d], 3600 * 24 * 5)
               * on(cluster, instance) group_left(nodename) node_uname_info < 0
             and on(instance) (time() - node_boot_time_seconds > 1800)
+        # Same root problem as CephNodeDiskspaceWarning above: the stock rule has no
+        # `for:`, so a single noisy 30s evaluation fires it. This rule has no
+        # network-scoping either (device!="lo" only) — it fires on any NIC on any
+        # node.exporter host, including the plain 1GbE eno1 management NICs on
+        # cp-02/cp-03/worker-01/worker-02, not just Ceph's own storage bond.
+        # 5 occurrences over 2026-07-11..07-18, confirmed via the ALERTS{} series at
+        # the rule group's native 30s resolution: every single one was exactly one
+        # evaluation tick (never 2 consecutive), i.e. drops lasted <30-60s. Baseline
+        # on eno1 is ~200-1000 pkts/s with 0 drops; the bursts genuinely crossed the
+        # existing thresholds (up to ~2963 pkts/s / 24 drops/s, ~0.6-1.2% ratio) --
+        # this isn't a threshold-too-strict problem, it's a missing-debounce problem.
+        # `for: 1m` requires 3 consecutive bad evals (interval: 30s) and would have
+        # suppressed all 5 historical false-fires while still catching a genuinely
+        # sustained drop event (failing NIC, persistent congestion) within 60s.
+        CephNodeNetworkPacketDrops:
+          for: 1m
     # Built-in toolbox pod — gives us the `ceph` CLI in-cluster for status,
     # `ceph osd tree`, `ceph -s`, etc. Reach it with:
     #   kubectl -n rook-ceph exec -it deploy/rook-ceph-tools -- ceph status

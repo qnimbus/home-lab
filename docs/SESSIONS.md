@@ -4,6 +4,34 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-18 — `diagnose-alerts-command-and-ceph-packetdrops-tuning`
+
+### Goal
+Build a `/diagnose-alerts` slash command for triaging firing/recent Alertmanager alerts against live cluster state and repo context, then use it to root-cause and fix recurring `CephNodeNetworkPacketDrops` false positives.
+
+### What we did
+- Explored the observability stack (`kube-prometheus-stack`, `silence-operator`, `AlertmanagerConfig` Pushover routing) and confirmed Prometheus/Alertmanager are reachable directly via `curl` from the devcontainer through their internal `envoy-internal` HTTPRoutes — no port-forward needed.
+- Wrote `.claude/commands/diagnose-alerts.md`: pulls live state from Alertmanager (`/api/v2/alerts`, `/api/v2/silences`) and Prometheus (`/api/v1/rules`, `ALERTS{}` timeseries for alerts that already resolved), cross-references against in-repo `PrometheusRule` definitions/comments, `silence-operator` `Silence` files, `docs/QA.md`/`SESSIONS.md`, and the severity→receiver routing, then reports per-alert with a recommendation — diagnosis-only, never auto-edits cluster resources.
+- Ran it against `CephNodeNetworkPacketDrops` (5 episodes, 2026-07-11 → 07-18, on the `eno1` management NIC across cp-02/cp-03/worker-01/worker-02). Found an existing but `INACTIVE` `Silence` for this alertname was for an unrelated, already-resolved cause (X520 storage-bond VLAN-200 fallback); the current episodes matched a different, previously-documented pattern (`docs/QA.md`, 2026-06-20) of brief, unexplained traffic bursts on the management NIC.
+- Tried to retroactively root-cause via `talosctl dmesg` on cp-02 — found the kernel ring buffer had gone silent since `2026-07-15T17:12` despite continuous uptime since `2026-07-09` (confirmed via `node_boot_time_seconds`, ruling out a reboot). Corrected an imprecise initial claim about this gap after the user pushed back on it. Concluded `dmesg` was never going to catch this class of event anyway — packet-drop counters come from `/proc/net/dev` via node-exporter, not kernel `printk` messages.
+- Re-checked the 7-day burst history at the rule group's native 30s evaluation resolution (the initial 7-day scan used a 60s query step, which risked aliasing) — confirmed all 5 episodes were exactly one 30s evaluation tick each, never two consecutive, with CPU/pod-restarts/conntrack all flat during the two clearest (cp-02) bursts.
+- Found the fix mechanism already in use in this repo for an analogous problem: `rook-ceph-cluster`'s `monitoring.prometheusRuleOverrides` (used for `CephNodeDiskspaceWarning`'s `for:` fix). Verified via the upstream `rook/rook` chart template (`prometheusrules.yaml`, fetched via `gh api`) that it uses Sprig `mergeOverwrite`, so a partial override (`for:` only) is valid and leaves `expr`/`labels`/`annotations` untouched.
+- Worked through `for:` boundary semantics with the user (does `for: 30s` at `interval: 30s` need 2 or 3 consecutive true evaluations) — verified directly against Prometheus's `rules/alerting.go` source (`ts.Sub(a.ActiveAt) >= r.holdDuration`, non-strict) rather than answering from memory. Landed on `for: 1m` (user's choice, over the theoretical-minimum `30s`) for extra margin against eval-alignment luck.
+- Added `CephNodeNetworkPacketDrops: { for: 1m }` to the `prometheusRuleOverrides` block, with a comment documenting the evidence (episode count/dates, native-resolution confirmation, baseline vs. burst magnitudes) so the reasoning doesn't need to be re-derived later.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.claude/commands/diagnose-alerts.md` | New slash command for triaging firing/recent Alertmanager alerts |
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` | Added `prometheusRuleOverrides.CephNodeNetworkPacketDrops: {for: 1m}` (staged, uncommitted) |
+
+### Key decisions
+- Chose to debounce (`for: 1m`) rather than silence the alert outright — two independent investigations (2026-06-20 archived one, and this session's) found no operational impact and no internal cause, but the user preferred to keep the signal live for a genuinely sustained event rather than suppress it.
+- Picked `for: 1m` over the theoretical-minimum `for: 30s`: both would have suppressed all 5 historical false-fires equally (none exceeded 1 tick), but `1m` adds slack against eval-alignment edge cases at negligible cost to detection latency for a real problem.
+- Left `expr`/thresholds on the stock rule untouched — the evidence showed a missing-debounce problem (`for: 0`), not a threshold-too-strict problem; the observed bursts genuinely exceeded even the existing ratio/absolute thresholds.
+
+---
+
 ## 2026-07-18 — `hwmon-textfile-staleness-alert`
 
 ### Goal
