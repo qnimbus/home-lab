@@ -33,8 +33,20 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
+  components:
+    - ../../../../components/volsync
   interval: 1h
   path: ./kubernetes/apps/development/forgejo/app
+  postBuild:
+    substitute:
+      APP: *app
+      APP_UID: "1000"
+      APP_GID: "1000"
+      # The chart's own default persistence claim name — NOT "forgejo" (the
+      # component's ${APP} default) — this PVC already exists and is bound
+      # with real data; see the retrofit comment in components/volsync/pvc.yaml.
+      VOLSYNC_CLAIM: gitea-shared-storage
+      VOLSYNC_CAPACITY: 10Gi
   prune: true
   wait: false
   sourceRef:
@@ -47,3 +59,6 @@ spec:
     - name: onepassword-store
     - name: rook-ceph-cluster
     - name: envoy-gateway-config
+    # ReplicationSource/ReplicationDestination CRDs don't exist until the operator installs
+    # them — see bootstrap-ordering rule in CLAUDE.md.
+    - name: volsync

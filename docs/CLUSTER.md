@@ -939,6 +939,7 @@ flowchart TD
   development --> external_secrets
   development --> network
   development --> rook_ceph
+  development --> system
   finance --> database
   finance --> external_secrets
   finance --> rook_ceph
@@ -1061,11 +1062,13 @@ flowchart TD
   flux_system_envoy_gateway_config(("envoy-gateway-config · network")):::external
   flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
   flux_system_rook_ceph_cluster(("rook-ceph-cluster · rook-ceph")):::external
+  flux_system_volsync(("volsync · system")):::external
   flux_system_forgejo --> flux_system_cloudnative_pg_cluster
   flux_system_forgejo --> flux_system_envoy_gateway_config
   flux_system_forgejo --> flux_system_forgejo_db
   flux_system_forgejo --> flux_system_onepassword_store
   flux_system_forgejo --> flux_system_rook_ceph_cluster
+  flux_system_forgejo --> flux_system_volsync
   flux_system_forgejo_db --> flux_system_cloudnative_pg_cluster
   flux_system_forgejo_db --> flux_system_onepassword_store
   classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
