@@ -1,0 +1,56 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: forgejo
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: forgejo
+    namespace: flux-system
+  values:
+    # image.registry/repository/rootless already default to code.forgejo.org/forgejo/forgejo
+    # rootless — leaving image.tag unset tracks the chart's own appVersion pairing rather
+    # than jumping ahead to an app release the pinned chart version wasn't tested against.
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      capabilities:
+        drop: ["ALL"]
+    gitea:
+      admin:
+        existingSecret: forgejo-admin-secret
+      config:
+        server:
+          DOMAIN: forgejo.${DOMAIN_CLUSTER}
+          ROOT_URL: https://forgejo.${DOMAIN_CLUSTER}
+          SSH_DOMAIN: forgejo.${DOMAIN_CLUSTER}
+        database:
+          DB_TYPE: postgres
+          HOST: "${PG_HOST}:5432"
+          NAME: forgejo
+          USER: forgejo
+      # cache/queue/session deliberately left unset: this chart's own template falls
+      # back to memory/level/memory when unspecified, which is correct for a single
+      # replicaCount deployment — no Redis/Valkey instance needed for one consumer.
+      additionalConfigFromEnvs:
+        - name: GITEA__DATABASE__PASSWD
+          valueFrom:
+            secretKeyRef:
+              name: forgejo-db-secret
+              key: password
+    persistence:
+      storageClass: ceph-block
+    httpRoute:
+      enabled: false
+    tcpRoute:
+      enabled: true
+      parentRefs:
+        - name: envoy-internal
+          namespace: network
+          sectionName: ssh

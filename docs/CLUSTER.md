@@ -225,6 +225,8 @@ All cluster endpoints are wired via **Gateway API** (`HTTPRoute`), not classic `
 
 Both gateways share pre-issued wildcard TLS certificates (in the `network` namespace). TLS terminates at the gateway; `HTTPRoute` objects never need to reference certificates.
 
+`envoy-internal` also carries a raw-TCP `ssh` listener (port 22, LAN-only) for git-over-SSH passthrough — first (and currently only) consumer is Forgejo's chart-native `TCPRoute` (`kubernetes/apps/development/forgejo/app/helmrelease.yaml`). The `TCPRoute` CRD ships bundled with the `envoy-gateway-helm` chart's CRD set (see `ops/bootstrap/helmfile.d/00-crds.yaml`), so no separate CRD bootstrap was needed to add it.
+
 ### Domain convention
 
 | Variable | Domain | Routed externally? | Safe for a *new* external hostname? |
@@ -904,20 +906,24 @@ removed). Pass `--check` to skip the doc update and only print findings (e.g. fo
 
 ```mermaid
 flowchart TD
-  actions_runner_system["actions-runner-system (2)"]
+  actions_runner_system["actions-runner-system (3)"]
   automation["automation (1)"]
   cert_manager["cert-manager (2)"]
   database["database (5)"]
-  default["default (1)"]
+  default["default (2)"]
+  development["development (2)"]
   external_secrets["external-secrets (3)"]
+  finance["finance (3)"]
   flux_bootstrap["flux-bootstrap (3)"]
   flux_system["flux-system (4)"]
+  intel_device_plugins["intel-device-plugins (2)"]
   kube_system["kube-system (5)"]
-  network["network (7)"]
-  observability["observability (2)"]
+  network["network (9)"]
+  node_feature_discovery["node-feature-discovery (1)"]
+  observability["observability (10)"]
   openebs["openebs (1)"]
   rook_ceph["rook-ceph (2)"]
-  system["system (3)"]
+  system["system (5)"]
   system_upgrade["system-upgrade (2)"]
   tailscale["tailscale (2)"]
   actions_runner_system --> external_secrets
@@ -928,9 +934,20 @@ flowchart TD
   database --> cert_manager
   database --> external_secrets
   database --> rook_ceph
+  database --> system
+  development --> database
+  development --> external_secrets
+  development --> network
+  development --> rook_ceph
+  finance --> database
+  finance --> external_secrets
+  finance --> rook_ceph
+  finance --> system
   flux_system --> external_secrets
   flux_system --> network
   flux_system --> observability
+  intel_device_plugins --> cert_manager
+  intel_device_plugins --> node_feature_discovery
   network --> cert_manager
   network --> external_secrets
   network --> kube_system
@@ -943,15 +960,17 @@ flowchart TD
 ```
 
 <details>
-<summary>actions-runner-system (2)</summary>
+<summary>actions-runner-system (3)</summary>
 
 ```mermaid
 flowchart TD
   flux_system_actions_runner_controller["actions-runner-controller"]
   flux_system_actions_runner_home_lab["actions-runner-home-lab"]
+  flux_system_actions_runner_home_lab_readonly["actions-runner-home-lab-readonly"]
   flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
   flux_system_actions_runner_controller --> flux_system_onepassword_store
   flux_system_actions_runner_home_lab --> flux_system_actions_runner_controller
+  flux_system_actions_runner_home_lab_readonly --> flux_system_actions_runner_controller
   classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
 ```
 
@@ -999,15 +1018,19 @@ flowchart TD
   flux_system_plugin_barman_cloud["plugin-barman-cloud"]
   flux_system_postgres_backup_local["postgres-backup-local"]
   flux_system_cert_manager(("cert-manager · cert-manager")):::external
+  flux_system_keda_add_ons_http(("keda-add-ons-http · system")):::external
   flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
   flux_system_rook_ceph_cluster(("rook-ceph-cluster · rook-ceph")):::external
+  flux_system_volsync(("volsync · system")):::external
   flux_system_cloudnative_pg_cluster --> flux_system_cloudnative_pg_operator
   flux_system_cloudnative_pg_cluster --> flux_system_onepassword_store
   flux_system_cloudnative_pg_cluster --> flux_system_plugin_barman_cloud
   flux_system_cloudnative_pg_operator --> flux_system_cert_manager
   flux_system_pgadmin --> flux_system_cloudnative_pg_cluster
+  flux_system_pgadmin --> flux_system_keda_add_ons_http
   flux_system_pgadmin --> flux_system_onepassword_store
   flux_system_pgadmin --> flux_system_rook_ceph_cluster
+  flux_system_pgadmin --> flux_system_volsync
   flux_system_plugin_barman_cloud --> flux_system_cert_manager
   flux_system_plugin_barman_cloud --> flux_system_cloudnative_pg_operator
   flux_system_postgres_backup_local --> flux_system_cloudnative_pg_cluster
@@ -1017,11 +1040,35 @@ flowchart TD
 </details>
 
 <details>
-<summary>default (1)</summary>
+<summary>default (2)</summary>
 
 ```mermaid
 flowchart TD
+  flux_system_homepage["homepage"]
   flux_system_whoami["whoami"]
+```
+
+</details>
+
+<details>
+<summary>development (2)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_forgejo["forgejo"]
+  flux_system_forgejo_db["forgejo-db"]
+  flux_system_cloudnative_pg_cluster(("cloudnative-pg-cluster · database")):::external
+  flux_system_envoy_gateway_config(("envoy-gateway-config · network")):::external
+  flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
+  flux_system_rook_ceph_cluster(("rook-ceph-cluster · rook-ceph")):::external
+  flux_system_forgejo --> flux_system_cloudnative_pg_cluster
+  flux_system_forgejo --> flux_system_envoy_gateway_config
+  flux_system_forgejo --> flux_system_forgejo_db
+  flux_system_forgejo --> flux_system_onepassword_store
+  flux_system_forgejo --> flux_system_rook_ceph_cluster
+  flux_system_forgejo_db --> flux_system_cloudnative_pg_cluster
+  flux_system_forgejo_db --> flux_system_onepassword_store
+  classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
 ```
 
 </details>
@@ -1036,6 +1083,34 @@ flowchart TD
   flux_system_onepassword_store["onepassword-store"]
   flux_system_onepassword_store --> flux_system_external_secrets
   flux_system_onepassword_store --> flux_system_onepassword_connect
+```
+
+</details>
+
+<details>
+<summary>finance (3)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_firefly_iii["firefly-iii"]
+  flux_system_firefly_iii_db["firefly-iii-db"]
+  flux_system_firefly_iii_importer["firefly-iii-importer"]
+  flux_system_cloudnative_pg_cluster(("cloudnative-pg-cluster · database")):::external
+  flux_system_keda_add_ons_http(("keda-add-ons-http · system")):::external
+  flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
+  flux_system_rook_ceph_cluster(("rook-ceph-cluster · rook-ceph")):::external
+  flux_system_volsync(("volsync · system")):::external
+  flux_system_firefly_iii --> flux_system_cloudnative_pg_cluster
+  flux_system_firefly_iii --> flux_system_firefly_iii_db
+  flux_system_firefly_iii --> flux_system_onepassword_store
+  flux_system_firefly_iii --> flux_system_rook_ceph_cluster
+  flux_system_firefly_iii --> flux_system_volsync
+  flux_system_firefly_iii_db --> flux_system_cloudnative_pg_cluster
+  flux_system_firefly_iii_db --> flux_system_onepassword_store
+  flux_system_firefly_iii_importer --> flux_system_firefly_iii
+  flux_system_firefly_iii_importer --> flux_system_keda_add_ons_http
+  flux_system_firefly_iii_importer --> flux_system_onepassword_store
+  classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
 ```
 
 </details>
@@ -1080,6 +1155,23 @@ flowchart TD
 </details>
 
 <details>
+<summary>intel-device-plugins (2)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_intel_device_plugins_gpu["intel-device-plugins-gpu"]
+  flux_system_intel_device_plugins_operator["intel-device-plugins-operator"]
+  flux_system_cert_manager(("cert-manager · cert-manager")):::external
+  flux_system_node_feature_discovery(("node-feature-discovery · node-feature-discovery")):::external
+  flux_system_intel_device_plugins_gpu --> flux_system_intel_device_plugins_operator
+  flux_system_intel_device_plugins_gpu --> flux_system_node_feature_discovery
+  flux_system_intel_device_plugins_operator --> flux_system_cert_manager
+  classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
+```
+
+</details>
+
+<details>
 <summary>kube-system (5)</summary>
 
 ```mermaid
@@ -1095,10 +1187,12 @@ flowchart TD
 </details>
 
 <details>
-<summary>network (7)</summary>
+<summary>network (9)</summary>
 
 ```mermaid
 flowchart TD
+  flux_system_adam["adam"]
+  flux_system_anna["anna"]
   flux_system_cloudflared["cloudflared"]
   flux_system_envoy_gateway["envoy-gateway"]
   flux_system_envoy_gateway_config["envoy-gateway-config"]
@@ -1120,23 +1214,48 @@ flowchart TD
   flux_system_external_dns_unifi --> flux_system_envoy_gateway_config
   flux_system_external_dns_unifi --> flux_system_onepassword_store
   flux_system_truenas --> flux_system_envoy_gateway_config
-  flux_system_wan_failover --> flux_system_envoy_gateway_config
   classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
 ```
 
 </details>
 
 <details>
-<summary>observability (2)</summary>
+<summary>node-feature-discovery (1)</summary>
 
 ```mermaid
 flowchart TD
+  flux_system_node_feature_discovery["node-feature-discovery"]
+```
+
+</details>
+
+<details>
+<summary>observability (10)</summary>
+
+```mermaid
+flowchart TD
+  flux_system_blackbox_exporter["blackbox-exporter"]
+  flux_system_fluent_bit["fluent-bit"]
+  flux_system_grafana_operator["grafana-operator"]
+  flux_system_grafana_operator_instance["grafana-operator-instance"]
   flux_system_kube_prometheus_stack["kube-prometheus-stack"]
+  flux_system_silence_operator["silence-operator"]
+  flux_system_silence_operator_silences["silence-operator-silences"]
   flux_system_smartctl_exporter["smartctl-exporter"]
+  flux_system_unpoller["unpoller"]
+  flux_system_victoria_logs["victoria-logs"]
   flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
   flux_system_rook_ceph_cluster(("rook-ceph-cluster · rook-ceph")):::external
+  flux_system_fluent_bit --> flux_system_kube_prometheus_stack
+  flux_system_grafana_operator_instance --> flux_system_grafana_operator
+  flux_system_grafana_operator_instance --> flux_system_kube_prometheus_stack
   flux_system_kube_prometheus_stack --> flux_system_onepassword_store
   flux_system_kube_prometheus_stack --> flux_system_rook_ceph_cluster
+  flux_system_silence_operator_silences --> flux_system_silence_operator
+  flux_system_unpoller --> flux_system_grafana_operator_instance
+  flux_system_unpoller --> flux_system_kube_prometheus_stack
+  flux_system_victoria_logs --> flux_system_kube_prometheus_stack
+  flux_system_victoria_logs --> flux_system_rook_ceph_cluster
   classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
 ```
 
@@ -1168,14 +1287,17 @@ flowchart TD
 </details>
 
 <details>
-<summary>system (3)</summary>
+<summary>system (5)</summary>
 
 ```mermaid
 flowchart TD
+  flux_system_keda["keda"]
+  flux_system_keda_add_ons_http["keda-add-ons-http"]
   flux_system_reloader["reloader"]
   flux_system_snapshot_controller["snapshot-controller"]
   flux_system_volsync["volsync"]
   flux_system_openebs(("openebs · openebs")):::external
+  flux_system_keda_add_ons_http --> flux_system_keda
   flux_system_volsync --> flux_system_openebs
   flux_system_volsync --> flux_system_snapshot_controller
   classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3

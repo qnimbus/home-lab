@@ -55,6 +55,12 @@ spec:
         superuser: false
         passwordSecret:
           name: firefly-db-secret
+      - name: forgejo
+        ensure: present
+        login: true
+        superuser: false
+        passwordSecret:
+          name: forgejo-db-secret
   monitoring:
     enablePodMonitor: true
   plugins:

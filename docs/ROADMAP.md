@@ -5,6 +5,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 ## Contents  <!-- omit from toc -->
 
 - [In Progress](#in-progress)
+  - [Forgejo: Deferred Follow-ups (Actions Runner, Backup, WAN Exposure)](#forgejo-deferred-follow-ups-actions-runner-backup-wan-exposure)
   - [WAN Failover Router: Host Header Rewrite](#wan-failover-router-host-header-rewrite)
   - [Renovate PR-Review Workflow: Cost/Bug Investigation, Re-enable](#renovate-pr-review-workflow-costbug-investigation-re-enable)
   - [CloudNativePG: Backup, PITR, and Per-App Provisioning](#cloudnative-pg-backup-pitr-and-per-app-provisioning)
@@ -29,6 +30,23 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 ---
 
 ## In Progress
+
+### Forgejo: Deferred Follow-ups (Actions Runner, Backup, WAN Exposure)
+
+Forgejo (self-hosted git, `kubernetes/apps/development/forgejo/`) was deployed following the exact
+`finance/firefly-iii` shape: official upstream chart, CNPG `Database` CRD against the shared
+`postgres-v17` cluster, `ceph-block` persistence, one consolidated 1Password item. HTTPS + SSH are
+both LAN-only (`envoy-internal`). Explicitly deferred at deploy time — not built:
+
+- **Forgejo Actions / self-hosted runner** — would land as a sibling
+  `kubernetes/apps/development/forgejo-runner/` app dir in the same `development` namespace.
+- **Backup for the repo-data PVC** — no DR story yet beyond Ceph's own replication; VolSync
+  (matching the `components/volsync` pattern already used by Firefly/pgadmin/waha) is the natural
+  fit.
+- **WAN-facing exposure** (`envoy-external`) for either the web UI or git-over-SSH — currently LAN
+  (Tailscale/VPN) only.
+- **OIDC/SSO integration, SSH commit signing** — both supported directly by the chart, zero-risk
+  to add later without restructuring.
 
 ### WAN Failover Router: Host Header Rewrite
 

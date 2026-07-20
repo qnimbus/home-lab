@@ -4,6 +4,52 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-20 — `forgejo-gitops-deployment`
+
+### Goal
+Investigate how to deploy a self-hosted git server, then design and build a full GitOps deployment for it, following the `finance/firefly-iii` architectural pattern (external CNPG database, `ceph-block` persistence, consolidated 1Password secret, Gateway API routing).
+
+### What we did
+- Investigated homelab community deployment patterns (kubesearch.dev, live GitHub code search) for self-hosted git; the two local `tmp/` reference repos (`home-ops-bykaj`, `k8s-homelab`) turned out to have no git-server deployment to learn from. Found `bjw-s-labs/home-ops` (this repo's own `app-template` chart maintainer) runs Forgejo, not Gitea; `gabe565/home-ops`'s Gitea-with-external-Postgres values were the closest concrete precedent. Presented the Gitea-vs-Forgejo finding to the user, who chose **Forgejo**.
+- Verified the upstream Forgejo Helm chart schema directly from source (`code.forgejo.org/forgejo-helm/forgejo-helm`) rather than assuming Gitea's chart schema carried over unchanged — confirmed it has no bundled `postgresql`/`valkey` subcharts (only a `bitnami-common` dependency), confirmed `cache`/`queue`/`session` fall back to `memory`/`level`/`memory` when left unset (safe for a single-replica deployment), and confirmed `podSecurityContext.fsGroup: 1000` and `strategy.type: Recreate` are already the chart's own defaults — pre-empting the exact `ceph-block` fsGroup failure mode a prior session hit with Firefly III.
+- Confirmed via `ops/bootstrap/helmfile.d/00-crds.yaml` that the `TCPRoute` CRD is already installed (bundled with the `envoy-gateway-crds` pre-bootstrap release), so exposing git-over-SSH via a Gateway API `TCPRoute` needed no new CRD bootstrap work. Used the chart's own native `tcpRoute` values block (matching `bjw-s-labs`' choice) instead of hand-authoring a `TCPRoute` manifest.
+- At the user's prompting, surveyed community namespace conventions for where Forgejo lives (`bjw-s-labs`/`rafaribe` use a narrow `dev`/`development` namespace; `NovaMachina` uses a broad `self-hosted` catch-all) and switched from an initially-planned dedicated `forgejo` namespace to a new `development` namespace — matching this repo's existing thematic-namespace convention and leaving room for a future Actions-runner sibling app.
+- Built the full deployment: `OCIRepository` chart source (`oci://code.forgejo.org/forgejo-helm/forgejo`, pinned `17.1.3`), the `development` namespace, and the `forgejo` app/db `Kustomization` pair (HelmRelease with consolidated 1Password `ExternalSecret`, `HTTPRoute` on `envoy-internal`, chart-native `TCPRoute` for SSH; CNPG `Database` CRD + `ExternalSecret` for the DB role) — mirroring `firefly-iii`'s two-Kustomization `dependsOn` shape exactly.
+- Added a `forgejo` role entry to the shared CNPG `postgres-v17` cluster's `managed.roles`, and a new `ssh` TCP listener (port 22, LAN-only) to the `envoy-internal` Gateway only — verified by re-reading the file that the edit didn't also land on `envoy-external` (its cert list has different inline comments that made the match string unique to `envoy-internal`).
+- Regenerated `docs/CLUSTER.md`'s auto dependency graph via `scripts/depgraph.py` (0 dangling references, 0 cycles) and added a short prose note on the new `ssh`/`TCPRoute` capability; added a `forgejo` item entry to `docs/EXTERNAL-SECRETS.yaml`; recorded deferred follow-ups (Actions runner, PVC backup, WAN exposure, OIDC/SSH signing) in `docs/ROADMAP.md`.
+- Validated every new and edited `kustomization.yaml` with `kubectl kustomize` dry-run builds (top-level `kubernetes/apps`, the new `development` tree, the edited CNPG cluster and Envoy Gateway config) — all built cleanly with no errors.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/forgejo.yaml` | New `OCIRepository` chart source, pinned `17.1.3` |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Registered `forgejo.yaml` |
+| `kubernetes/apps/development/namespace.yaml` | New `development` namespace |
+| `kubernetes/apps/development/kustomization.yaml` | New — lists `forgejo/ks.yaml` |
+| `kubernetes/apps/development/forgejo/ks.yaml` | New — `forgejo-db` + `forgejo` Flux Kustomizations |
+| `kubernetes/apps/development/forgejo/app/helmrelease.yaml` | New — Forgejo HelmRelease (external Postgres, `ceph-block`, chart-native TCPRoute for SSH) |
+| `kubernetes/apps/development/forgejo/app/externalsecret.yaml` | New — consolidated 1Password secret (admin creds) |
+| `kubernetes/apps/development/forgejo/app/httproute.yaml` | New — `envoy-internal` HTTPRoute, `forgejo.${DOMAIN_CLUSTER}` |
+| `kubernetes/apps/development/forgejo/app/kustomization.yaml` | New — lists app resources |
+| `kubernetes/apps/development/forgejo/db/database.yaml` | New — CNPG `Database` CRD against shared `postgres-v17` cluster |
+| `kubernetes/apps/development/forgejo/db/externalsecret.yaml` | New — DB role basic-auth secret, `cnpg.io/reload` labeled |
+| `kubernetes/apps/development/forgejo/db/kustomization.yaml` | New — lists db resources |
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/cluster.yaml` | Added `forgejo` role to shared cluster's `managed.roles` |
+| `kubernetes/apps/network/envoy-gateway/config/gateway.yaml` | Added `ssh` TCP listener (port 22) to `envoy-internal` only |
+| `kubernetes/apps/kustomization.yaml` | Registered `./development` |
+| `docs/CLUSTER.md` | Regenerated auto dependency graph; added `ssh`/`TCPRoute` note |
+| `docs/EXTERNAL-SECRETS.yaml` | Added `forgejo` 1Password item entry |
+| `docs/ROADMAP.md` | Added deferred-follow-ups entry (runner, backup, WAN exposure, OIDC/signing) |
+
+### Key decisions
+- Used the official upstream Forgejo Helm chart rather than `app-template` — unlike Firefly (a single-container Laravel app), Forgejo is multi-concern (web + SSH + queue + cache + migrations) with real upstream chart support, so reimplementing it in raw `app-template` containers would mean re-deriving already-solved logic (e.g. the memory/level cache-queue-session fallback).
+- Deployed Forgejo instead of the originally-named Gitea, after community research showed the homelab GitOps ecosystem — including this repo's own `app-template` chart maintainer — has largely moved to Forgejo; user confirmed the switch after seeing the evidence.
+- Disabled the chart's native `httpRoute` in favor of a hand-written `httproute.yaml` (to keep `gethomepage.dev` annotations and match this repo's HTTP-route convention), but kept the chart's native `tcpRoute` toggle for SSH rather than hand-authoring a `TCPRoute` — there's no equivalent annotation need for the SSH route, and the chart already pairs its `Service` and `TCPRoute` correctly.
+- Placed the new `ssh` Gateway listener on `envoy-internal` only (LAN-only), not `envoy-external`, matching the HTTPRoute's own LAN-only default — extending either surface to WAN later is a one-line `parentRefs` addition, not a redesign.
+- Deferred Forgejo Actions runner, PVC backup, WAN exposure, and OIDC/SSH signing rather than building them now, per explicit user direction.
+
+---
+
 ## 2026-07-18 — `diagnose-alerts-command-and-ceph-packetdrops-tuning`
 
 ### Goal

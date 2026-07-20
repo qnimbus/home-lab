@@ -35,3 +35,4 @@ resources:
   - ./keda.yaml
   - ./keda-add-ons-http.yaml
   - ./blackbox-exporter.yaml
+  - ./forgejo.yaml

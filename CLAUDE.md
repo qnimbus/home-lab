@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-07-20 | `forgejo-gitops-deployment` | Deployed Forgejo (not Gitea) via GitOps after community research; CNPG DB, ceph-block, HTTPRoute + TCPRoute for SSH |
 > | 2026-07-18 | `diagnose-alerts-command-and-ceph-packetdrops-tuning` | Built /diagnose-alerts slash command; used it to root-cause CephNodeNetworkPacketDrops false positives, added for:1m debounce |
 > | 2026-07-18 | `hwmon-textfile-staleness-alert` | Verified hwmon sidecar in production; advisor found silent-staleness gap, added NodeHwmonTextfileStale alert |
 > | 2026-07-17 | `node-exporter-hwmon-crash-fix` | Root-caused node-exporter TrueNAS crash to hwmon panic; added textfile-collector sidecar for sensors |
@@ -11,7 +12,6 @@
 > | 2026-07-14 | `external-secrets-1password-inventory` | Built docs/EXTERNAL-SECRETS.yaml cataloging all 18 1Password items (ESO + bootstrap-tier) with consumers and field imports; confirmed no secret values exposed |
 > | 2026-07-12 | `firefly-fsgroup-fix-cnpg-backup-tasks` | Fixed Firefly III attachment uploads via fsGroup on ceph-block PVC; added `just cnpg dump`/`restore` tasks, fixed hardcoded pod name in nfs-restore-from-backup |
 > | 2026-07-12 | `alertmanager-ha-replicas` | Root-caused Alertmanager's "Cluster Status: disabled" to single-replica gossip omission; moved to replicas:3 + podAntiAffinity:soft |
-> | 2026-07-11 | `firefly-iii-deployment` | Deployed Firefly III + Data Importer via CNPG Database/role CRDs, ceph-block PVC, internal HTTPRoute; consolidated to one 1Password item |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
