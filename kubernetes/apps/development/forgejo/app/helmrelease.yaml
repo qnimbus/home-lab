@@ -42,8 +42,12 @@ spec:
         - name: GITEA__DATABASE__PASSWD
           valueFrom:
             secretKeyRef:
-              name: forgejo-db-secret
-              key: password
+              # NOT forgejo-db-secret — that Secret lives in the `database` namespace
+              # (for CNPG's same-namespace passwordSecret reference) and a Pod can't
+              # reference a Secret across namespaces. forgejo-admin-secret carries a
+              # same-namespace copy of DB_PASSWORD for exactly this reason.
+              name: forgejo-admin-secret
+              key: DB_PASSWORD
     persistence:
       storageClass: ceph-block
     httpRoute:
