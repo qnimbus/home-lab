@@ -4,6 +4,30 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-25 — `truenas-thermal-incident-docker-recovery`
+
+### Goal
+Investigate a recurring TrueNAS CPU over-temperature alert to find and prevent the root cause, then diagnose and recover a Docker/Apps outage on the same host that surfaced mid-investigation as a consequence of the incident.
+
+### What we did
+- Investigated an AlertManager CPU-temperature alert (>90°C, 2nd occurrence) reported ~11:05 local (09:05 UTC); initially hypothesized VolSync's shared hourly backup schedule (`waha`, `pgadmin`, `firefly-iii`, `forgejo` all on the default `0 * * * *` Restic schedule to the same NFS path) as the cause, since `docs/CLUSTER.md` already documents a thundering-herd mitigation for exactly this concern.
+- Dispatched a `cluster-doctor` agent to pull live Prometheus/Alertmanager data for the exact window (08:40–09:12 UTC), which disproved the VolSync theory: the temp spike was a step-function (+29°C in a single 30s sample at 08:45:30 UTC) with CPU usage staying flat (~91% idle) for the entire critical period; every VolSync job started 15 minutes *after* the spike began. Only the CPU package sensor (`k10temp`/Tctl) moved — NVMe, drives, NIC, and RAM SPD sensors all stayed normal.
+- Investigated whether the `sensors-textfile` hwmon sidecar could be reconfigured to expose real fan RPM telemetry: confirmed the sidecar's collection code is already generic and fan-capable (no code gap), then, via read-only on-box inspection the user ran (`/sys/class/hwmon`, `lsmod`, `dmidecode`, `journalctl -k -b`, ACPI device enumeration), found the board (`F8NAA`, a Shenzhen Meigao/Minisforum-family ODM board) exposes no Super I/O or fan-tach chip to Linux at all — only the generic ACPI Embedded Controller (`PNP0C09`) and AMI BIOS 1.04, which reads fan RPM via an OS-invisible SMI path. Concluded this is a hardware/firmware ceiling, not a config gap, and declined to pursue raw EC-register access (`ec_sys`) given no vendor documentation exists for this board.
+- Mid-investigation, the user reported Docker/"Apps" hadn't restarted since the thermal-incident shutdown, which was also why `node-exporter`/`smartctl-exporter` were down. Diagnosed live via commands the user ran: `zpool status` showed both pools healthy (ruling out post-shutdown ZFS corruption); a manual `systemctl start docker` succeeded but produced an empty `docker ps -a` — traced to Docker's configured `--data-root` (`/mnt/.ix-apps/docker`) being an unmounted ZFS mountpoint, so `dockerd` silently initialized a fresh, empty state directory on the boot-pool root filesystem instead of finding the real 57.6G dataset.
+- Found the `tank/ix-apps` dataset tree carries `canmount=noauto`, so it's never mounted by generic `zfs mount -a` — mounting it is middleware's own app-lifecycle responsibility. Confirmed via `midclt call docker.status` = `FAILED`, a state that hadn't self-healed across at least two reboots.
+- Fixed by forcing a genuine state transition via `midclt call docker.update`: unsetting the pool (`{"pool": null}` — real teardown, unmounted `tank/ix-apps`, status → `UNCONFIGURED`) then re-setting it (`{"pool": "tank"}` — ~21s, real setup: mounted the full dataset tree in order and started `dockerd` with all previously-running containers). Verified full recovery — `docker.status` = `RUNNING`, `docker ps -a` showed every container (this repo's own `node-exporter`/`smartctl-exporter`/`doco-cd` stack plus all TrueNAS-native apps) `Up` with authentic multi-week/-month `CREATED` timestamps — no data loss.
+- Investigated the original trigger for the Docker failure: ruled out "unclean shutdown" once the user confirmed the shutdown was clean, in favor of a timing-correlated theory — the `doco-cd` health-endpoint probe had already started failing at 08:51:00 UTC, five minutes into the thermal event and well before the shutdown, suggesting Docker was disrupted by the thermal event itself. Tried to confirm via `middlewared.log`/`journalctl` for the incident window but found no entries at all; concluded the box was almost certainly already powered off before that window could be logged, and that TrueNAS's journald likely isn't persistent across reboots — left the exact original trigger as an evidence-correlated inference rather than a proven trace.
+
+### Files changed
+None — this session was live incident investigation and remediation on the TrueNAS host itself; no repository files were changed.
+
+### Key decisions
+- Declined to pursue raw EC-register access (`ec_sys`) for fan RPM telemetry — too risky/undocumented on a NAS board with no available vendor register map, for a benefit (fan speed monitoring) that a rate-of-change temperature alert can substantially cover instead.
+- Held off letting the user recreate TrueNAS-native (non-GitOps) apps via `docker compose up`/the Apps UI before confirming the real data-root mount was restored — those apps (Plex, Paperless-ngx, Syncthing, etc.) have no Git-backed definition to recover from, so avoiding a premature recreate was the only thing preventing real data loss.
+- Used `midclt call docker.update` (unset then reset the pool) rather than manually `zfs mount`-ing each `noauto` dataset — this is middleware's own supported lifecycle path and atomically handled correct mount ordering plus Docker startup, rather than risking a partially-mounted tree.
+
+---
+
 ## 2026-07-20 — `forgejo-gitops-deployment`
 
 ### Goal
