@@ -66,3 +66,22 @@ fi
 # Install helm plugins (helm-diff is required by helmfile)
 helm plugin list | awk '{print $1}' | grep -qx diff \
   || helm plugin install https://github.com/databus23/helm-diff --verify=false
+
+# Install fj (Forgejo CLI, https://codeberg.org/forgejo-contrib/forgejo-cli), for interacting
+# with a Forgejo instance the way `gh` is used for GitHub. No devcontainer feature exists for
+# this yet and it isn't in Debian trixie's apt repos, so install the pre-built release binary
+# directly, following the same pattern as kubectl above (resolve latest version, download,
+# install to /usr/local/bin) rather than a fixed version.
+case "$(dpkg --print-architecture)" in
+    amd64) FJ_ARCH=x86_64-linux ;;
+    arm64) FJ_ARCH=aarch64-linux ;;
+    *) echo "fj: unsupported architecture $(dpkg --print-architecture), skipping install" >&2 ;;
+esac
+if [ -n "${FJ_ARCH:-}" ]; then
+    FJ_VERSION=$(curl -fsSL https://codeberg.org/api/v1/repos/forgejo-contrib/forgejo-cli/releases/latest | jq -r .tag_name)
+    curl -fsSL -o /tmp/fj.tar.gz "https://codeberg.org/forgejo-contrib/forgejo-cli/releases/download/${FJ_VERSION}/forgejo-cli-${FJ_ARCH}.tar.gz"
+    tar -xzf /tmp/fj.tar.gz -C /tmp fj
+    sudo install -o root -g root -m 0755 /tmp/fj /usr/local/bin/fj
+    rm -f /tmp/fj.tar.gz /tmp/fj
+    fj version
+fi
