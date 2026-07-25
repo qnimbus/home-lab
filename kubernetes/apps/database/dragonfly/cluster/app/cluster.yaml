@@ -8,6 +8,16 @@ spec:
   # renovate: datasource=docker depName=ghcr.io/dragonflydb/dragonfly
   image: ghcr.io/dragonflydb/dragonfly:v1.39.0@sha256:0fa01a2b929e704c7a9300d23e7f52002ebd39e90996fb8bb63826aed92fa06f
   replicas: 3
+  # Explicit thread count, paired with resources.limits.cpu below: without a CPU
+  # limit, Dragonfly auto-detects the proactor thread count from the host's full
+  # core count (sched_getaffinity), not the container's cgroup quota. On cp-01
+  # (32-core AMD) this produced "32 threads, so 8.00GiB are required. Exiting"
+  # (Dragonfly hard-requires ~256MiB per thread) against a 768Mi memory limit —
+  # a CrashLoopBackOff observed live after the first deploy. Pinning both the
+  # thread count and a matching CPU limit makes startup memory requirements
+  # deterministic regardless of which node a replica lands on.
+  args:
+    - --proactor_threads=2
   authentication:
     passwordFromSecret:
       name: dragonfly-secret
@@ -17,6 +27,7 @@ spec:
       cpu: 100m
       memory: 256Mi
     limits:
+      cpu: "2"
       memory: 768Mi
   topologySpreadConstraints:
     - maxSkew: 1
