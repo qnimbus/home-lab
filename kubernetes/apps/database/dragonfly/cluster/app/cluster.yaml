@@ -1,0 +1,36 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/dragonflydb.io/dragonfly_v1alpha1.json
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: dragonfly
+spec:
+  # renovate: datasource=docker depName=ghcr.io/dragonflydb/dragonfly
+  image: ghcr.io/dragonflydb/dragonfly:v1.39.0@sha256:0fa01a2b929e704c7a9300d23e7f52002ebd39e90996fb8bb63826aed92fa06f
+  replicas: 3
+  authentication:
+    passwordFromSecret:
+      name: dragonfly-secret
+      key: password
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 768Mi
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app: dragonfly
+  # Disabled: the operator's default (true) auto-creates a NetworkPolicy that
+  # restricts the redis port (6379) to same-namespace pods only. This instance is
+  # meant to be a cluster-wide/multi-tenant service (future consumers land in other
+  # namespaces, e.g. a paused paperless-ngx plan in `documents`) — leaving the
+  # operator's namespace-scoped default enabled would silently block every
+  # cross-namespace consumer. This repo has no NetworkPolicy resources elsewhere by
+  # design; revisit if that changes, replacing this with an explicit allow-list of
+  # consumer namespaces instead of leaving ingress fully open.
+  networkPolicyEnabled: false

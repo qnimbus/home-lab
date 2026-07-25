@@ -25,6 +25,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
   - [CSI Snapshots (external-snapshotter + Ceph VolumeSnapshotClass)](#csi-snapshots-external-snapshotter--ceph-volumesnapshotclass)
   - [VolSync (PVC Backup)](#volsync-pvc-backup)
   - [Researched Patterns (bykaj/home-ops)](#researched-patterns-bykajhome-ops)
+  - [Dragonfly: Snapshot Persistence (Future)](#dragonfly-snapshot-persistence-future)
 - [Completed](#completed)
 
 ---
@@ -1313,6 +1314,43 @@ A third Gateway alongside `envoy-external` and `envoy-internal`, purpose-built f
 **Overhead:** one additional Envoy proxy Deployment (3 replicas × ~256 Mi each) and one IP from the Cilium pool.
 
 **Reference:** `bykaj/home-ops` `kubernetes/apps/network/external-services/` uses this pattern with an `envoy-services` gateway on a dedicated IP.
+
+---
+
+### Dragonfly: Snapshot Persistence (Future)
+
+`kubernetes/apps/database/dragonfly/` currently runs with no persistence by design — HA comes from
+3 in-memory replicas (`spec.replicas`) plus `spec.topologySpreadConstraints`, not disk replication,
+which was the whole point of choosing Dragonfly over Valkey/Redis on this cluster's `ceph-block`
+(RWO-only) storage. Not needed today: the only planned consumer (a paused paperless-ngx plan) only
+uses it for non-durable Celery/Channels traffic.
+
+**When to revisit:** a future consumer needs to survive a full cluster restart without a cold cache
+(e.g. a job queue where in-flight work would otherwise be lost).
+
+**How**: the `Dragonfly` CRD has a native `spec.snapshot` field — no redesign needed, just an
+addition to `cluster.yaml`:
+
+```yaml
+spec:
+  snapshot:
+    dir: s3://<bucket>/dragonfly/          # S3-compatible target, not a local PVC
+    cron: "0 * * * *"                       # hourly, adjust as needed
+    enableOnMasterOnly: true                 # avoid replicas racing/clobbering the same prefix
+```
+
+Prefer the **S3 `dir`** form over `persistentVolumeClaimSpec` — it keeps the deployment disk-free,
+preserving the same rationale that led to choosing Dragonfly in the first place, and can reuse the
+same Backblaze B2 bucket + S3-compatible credential pattern `plugin-barman-cloud` already uses for
+CNPG's WAL archiving (`kubernetes/apps/database/cloudnative-pg/cluster/app/objectstore.yaml`), via a
+new same-namespace `ExternalSecret` (or extending the existing `cloudnative-pg` 1Password item's S3
+fields, if scoping allows) supplying `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` through
+`spec.env` on the `Dragonfly` CR. `enableOnMasterOnly: true` is a solid default either way — without
+it, every replica would write to the same `dir`/prefix concurrently.
+
+The `persistentVolumeClaimSpec` alternative (one `ceph-block` PVC per pod) works too, but
+reintroduces the RWO-disk dependency this design deliberately avoided — only reach for it if S3
+access turns out to be unavailable/undesirable at the time.
 
 ---
 

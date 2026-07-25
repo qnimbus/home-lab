@@ -109,7 +109,7 @@ Apps are grouped by functional area. Entries marked **✅ deployed** are already
 |-----|-------|--------|-------|
 | **cloudnative-pg** ✅ | `cloudnative-pg` v0.28.2 | `ghcr.io/cloudnative-pg/charts` | PostgreSQL cluster operator (CNPG) — backs `pgadmin` today; would also power Authentik, Paperless, etc. |
 | **cloudnative-pg-dashboard** | `cloudnative-pg-dashboard` v0.0.5 | `ghcr.io/cloudnative-pg/grafana-dashboards` | Grafana dashboards for CNPG clusters |
-| **dragonfly** | `dragonfly-operator` v4.6.2 | `app-template` | Redis-compatible in-memory store; faster than Redis |
+| **dragonfly** ✅ | `dragonfly-operator` v1.6.1 | `ghcr.io/dragonflydb/dragonfly-operator/helm` | Cluster-wide Redis-compatible in-memory store deployed via the official operator chart directly (mirrors cloudnative-pg's pattern); backs future paperless-ngx and other multi-tenant consumers via logical DB index |
 | **emqx** | `emqx-operator` | `repos.emqx.io/charts` | MQTT broker — IoT/home-automation integration |
 | **barman-cloud** ✅ | `plugin-barman-cloud` v0.7.0 | `ghcr.io/cloudnative-pg/charts` | PostgreSQL WAL archiving to object storage (Backblaze B2) — a CNPG plugin chart, not `app-template` |
 | **postgres-backup-local** ✅ | `app-template` v5.0.1 | `ghcr.io/bjw-s-labs/helm/app-template` | Local PostgreSQL backup job |

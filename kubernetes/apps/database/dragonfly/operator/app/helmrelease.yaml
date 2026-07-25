@@ -1,0 +1,36 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: dragonfly-operator
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: dragonfly-operator
+    namespace: flux-system
+  interval: 1h
+  values:
+    crds:
+      install: true
+    # Avoids the kube-rbac-proxy bearer-token ClusterRoleBinding dance needed to
+    # scrape port 8443 — exposes plain-HTTP /metrics on :8080 instead, matching
+    # every other operator's metrics exposure in this repo (CNPG, envoy-gateway,
+    # flux-instance).
+    rbacProxy:
+      enabled: false
+    serviceMonitor:
+      enabled: true
+    grafanaDashboard:
+      enabled: true
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+    manager:
+      image:
+        repository: ghcr.io/dragonflydb/operator
+        # renovate: datasource=docker depName=ghcr.io/dragonflydb/operator
+        tag: v1.6.1@sha256:b11411142935f92ed0ec30a5ddeb31680e09ab66beecb827cb0224f1c4238638

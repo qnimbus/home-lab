@@ -36,3 +36,4 @@ resources:
   - ./keda-add-ons-http.yaml
   - ./blackbox-exporter.yaml
   - ./forgejo.yaml
+  - ./dragonfly-operator.yaml

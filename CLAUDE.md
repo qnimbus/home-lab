@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-07-25 | `dragonfly-cluster-wide-deployment` | Deployed cluster-wide Dragonfly via native operator chart as shared Redis-compatible store; unblocks paused paperless-ngx plan |
 > | 2026-07-25 | `truenas-thermal-incident-docker-recovery` | Root-caused TrueNAS thermal spike to hardware, not workload; recovered Docker Apps outage from an unmounted dataset |
 > | 2026-07-20 | `forgejo-gitops-deployment` | Deployed Forgejo (not Gitea) via GitOps after community research; CNPG DB, ceph-block, HTTPRoute + TCPRoute for SSH |
 > | 2026-07-18 | `diagnose-alerts-command-and-ceph-packetdrops-tuning` | Built /diagnose-alerts slash command; used it to root-cause CephNodeNetworkPacketDrops false positives, added for:1m debounce |
@@ -11,8 +12,6 @@
 > | 2026-07-17 | `node-exporter-hwmon-crash-fix` | Root-caused node-exporter TrueNAS crash to hwmon panic; added textfile-collector sidecar for sensors |
 > | 2026-07-14 | `doco-cd-truenas-compose-gitops` | Added doco-cd to GitOps-manage node-exporter/smartctl-exporter on TrueNAS outside Flux; wired Prometheus ScrapeConfig, fixed Renovate tag-pinning gap |
 > | 2026-07-14 | `external-secrets-1password-inventory` | Built docs/EXTERNAL-SECRETS.yaml cataloging all 18 1Password items (ESO + bootstrap-tier) with consumers and field imports; confirmed no secret values exposed |
-> | 2026-07-12 | `firefly-fsgroup-fix-cnpg-backup-tasks` | Fixed Firefly III attachment uploads via fsGroup on ceph-block PVC; added `just cnpg dump`/`restore` tasks, fixed hardcoded pod name in nfs-restore-from-backup |
-
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

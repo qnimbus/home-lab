@@ -4,6 +4,48 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-25 — `dragonfly-cluster-wide-deployment`
+
+### Goal
+Research and deploy a cluster-wide, reusable Redis-protocol-compatible datastore (Dragonfly) as shared infrastructure, deferring the previously-designed paperless-ngx deployment until it exists.
+
+### What we did
+- Reviewed a prior paused paperless-ngx GitOps plan (Gotenberg+Tika, web-UI-only ingestion, internal-only access, shared CNPG postgres); user deferred implementing it in favor of building a cluster-wide Valkey/Redis solution first, since paperless would otherwise have been the first and only consumer of a one-off in-pod sidecar.
+- Researched community consensus for Redis-compatible stores in homelab GitOps repos via `gh api search/code` adoption counts (`dragonfly-operator`: 1212 hits vs `valkey-operator`: 381) and by reading `bykaj/home-ops`'s actual Dragonfly manifests; recommended Dragonfly over Valkey/Bitnami Redis, primarily because its HA model (in-memory replication across `spec.replicas`) avoids this cluster's Ceph RBD ReadWriteOnce-only limitation entirely.
+- Ran a full Plan Mode design pass (2 parallel Explore agents + 1 Plan agent, resumed once after a harness restart interrupted it) verifying every claim directly against upstream `dragonflydb/dragonfly-operator` source (`dragonfly_types.go`, chart `values.yaml`/templates) and this repo's own `cloudnative-pg` operator+cluster Kustomization pattern, rather than copying the community reference's `app-template`-based approach.
+- Implemented the design: new `dragonfly-operator` OCIRepository source, a 2-document `ks.yaml` (operator Kustomization → CRD-instance Kustomization) in `kubernetes/apps/database/dragonfly/`, the official operator Helm chart (not `app-template`, mirroring CNPG), a `Dragonfly` CR with 3 replicas + `topologySpreadConstraints` + `networkPolicyEnabled: false`, a wildcard/rewrite `ExternalSecret` for a new 1Password `dragonfly` item (created by the user), and a hand-authored `PodMonitor` for per-instance metrics.
+- Validated the full repo with `task validate` (kubeconform against Flux's OpenAPI schemas) — all new resources passed, `kustomize build` rendered cleanly for both the operator and cluster paths.
+- Updated `docs/EXTERNAL-SECRETS.yaml` (new `dragonfly` item entry, bumped `last_verified`) and corrected a stale `docs/POTENTIAL-DEPLOYMENTS.md` line that assumed an `app-template`-based deployment at an old chart version.
+- On a follow-up question about future persistence, verified the `Dragonfly` CRD's native `spec.snapshot` field (S3 `dir`, `cron`, `enableOnMasterOnly`, or PVC-backed) directly from operator source, and recorded a config sketch + rationale in `docs/ROADMAP.md` (favoring S3-backed snapshots reusing the existing `plugin-barman-cloud`/Backblaze B2 pattern over PVC-backed, to preserve the disk-free design) rather than adding unused config to the live CR.
+- Saved a memory (`paperless-ngx-deployment-plan.md`) documenting the paused paperless-ngx plan and its dependency on this work.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/dragonfly-operator.yaml` | New OCIRepository source for the `dragonfly-operator` Helm chart |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Added the new OCIRepository to resources |
+| `kubernetes/apps/database/kustomization.yaml` | Added `./dragonfly` to resources |
+| `kubernetes/apps/database/dragonfly/kustomization.yaml` | New — points at `ks.yaml` |
+| `kubernetes/apps/database/dragonfly/ks.yaml` | New — 2-doc Flux Kustomization (operator + CRD instance) |
+| `kubernetes/apps/database/dragonfly/operator/app/kustomization.yaml` | New |
+| `kubernetes/apps/database/dragonfly/operator/app/helmrelease.yaml` | New — `dragonfly-operator` HelmRelease (chart-native, `rbacProxy` disabled, monitoring/dashboard enabled) |
+| `kubernetes/apps/database/dragonfly/cluster/app/kustomization.yaml` | New |
+| `kubernetes/apps/database/dragonfly/cluster/app/externalsecret.yaml` | New — pulls the `dragonfly` 1Password item |
+| `kubernetes/apps/database/dragonfly/cluster/app/cluster.yaml` | New — `Dragonfly` CR, 3 replicas, `networkPolicyEnabled: false` |
+| `kubernetes/apps/database/dragonfly/cluster/app/podmonitor.yaml` | New — scrapes the instance's `admin` metrics port |
+| `docs/EXTERNAL-SECRETS.yaml` | Added `dragonfly` item entry; bumped `last_verified`/`last_verified_commit` |
+| `docs/POTENTIAL-DEPLOYMENTS.md` | Corrected the dragonfly row (was `app-template` v4.6.2, now reflects the actual native-chart deployment) |
+| `docs/ROADMAP.md` | Added a "Dragonfly: Snapshot Persistence (Future)" reference section |
+
+### Key decisions
+- Chose Dragonfly over Valkey/Redis: community adoption plus its in-memory replication model avoids needing a shared/replicated PVC on Ceph RBD (RWO-only).
+- Deployed via the official `dragonfly-operator` chart directly (`chartRef: OCIRepository`), not `bjw-s/app-template` — mirrors this repo's own `cloudnative-pg` pattern and avoids re-implementing RBAC the chart already ships (the community reference repo had hand-rolled it unnecessarily).
+- Set `spec.networkPolicyEnabled: false` on the `Dragonfly` CR, deliberately overriding the operator's same-namespace-only default — the entire purpose of this deployment is to be a cross-namespace, multi-tenant service, and this repo has no NetworkPolicy resources elsewhere by design.
+- Set `rbacProxy.enabled: false` on the operator chart to expose plaintext `/metrics` rather than requiring a new `kube-rbac-proxy` bearer-token ClusterRoleBinding — matches this repo's existing metrics-exposure posture on every other operator.
+- Deferred persistence/snapshotting entirely for now (no consumer needs durability yet); recorded the future config as a `docs/ROADMAP.md` reference note rather than dead config in the live manifest, per the repo's own "don't design for hypothetical requirements" convention.
+
+---
+
 ## 2026-07-25 — `truenas-thermal-incident-docker-recovery`
 
 ### Goal
