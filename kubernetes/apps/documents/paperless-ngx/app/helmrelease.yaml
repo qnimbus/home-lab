@@ -23,8 +23,13 @@ spec:
           app:
             image:
               repository: ghcr.io/paperless-ngx/paperless-ngx
+              # TEMPORARY: pinned to match the version of a TrueNAS-side backup being
+              # restored via document_importer (which does a raw, version-strict Django
+              # loaddata - the 3.0.3 schema rejected the 2.20.15 export's SavedView
+              # fields). Revert to 3.0.3 once the import succeeds and let Django's own
+              # migrations bring the imported data forward.
               # renovate: datasource=docker depName=ghcr.io/paperless-ngx/paperless-ngx
-              tag: "3.0.3"
+              tag: "2.20.15"
             env:
               PAPERLESS_DBHOST: ${PG_HOST}
               PAPERLESS_DBPORT: "5432"
