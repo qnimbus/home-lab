@@ -42,9 +42,21 @@ spec:
               PAPERLESS_DATA_DIR: /usr/src/paperless/data
               PAPERLESS_MEDIA_ROOT: /usr/src/paperless/media
               PAPERLESS_EXPORT_DIR: /usr/src/paperless/export
+              # The image's s6-overlay entrypoint must start as root: PAPERLESS_OCR_LANGUAGES
+              # triggers a runtime `apt-get install tesseract-ocr-nld`, and it also chowns the
+              # mounted volumes - both fail silently as non-root (confirmed live: container
+              # crash-looped with "Unable to install language tesseract-ocr-nld as non-root").
+              # USERMAP_UID/GID is the image's documented mechanism to drop root privileges to
+              # this UID/GID for the actual gunicorn/celery processes after that init work is
+              # done - see containers.app.securityContext below for the matching root override.
+              USERMAP_UID: "1000"
+              USERMAP_GID: "1000"
             envFrom:
               - secretRef:
                   name: paperless-secret
+            securityContext:
+              runAsUser: 0
+              runAsGroup: 0
             probes:
               liveness: &probes
                 enabled: true
