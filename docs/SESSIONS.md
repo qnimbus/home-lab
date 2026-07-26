@@ -4,6 +4,47 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-26 — `paperless-ngx-gitops-deployment`
+
+### Goal
+Design and implement the paperless-ngx (document management/OCR) GitOps deployment, wired to the newly-available cluster-wide Dragonfly instance.
+
+### What we did
+- Researched community GitOps patterns for paperless-ngx via kubesearch.dev and `gh api search/code`, examining `bykaj/home-ops` (shared CNPG + Dragonfly + SMB/NAS storage + OIDC, no Gotenberg/Tika) and `vaskozl/home-infra` (single app-template controller bundling app+Gotenberg+Tika+Redis as localhost sidecars) as concrete community references.
+- Ran a full Plan Mode design pass (1 Explore agent surveying this repo's existing CNPG/ceph-block-fsGroup/VolSync conventions via `firefly-iii`/`pgadmin`/`forgejo`, 1 Plan agent producing a concrete file-by-file design) and used `AskUserQuestion` to lock in Gotenberg+Tika inclusion, web-UI/API-only ingestion (no NFS watched folder), internal-only access, and OCR language (Dutch+English).
+- User rejected two initial `ExitPlanMode` attempts, instead deferring the whole deployment until a cluster-wide Redis-compatible store existed — paperless-ngx would otherwise have been the first and only consumer of a one-off in-pod Redis sidecar; plan and rationale saved to memory.
+- Resumed the session after Dragonfly was deployed cluster-wide (separate session); revised the plan to drop the in-pod Redis/Valkey sidecar entirely and wire paperless-ngx to the shared Dragonfly instance instead (db index 0), adding `dependsOn: dragonfly` to the app Kustomization and extending the app-level `ExternalSecret` to also pull the existing `dragonfly` 1Password item.
+- Implemented the design in an isolated worktree: new `documents` namespace, a `paperless-ngx` app-template `HelmRelease` (this repo's first multi-container controller — `app`+`gotenberg`+`tika` as localhost sidecars, no separate Redis container), a CNPG `Database` CR + managed role wired to the shared `postgres-v17` cluster, 4 `ceph-block` PVCs (only `media` VolSync-backed via `existingClaim`), and an internal-only `HTTPRoute`.
+- Pinned concrete current versions via live GitHub/Docker Hub API lookups rather than guessing (`paperless-ngx:3.0.3`, `gotenberg:8.34.0`, `apache/tika:3.3.1.0`).
+- Validated every new/edited path with `kubectl kustomize` + `kubeconform -strict`, confirming the one reported `HTTPRoute` hostname "error" is a pre-existing `${DOMAIN_CLUSTER}` substitution false-positive also present on `firefly-iii`'s already-deployed `HTTPRoute`.
+- After the user created the 1Password `paperless` item with field names that differed from the initially-drafted placeholders (`DB_USER`/`SECRET_KEY`/`ADMIN_USER`/`ADMIN_MAIL`/`ADMIN_PASSWORD`, no `PAPERLESS_` prefix), corrected both `ExternalSecret` templates and `docs/EXTERNAL-SECRETS.yaml`'s field lists to match, re-validating after the fix.
+- Work is implemented but not yet committed — user's explicit `/git-stage`/`/git-commit` still pending, per repo convention.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/documents/namespace.yaml` | New — `documents` namespace |
+| `kubernetes/apps/documents/kustomization.yaml` | New |
+| `kubernetes/apps/documents/paperless-ngx/ks.yaml` | New — 2-doc Flux Kustomization (`db` + `app`) |
+| `kubernetes/apps/documents/paperless-ngx/db/database.yaml` | New — CNPG `Database` CR |
+| `kubernetes/apps/documents/paperless-ngx/db/externalsecret.yaml` | New — DB role secret |
+| `kubernetes/apps/documents/paperless-ngx/db/kustomization.yaml` | New |
+| `kubernetes/apps/documents/paperless-ngx/app/helmrelease.yaml` | New — 3-container app-template controller (app/gotenberg/tika) |
+| `kubernetes/apps/documents/paperless-ngx/app/externalsecret.yaml` | New — app secrets + Dragonfly-sourced `PAPERLESS_REDIS` |
+| `kubernetes/apps/documents/paperless-ngx/app/httproute.yaml` | New — internal-only route |
+| `kubernetes/apps/documents/paperless-ngx/app/kustomization.yaml` | New |
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/cluster.yaml` | Added `paperless` managed role |
+| `kubernetes/apps/kustomization.yaml` | Registered `./documents` |
+| `docs/EXTERNAL-SECRETS.yaml` | Added `paperless` item + new `dragonfly`/`volsync-restic` consumer entries |
+
+### Key decisions
+- Hybrid of the two community reference architectures rather than copying either: this repo's existing shared-CNPG convention, plus Dragonfly-as-shared-broker once it became available, instead of bykaj's SMB/NAS+OIDC or vaskozl's fully self-bundled sidecars.
+- `media` PVC uses `existingClaim: "${VOLSYNC_CLAIM:=paperless-ngx}"` rather than a self-declared PVC — traced explicitly through `components/volsync/pvc.yaml`/`replicationsource.yaml` to guarantee it's the same volume VolSync backs up, rather than relying on implicit PVC-name matching (which `firefly-iii`'s own setup leaves ambiguous).
+- Only the `media` PVC (irreplaceable document archive) is VolSync-backed; `data`/`export`/`consume` are treated as regenerable/transient and excluded to keep backup size/time down.
+- Internal-only access (`envoy-internal`) chosen over public/Tailscale exposure, matching how `firefly-iii`/`forgejo` (also sensitive personal data) are exposed in this repo.
+
+---
+
 ## 2026-07-25 — `dragonfly-cluster-wide-deployment`
 
 ### Goal

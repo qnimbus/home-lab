@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-07-26 | `paperless-ngx-gitops-deployment` | Implemented paperless-ngx GitOps deployment wired to cluster-wide Dragonfly; app-template's first multi-container controller (app+gotenberg+tika), CNPG DB, VolSync-backed media PVC |
 > | 2026-07-25 | `dragonfly-cluster-wide-deployment` | Deployed cluster-wide Dragonfly via native operator chart as shared Redis-compatible store; unblocks paused paperless-ngx plan |
 > | 2026-07-25 | `truenas-thermal-incident-docker-recovery` | Root-caused TrueNAS thermal spike to hardware, not workload; recovered Docker Apps outage from an unmounted dataset |
 > | 2026-07-20 | `forgejo-gitops-deployment` | Deployed Forgejo (not Gitea) via GitOps after community research; CNPG DB, ceph-block, HTTPRoute + TCPRoute for SSH |
@@ -11,7 +12,6 @@
 > | 2026-07-18 | `hwmon-textfile-staleness-alert` | Verified hwmon sidecar in production; advisor found silent-staleness gap, added NodeHwmonTextfileStale alert |
 > | 2026-07-17 | `node-exporter-hwmon-crash-fix` | Root-caused node-exporter TrueNAS crash to hwmon panic; added textfile-collector sidecar for sensors |
 > | 2026-07-14 | `doco-cd-truenas-compose-gitops` | Added doco-cd to GitOps-manage node-exporter/smartctl-exporter on TrueNAS outside Flux; wired Prometheus ScrapeConfig, fixed Renovate tag-pinning gap |
-> | 2026-07-14 | `external-secrets-1password-inventory` | Built docs/EXTERNAL-SECRETS.yaml cataloging all 18 1Password items (ESO + bootstrap-tier) with consumers and field imports; confirmed no secret values exposed |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
