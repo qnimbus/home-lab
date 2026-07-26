@@ -61,6 +61,12 @@ spec:
         superuser: false
         passwordSecret:
           name: forgejo-db-secret
+      - name: paperless
+        ensure: present
+        login: true
+        superuser: false
+        passwordSecret:
+          name: paperless-db-secret
   monitoring:
     enablePodMonitor: true
   plugins:
