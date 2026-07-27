@@ -2,7 +2,9 @@
 .archive/
 .agents
 .claude/skills
+.claude/worktrees
 .claude/skills/*
+.claude/worktrees/*
 .claude/settings.local.json
 
 # Ignore IDE/editor specific files and folders
