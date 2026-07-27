@@ -92,7 +92,7 @@ spec:
                 # deserializer loads the whole manifest into memory at once (no
                 # streaming), and a real-world manifest.json can run 500Mi+ on top
                 # of the ~512Mi gunicorn/celery baseline already resident here.
-                memory: 6Gi
+                memory: 10Gi
           gotenberg:
             image:
               repository: docker.io/gotenberg/gotenberg
