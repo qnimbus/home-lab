@@ -3,18 +3,19 @@
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: pgadmin
+  name: ${APP}
 spec:
   scaleTargetRef:
-    name: pgadmin
+    name: ${APP}
   minReplicaCount: 0
   maxReplicaCount: 1
-  # Idle window before scaling to 0 once request activity stops — pgadmin is a
-  # human-triggered admin GUI, not a service other workloads depend on, so a
-  # generous window avoids reloading on every short pause. Tune freely.
+  # Idle window before scaling to 0 once request activity stops. Consumers of this
+  # component are human-triggered, on-demand tools, not services other workloads
+  # depend on staying warm, so a generous window avoids reloading on every short
+  # pause. Tune in the component if the assumption stops holding for a consumer.
   cooldownPeriod: 1800
   triggers:
     - type: external-push
       metadata:
         scalerAddress: keda-add-ons-http-external-scaler.keda:9090
-        interceptorRoute: pgadmin
+        interceptorRoute: ${APP}

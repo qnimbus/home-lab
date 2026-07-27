@@ -10,8 +10,13 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
+  components:
+    - ../../../../components/keda/http-scaler
   interval: 1h
   path: ./kubernetes/apps/finance/firefly-iii-importer/app
+  postBuild:
+    substitute:
+      APP: *app
   prune: true
   wait: false
   sourceRef:
