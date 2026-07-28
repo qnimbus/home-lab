@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-07-28 | `externalsecret-rewrite-convention-cleanup` | Brought all ExternalSecrets onto the extract+rewrite mnemonic-prefix convention; fixed a stale-reference bug and a doc drift along the way |
 > | 2026-07-28 | `csi-nfs-smb-storage-deployment` | Deployed csi-driver-nfs (dynamic `nfs` StorageClass, dedicated NAS export) and csi-driver-smb (driver + ExternalSecret only, no consumer yet) implementing ROADMAP's Future Storage Options |
 > | 2026-07-26 | `paperless-ngx-gitops-deployment` | Implemented paperless-ngx GitOps deployment wired to cluster-wide Dragonfly; app-template's first multi-container controller (app+gotenberg+tika), CNPG DB, VolSync-backed media PVC |
 > | 2026-07-25 | `dragonfly-cluster-wide-deployment` | Deployed cluster-wide Dragonfly via native operator chart as shared Redis-compatible store; unblocks paused paperless-ngx plan |
@@ -11,7 +12,6 @@
 > | 2026-07-20 | `forgejo-gitops-deployment` | Deployed Forgejo (not Gitea) via GitOps after community research; CNPG DB, ceph-block, HTTPRoute + TCPRoute for SSH |
 > | 2026-07-18 | `diagnose-alerts-command-and-ceph-packetdrops-tuning` | Built /diagnose-alerts slash command; used it to root-cause CephNodeNetworkPacketDrops false positives, added for:1m debounce |
 > | 2026-07-18 | `hwmon-textfile-staleness-alert` | Verified hwmon sidecar in production; advisor found silent-staleness gap, added NodeHwmonTextfileStale alert |
-> | 2026-07-17 | `node-exporter-hwmon-crash-fix` | Root-caused node-exporter TrueNAS crash to hwmon panic; added textfile-collector sidecar for sensors |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

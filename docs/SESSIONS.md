@@ -4,6 +4,45 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-28 — `externalsecret-rewrite-convention-cleanup`
+
+### Goal
+Bring every `ExternalSecret` in the cluster into conformance with the documented `dataFrom.extract` + `rewrite.regexp` mnemonic-prefix convention, closing the gap between what `docs/CONVENTIONS.md` already mandated and what the manifests actually did.
+
+### What we did
+- Audited all 26 files referencing `kind: ExternalSecret` in the repo and classified each by whether its `extract` blocks already carried a `rewrite`, confirming the convention itself was already documented in `docs/CONVENTIONS.md` (added in a prior session) but not fully applied.
+- Used `AskUserQuestion` to resolve two ambiguous cases before editing: how to handle `firefly-iii-importer`'s apparently self-prefixed `FIREFLY_III_ACCESS_TOKEN` field, and whether to convert `flux-instance`'s discrete `data`/`remoteRef.property` pattern (item "GitHub App") to `extract`+`rewrite` or leave it as an exception.
+- Verified live 1Password field labels via `op item get ... --format json | jq` for `firefly-III`, `smb-credentials`, and `grafana` before editing — this caught that `firefly-III`'s real field is `ACCESS_TOKEN` (not `FIREFLY_III_ACCESS_TOKEN`), revealing that `firefly-iii-importer`'s template was referencing a nonexistent key and silently rendering an empty secret value; fixed as part of adding the `FIREFLY_$1` rewrite.
+- Renamed the `volsync-restic` 1Password item's field from `RESTIC_PASSWORD` to `PASSWORD` (via a `jq`-piped `op item edit`, keeping the concealed value untouched — same field ID before/after) so the shared VolSync component could add a proper `RESTIC_$1` rewrite instead of relying on a prefix baked into the field name; confirmed via `AskUserQuestion` given the blast radius (every VolSync-backed app in the cluster shares this item).
+- Added `rewrite` blocks (and matching `target.template` key updates) to `forgejo` (app+db), `paperless-ngx` (app+db), `firefly-iii` (app+db+importer), `csi-driver-smb`, and the shared `components/volsync` `ExternalSecret`; replaced `kube-prometheus-stack`'s `grafana-admin` no-op identity rewrite (`(.*) → $1`) with a real `GRAFANA_$1` prefix.
+- Documented the `flux-instance` discrete `data`/`remoteRef.property` pattern as an intentional exception in `docs/CONVENTIONS.md`, since its three fields are already unique and a blanket prefix would add ceremony without preventing any collision.
+- Updated `docs/EXTERNAL-SECRETS.yaml` to match every manifest change, and in the process fixed a pre-existing, unrelated drift in the `smb-credentials` entry (it was documented as `import_mode: explicit` with `SMB_`-prefixed field names, but the live manifest was actually a wildcard extract with raw `USERNAME`/`PASSWORD` — now both agree).
+- Validated every edited YAML file parses cleanly and confirmed via a Python/PyYAML sweep that no `ExternalSecret` in the repo has an `extract` block without an accompanying `rewrite`, except the documented `flux-instance` exception.
+- Work is implemented but not yet committed — user's explicit `/git-stage`/`/git-commit` still pending, per repo convention.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/CONVENTIONS.md` | Added "Exception: discrete `data` + `remoteRef.property`" subsection documenting `flux-instance`'s pattern |
+| `docs/EXTERNAL-SECRETS.yaml` | Updated `import_mode`/`known_fields`/notes for `firefly-III`, `forgejo`, `grafana`, `paperless`, `volsync-restic`, `smb-credentials` to match new rewrites; fixed pre-existing `smb-credentials` drift |
+| `kubernetes/apps/development/forgejo/app/externalsecret.yaml` | Added `FORGEJO_$1` rewrite; updated `template` refs |
+| `kubernetes/apps/development/forgejo/db/externalsecret.yaml` | Added `FORGEJO_$1` rewrite; updated `template` refs |
+| `kubernetes/apps/documents/paperless-ngx/app/externalsecret.yaml` | Added `PAPERLESS_$1` rewrite to the `paperless` extract (kept existing `DRAGONFLY_$1` on the `dragonfly` extract); updated `template` refs |
+| `kubernetes/apps/documents/paperless-ngx/db/externalsecret.yaml` | Added `PAPERLESS_$1` rewrite; updated `template` refs |
+| `kubernetes/apps/finance/firefly-iii/app/externalsecret.yaml` | Added `FIREFLY_$1` rewrite; updated `template` refs |
+| `kubernetes/apps/finance/firefly-iii/db/externalsecret.yaml` | Added `FIREFLY_$1` rewrite; updated `template` refs |
+| `kubernetes/apps/finance/firefly-iii-importer/app/externalsecret.yaml` | Added `FIREFLY_$1` rewrite; fixed stale `.FIREFLY_III_ACCESS_TOKEN` template reference to `.FIREFLY_ACCESS_TOKEN` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/externalsecret.yaml` | Replaced `grafana-admin`'s no-op identity rewrite with `GRAFANA_$1`; updated `template` ref |
+| `kubernetes/apps/system/csi-driver-smb/app/externalsecret.yaml` | Added `SMB_$1` rewrite, `engineVersion: v2`; updated `template` refs |
+| `kubernetes/components/volsync/externalsecret.yaml` | Added `RESTIC_$1` rewrite to match the renamed 1Password field |
+
+### Key decisions
+- Chose `FIREFLY_$1` etc. — a short mnemonic derived from the 1Password item name, not a literal 2-character code — matching the pattern already established by `CNPG_`, `DRAGONFLY_`, `ALERTMANAGER_` in the repo (length isn't the invariant; "1Password fields stay unprefixed, rewrite adds the app namespace" is).
+- Renamed the `volsync-restic` 1Password field rather than leaving it unprefixed-and-exempt, since the user explicitly opted for full convention compliance over a low-risk shortcut, despite the shared blast radius across every VolSync consumer.
+- Left `flux-instance` on its discrete `data`/`remoteRef.property` pattern rather than converting it, per user's choice — its fields are already unique so `extract`+`rewrite` would add no safety benefit.
+
+---
+
 ## 2026-07-28 — `csi-nfs-smb-storage-deployment`
 
 ### Goal

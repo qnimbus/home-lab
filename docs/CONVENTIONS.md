@@ -175,6 +175,27 @@ named `myapp`:
 | `DASHBOARD_USERNAME` | `MYAPP_DASHBOARD_USERNAME` |
 | `DASHBOARD_PASSWORD` | `MYAPP_DASHBOARD_PASSWORD` |
 
+### Exception: discrete `data` + `remoteRef.property`
+
+`extract` pulls every field of an item and relies on `rewrite` to keep keys collision-free — it's
+overkill when an item's fields are already few, unique, and unambiguous. In that case, prefer the
+explicit form instead:
+
+```yaml
+spec:
+  data:
+    - secretKey: githubAppID
+      remoteRef:
+        key: <1password-item-name>
+        property: githubAppID
+```
+
+`kubernetes/apps/flux-system/flux-instance/app/externalsecret.yaml` (item "GitHub App") is the
+live example: its three fields (`githubAppID`, `githubAppInstallationID`, `githubAppPrivateKey`)
+are already unique, so a blanket prefix would add ceremony without preventing anything. Reach for
+`extract` + `rewrite` by default; drop to explicit `data`/`remoteRef` only when every field is
+named individually anyway and collision risk is a non-issue.
+
 ---
 
 ## Cluster-wide variables (cluster-settings)
