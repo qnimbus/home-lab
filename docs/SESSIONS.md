@@ -4,6 +4,42 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-28 — `keda-postgres-scaler-component`
+
+### Goal
+Add a KEDA `ScaledObject` Component that scales Postgres-dependent apps (forgejo, firefly-iii, paperless-ngx) to zero when the shared CNPG cluster becomes unreachable, mirroring a pattern researched from `bykaj/home-ops`.
+
+### What we did
+- User asked to introduce "KEDA autoscale for postgres in bykaj's fashion"; an initial `WebSearch`/`gh api` lookup against a wrong GitHub repo (`ByKaj/home-ops`, an unrelated stale mirror) suggested bykaj used a raw HPA + prometheus-adapter "zeroscaler" pattern instead of KEDA — flagged this discrepancy to the user via `AskUserQuestion` before proceeding.
+- User corrected course, pointing to their actual local clone at `tmp/home-ops-bykaj` (repo `qnimbus/home-ops-bykaj`), which confirmed bykaj genuinely uses a native `keda.sh/v1alpha1 ScaledObject` with a `prometheus` trigger (`components/keda/postgres-scaler/scaledobject.yaml`) — re-derived the plan from that file directly instead of the wrong repo.
+- Ran two `Explore` subagents in parallel (existing KEDA setup; CNPG postgres usage across the cluster) plus a `Plan` subagent to design the concrete implementation, after live-verifying this cluster's prerequisites via `kubectl`: KEDA deployed/healthy, the existing `blackbox-exporter` `postgres` Probe already live with a healthy `probe_success{instance="postgres-v17-rw.database.svc.cluster.local:5432"}` metric, the correct in-cluster Prometheus service name (`kube-prometheus-stack-prometheus`, not bykaj's `prometheus-operated`), and that this repo's existing `PG_HOST` variable (not bykaj's `DB_HOST`) was the right one to reuse.
+- Reviewed the plan in plan mode; user approved with one change — `cooldownPeriod: 30` instead of bykaj's `0` — reasoning that this cluster's CNPG cluster already performs brief, self-healing `primaryUpdateStrategy: unsupervised` primary switchovers that a zero-debounce scaler could turn into unnecessary full pod restarts. User also requested auto mode for the implementation step.
+- Implemented: new Kustomize Component `kubernetes/components/keda/postgres-scaler/` (`kustomization.yaml` + `scaledobject.yaml`), wired into forgejo/firefly-iii/paperless-ngx's `ks.yaml` `components:` lists, and added a `driftDetection.ignore` block for `/spec/replicas` to each app's `helmrelease.yaml` (required so Flux's drift detection doesn't revert KEDA's scale-to-zero on its next reconcile).
+- Verified with `task validate` (all schema checks pass) and `flux build kustomization` against the live cluster for forgejo and firefly-iii — confirmed `${APP}` substitutes correctly into each `ScaledObject`'s name/namespace and the `driftDetection` block renders correctly in the built `HelmRelease`. Confirmed `${PG_HOST}` not resolving under this isolated single-Kustomization build mode is a pre-existing tooling limitation, not a regression, by showing the identical gap on forgejo's already-existing `HOST` field under the same command.
+- paperless-ngx is currently disabled (`kubernetes/apps/documents/kustomization.yaml` has its `ks.yaml` line commented out) — wired the component in anyway per the user's explicit "all three now" choice, with an inline comment noting it's inert until the app is re-enabled; couldn't `flux build`-verify it in isolation for the same reason (no live Flux object to fetch).
+- Work is implemented but not committed — user's explicit `/git-stage`/`/git-commit` still pending, per repo convention.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/components/keda/postgres-scaler/kustomization.yaml` | New Kustomize Component entry point |
+| `kubernetes/components/keda/postgres-scaler/scaledobject.yaml` | New KEDA `ScaledObject` template (`prometheus` trigger on `probe_success`, `cooldownPeriod: 30`) |
+| `kubernetes/apps/development/forgejo/ks.yaml` | Added `postgres-scaler` to `components:` list |
+| `kubernetes/apps/development/forgejo/app/helmrelease.yaml` | Added `driftDetection.ignore` for `/spec/replicas` |
+| `kubernetes/apps/finance/firefly-iii/ks.yaml` | Added `postgres-scaler` to `components:` list |
+| `kubernetes/apps/finance/firefly-iii/app/helmrelease.yaml` | Added `driftDetection.ignore` for `/spec/replicas` |
+| `kubernetes/apps/documents/paperless-ngx/ks.yaml` | Added `postgres-scaler` to `components:` list (inert while app disabled) |
+| `kubernetes/apps/documents/paperless-ngx/app/helmrelease.yaml` | Added `driftDetection.ignore` for `/spec/replicas` |
+
+### Key decisions
+- Corrected an initial wrong research lead (GitHub repo `ByKaj/home-ops`) using the user's own local clone as ground truth once they pointed to it — the reference pattern is a genuine KEDA `ScaledObject`, not a raw HPA + prometheus-adapter.
+- Chose `cooldownPeriod: 30` over bykaj's `0`, per explicit user instruction, to avoid scale-to-zero flapping during CNPG's own routine primary switchovers.
+- Query filters only on the `instance` label (not `job="postgres_probe"` like bykaj) since this repo's existing `postgres` Probe CR doesn't set a custom `jobName`.
+- Reused the existing `PG_HOST` cluster-wide variable rather than introducing bykaj's `DB_HOST` name, matching this repo's established convention.
+- Went straight to a shared Kustomize Component instead of a phased single-app pilot, since 3 consumers immediately clear this repo's documented "3+ apps" Component-creation threshold (`docs/ROADMAP.md`).
+
+---
+
 ## 2026-07-28 — `externalsecret-rewrite-convention-cleanup`
 
 ### Goal
