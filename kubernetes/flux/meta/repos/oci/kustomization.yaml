@@ -26,6 +26,8 @@ resources:
   - ./rook-ceph-cluster.yaml
   - ./snapshot-controller.yaml
   - ./volsync.yaml
+  - ./csi-driver-nfs.yaml
+  - ./csi-driver-smb.yaml
   - ./victoria-logs.yaml
   - ./fluent-bit.yaml
   - ./silence-operator.yaml

@@ -1,0 +1,41 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: csi-driver-nfs
+  namespace: csi-driver-nfs
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: csi-driver-nfs
+    namespace: flux-system
+  values:
+    storageClass:
+      create: true
+      name: nfs
+      # General-purpose RWX pool for future NAS-backed workloads (photo libraries,
+      # shared media) where Ceph capacity should be conserved — see docs/ROADMAP.md
+      # "Future Storage Options". Dedicated export (not the existing /mnt/tank/Cluster
+      # export used by postgres-backup-local/Volsync) because this provisioner creates
+      # and deletes a subdirectory per PVC under this path; sharing it with a
+      # hand-managed export risks the provisioner deleting data it doesn't own.
+      parameters:
+        server: "${NAS_HOST}"
+        share: /mnt/tank/Cluster/k8s-nfs-csi
+      # Mirrors talos/patches/global/machine-files.yaml's /etc/nfsmount.conf global
+      # defaults, so CSI-mounted volumes behave identically to the direct NFS mounts
+      # already used by postgres-backup-local/Volsync.
+      mountOptions:
+        - nfsvers=4.2
+        - nconnect=16
+        - hard
+        - noatime
+      # General-purpose scratch/working pool — deleting a PVC removes its NAS
+      # subdirectory. Anything precious must NOT use this StorageClass; use a
+      # hand-authored static PV with Retain instead (see csi-driver-smb).
+      reclaimPolicy: Delete
+      # NFS has no node/zone topology to respect (unlike Ceph RBD), so there's no
+      # benefit to WaitForFirstConsumer — bind immediately.
+      volumeBindingMode: Immediate

@@ -4,6 +4,47 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-28 — `csi-nfs-smb-storage-deployment`
+
+### Goal
+Implement the ROADMAP's "Future Storage Options" item: deploy `csi-driver-nfs` and `csi-driver-smb` for NAS-backed ReadWriteMany storage that doesn't consume Ceph capacity.
+
+### What we did
+- Reviewed `docs/ROADMAP.md`'s "Future Storage Options" entry and cross-referenced a sibling community repo (`tmp/home-ops-bykaj`) for real-world `csi-driver-nfs`/`csi-driver-smb` deployment patterns, using two parallel Explore agents to cover roadmap/current-cluster-storage context and the reference repo's actual manifests simultaneously.
+- Used `AskUserQuestion` to lock in three storage-safety decisions before designing: create a dynamic NFS StorageClass now rather than deferring it, use `Delete` reclaim policy for that general-purpose pool, and provision NFS on a dedicated new TrueNAS export rather than reusing the existing `postgres-backup-local`/Volsync export (diverging from the reference repo's approach of reusing its existing export).
+- Ran a Plan agent to produce a concrete file-by-file design, independently verifying every cited convention against real repo files first (namespace-per-app pattern in `kubernetes/apps/system/`, centralized `OCIRepository` sources in `kubernetes/flux/meta/repos/oci/`, the `dependsOn: onepassword-connect` rule for ExternalSecret-bearing Kustomizations, and the exact Talos NFS mount defaults from `talos/patches/global/machine-files.yaml`).
+- Implemented `csi-driver-nfs` (dynamic `nfs` StorageClass backed by a dedicated `/mnt/tank/Cluster/k8s-nfs-csi` export, `Delete` reclaim, mount options mirroring Talos's own NFS defaults) and `csi-driver-smb` (driver + `smb-credentials` ExternalSecret only, no StorageClass — deferred until a real consumer needs static per-share PVs) as new `kubernetes/apps/system/` Flux apps.
+- Added centralized `OCIRepository` chart sources with cosign signature verification (matching the `openebs.yaml` pattern), wired both apps into `kubernetes/apps/system/kustomization.yaml`, and validated every new/edited Kustomize path with `kubectl kustomize`.
+- Updated `docs/ROADMAP.md`, `docs/EXTERNAL-SECRETS.yaml`, and `docs/POTENTIAL-DEPLOYMENTS.md` to reflect the new deployment status, including the two manual out-of-band prerequisites (TrueNAS export creation, `smb-credentials` 1Password item) still required before it's functional, and flagging that Talos's CIFS/SMB kernel client support is unconfirmed pending a real static-PV smoke test.
+- Work is implemented but not yet committed — user's explicit `/git-stage`/`/git-commit` still pending, per repo convention.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/csi-driver-nfs.yaml` | New — OCIRepository source, `csi-driver-nfs` chart w/ cosign verify |
+| `kubernetes/flux/meta/repos/oci/csi-driver-smb.yaml` | New — OCIRepository source, `csi-driver-smb` chart w/ cosign verify |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Wired in both new OCIRepository sources |
+| `kubernetes/apps/system/csi-driver-nfs/ks.yaml` | New — Flux Kustomization, `targetNamespace: csi-driver-nfs` |
+| `kubernetes/apps/system/csi-driver-nfs/app/namespace.yaml` | New — dedicated namespace |
+| `kubernetes/apps/system/csi-driver-nfs/app/kustomization.yaml` | New |
+| `kubernetes/apps/system/csi-driver-nfs/app/helmrelease.yaml` | New — HelmRelease w/ dynamic `nfs` StorageClass |
+| `kubernetes/apps/system/csi-driver-smb/ks.yaml` | New — Flux Kustomization, `dependsOn: onepassword-connect` |
+| `kubernetes/apps/system/csi-driver-smb/app/namespace.yaml` | New — dedicated namespace |
+| `kubernetes/apps/system/csi-driver-smb/app/kustomization.yaml` | New |
+| `kubernetes/apps/system/csi-driver-smb/app/externalsecret.yaml` | New — `smb-credentials` ExternalSecret |
+| `kubernetes/apps/system/csi-driver-smb/app/helmrelease.yaml` | New — HelmRelease, driver-only, no StorageClass |
+| `kubernetes/apps/system/kustomization.yaml` | Wired in both new `ks.yaml` entries |
+| `docs/ROADMAP.md` | Added deployment status note to "Future Storage Options" |
+| `docs/EXTERNAL-SECRETS.yaml` | Added `smb-credentials` 1Password item entry; bumped `last_verified` |
+| `docs/POTENTIAL-DEPLOYMENTS.md` | Marked `csi-driver-nfs`/`csi-driver-smb` rows deployed w/ current versions |
+
+### Key decisions
+- Dedicated NFS export (`/mnt/tank/Cluster/k8s-nfs-csi`) instead of reusing the existing `/mnt/tank/Cluster` export — the dynamic provisioner creates/deletes a subdirectory per PVC, which shouldn't share a path with hand-managed backup exports it doesn't own.
+- SMB deployed driver-only with no StorageClass/PV — each SMB share needs its own distinct source path and credentials, so there's nothing generic to provision dynamically until a real consumer exists; follows the reference repo's static-PV-per-share pattern as documented follow-up work.
+- `Delete` reclaim policy for the general-purpose NFS pool — anything precious should get its own hand-authored static PV with `Retain` instead, mirroring how SMB is already handled.
+
+---
+
 ## 2026-07-26 — `paperless-ngx-gitops-deployment`
 
 ### Goal

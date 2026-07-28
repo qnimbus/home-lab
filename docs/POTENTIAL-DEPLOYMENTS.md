@@ -62,8 +62,8 @@ Apps are grouped by functional area. Entries marked **✅ deployed** are already
 | **rook-ceph operator** ✅ | `rook-ceph` v1.19.6 | `ghcr.io/rook/rook-ceph` | Ceph distributed storage operator — replaced Longhorn as primary storage |
 | **rook-ceph cluster** ✅ | `rook-ceph-cluster` v1.19.6 | `ghcr.io/rook/rook-ceph-cluster` | Ceph cluster instance; `ceph-block` is the default StorageClass (size=3/min_size=2) |
 | **rook-ceph-tools** ✅ | built into `rook-ceph-cluster` (`toolbox.enabled: true`) | `ghcr.io/rook/rook-ceph-cluster` | Ceph admin toolbox pod — not a standalone chart; exec via `just ceph <recipe>` (`ops/ceph/mod.just`) |
-| **csi-driver-nfs** | `csi-driver-nfs` v4.13.2 | `ghcr.io/home-operations/charts-mirror` | NFS dynamic provisioning (NAS integration) |
-| **csi-driver-smb** | `csi-driver-smb` v1.20.1 | `ghcr.io/home-operations/charts-mirror` | SMB/CIFS dynamic provisioning |
+| **csi-driver-nfs** ✅ | `csi-driver-nfs` v4.13.4 | `ghcr.io/home-operations/charts-mirror` | Dynamic `nfs` StorageClass, dedicated NAS export `/mnt/tank/Cluster/k8s-nfs-csi` |
+| **csi-driver-smb** ✅ | `csi-driver-smb` v1.20.3 | `ghcr.io/home-operations/charts-mirror` | Driver + `smb-credentials` ExternalSecret only — no consumer app yet, see [Future Storage Options](#future-storage-options) |
 | **snapshot-controller** ✅ | `snapshot-controller` v5.1.1 | `ghcr.io/piraeusdatastore/helm-charts` | VolumeSnapshot CRD controller; `ceph-block-snapshot` VolumeSnapshotClass enabled |
 | **volsync** ✅ | `volsync` v0.15.0 | `ghcr.io/home-operations/charts-mirror` | PVC replication and off-cluster backup (Restic); `waha` is the only adopted consumer so far |
 

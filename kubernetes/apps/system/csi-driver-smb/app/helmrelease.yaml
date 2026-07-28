@@ -1,0 +1,21 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: csi-driver-smb
+  namespace: csi-driver-smb
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: csi-driver-smb
+    namespace: flux-system
+  # Deliberately driver-only — no storageClass block. There is no concrete SMB
+  # consumer app in this cluster yet, and unlike NFS, SMB shares each need their
+  # own explicit source path/credentials, so there's nothing generic to provision
+  # via a single dynamic StorageClass. When a real consumer appears, follow the
+  # hand-authored static PersistentVolume/PersistentVolumeClaim pattern
+  # (driver: smb.csi.k8s.io, nodeStageSecretRef -> smb-credentials in this
+  # namespace) documented in docs/ROADMAP.md "Future Storage Options".
+  values: {}

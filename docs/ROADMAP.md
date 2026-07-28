@@ -277,6 +277,21 @@ maintain. Defer until a concrete need (e.g. offline image export) appears.
 Replicated block storage is covered by the committed [Rook-Ceph Migration](#rook-ceph-migration) (Ceph also
 provides RWX block volumes and S3-compatible object storage natively). The remaining optional item:
 
+> **Status: NFS deployed, SMB driver-only.** `csi-driver-nfs` (dynamic `nfs` StorageClass, dedicated
+> TrueNAS export `/mnt/tank/Cluster/k8s-nfs-csi`, `Delete` reclaim) and `csi-driver-smb` (driver +
+> `smb-credentials` ExternalSecret, no dynamic StorageClass) are both deployed in
+> `kubernetes/apps/system/csi-driver-nfs/` and `kubernetes/apps/system/csi-driver-smb/`. SMB has no
+> concrete consumer app yet — future SMB workloads use a hand-authored static
+> PersistentVolume/PersistentVolumeClaim pair (`driver: smb.csi.k8s.io`, `nodeStageSecretRef` →
+> `smb-credentials` in the `csi-driver-smb` namespace), not a dynamic StorageClass, since each SMB
+> share needs its own explicit `source`/credentials. NFS: any future app can request
+> `storageClassName: nfs` directly. Two manual, out-of-band prerequisites gate this working:
+> the `/mnt/tank/Cluster/k8s-nfs-csi` NFS export must be created on TrueNAS (Storage VLAN,
+> `10.200.0.0/24`), and a `smb-credentials` item (fields `SMB_USERNAME`/`SMB_PASSWORD`) must exist
+> in the `homelab` 1Password vault. Talos's CIFS/SMB kernel client support is unconfirmed (no
+> existing SMB mount in this repo to prove it) — worth validating with a real static-PV smoke test
+> before treating SMB as production-ready.
+
 - **NFS/SMB CSI**: Deploy `csi-driver-nfs` and/or `csi-driver-smb` for ReadWriteMany file workloads (photo libraries, shared media) backed by the NAS. Wire credentials via ExternalSecret from 1Password (ESO + 1Password Connect already deployed — no blocker). Optional even after Rook-Ceph, for NAS-backed RWX where Ceph capacity should be conserved.
 
 ---
