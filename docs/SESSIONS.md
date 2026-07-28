@@ -4,6 +4,40 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-28 — `paperless-ngx-smb-persistence-reenable`
+
+### Goal
+Wire paperless-ngx onto the new SMB CSI driver for NAS-backed archive/backups storage, keep VolSync protecting the regenerable working-state PVC, and re-enable the app.
+
+### What we did
+- Reviewed bykaj's `tmp/home-ops-bykaj/kubernetes/apps/default/paperless` as the reference pattern for static SMB PV/PVC wiring (per `CONVENTIONS.md`'s community-research guidance), cross-checked against this repo's already-deployed `csi-driver-smb` (driver-only, `smb-credentials` ExternalSecret in the `csi-driver-smb` namespace).
+- Found the user had already reworked `helmrelease.yaml`'s env/persistence blocks toward bykaj's shape (image pin, `archive`/`backups` `existingClaim` SMB persistence keys) but left a stale ceph-block `data` persistence block colliding with `config` on the same mount path (`/usr/src/paperless/data`) — removed it.
+- Added static `PersistentVolume`/`PersistentVolumeClaim` pairs (`pv.yaml`, `pvc.yaml`) for `paperless-ngx-smb-archive` (whole `//${NAS_HOST}/Archive` share) and `paperless-ngx-smb-backup` (`//${NAS_HOST}/Backup` share, scoped via `subPath: Apps/Paperless`); `storageClassName: smb` is a label-only match for static binding — no actual StorageClass object exists — `Retain` reclaim, cross-namespace `nodeStageSecretRef` to `csi-driver-smb`'s `smb-credentials` Secret.
+- Wired `dependsOn: csi-driver-smb` into paperless-ngx's app Kustomization so the async ExternalSecret-created Secret is guaranteed present before the pod tries to mount.
+- At the user's direction, briefly removed VolSync entirely from paperless-ngx (component, `VOLSYNC_CLAIM`/`VOLSYNC_CAPACITY`/`APP_UID`/`APP_GID` substitutions, `dependsOn`, and the `docs/EXTERNAL-SECRETS.yaml` consumer entry) reasoning the real documents now live durably on the NAS via SMB — then reverted per the user's follow-up correction: `config` (the regenerable search-index/working-state PVC) stays VolSync-protected. Renamed the claim from the stale `paperless-ngx-media` to `paperless-ngx-config` and resized `VOLSYNC_CAPACITY` from `30Gi` to `5Gi` to match what `config` actually holds now.
+- Answered a question on SMB `subPath` directory auto-creation: `smb.csi.k8s.io` does no subdirectory management in static mode (that's dynamic-provisioning-only); `Apps/Paperless` gets auto-created by the kubelet's generic subPath handling on first pod start, contingent on the `smb-credentials` account having write access to the `Backup` share.
+- Updated `docs/EXTERNAL-SECRETS.yaml` to document the two new `PersistentVolume` consumers of `smb-credentials`.
+- Re-enabled paperless-ngx in `kubernetes/apps/documents/kustomization.yaml` (uncommented `./paperless-ngx/ks.yaml`).
+- `kubectl kustomize` validated clean at each step; work is implemented but not committed — `/git-stage`/`/git-commit` still pending.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/EXTERNAL-SECRETS.yaml` | Documented `smb-credentials`' new `PersistentVolume` consumers (`paperless-ngx-smb-archive`/`-smb-backup`); kept the existing `volsync-restic` consumer entry for `paperless-ngx-volsync` |
+| `kubernetes/apps/documents/kustomization.yaml` | Re-enabled paperless-ngx (uncommented `./paperless-ngx/ks.yaml`) |
+| `kubernetes/apps/documents/paperless-ngx/app/helmrelease.yaml` | Fixed `persistence.config`/`data` mount-path collision; `archive`/`backup` persistence now point at the new SMB `existingClaim`s |
+| `kubernetes/apps/documents/paperless-ngx/app/kustomization.yaml` | Added `pv.yaml`/`pvc.yaml` |
+| `kubernetes/apps/documents/paperless-ngx/app/pv.yaml` | New — static PVs `paperless-ngx-smb-archive` and `paperless-ngx-smb-backup` |
+| `kubernetes/apps/documents/paperless-ngx/app/pvc.yaml` | New — matching static PVCs |
+| `kubernetes/apps/documents/paperless-ngx/ks.yaml` | Restored VolSync wiring for the `config` claim (renamed/resized), added `dependsOn: csi-driver-smb` |
+
+### Key decisions
+- SMB gets static PV/PVC pairs, not a dynamic StorageClass — mirrors the earlier `csi-driver-smb` design decision (each share needs distinct source/credentials, nothing generic to provision).
+- `config` (working-state/search-index data) stays VolSync-protected even though it's regenerable, because rebuilding a large document index from scratch is slow — cheap insurance via the existing Ceph→NAS backup path. The precious original documents (`archive`/`backups`) don't need VolSync since they're already durably stored on the NAS via SMB.
+- `storageClassName: smb` on both PV and PVC is a label-only match for static binding, not a reference to a real StorageClass resource — consistent with `csi-driver-smb` being driver-only.
+
+---
+
 ## 2026-07-28 — `keda-redis-smb-scaler-components`
 
 ### Goal

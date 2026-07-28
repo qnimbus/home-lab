@@ -47,10 +47,13 @@ spec:
   postBuild:
     substitute:
       APP: *app
+      # VolSync's mover container needs to run as the UID/GID that owns files on the
+      # config PVC (1000, matching defaultPodOptions.securityContext) rather than the
+      # component's default of 4000, or restic backup/restore hits permission errors.
       APP_UID: "1000"
       APP_GID: "1000"
-      VOLSYNC_CLAIM: paperless-ngx-media
-      VOLSYNC_CAPACITY: 30Gi
+      VOLSYNC_CLAIM: paperless-ngx-config
+      VOLSYNC_CAPACITY: 5Gi
   prune: true
   wait: false
   sourceRef:
@@ -66,3 +69,7 @@ spec:
     # ReplicationSource/ReplicationDestination CRDs don't exist until the operator installs
     # them — see bootstrap-ordering rule in CLAUDE.md.
     - name: volsync
+    # pv.yaml's nodeStageSecretRef points at the smb-credentials Secret ESO creates
+    # asynchronously in csi-driver-smb's namespace — wait: true there guarantees it's
+    # Ready before this Kustomization's Pod tries to mount the SMB PVCs.
+    - name: csi-driver-smb

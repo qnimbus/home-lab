@@ -30,26 +30,45 @@ spec:
         containers:
           app:
             image:
-              repository: ghcr.io/paperless-ngx/paperless-ngx
               # renovate: datasource=docker depName=ghcr.io/paperless-ngx/paperless-ngx
-              tag: "3.0.3"
+              repository: ghcr.io/paperless-ngx/paperless-ngx
+              tag: 2.20.15@sha256:6c86cad803970ea782683a8e80e7403444c5bf3cf70de63b4d3c8e87500db92f
             env:
+              # OIDC integration
+              PAPERLESS_APPS: "allauth.socialaccount.providers.openid_connect"
+              PAPERLESS_DISABLE_REGULAR_LOGIN: "false"
+              PAPERLESS_REDIRECT_LOGIN_TO_SSO: "false"
+              # Configure application
+              PAPERLESS_FILENAME_FORMAT: "{ created }-{ correspondent }-{ title }"
+              PAPERLESS_PORT: &port 8000
+              PAPERLESS_TASK_WORKERS: "2"
+              PAPERLESS_TIME_ZONE: ${CLUSTER_TIMEZONE}
+              PAPERLESS_URL: "https://paperless.${DOMAIN_CLUSTER}"
+              PAPERLESS_WEBSERVER_WORKERS: "2"
+              # Configure folders
+              PAPERLESS_CONSUMPTION_DIR: &consumePath /mnt/archive/consume
+              PAPERLESS_DATA_DIR: &dataPath /usr/src/paperless/data
+              PAPERLESS_EXPORT_DIR: &exportPath /mnt/archive/export
+              PAPERLESS_MEDIA_ROOT: &mediaPath /mnt/archive/media
+              # Configure folder importer
+              PAPERLESS_CONSUMER_POLLING: "15"
+              PAPERLESS_CONSUMER_RECURSIVE: "true"
+              PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS: "true"
+              # Configure OCR
+              PAPERLESS_OCR_LANGUAGE: nld+eng
+              PAPERLESS_OCR_LANGUAGES: nld
+              # Configure database
               PAPERLESS_DBHOST: ${PG_HOST}
               PAPERLESS_DBPORT: "5432"
               PAPERLESS_DBNAME: paperless
+              # Miscellaneous
               PAPERLESS_TIKA_ENABLED: "1"
               PAPERLESS_TIKA_ENDPOINT: http://localhost:9998
               PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://localhost:3000
-              PAPERLESS_URL: "https://paperless.${DOMAIN_CLUSTER}"
+
               PAPERLESS_CSRF_TRUSTED_ORIGINS: "https://paperless.${DOMAIN_CLUSTER}"
               PAPERLESS_TRUSTED_PROXIES: "**"
-              PAPERLESS_TIME_ZONE: ${CLUSTER_TIMEZONE}
-              PAPERLESS_OCR_LANGUAGE: nld
-              PAPERLESS_OCR_LANGUAGES: nld
-              PAPERLESS_CONSUMPTION_DIR: /usr/src/paperless/consume
-              PAPERLESS_DATA_DIR: /usr/src/paperless/data
-              PAPERLESS_MEDIA_ROOT: /usr/src/paperless/media
-              PAPERLESS_EXPORT_DIR: /usr/src/paperless/export
+
               # The image's s6-overlay entrypoint must start as root: PAPERLESS_OCR_LANGUAGES
               # triggers a runtime `apt-get install tesseract-ocr-nld`, and it also chowns the
               # mounted volumes - both fail silently as non-root (confirmed live: container
@@ -57,6 +76,7 @@ spec:
               # USERMAP_UID/GID is the image's documented mechanism to drop root privileges to
               # this UID/GID for the actual gunicorn/celery processes after that init work is
               # done - see containers.app.securityContext below for the matching root override.
+              # Configure user permissions
               USERMAP_UID: "1000"
               USERMAP_GID: "1000"
             envFrom:
@@ -72,7 +92,7 @@ spec:
                 spec:
                   httpGet:
                     path: /
-                    port: &port 8000
+                    port: *port
                   initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 5
@@ -94,13 +114,9 @@ spec:
             resources:
               requests:
                 cpu: 250m
-                memory: 1Gi
+                memory: 2Gi
               limits:
-                # 3Gi OOMKilled during document_importer restore: Django's JSON
-                # deserializer loads the whole manifest into memory at once (no
-                # streaming), and a real-world manifest.json can run 500Mi+ on top
-                # of the ~512Mi gunicorn/celery baseline already resident here.
-                memory: 10Gi
+                memory: 4Gi
           gotenberg:
             image:
               repository: docker.io/gotenberg/gotenberg
@@ -139,33 +155,28 @@ spec:
           http:
             port: *port
     persistence:
-      data:
-        type: persistentVolumeClaim
-        storageClass: ceph-block
-        accessMode: ReadWriteOnce
-        size: 5Gi
+      config:
+        existingClaim: "${VOLSYNC_CLAIM:=paperless-ngx-config}"
         globalMounts:
-          - path: /usr/src/paperless/data
-      # The document archive - the only irreplaceable data here, so it's the only volume
-      # backed by VolSync. existingClaim ties this directly to the PVC that
-      # components/volsync's pvc.yaml/replicationsource.yaml create and back up (named via
-      # ks.yaml's postBuild.substitute.VOLSYNC_CLAIM), rather than relying on this
-      # persistence key happening to produce a matching PVC name.
-      media:
-        existingClaim: "${VOLSYNC_CLAIM:=paperless-ngx}"
+          - path: *dataPath
+      archive:
+        existingClaim: "paperless-ngx-smb-archive"
         globalMounts:
-          - path: /usr/src/paperless/media
-      export:
-        type: persistentVolumeClaim
-        storageClass: ceph-block
-        accessMode: ReadWriteOnce
-        size: 5Gi
+          - path: *consumePath
+            subPath: consume
+          - path: *exportPath
+            subPath: export
+          - path: *mediaPath
+            subPath: media
+      backups:
+        existingClaim: "paperless-ngx-smb-backup"
         globalMounts:
-          - path: /usr/src/paperless/export
-      consume:
-        type: persistentVolumeClaim
-        storageClass: ceph-block
-        accessMode: ReadWriteOnce
-        size: 2Gi
+          - path: /mnt/backups
+            subPath: Apps/Paperless
+      tmpfs:
+        type: emptyDir
         globalMounts:
-          - path: /usr/src/paperless/consume
+          - path: /tmp
+            subPath: tmp
+          - path: /usr/src/paperless/data/log
+            subPath: log
