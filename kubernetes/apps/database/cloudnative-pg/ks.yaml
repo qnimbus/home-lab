@@ -73,7 +73,12 @@ spec:
   path: ./kubernetes/apps/database/cloudnative-pg/cluster/app
   postBuild:
     substitute:
-      CNPG_V17_CURRENT_CLUSTER: "postgres-v17-20260702"
+      # Bumped after the 2026-07-28 accidental Cluster recreation + PITR recovery:
+      # the current cluster (new system identifier, created 11:47:40 that day) must
+      # archive under its own fresh prefix, never the old one it was just restored
+      # from — reusing "postgres-v17-20260702" made barman-cloud reject every WAL
+      # archive attempt (system ID mismatch against that prefix's existing lineage).
+      CNPG_V17_CURRENT_CLUSTER: "postgres-v17-20260728"
   prune: true
   wait: false
   sourceRef:
