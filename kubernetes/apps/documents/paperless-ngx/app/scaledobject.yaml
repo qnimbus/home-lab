@@ -1,0 +1,33 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/keda.sh/scaledobject_v1alpha1.json
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: ${APP}-scaler
+spec:
+  scaleTargetRef:
+    name: ${APP}
+  minReplicaCount: 0
+  maxReplicaCount: 1
+  advanced:
+    restoreToOriginalReplicaCount: true
+  # 30s, same rationale as components/keda/postgres-scaler: one extra confirmation
+  # window beyond each blackbox probe's own 30s scrape interval before committing to
+  # scale-down, so a single transient failed scrape doesn't cold-restart the app.
+  cooldownPeriod: 30
+  # A single combined trigger, not one Component per dependency: KEDA only allows one
+  # ScaledObject per workload (confirmed live via the vscaledobject.kb.io admission
+  # webhook), so paperless-ngx's three critical dependencies — CNPG Postgres, the
+  # shared Dragonfly cache, and the SMB-backed archive/backup PVCs (app/pv.yaml) —
+  # must be folded into one query. min() over all three probe_success series means
+  # ANY one being unreachable (0) drags the aggregate to 0, preserving the same
+  # "any dependency down -> scale to zero" semantics a per-dependency trigger would
+  # give — a multi-trigger ScaledObject can't: KEDA scales down only when ALL
+  # triggers are inactive, the opposite of what's needed here.
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+        query: min(probe_success{instance=~"${PG_HOST}:5432|${DRAGONFLY_HOST}:6379|${NAS_HOST}:445"})
+        threshold: "1"
+        ignoreNullValues: "0"

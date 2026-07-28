@@ -8,3 +8,4 @@ resources:
   - ./httproute.yaml
   - ./pv.yaml
   - ./pvc.yaml
+  # - ./scaledobject.yaml
