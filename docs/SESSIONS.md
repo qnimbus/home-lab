@@ -4,6 +4,66 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-28 — `keda-redis-smb-scaler-components`
+
+### Goal
+Extend the KEDA scale-to-zero pattern (established for Postgres) to Dragonfly and SMB, mirroring `bykaj/home-ops`'s `redis-scaler`/`smb-scaler` Components.
+
+### What we did
+- Read bykaj's `redis-scaler` and `smb-scaler` Components (`tmp/home-ops-bykaj/kubernetes/components/keda/{redis,smb}-scaler/scaledobject.yaml`) as the reference pattern, then checked this repo's actual consumers: Dragonfly (cluster-wide shared Redis-compatible store, `kubernetes/apps/database/dragonfly`) has exactly one named consumer, paperless-ngx (itself currently disabled); `csi-driver-smb` has no consumer at all yet (driver + ExternalSecret only, per the earlier `csi-nfs-smb-storage-deployment` session).
+- Added a `DRAGONFLY_HOST` cluster-wide substitution var (`dragonfly.database.svc.cluster.local`) to `kubernetes/flux/vars/cluster-secrets.sops.yaml`, matching the existing `PG_HOST` convention (stable in-cluster DNS name, not truly secret, but grouped alongside `PG_HOST`/`NAS_HOST` for consistency) — decrypted, edited, re-encrypted with `sops`, verified the round-trip.
+- Added a new `dragonfly` blackbox `Probe` (`tcp_connect` on `${DRAGONFLY_HOST}:6379`) to `kubernetes/apps/observability/blackbox-exporter/app/probes.yaml`, mirroring the existing `postgres` Probe's structure and comment style — the `nas-smb` Probe smb-scaler needs already existed, so no new Probe was needed for that one.
+- Built two new Kustomize Components, mirroring `postgres-scaler`'s style (not bykaj's `${KEDA_NAME:=${APP}}` indirection): `kubernetes/components/keda/redis-scaler/` and `kubernetes/components/keda/smb-scaler/`, both `cooldownPeriod: 30` (not bykaj's `0`) for the same self-healing-blip rationale as the Postgres scaler.
+- Wired `redis-scaler` into paperless-ngx's `ks.yaml` `components:` list — inert until the app is re-enabled, same status as its `postgres-scaler` entry. Left `smb-scaler` unwired: confirmed via `flux build --dry-run` that `csi-driver-smb`'s Kustomization produces no Deployment to target.
+- Verified the existing generic `driftDetection.ignore` block (`target.kind: Deployment`, no `name` filter) in paperless-ngx's `helmrelease.yaml` already covers any number of ScaledObjects aimed at the same Deployment — no HelmRelease change needed for the second scaler.
+- Ran `task validate` (all checks pass) and `flux build kustomization` for paperless-ngx and csi-driver-smb; confirmed the empty `${PG_HOST}`/`${DRAGONFLY_HOST}` substitution in local dry-run output is a pre-existing tooling limitation (Flux's SOPS decryption provider isn't available offline), not a regression, by reproducing the identical gap on an already-shipped `PG_HOST` consumer (`postgres-backup-local`).
+- Work is implemented but not committed — `/git-stage`/`/git-commit` still pending.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/components/keda/redis-scaler/kustomization.yaml` | New Kustomize Component entry point |
+| `kubernetes/components/keda/redis-scaler/scaledobject.yaml` | New KEDA `ScaledObject` template (`prometheus` trigger on Dragonfly's `probe_success`, `cooldownPeriod: 30`) |
+| `kubernetes/components/keda/smb-scaler/kustomization.yaml` | New Kustomize Component entry point |
+| `kubernetes/components/keda/smb-scaler/scaledobject.yaml` | New KEDA `ScaledObject` template (`prometheus` trigger on SMB's `probe_success`, `cooldownPeriod: 30`), currently unwired — no app consumes `csi-driver-smb` yet |
+| `kubernetes/apps/observability/blackbox-exporter/app/probes.yaml` | Added `dragonfly` Probe (`tcp_connect` on `${DRAGONFLY_HOST}:6379`) |
+| `kubernetes/flux/vars/cluster-secrets.sops.yaml` | Added `DRAGONFLY_HOST` var |
+| `kubernetes/apps/documents/paperless-ngx/ks.yaml` | Added `redis-scaler` to `components:` list |
+
+### Key decisions
+- `smb-scaler` was built but deliberately left unwired — there's no live consumer, and wiring it into an arbitrary app would misrepresent the Component as active when it isn't.
+- `DRAGONFLY_HOST` was added as a cluster-wide var (grouped with `PG_HOST`/`NAS_HOST` in `cluster-secrets.sops.yaml`) rather than hardcoding the FQDN, for a single source of truth across the new Probe and ScaledObject, consistent with the existing `PG_HOST` precedent.
+
+---
+
+## 2026-07-28 — `cnpg-accidental-recreation-pitr-recovery`
+
+### Goal
+Diagnose and recover from an accidental full recreation of the shared CNPG `postgres-v17` Cluster (triggered while testing the new KEDA scale-down mechanism), including a failed `restore-from-backup` attempt and a successful PITR recovery of forgejo/firefly-iii data.
+
+### What we did
+- User tested the scale-down mechanism by manually scaling down `cloudnative-pg`; the third replica's join job (`postgres-v17-3-join-fthlk`) stalled. Initial read was that this was a normal, self-healing instance-count topology change — later corrected: `creationTimestamp` forensics on the `Cluster` object and its PVCs (`2026-07-28T11:47:40Z`) showed the whole Cluster had actually been torn down and recreated from scratch, wiping forgejo/firefly-iii data.
+- Separately, `just cnpg restore-from-backup` had edited `cluster/app/cluster.yaml` to add `spec.bootstrap.recovery` + `externalClusters`; Flux's dry-run rejected it — admission webhook `vcluster.cnpg.io`: `spec.bootstrap: Forbidden: Only one bootstrap method can be specified at a time`. Root cause: CNPG's own mutating webhook had already defaulted `spec.bootstrap.initdb` onto the live object at original creation (Git never declared it explicitly), so the recipe's `yq`-added `recovery` block merged alongside the existing `initdb` default instead of replacing it.
+- Reverted `cluster.yaml` to drop the added `bootstrap`/`externalClusters` block (matching `just cnpg undo-restore`'s effect) — validated with `task validate`; this edit was never committed (caught and reverted before staging), so it leaves no trace in git history.
+- Walked the user through PITR recovery into a disposable scratch `Cluster` (`postgres-v17-pitr-scratch`), applied by hand via `kubectl` (bykaj's `just cnpg pitr-restore` recipe is `gum`-interactive and unusable non-interactively; its automatic `serverName` resolution would also have picked the wrong, empty archive prefix for this scenario) — explained why a barman-cloud recovery + WAL replay onto the *live* cluster wasn't viable (`spec.bootstrap` is creation-time-only; would require another full Cluster recreation), versus a disposable scratch cluster for safe extraction.
+- First scratch-cluster attempt with an explicit `recoveryTarget.targetTime` (11:45:00Z) failed: `recovery ended before configured recovery target was reached`, only WAL file `000000070000000500000030` available. User revealed they'd separately reverted the change that had been breaking WAL archiving, expecting more WAL to be recoverable. Retried with no explicit `recoveryTarget` (recover-to-latest) — succeeded, reaching timeline 8 with real data (forgejo: 2 repos/2 users; firefly: 1886 accounts/42324 transactions).
+- User completed the actual dump/restore into the live cluster and scratch-cluster cleanup themselves.
+- Found continuous WAL archiving still failing post-recovery (`ContinuousArchivingFailing`; `pg_stat_archiver`: `archived_count=0`, `failed_count=147`) — root cause: the recreated cluster (new system identifier) was still configured to archive under the *old* cluster's `serverName` (`postgres-v17-20260702`); barman-cloud correctly rejects a mismatched system ID writing into an existing server's WAL lineage.
+- Fixed by bumping `CNPG_V17_CURRENT_CLUSTER` to `postgres-v17-20260728` (a fresh, never-archived-to prefix) in `kubernetes/apps/database/cloudnative-pg/ks.yaml`. User confirmed via `kubectl get cluster postgres-v17 -o jsonpath='{.status.conditions}'`, showing `ContinuousArchivingSuccess` at `12:32:46Z`.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/database/cloudnative-pg/ks.yaml` | Bumped `CNPG_V17_CURRENT_CLUSTER` from `postgres-v17-20260702` to `postgres-v17-20260728` — committed as `bed4aaf` |
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/cluster.yaml` | Added then reverted a bad `bootstrap.recovery`/`externalClusters` block (never committed) |
+
+### Key decisions
+- Recovered via a disposable scratch `Cluster` object rather than any in-place recovery on the live `postgres-v17` Cluster — `spec.bootstrap` is consulted by CNPG only once, at object creation, so an in-place PITR would have required deleting and recreating the live Cluster again, compounding the exact risk that caused this incident.
+- Chose recover-to-latest over a second explicit `recoveryTarget.targetTime` guess, once new WAL archives were confirmed available — safer than estimating a second timestamp against unknown-good WAL coverage.
+- A fresh, never-used `serverName` (`postgres-v17-20260728`) was picked for the recreated cluster's ongoing archiving, rather than reusing the old prefix — avoids any possibility of barman-cloud system-identifier collisions against the old cluster's WAL lineage.
+
+---
+
 ## 2026-07-28 — `keda-postgres-scaler-component`
 
 ### Goal

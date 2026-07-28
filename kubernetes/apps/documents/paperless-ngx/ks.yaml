@@ -35,9 +35,13 @@ spec:
       app.kubernetes.io/name: *app
   components:
     - ../../../../components/volsync
-    # postgres-scaler: wired in while paperless-ngx itself is disabled (see
-    # ../../kustomization.yaml) — has no live effect until the app is re-enabled.
+    # postgres-scaler + redis-scaler: wired in while paperless-ngx itself is disabled
+    # (see ../../kustomization.yaml) — has no live effect until the app is re-enabled.
+    # Both target the same Deployment; the driftDetection.ignore rule in
+    # app/helmrelease.yaml already covers /spec/replicas generically for any
+    # ScaledObject, no per-scaler addition needed there.
     - ../../../../components/keda/postgres-scaler
+    - ../../../../components/keda/redis-scaler
   interval: 1h
   path: ./kubernetes/apps/documents/paperless-ngx/app
   postBuild:

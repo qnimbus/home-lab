@@ -1,0 +1,27 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/keda.sh/scaledobject_v1alpha1.json
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: ${APP}-redis-scaler
+spec:
+  scaleTargetRef:
+    name: ${APP}
+  minReplicaCount: 0
+  maxReplicaCount: 1
+  advanced:
+    restoreToOriginalReplicaCount: true
+  # 30s, matching postgres-scaler's rationale: Dragonfly (kubernetes/apps/database/dragonfly)
+  # is a cluster-wide shared instance whose 3 replicas can perform brief, self-healing
+  # failovers today that consumers ride out via a few failed queries + reconnect. A 30s
+  # cooldown adds one extra confirmation window beyond the blackbox probe's own 30s scrape
+  # interval (observability/blackbox-exporter/app/probes.yaml) before committing to
+  # scale-down, so a single transient failed scrape doesn't immediately cold-restart the app.
+  cooldownPeriod: 30
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+        query: probe_success{instance="${DRAGONFLY_HOST}:6379"}
+        threshold: "1"
+        ignoreNullValues: "0"
