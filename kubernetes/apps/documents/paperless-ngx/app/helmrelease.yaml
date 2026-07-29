@@ -118,8 +118,13 @@ spec:
               requests:
                 cpu: 250m
                 memory: 2Gi
+              # TEMPORARY: bumped from 4Gi - document_archiver -f OOMKilled the container
+              # twice (2026-07-28) reprocessing the imported TrueNAS backup, once at
+              # --processes 2 and once single-process, so it's not purely a concurrency
+              # issue - at least one document's OCR pass needs more than 4Gi alone.
+              # Revert to 4Gi once the archiver run completes.
               limits:
-                memory: 4Gi
+                memory: 12Gi
           gotenberg:
             image:
               repository: docker.io/gotenberg/gotenberg
