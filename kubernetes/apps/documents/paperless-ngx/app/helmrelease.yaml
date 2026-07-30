@@ -124,7 +124,7 @@ spec:
               # issue - at least one document's OCR pass needs more than 4Gi alone.
               # Revert to 4Gi once the archiver run completes.
               limits:
-                memory: 12Gi
+                memory: 4Gi
           gotenberg:
             image:
               repository: docker.io/gotenberg/gotenberg
