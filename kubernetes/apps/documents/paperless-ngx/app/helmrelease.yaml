@@ -39,24 +39,28 @@ spec:
               PAPERLESS_DISABLE_REGULAR_LOGIN: "false"
               PAPERLESS_REDIRECT_LOGIN_TO_SSO: "false"
               # Configure application
-              # Single-brace "{ created }" is neither valid old-style ({created}, no
-              # spaces) nor valid new-style Jinja2 ({{ created }}) - paperless's template
-              # engine (Jinja2) treats it as literal text, so it was never substituting
-              # anything. Confirmed live: this is why document 4693 got a file literally
-              # named "{ created }-{ correspondent }-{ title }.pdf" the first time an edit
-              # triggered the rename-on-metadata-change signal (document_importer bypasses
-              # this rendering entirely, so bulk-imported filenames were unaffected).
+              # Structure: real correspondents get correspondent/year/... (matches the
+              # existing per-category StoragePath rules imported from the old instance);
+              # the 84%-majority "Onbekend" placeholder correspondent (see the Onbekend
+              # Correspondent, matching_algorithm=NONE) is deliberately flattened to
+              # year/... instead of a single giant Onbekend/ folder. doc_pk suffix
+              # guarantees uniqueness without relying on paperless's _01/_02 collision
+              # fallback. correspondent|string (not correspondent.name) is required -
+              # Jinja2's sandboxed environment rejects direct attribute access on the
+              # MatchingModelContext object but allows __str__ via the `string` filter.
+              # Verified live against real documents (correspondent, Onbekend, and
+              # unset cases) via format_filename() before deploying.
               #
               # The {{"{{"}}/{{"}}"}}  escaping below is required because app-template
               # pipes every env value through Helm's own `tpl` function before it reaches
               # the container - a first, unescaped attempt at plain "{{ created }}" made
               # Helm's Go template engine try to evaluate it as ITS OWN template syntax
               # (error: function "created" not defined), failing the HelmRelease for ~22h
-              # with the old pod silently left running. Verified via `helm template`
-              # against the real chart that this renders to the literal Jinja2 string
-              # paperless expects: "{{ created }}-{{ correspondent }}-{{ title }}".
+              # with the old pod silently left running. Go templates only recognize
+              # {{ }} as delimiters, not Jinja2's {% %}, so only the {{ }} expressions
+              # need escaping - confirmed via `helm template` against the real chart.
               PAPERLESS_FILENAME_FORMAT: >-
-                {{"{{"}} created {{"}}"}}-{{"{{"}} correspondent {{"}}"}}-{{"{{"}} title {{"}}"}}
+                {% if not correspondent or correspondent|string == 'Onbekend' %}{{"{{"}} created_year {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}{% else %}{{"{{"}} correspondent {{"}}"}}/{{"{{"}} created_year {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}{% endif %}
               PAPERLESS_PORT: &port 8000
               PAPERLESS_TASK_WORKERS: "2"
               PAPERLESS_TIME_ZONE: ${CLUSTER_TIMEZONE}
