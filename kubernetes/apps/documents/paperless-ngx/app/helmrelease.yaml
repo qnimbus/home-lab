@@ -46,7 +46,17 @@ spec:
               # named "{ created }-{ correspondent }-{ title }.pdf" the first time an edit
               # triggered the rename-on-metadata-change signal (document_importer bypasses
               # this rendering entirely, so bulk-imported filenames were unaffected).
-              PAPERLESS_FILENAME_FORMAT: "{{ created }}-{{ correspondent }}-{{ title }}"
+              #
+              # The {{"{{"}}/{{"}}"}}  escaping below is required because app-template
+              # pipes every env value through Helm's own `tpl` function before it reaches
+              # the container - a first, unescaped attempt at plain "{{ created }}" made
+              # Helm's Go template engine try to evaluate it as ITS OWN template syntax
+              # (error: function "created" not defined), failing the HelmRelease for ~22h
+              # with the old pod silently left running. Verified via `helm template`
+              # against the real chart that this renders to the literal Jinja2 string
+              # paperless expects: "{{ created }}-{{ correspondent }}-{{ title }}".
+              PAPERLESS_FILENAME_FORMAT: >-
+                {{"{{"}} created {{"}}"}}-{{"{{"}} correspondent {{"}}"}}-{{"{{"}} title {{"}}"}}
               PAPERLESS_PORT: &port 8000
               PAPERLESS_TASK_WORKERS: "2"
               PAPERLESS_TIME_ZONE: ${CLUSTER_TIMEZONE}

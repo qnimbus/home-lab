@@ -4,6 +4,35 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-07-31 — `paperless-ngx-truenas-restore-v3-upgrade`
+
+### Goal
+Import the TrueNAS-hosted paperless-ngx instance's exported backup into the vanilla Kubernetes deployment, upgrade it to v3.0.4, and fix the data-integrity and configuration issues the restore/upgrade surfaced.
+
+### What we did
+- Imported a `document_exporter`-format backup (`paperless_export_20260725_220003.zip`, 4061 files/3.75GB) from the TrueNAS-hosted paperless instance into the fresh, empty Kubernetes deployment via `kubectl cp` to the SMB-backed `archive` PVC's `export` mount, Python `zipfile` extraction (no `unzip` binary in the image), and `document_importer`; verified 4059/4059 documents, 59 correspondents, 114 tags, 17 document types restored with matching counts, then cleaned up staging files.
+- Diagnosed via the user-provided `backup.sh` that the export's `--no-archive --no-thumbnail` flags — not a filename collision, an initial wrong theory — were why archived/OCR'd PDF versions were entirely absent for 4043 of 4059 documents despite the DB's `archive_checksum` still carrying values from the source instance.
+- Upgraded the image from `2.20.15` to `3.0.4` (digests resolved via `crane`/GHCR token API, cross-checked two ways), applying the two functionally-required v3 migration changes from the official `migration-v3.md` guide: `PAPERLESS_CONSUMER_POLLING` → `PAPERLESS_CONSUMER_POLLING_INTERVAL` rename and new mandatory `PAPERLESS_DBENGINE: postgresql`; confirmed via GitHub release notes that 3.0.1–3.0.4 patches carried no additional breaking changes.
+- Ran `document_archiver -f` to regenerate the missing archive files; hit two `OOMKilled` crashes at the original 4Gi container limit (once at `--processes 2`, once single-process). Root-caused the second as document ID 1588 (a 19.2MB/4-page outlier, confirmed by isolating it — peaked >2GB and succeeded once the limit was temporarily raised to 12Gi), then resumed the remaining 2788 documents via a custom script calling `update_document_content_maybe_archive_file` directly, skipping the ~1270 already-completed documents rather than re-running the full `-f` pass, completing with 0 failures; verified zero residual `archive_checksum`-without-file gaps afterward, then reverted the memory limit back to 4Gi.
+- Diagnosed a `500` error the user hit editing document 4693 in the web UI. Guessed wrong twice first (a filename-collision theory, then a "deprecated old-style `FILENAME_FORMAT`" theory) before finding VictoriaLogs was already deployed in-cluster (missed on an initial name-only `grep loki`) and pulling the real traceback from it: a transient Tantivy search-index `PermissionDenied` reading `.managed.json` during the post-edit reindex step, unrelated to the filename. Confirmed the index opens cleanly now and that the tag removal itself had succeeded despite the 500.
+- Separately confirmed via `manage.py check`/`convert_format_str_to_template_format` and live rendering tests that `PAPERLESS_FILENAME_FORMAT: "{ created }-{ correspondent }-{ title }"` was genuinely broken — single braces with internal spaces match neither valid old-style (`{created}`) nor valid Jinja2 (`{{ created }}`), so paperless rendered it as literal text. This is why document 4693's file was literally named `{ created }-{ correspondent }-{ title }.pdf` the first time a real edit ever triggered the rename-on-metadata-change signal (bulk import/archiving bypasses that signal entirely). Fixed to `{{ created }}-{{ correspondent }}-{{ title }}`, but that first fix then failed the Helm upgrade for ~22h (`function "created" not defined`) because `app-template` pipes every env value through Helm's own `tpl` function before the container ever sees it; fixed properly with Go-template brace-escaping (`{{"{{"}} created {{"}}"}}...`), verified this time via `helm template` against the real pulled chart before committing.
+- Created a manual-only `Onbekend` correspondent (`matching_algorithm: NONE`) and bulk-assigned it via a single `.update()` — deliberately not per-document `.save()`, to avoid mass-triggering the not-yet-deployed filename-rename signal — to the 3403 of 4059 documents that had no correspondent.
+- Re-rendered document 4693's `filename`/`archive_filename` correctly using the corrected template (run manually, since the Helm fix wasn't deployed yet) and confirmed the old garbage-named file was cleanly moved, not duplicated.
+- The final Helm-escaping fix to `PAPERLESS_FILENAME_FORMAT` is implemented and verified but not yet committed — `/git-stage`/`/git-commit` still pending.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/documents/paperless-ngx/app/helmrelease.yaml` | Bumped image `2.20.15`→`3.0.4`; renamed `PAPERLESS_CONSUMER_POLLING`→`PAPERLESS_CONSUMER_POLLING_INTERVAL`; added `PAPERLESS_DBENGINE: postgresql`; temporarily raised then reverted app container memory limit (4Gi→12Gi→4Gi) for the archiver run; fixed `PAPERLESS_FILENAME_FORMAT` (Jinja2 syntax, then Helm `tpl`-escaping) |
+
+### Key decisions
+- Used a hand-written script calling `update_document_content_maybe_archive_file` directly (skipping already-completed documents) to resume the archiver rather than re-running the built-in `-f` bulk command a third time — avoided redoing ~1270 already-successful documents and added per-document error isolation the built-in command lacks.
+- Used bulk `.update()` rather than per-document `.save()` for the `Onbekend` correspondent assignment specifically because `.save()` fires the same rename-on-metadata-change signal that was still broken/undeployed at the time — a deliberate ordering safeguard, not an oversight.
+- Retracted two wrong theories about the 4693 `500` error in real time rather than committing to them, after the user pointed out VictoriaLogs was available — went back to the actual traceback instead of plausible-sounding inference.
+- Chose Go-template brace-escaping over alternatives after the first `FILENAME_FORMAT` fix silently broke the Helm release for ~22 hours; verified the fix with a real `helm template` render against the pulled chart before proposing it again, rather than trusting reasoning alone a third time.
+
+---
+
 ## 2026-07-28 — `paperless-ngx-smb-persistence-reenable`
 
 ### Goal
