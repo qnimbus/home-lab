@@ -41,16 +41,17 @@ spec:
               # Configure application
               # Structure: real correspondents get correspondent/year/... (matches the
               # existing per-category StoragePath rules imported from the old instance);
-              # the 84%-majority "Onbekend" placeholder correspondent (see the Onbekend
-              # Correspondent, matching_algorithm=NONE) is deliberately grouped under its
-              # own _Onbekend/year/... subfolder rather than flat year/... - keeps its
-              # year folders (1996, 2003, ...) from mixing in among real correspondent
-              # folders at the top level. doc_pk suffix guarantees uniqueness without
-              # relying on paperless's _01/_02 collision fallback. correspondent|string
-              # (not correspondent.name) is required - Jinja2's sandboxed environment
-              # rejects direct attribute access on the MatchingModelContext object but
-              # allows __str__ via the `string` filter. Verified live against real
-              # documents (correspondent, Onbekend, and unset cases) via
+              # documents with no correspondent at all file under a literal None/year/...
+              # subfolder rather than flat year/... - keeps their year folders
+              # (1996, 2003, ...) from mixing in among real correspondent folders at the
+              # top level. (An earlier revision used a placeholder "Onbekend" Correspondent
+              # object for this; removed as redundant since this condition already covers
+              # "no correspondent" - see docs/SESSIONS.md.) doc_pk suffix guarantees
+              # uniqueness without relying on paperless's _01/_02 collision fallback.
+              # correspondent|string (not correspondent.name) is required for the real-
+              # correspondent branch - Jinja2's sandboxed environment rejects direct
+              # attribute access on the MatchingModelContext object but allows __str__ via
+              # the `string` filter. Verified live against real documents via
               # format_filename() before deploying.
               #
               # The {{"{{"}}/{{"}}"}}  escaping below is required because app-template
@@ -62,7 +63,7 @@ spec:
               # {{ }} as delimiters, not Jinja2's {% %}, so only the {{ }} expressions
               # need escaping - confirmed via `helm template` against the real chart.
               PAPERLESS_FILENAME_FORMAT: >-
-                {% if not correspondent or correspondent|string == 'Onbekend' %}_onbekend/{{"{{"}} created_year {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}{% else %}{{"{{"}} correspondent {{"}}"}}/{{"{{"}} created_year {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}{% endif %}
+                {% if not correspondent %}None/{{"{{"}} created_year {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}{% else %}{{"{{"}} correspondent {{"}}"}}/{{"{{"}} created_year {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}{% endif %}
               PAPERLESS_PORT: &port 8000
               PAPERLESS_TASK_WORKERS: "2"
               PAPERLESS_TIME_ZONE: ${CLUSTER_TIMEZONE}
