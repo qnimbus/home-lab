@@ -4,6 +4,41 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-02 — `openwebui-gitops-deployment`
+
+### Goal
+Research community OpenWebUI deployment patterns, design a GitOps implementation plan matching this repo's conventions, and begin implementing the new `ai` tenant namespace and `open-webui` app manifests.
+
+### What we did
+- Researched community deployment patterns via kubesearch.dev and targeted WebSearch/WebFetch calls: confirmed `bjw-s-labs/charts`' `app-template` is the dominant community pattern for OpenWebUI (26 indexed repos) versus the official `open-webui/helm-charts` chart (1 repo), and used `bjw-s-labs/home-ops`'s own OpenWebUI deployment (the app-template maintainers' own cluster) as the direct architectural reference — single `app` container, Dragonfly-backed websocket manager, VolSync-style persistent `config` claim, Gateway API route.
+- Ran two parallel Explore agents against the local repo: one fully mapped the `paperless-ngx` deployment (two-stage `ks.yaml` Kustomization pattern, CNPG `Database` CR, ExternalSecret extract+rewrite convention, VolSync component, HTTPRoute/Gateway API exposure) as the template to mirror; the other confirmed no existing LLM/GPU-serving infrastructure exists in this cluster (only unused Intel iGPU passthrough for Plex/Jellyfin) and catalogued the Dragonfly, CNPG, storage-class, and 1Password/ExternalSecret conventions in play.
+- Verified upstream OpenWebUI behavior directly against source rather than trusting an initial WebFetch summary: caught a hallucinated claim that `WEBUI_ADMIN_EMAIL`/`WEBUI_ADMIN_PASSWORD` env vars exist for admin bootstrap by reading `backend/open_webui/config.py` directly (they don't exist), then confirmed via a GitHub discussion that the real mechanism is the `/api/v1/auths/signup` API endpoint (the first account created always becomes admin, regardless of `ENABLE_SIGNUP`). Also confirmed via the official Dockerfile and several GitHub issues that the published image is not arbitrary-UID friendly and genuinely needs to run as root.
+- Used `AskUserQuestion` to resolve four decisions not derivable from the repo: no LLM backend wired at deploy time (added later via the admin UI), a new `ai` tenant namespace, internal-only exposure (`envoy-internal` Gateway, no Cloudflare), and a pre-provisioned admin account with signup closed from the start — implemented via a one-shot bootstrap Job rather than ever opening public signup.
+- Wrote a full implementation plan and got user approval (saved at `/home/vscode/.claude/plans/research-community-configurations-for-optimized-chipmunk.md`).
+- Began implementation: created the `ai` tenant namespace scaffold, the `open-webui` app's two-Kustomization dependency chain (`open-webui-db` targeting `database` with `wait: true`; `open-webui` targeting `ai`), the CNPG `Database` CR and DB-role `ExternalSecret` (role/db name `open_webui`, underscored to stay a quote-free SQL identifier), and the app's own `ExternalSecret` (extract+rewrite from a new `open-webui` 1Password item, plus the existing `dragonfly` item on DB index `1` — paperless-ngx already owns index `0`).
+- **Not yet done**: `app/helmrelease.yaml`, `app/httproute.yaml`, and `app/job-bootstrap-admin.yaml` are referenced by `app/kustomization.yaml` but not yet written; the top-level `kubernetes/apps/kustomization.yaml` still needs `./ai` registered; the shared CNPG `cluster.yaml` still needs the `open_webui` role added to `managed.roles`; no `open-webui` 1Password vault item exists yet. The Kustomization will not build until these land.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/ai/namespace.yaml` | Created — new `ai` tenant namespace, prune disabled |
+| `kubernetes/apps/ai/kustomization.yaml` | Created — registers namespace + open-webui `ks.yaml` |
+| `kubernetes/apps/ai/open-webui/ks.yaml` | Created — two-stage Flux Kustomization (db + app), VolSync component, `dependsOn` chain |
+| `kubernetes/apps/ai/open-webui/db/kustomization.yaml` | Created |
+| `kubernetes/apps/ai/open-webui/db/database.yaml` | Created — CNPG `Database` CR, owner `open_webui` on shared `postgres-v17` cluster |
+| `kubernetes/apps/ai/open-webui/db/externalsecret.yaml` | Created — DB-role basic-auth secret, `cnpg.io/reload` label |
+| `kubernetes/apps/ai/open-webui/app/kustomization.yaml` | Created — references not-yet-written helmrelease/httproute/job manifests |
+| `kubernetes/apps/ai/open-webui/app/externalsecret.yaml` | Created — app secret (`WEBUI_SECRET_KEY`, `DATABASE_URL`, `WEBSOCKET_REDIS_URL`, bootstrap admin creds) |
+
+### Key decisions
+- Chose `bjw-s/app-template` over the official `open-webui/helm-charts` chart — matches this repo's universal convention and is also the dominant community pattern (26 vs. 1 repos on kubesearch.dev).
+- Used underscore-separated `open_webui` for the Postgres role/database name (vs. hyphenated `open-webui` for all Kubernetes resource names) to keep the SQL identifier quote-free.
+- Pre-provision the admin account via a one-shot Job calling the public signup API once (idempotent across re-runs) rather than ever setting `ENABLE_SIGNUP: true` temporarily — avoids any window where an anonymous LAN client could register.
+- Set VolSync mover `APP_UID`/`APP_GID` to `0` (root) instead of the component's default `4000`, matching the app container's own required root UID (upstream image is not arbitrary-UID friendly), so backup/restore doesn't hit permission errors.
+- Deliberately left the LLM backend (Ollama/OpenAI) unwired — per user decision, to be added manually post-deploy via the admin UI rather than as env vars/secrets now.
+
+---
+
 ## 2026-07-31 — `paperless-ngx-truenas-restore-v3-upgrade`
 
 ### Goal
