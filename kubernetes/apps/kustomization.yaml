@@ -8,6 +8,7 @@ resources:
   - ./external-secrets
   - ./flux-system
   - ./kube-system
+  - ./mail
   - ./network
   - ./tailscale
   - ./openebs

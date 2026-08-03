@@ -1,0 +1,110 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: smtp-relay
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: app-template
+    namespace: flux-system
+  values:
+    controllers:
+      smtp-relay:
+        containers:
+          app:
+            image:
+              repository: ghcr.io/foxcpp/maddy
+              # renovate: datasource=docker depName=ghcr.io/foxcpp/maddy
+              tag: "0.9.5"
+            env:
+              SMTP_RELAY_HOSTNAME: smtp-relay.${DOMAIN_CLUSTER}
+              # Kept off 25 so the container never needs NET_BIND_SERVICE / root to
+              # bind it — the Service below remaps the printer-facing port 25 to
+              # this one (same trick as victoria-logs' syslog-service.yaml).
+              SMTP_RELAY_SMTP_PORT: &port 2525
+            envFrom:
+              - secretRef:
+                  name: smtp-relay-secret
+            probes:
+              liveness:
+                enabled: true
+              readiness:
+                enabled: true
+              startup:
+                enabled: true
+                spec:
+                  failureThreshold: 30
+                  periodSeconds: 10
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 64Mi
+            # Unlike boky/postfix, maddy is a from-scratch Go MTA with no privilege-
+            # separation model requiring root at any point — runs fully locked down.
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: ["ALL"]
+        pod:
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+    configMaps:
+      config:
+        data:
+          # Only the printer's IP can reach this at all (see service.app.loadBalancerSourceRanges
+          # below), so this accepts mail unauthenticated on the internal listener and relays it
+          # onward through an authenticated upstream (SMTP_RELAY_* from smtp-relay-secret).
+          maddy.conf: |-
+            state_dir /cache/state
+            runtime_dir /cache/run
+            tls off
+            hostname {env:SMTP_RELAY_HOSTNAME}
+            smtp tcp://0.0.0.0:{env:SMTP_RELAY_SMTP_PORT} {
+                default_source {
+                    deliver_to &remote_queue
+                }
+            }
+            target.queue remote_queue {
+                target &remote_smtp
+            }
+            target.smtp remote_smtp {
+                starttls yes
+                auth plain {env:SMTP_RELAY_USERNAME} {env:SMTP_RELAY_PASSWORD}
+                targets tcp://{env:SMTP_RELAY_SERVER}:{env:SMTP_RELAY_SERVER_PORT}
+            }
+    persistence:
+      cache:
+        type: emptyDir
+      config-file:
+        type: configMap
+        identifier: config
+        globalMounts:
+          - path: /data/maddy.conf
+            subPath: maddy.conf
+    service:
+      app:
+        controller: smtp-relay
+        type: LoadBalancer
+        # Preserves the printer's real source IP at the Service (no SNAT hop through
+        # another node), which loadBalancerSourceRanges below depends on to filter correctly.
+        externalTrafficPolicy: Local
+        annotations:
+          # external-dns-unifi watches plain Services (sources: [gateway-httproute, service]);
+          # publishes a stable record so LAN devices point at a hostname, not the LB IP,
+          # which can change if the Service is ever recreated.
+          external-dns.alpha.kubernetes.io/hostname: "smtp-relay.${DOMAIN_CLUSTER}"
+        # Restrict to the printer's known IP; widen when a second appliance needs this relay.
+        loadBalancerSourceRanges:
+          - "${PRINTER_LAN_HOST}/32"
+        ports:
+          smtp:
+            port: 25
+            protocol: TCP
+            targetPort: *port

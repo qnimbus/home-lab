@@ -4,6 +4,47 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-03 — `smtp-relay-deployment`
+
+### Goal
+Research what the homelab community uses for a local SMTP relay and deploy a GitOps-managed replacement (in the new `mail` namespace) for the TrueNAS `msmtpd` app currently relaying the home printer's mail.
+
+### What we did
+- Initial research via kubesearch.dev and WebFetch wrongly concluded `boky/postfix` (`bokysan/docker-postfix`) was the dominant Flux/GitOps home-ops pattern versus a supposedly rare `maddy` — this was wrong, caught by the user citing a `maddy`-based repo kubesearch's page hadn't surfaced. A follow-up `gh search code` (actual GitHub code search, not a scrape of kubesearch's JS-rendered page) found 29+ home-ops-style repos — including `onedr0p/home-ops`, the origin of the whole "home-ops" genre — using `ghcr.io/foxcpp/maddy` at `kubernetes/apps/.../smtp-relay/app/helmrelease.yaml`, and **zero** using `boky/postfix` in that Flux/app-template pattern (only docker-compose/bare-`docker run` hits). One of the two repos originally cited as "postfix" evidence (`gavinmcfall/home-ops`) turned out to use `maddy` too — the initial WebFetch summary had simply misread it. Switched the whole implementation to `maddy`, adapting `onedr0p/home-ops`'s vetted config rather than copying it blind: their container binds port 25 directly as UID 1000 with no `NET_BIND_SERVICE`, which only works if `net.ipv4.ip_unprivileged_port_start=0` is set in the pod netns — unverified for this cluster — so kept the container on a high port (2525) with the Service remapping 25→2525 instead (same trick as this repo's own `victoria-logs` 514→1514 precedent).
+- Ran an Explore agent that found this repo's only existing raw-TCP-to-LAN-device precedent (`victoria-logs`' hand-written `syslog-service.yaml` LoadBalancer Service, `loadBalancerSourceRanges` pinned via a `${..._LAN_HOST}` substitution var, no MetalLB — Cilium IPAM + L2 announcement instead), the minimal app-template reference (`whoami`), the extract+rewrite `ExternalSecret` convention (`waha`), and the new-namespace scaffold pattern (`ai`/`automation`: `namespace.yaml` + `kustomization.yaml`).
+- A second Explore agent traced exactly where `NAS_LAN_HOST`-style vars live (`kubernetes/flux/vars/cluster-secrets.sops.yaml`, exposed cluster-wide via the `cluster-apps` `postBuild.substituteFrom` patch) and pulled a full extract+rewrite `ExternalSecret` template plus the `docs/EXTERNAL-SECRETS.yaml` entry format to match.
+- Used `AskUserQuestion` to resolve decisions not derivable from the repo: a new dedicated `mail` namespace (room to grow — could later double as Alertmanager's SMTP receiver); `loadBalancerSourceRanges` pinned to the printer's IP only (not the whole management subnet) for now; upstream authenticated relay (credentials) rather than direct-to-MX delivery; and, after the image correction, confirming the switch to `maddy`.
+- Queried the 1Password `smtp-relay` item's field labels only (`op item get ... --format json`, no values) to confirm the exact raw field names (`HOST`, `PORT`, `USERNAME`, `PASSWORD`) to wire into the `ExternalSecret`'s rewrite rules.
+- While still on the (later-reverted) `boky/postfix` path, read its actual entrypoint scripts (`image_root/scripts/{run,functions}.sh`, `supervisord.conf`, `master.cf`) in `bokysan/docker-postfix` to derive a minimal capability set instead of guessing — then had to correct a second error mid-derivation: claimed port 587 was "unprivileged," which is wrong (privileged range is 0–1023; 587 needs `CAP_NET_BIND_SERVICE` same as any port <1024). Both this and the image-choice error are moot now since `maddy` needs no such workarounds at all.
+- Fetched the actual `bjw-s-labs/helm-charts` `app-template`/`common` JSON schema (via `gh api`, pinned to the in-repo chart version) and confirmed `service.<name>` natively supports `type`, `loadBalancerSourceRanges`, and `annotations` with `controller:` auto-wiring the pod selector (avoided a hand-written Service entirely), and confirmed `controllers.<name>.pod.securityContext` and the automatic `tcpSocket` probe derivation (from the primary service's `targetPort`, when its protocol is `TCP`) before relying on either.
+- Implemented the full GitOps deployment: new `mail` namespace, `smtp-relay` Flux `Kustomization` (`dependsOn: onepassword-store`), extract+rewrite `ExternalSecret` (→ `SMTP_RELAY_SERVER`/`SMTP_RELAY_SERVER_PORT`/`SMTP_RELAY_USERNAME`/`SMTP_RELAY_PASSWORD`), and an app-template `HelmRelease` running `maddy` fully non-root (`runAsUser: 1000`, `readOnlyRootFilesystem: true`, `capabilities: drop: ["ALL"]`, no exceptions) with an inline `maddy.conf` ConfigMap and `emptyDir` cache/state, LoadBalancer Service (port 25 → container 2525, `externalTrafficPolicy: Local` to preserve the printer's source IP for `loadBalancerSourceRanges` filtering). Added `PRINTER_LAN_HOST` to `cluster-secrets.sops.yaml` via `sops set` (no manual decrypt/re-encrypt round-trip) and appended the new `docs/EXTERNAL-SECRETS.yaml` inventory entry.
+- Validated: `kustomize build` succeeds on the new app, the `mail` namespace, and the full `kubernetes/apps` tree (81 resources); `kubeconform -strict` passes on both new resources — re-run after the maddy rework, still clean.
+- **Not yet done**: the user still needs to reconcile via Flux (not applied to the live cluster in this session), confirm the printer/cluster VLANs (printer is on `10.30.0.0/24`, cluster management is `10.60.0.0/24`) actually route to each other, repoint the printer at `smtp-relay.cluster.vwn.io:25`, and decommission the TrueNAS `msmtpd` app once mail delivery is confirmed working end-to-end.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/mail/namespace.yaml` | Created — new `mail` namespace, prune disabled |
+| `kubernetes/apps/mail/kustomization.yaml` | Created — registers namespace + smtp-relay `ks.yaml` |
+| `kubernetes/apps/mail/smtp-relay/ks.yaml` | Created — Flux Kustomization, `targetNamespace: mail`, `dependsOn: onepassword-store` |
+| `kubernetes/apps/mail/smtp-relay/app/kustomization.yaml` | Created — lists externalsecret.yaml + helmrelease.yaml |
+| `kubernetes/apps/mail/smtp-relay/app/externalsecret.yaml` | Created, then reworked for maddy's env var names — extract+rewrite `HOST`/`PORT`/`USERNAME`/`PASSWORD` → `SMTP_RELAY_SERVER`/`SMTP_RELAY_SERVER_PORT`/`SMTP_RELAY_USERNAME`/`SMTP_RELAY_PASSWORD` |
+| `kubernetes/apps/mail/smtp-relay/app/helmrelease.yaml` | Created as `boky/postfix:5.1.0`, then fully rewritten as `ghcr.io/foxcpp/maddy:0.9.5` via app-template — fully non-root, inline `maddy.conf`, LoadBalancer Service pinned to printer IP |
+| `kubernetes/apps/kustomization.yaml` | Added `./mail` to the top-level namespace list |
+| `kubernetes/flux/vars/cluster-secrets.sops.yaml` | Added `PRINTER_LAN_HOST: 10.30.0.51` via `sops set` |
+| `docs/EXTERNAL-SECRETS.yaml` | Appended `smtp-relay` ExternalSecret inventory entry |
+
+### Key decisions
+- **`maddy` chosen over `boky/postfix`** — corrected mid-session after the user caught an initial research error (see "What we did"). Verified via `gh search code` rather than trusting a kubesearch.dev page render a second time.
+- `maddy` runs fully non-root with zero capability exceptions (`runAsNonRoot`, `readOnlyRootFilesystem`, `drop: ["ALL"]`) — strictly better fit for this repo's hardened default pattern than `boky/postfix`, which needed root for Postfix's internal privilege-separation model (moot now, but was real effort spent before the correction).
+- New dedicated `mail` namespace rather than folding into `network` or `default` — leaves room to grow (e.g. a future Alertmanager SMTP receiver).
+- `loadBalancerSourceRanges` pinned to just the printer's `/32` for now, not the whole management subnet, per user preference — widen in Git later if a second appliance needs access.
+- Used app-template's built-in `service:` block (confirmed via the chart's JSON schema to support `loadBalancerSourceRanges`/`type`/`annotations`) instead of a hand-written `Service`, since `victoria-logs`' hand-written Service pattern was only necessary because that chart lacks these knobs.
+- Container listens on 2525 internally, Service remaps 25→2525 — deliberately did not copy `onedr0p/home-ops`'s direct bind to port 25 as non-root, since that depends on an unverified node/CNI sysctl (`net.ipv4.ip_unprivileged_port_start=0`) this cluster's config doesn't confirm.
+- `externalTrafficPolicy: Local` added to the Service so `loadBalancerSourceRanges` filtering sees the printer's real source IP rather than a potentially-SNATed one.
+
+---
+
 ## 2026-08-02 — `openwebui-gitops-deployment`
 
 ### Goal
