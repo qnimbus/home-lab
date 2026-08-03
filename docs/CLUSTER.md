@@ -760,6 +760,27 @@ per-app boilerplate beyond a few `postBuild.substitute` variables.
 
 ---
 
+### Open WebUI · `v5.0.1` (chart) · `ai`
+
+**Self-hosted AI chat interface.** Deployed via `app-template`, container pinned to
+`ghcr.io/open-webui/open-webui:v0.11.0`. Postgres-backed (shared `postgres-v17` CNPG cluster,
+role `open_webui`) instead of the default SQLite, so it isn't limited to a single replica.
+Dragonfly-backed websocket manager on db index `1` (paperless-ngx owns index `0`). No LLM
+backend (Ollama/OpenAI) wired in by design — this cluster has no GPU-based inference path today
+(only unused Intel iGPU passthrough for Plex/Jellyfin transcoding); connections are added
+manually post-deploy via the admin UI's Settings → Connections. Exposed internally only via an
+`HTTPRoute` on `envoy-internal`; public signup is permanently disabled (`ENABLE_SIGNUP: false`),
+with the sole admin account pre-provisioned by a one-shot bootstrap `Job` that calls the signup
+API directly. A KEDA `ScaledObject` (combined Prometheus trigger over both dependencies' blackbox
+probes) scales it to 0 whenever either Postgres or Dragonfly is unreachable, and back to 1 once
+both recover — verified live by scaling Dragonfly to 0 and observing the full round-trip.
+
+| Pod | Type | Replicas | Role |
+|-----|------|----------|------|
+| `open-webui` | Deployment | 0–1 (KEDA-managed) | Chat UI + backend API |
+
+---
+
 ## Node Disk Inventory
 
 | Node | Device | Size | Model | Serial | Role |

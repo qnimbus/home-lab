@@ -39,6 +39,14 @@ spec:
               ENABLE_LOGIN_FORM: true
               ENABLE_WEBSOCKET_SUPPORT: true
               WEBSOCKET_MANAGER: redis
+              # Upstream inconsistency (confirmed live via open_webui/socket/utils.py and
+              # env.py): the lock's own default TTL (60s) is shorter than
+              # SESSION_POOL_TIMEOUT, the hardcoded 120s sleep interval between renewal
+              # attempts - so the lock always expires before the next renewal check runs,
+              # flooding logs with harmless "Unable to renew session cleanup lock"
+              # warnings every cycle. Set longer than 120s so a renewal always lands
+              # inside the lock's TTL.
+              WEBSOCKET_REDIS_LOCK_TIMEOUT: "150"
             envFrom:
               - secretRef:
                   name: open-webui-secret

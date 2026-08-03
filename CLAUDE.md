@@ -320,6 +320,7 @@ See **[CLUSTER.md → Key Architectural Decisions](docs/CLUSTER.md#key-architect
 | Split DNS (ExternalDNS)       | ✅ Done    | `external-dns-cloudflare` (envoy-external, proxied) + `external-dns-unifi` (all gateways + services, webhook sidecar); chart v1.21.1 |
 | Renovate                      | ✅ Done    | `renovate.json5` + GitHub App; tracks Talos + K8s via `separateMinorPatch`; `talosctl` + `etcd` excluded (must match server version) |
 | Talos + Kubernetes upgrades   | ✅ Done    | tuppr deployed in `system-upgrade`; `TalosUpgrade` + `KubernetesUpgrade` CRDs at current running versions; upgrades triggered by Renovate PRs |
+| Open WebUI                    | ✅ Done    | `ai` namespace; CNPG-backed (not SQLite), Dragonfly websocket manager, pre-provisioned admin (no open signup window), KEDA scales to 0 on Postgres/Dragonfly outage. No LLM backend wired — added manually post-deploy. See [CLUSTER.md → Running Components](docs/CLUSTER.md) |
 
 ---
 
