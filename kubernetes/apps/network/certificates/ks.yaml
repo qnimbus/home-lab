@@ -1,0 +1,94 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app certificates-import
+  namespace: flux-system
+spec:
+  targetNamespace: network
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  interval: 1h
+  wait: true
+  prune: true
+  path: ./kubernetes/apps/network/certificates/import
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  dependsOn:
+    - name: onepassword-store
+      namespace: flux-system
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: vwn-app-tls
+      namespace: network
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: vwn-casa-tls
+      namespace: network
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: cluster-vwn-io-tls
+      namespace: network
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: apps-vwn-io-tls
+      namespace: network
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: vwn-io-tls
+      namespace: network
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app certificates-export
+  namespace: flux-system
+spec:
+  targetNamespace: network
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  interval: 1h
+  wait: true
+  prune: true
+  path: ./kubernetes/apps/network/certificates/export
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  dependsOn:
+    - name: cert-manager
+      namespace: flux-system
+    - name: cluster-issuers
+      namespace: flux-system
+    # PHASE 2 (rollout step 6): add "certificates-import" here once the PushSecrets
+    # below have confirmed-backfilled 1Password. Adding it before that would deadlock
+    # this Kustomization behind certificates-import's ExternalSecrets, which can't
+    # succeed until 1Password actually holds the items they read from.
+  healthChecks:
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: wildcard-vwn-app
+      namespace: network
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: wildcard-vwn-casa
+      namespace: network
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: wildcard-cluster-vwn-io
+      namespace: network
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: wildcard-apps-vwn-io
+      namespace: network
+    - apiVersion: cert-manager.io/v1
+      kind: Certificate
+      name: wildcard-vwn-io
+      namespace: network
