@@ -20,12 +20,13 @@ spec:
             - secretRef:
                 name: open-webui-secret
           # Open WebUI has no env-var admin-bootstrap mechanism (confirmed against
-          # backend/open_webui/config.py upstream) - the only way to create an account
-          # without ever opening public signup is to call the signup API directly. The
-          # first account ever created via this endpoint always becomes admin, regardless
-          # of ENABLE_SIGNUP (that flag only gates subsequent signups) - see
-          # helmrelease.yaml's ENABLE_SIGNUP: false. Idempotent: a re-run after the admin
-          # already exists is treated as success, not a failure.
+          # backend/open_webui/config.py upstream) - the only way to create an account is
+          # to call the signup API directly. The first account ever created via this
+          # endpoint always becomes admin regardless of ENABLE_SIGNUP (that flag only gates
+          # *subsequent* signups - see routers/auths.py's has_users check), so this Job
+          # still guarantees the pre-provisioned account is always the admin even though
+          # helmrelease.yaml now leaves ENABLE_SIGNUP: true permanently. Idempotent: a
+          # re-run after the admin already exists is treated as success, not a failure.
           command:
             - sh
             - -c
@@ -67,6 +68,19 @@ spec:
               # true idempotent no-op as a hard failure on every re-run.
               if grep -qi "already registered\|already exists\|taken" /tmp/resp.json 2>/dev/null; then
                 echo "admin account already exists, nothing to do"
+                exit 0
+              fi
+
+              # Confirmed live against routers/auths.py: once any user exists, the
+              # signup endpoint returns 403 ACCESS_PROHIBITED (instead of the 400
+              # EMAIL_TAKEN case handled above) whenever ENABLE_SIGNUP or
+              # ENABLE_LOGIN_FORM is false at call time - which was true when this Job
+              # last failed (ENABLE_SIGNUP was false then). helmrelease.yaml now sets
+              # ENABLE_SIGNUP: true permanently, so in practice this Job will hit the
+              # EMAIL_TAKEN branch above instead - kept as a defensive fallback in case
+              # either flag is ever flipped back while an admin already exists.
+              if [ "$status" = "403" ]; then
+                echo "admin account already exists (signup disabled), nothing to do"
                 exit 0
               fi
 

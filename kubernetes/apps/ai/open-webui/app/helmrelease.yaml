@@ -33,9 +33,11 @@ spec:
               tag: v0.11.0@sha256:72c0ba641ba75e7aa52655cb242570906ececd09b1140fb736483038a22b3228
             env:
               WEBUI_URL: "https://chat.${DOMAIN_CLUSTER}"
-              # Pre-provisioned admin only (see job-bootstrap-admin.yaml) - signup is never
-              # opened, not even briefly, to create the first account.
-              ENABLE_SIGNUP: false
+              # Deliberately left open (not just for the bootstrap moment) - anyone who can
+              # reach chat.${DOMAIN_CLUSTER} (internal network only) can self-register a
+              # non-admin account. job-bootstrap-admin.yaml still pre-provisions the first
+              # (admin) account so this app never has a truly anonymous first-boot window.
+              ENABLE_SIGNUP: true
               ENABLE_LOGIN_FORM: true
               ENABLE_WEBSOCKET_SUPPORT: true
               WEBSOCKET_MANAGER: redis
