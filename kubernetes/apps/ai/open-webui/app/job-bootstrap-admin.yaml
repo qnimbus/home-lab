@@ -6,6 +6,10 @@ metadata:
 spec:
   backoffLimit: 3
   ttlSecondsAfterFinished: 3600
+  # Bounds the health-check wait loop below, which otherwise has no timeout of its own -
+  # without this, a pod stuck waiting on a permanently-unhealthy app would run forever
+  # instead of ever counting against backoffLimit.
+  activeDeadlineSeconds: 600
   template:
     spec:
       restartPolicy: Never
@@ -29,21 +33,39 @@ spec:
               set -eu
               url="http://open-webui.ai.svc.cluster.local:8080"
 
-              until curl -sf "$url/health" >/dev/null 2>&1; do
+              # --connect-timeout/--max-time are required, not cosmetic: a bare curl -sf
+              # has no timeout of its own, so a single stalled connection attempt can hang
+              # for far longer than the 5s sleep implies - observed live, a pod logged
+              # "waiting for open-webui..." only twice across 4.5 minutes instead of the
+              # ~54 times a genuinely-5s-spaced retry loop would produce, i.e. it looked
+              # permanently stuck rather than actively retrying.
+              until curl -sf --connect-timeout 3 --max-time 5 "$url/health" >/dev/null 2>&1; do
                 echo "waiting for open-webui..."
                 sleep 5
               done
 
-              status=$(curl -s -o /tmp/resp.json -w "%{http_code}" -X POST "$url/api/v1/auths/signup" \
+              # $$ (not $) below - Flux's postBuild.substitute does blind textual
+              # replacement of any ${VAR} across the whole rendered manifest (it's how
+              # ${DOMAIN_CLUSTER}/${PG_HOST} elsewhere in this app get their values), with
+              # no way to tell a Flux cluster-var apart from a shell runtime var of the
+              # same ${NAME} shape. Un-escaped, it silently replaced all three with empty
+              # strings before this Job was ever applied (confirmed live: rendered command
+              # showed a literal {"name":"","email":"","password":""}) - $$ escapes to a
+              # literal, un-substituted $ so bash expands these from envFrom at runtime.
+              status=$(curl -s --connect-timeout 3 --max-time 10 -o /tmp/resp.json -w "%{http_code}" -X POST "$url/api/v1/auths/signup" \
                 -H "Content-Type: application/json" \
-                -d "{\"name\":\"${BOOTSTRAP_ADMIN_NAME}\",\"email\":\"${BOOTSTRAP_ADMIN_EMAIL}\",\"password\":\"${BOOTSTRAP_ADMIN_PASSWORD}\"}")
+                -d "{\"name\":\"$${BOOTSTRAP_ADMIN_NAME}\",\"email\":\"$${BOOTSTRAP_ADMIN_EMAIL}\",\"password\":\"$${BOOTSTRAP_ADMIN_PASSWORD}\"}")
 
               if [ "$status" = "200" ]; then
                 echo "admin account created"
                 exit 0
               fi
 
-              if grep -qi "already exists\|taken" /tmp/resp.json 2>/dev/null; then
+              # Open WebUI's actual wording (constants.py EMAIL_TAKEN) is "already
+              # registered", not "already exists"/"taken" - verified live: the first
+              # naive pattern here missed it entirely and would have misclassified a
+              # true idempotent no-op as a hard failure on every re-run.
+              if grep -qi "already registered\|already exists\|taken" /tmp/resp.json 2>/dev/null; then
                 echo "admin account already exists, nothing to do"
                 exit 0
               fi
