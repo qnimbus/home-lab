@@ -67,6 +67,12 @@ spec:
         superuser: false
         passwordSecret:
           name: paperless-db-secret
+      - name: open_webui
+        ensure: present
+        login: true
+        superuser: false
+        passwordSecret:
+          name: open-webui-db-secret
   monitoring:
     enablePodMonitor: true
   plugins:

@@ -1,0 +1,53 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: open-webui-bootstrap-admin
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: bootstrap-admin
+          image: curlimages/curl:8.11.1
+          envFrom:
+            - secretRef:
+                name: open-webui-secret
+          # Open WebUI has no env-var admin-bootstrap mechanism (confirmed against
+          # backend/open_webui/config.py upstream) - the only way to create an account
+          # without ever opening public signup is to call the signup API directly. The
+          # first account ever created via this endpoint always becomes admin, regardless
+          # of ENABLE_SIGNUP (that flag only gates subsequent signups) - see
+          # helmrelease.yaml's ENABLE_SIGNUP: false. Idempotent: a re-run after the admin
+          # already exists is treated as success, not a failure.
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              url="http://open-webui.ai.svc.cluster.local:8080"
+
+              until curl -sf "$url/health" >/dev/null 2>&1; do
+                echo "waiting for open-webui..."
+                sleep 5
+              done
+
+              status=$(curl -s -o /tmp/resp.json -w "%{http_code}" -X POST "$url/api/v1/auths/signup" \
+                -H "Content-Type: application/json" \
+                -d "{\"name\":\"${BOOTSTRAP_ADMIN_NAME}\",\"email\":\"${BOOTSTRAP_ADMIN_EMAIL}\",\"password\":\"${BOOTSTRAP_ADMIN_PASSWORD}\"}")
+
+              if [ "$status" = "200" ]; then
+                echo "admin account created"
+                exit 0
+              fi
+
+              if grep -qi "already exists\|taken" /tmp/resp.json 2>/dev/null; then
+                echo "admin account already exists, nothing to do"
+                exit 0
+              fi
+
+              echo "signup failed: HTTP $status"
+              cat /tmp/resp.json
+              exit 1
