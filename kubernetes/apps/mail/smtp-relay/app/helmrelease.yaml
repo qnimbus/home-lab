@@ -92,9 +92,15 @@ spec:
       app:
         controller: smtp-relay
         type: LoadBalancer
-        # Preserves the printer's real source IP at the Service (no SNAT hop through
-        # another node), which loadBalancerSourceRanges below depends on to filter correctly.
-        externalTrafficPolicy: Local
+        # Cluster (not Local): Cilium's L2-announcement leader election has no local-
+        # endpoint awareness on reschedule (cilium/cilium#34235-adjacent behavior,
+        # confirmed via https://docs.cilium.io/en/stable/network/l2-announcements/) —
+        # a stale leader on a node without the pod causes silent drops/refused conns
+        # until the lease expires or is force-deleted. loadBalancerSourceRanges below
+        # is still enforced against the real client IP at ingress regardless of this
+        # setting, so switching away from Local costs nothing but SNAT'd source-IP
+        # visibility in maddy's own logs on the (now harmless) cross-node-forward path.
+        externalTrafficPolicy: Cluster
         annotations:
           # external-dns-unifi watches plain Services (sources: [gateway-httproute, service]);
           # publishes a stable record so LAN devices point at a hostname, not the LB IP,
@@ -103,8 +109,7 @@ spec:
         # Restrict to the printer's known IP; widen when a second appliance needs this relay.
         loadBalancerSourceRanges:
           - "${PRINTER_LAN_HOST}/32"
-          # TEMP — 2026-08-04 troubleshooting only, revert once end-to-end delivery is confirmed.
-          - "10.10.0.71/32"
+          - "${LAN_SUBNET}"
         ports:
           smtp:
             port: 25

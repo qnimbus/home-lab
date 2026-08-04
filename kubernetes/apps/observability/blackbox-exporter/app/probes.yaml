@@ -106,3 +106,24 @@ spec:
     staticConfig:
       static:
         - "http://${NAS_LAN_HOST}:18080/v1/health"
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: smtp-relay
+spec:
+  # In-cluster Service DNS, not the external smtp-relay.${DOMAIN_CLUSTER} hostname:
+  # that LoadBalancer IP is locked to the printer's IP via loadBalancerSourceRanges
+  # (kubernetes/apps/mail/smtp-relay/app/helmrelease.yaml), so a probe from
+  # blackbox-exporter's pod IP would always be filtered out and alert falsely.
+  # This still catches the failure class that matters most (maddy itself down/
+  # OOM/crashlooping) without racing that ACL.
+  module: tcp_connect
+  interval: 30s
+  prober:
+    url: blackbox-exporter.observability.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      static:
+        - "smtp-relay.mail.svc.cluster.local:25"
