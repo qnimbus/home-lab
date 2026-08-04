@@ -6,7 +6,11 @@ kubernetes_dir := justfile_dir() + '/kubernetes'
 talos_dir := justfile_dir() + '/talos'
 
 [private]
-default: gensecret genconfig check-maintenance talos-install kubeconfig wait namespaces resources live-osd-cleanup crds apps
+default:
+    just --list bootstrap
+
+[doc('Run the full first-boot bootstrap pipeline (gensecret → genconfig → check-maintenance → talos-install → kubeconfig → wait → namespaces → resources → live-osd-cleanup → crds → apps). First-boot only — see docs/CLUSTER.md.')]
+all: gensecret genconfig check-maintenance talos-install kubeconfig wait namespaces resources live-osd-cleanup crds apps
 
 [doc('Generate Talos cluster secrets (no-op if talsecret.sops.yaml already exists)')]
 gensecret:
@@ -28,7 +32,7 @@ check-maintenance:
     just log info "Running stage..." stage check-maintenance
     MAINT=$(nmap -p 50000 --open -T4 10.60.0.0/24 -oG - 2>/dev/null | awk '/50000\/open/{print $2}') || true
     if [ -z "${MAINT}" ]; then
-        gum log -t rfc3339 -s -l error "No nodes in maintenance mode — boot nodes from ISO first, then re-run 'just bootstrap'" stage check-maintenance
+        gum log -t rfc3339 -s -l error "No nodes in maintenance mode — boot nodes from ISO first, then re-run 'just bootstrap all'" stage check-maintenance
         exit 1
     fi
     COUNT=$(echo "${MAINT}" | wc -l | tr -d ' ')
@@ -133,7 +137,7 @@ apps:
     helmfile sync -f "{{ bootstrap_dir }}/helmfile.d/01-apps.yaml" \
         || { just log fatal "Helmfile sync failed" "stage" "apps"; exit 1; }
 
-[doc('Fetch SOPS age private key from 1Password and write to age.key (run before just bootstrap)')]
+[doc('Fetch SOPS age private key from 1Password and write to age.key (run before just bootstrap all)')]
 age-key vault="homelab" item="sops" field="SOPS_PRIVATE_KEY":
     KEY=$(op read "op://{{ vault }}/{{ item }}/{{ field }}"); \
     [[ -n "${KEY}" ]] || { just log fatal "1Password returned empty value" "stage" "age-key"; exit 1; }; \

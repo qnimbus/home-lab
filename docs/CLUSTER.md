@@ -1424,8 +1424,10 @@ just bootstrap age-key
 Then run the full bootstrap pipeline:
 
 ```bash
-just bootstrap
+just bootstrap all
 ```
+
+> Bare `just bootstrap` (no subcommand) lists all subtasks instead of running anything — safe to run any time you want a reminder of what's available.
 
 Runs these stages in sequence:
 
@@ -1513,7 +1515,7 @@ task talos:apply IP=10.60.0.201
 > `talos:apply` defaults to authenticated mode (mutual TLS via talosconfig) for **running** nodes.
 > Pass `INSECURE=true` only during **bootstrap/maintenance mode**: `task talos:apply IP=x INSECURE=true`.
 > `talos:apply-all` always uses `--insecure` and is for **bootstrap only**.
-> `talos:genconfig` is run automatically by the `genconfig` stage of `just bootstrap`. For day-2 edits you call it directly — `just bootstrap` is for first-boot only.
+> `talos:genconfig` is run automatically by the `genconfig` stage of `just bootstrap all`. For day-2 edits you call it directly — `just bootstrap all` is for first-boot only.
 
 ---
 
