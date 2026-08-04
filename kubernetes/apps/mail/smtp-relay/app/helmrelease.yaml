@@ -103,6 +103,8 @@ spec:
         # Restrict to the printer's known IP; widen when a second appliance needs this relay.
         loadBalancerSourceRanges:
           - "${PRINTER_LAN_HOST}/32"
+          # TEMP — 2026-08-04 troubleshooting only, revert once end-to-end delivery is confirmed.
+          - "10.10.0.71/32"
         ports:
           smtp:
             port: 25
