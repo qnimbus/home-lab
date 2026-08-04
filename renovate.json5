@@ -110,15 +110,24 @@
       separateMinorPatch: true,
       minimumReleaseAge: "5 days",
     },
+    // The single "Flux" group below used to span three datasources (mise, github-releases,
+    // docker) via a broad /flux-operator/ regex that matched both the mise CLI tool name and
+    // the OCI chart's depName. Cross-manager/cross-datasource grouping like that is unreliable —
+    // it silently dropped the docker-datasource chart deps (kubernetes/flux/meta/repos/oci/
+    // flux-operator.yaml + flux-instance.yaml + the ops/bootstrap helmfile ladder pins) from ever
+    // getting a PR, while the mise/github-releases members kept updating fine on their own. Split
+    // into two single-datasource groups so each stays within the pattern that already works
+    // elsewhere in this file (e.g. cert-manager, CoreDNS below — one datasource per group).
     {
-      description: "Group Flux Operator + Instance into one PR",
+      description: "Group Flux CLI tool (mise) + distribution (flux2) version bumps",
       groupName: "Flux",
-      matchPackageNames: [
-        "/flux-operator/",
-        "/flux-instance/",
-        "ghcr.io/fluxcd/flux-operator",
-        "fluxcd/flux2",
-      ],
+      matchPackageNames: ["flux-operator", "flux-operator-mcp", "fluxcd/flux2"],
+    },
+    {
+      description: "Group flux-operator + flux-instance Helm chart bumps (OCIRepository + helmfile ladder)",
+      groupName: "Flux chart",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["/flux-operator/", "/flux-instance/"],
     },
     {
       description: "Group cert-manager chart + image bumps",

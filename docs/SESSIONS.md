@@ -4,6 +4,35 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-04 — `flux-operator-0.57.0-bump`
+
+### Goal
+Before merging Renovate PR #72, bring the flux-operator/flux-instance Helm chart pins up to the same `0.57.0` release the PR already targets for the CLI tools, and find out why Renovate had never opened a PR for the chart itself.
+
+### What we did
+- Established the current chart version (`0.50.0`, pinned in `kubernetes/flux/meta/repos/oci/flux-operator.yaml`) and queried the `controlplaneio-fluxcd/flux-operator` GitHub Releases API to confirm `v0.57.0` (2026-07-27) is the latest stable release, matching what PR #72 already bumps `.mise.toml`'s `flux-operator`/`flux-operator-mcp` CLI tools to.
+- Pulled PR #72's diff and the live Renovate Dependency Dashboard (issue #2) to map out that this repo pins the same upstream project's version in four independent places — `.mise.toml` (CLI tools), `flux-instance` values.yaml (Flux distribution/controllers version), and two Helm-chart pins (`kubernetes/flux/meta/repos/oci/flux-operator.yaml` + `flux-instance.yaml`, and `ops/bootstrap/helmfile.d/01-apps.yaml`) — and that PR #72 only touched the first two.
+- Diagnosed why: the dashboard showed Renovate *had* detected the chart update (`0.50.0 → 0.57.0`, listed under "Detected Dependencies → flux") but it never appeared in any actionable section (Open/Rate-Limited/Pending Status Checks) — no branch was ever created for it, despite matching the `renovate.json5` "Group Flux Operator + Instance into one PR" packageRule.
+- Root-caused it to that packageRule's `/flux-operator/` regex spanning three different Renovate managers/datasources (`mise`, `github-releases`, `docker`) under one `groupName` — cross-manager/cross-datasource grouping is unreliable, and the docker-datasource chart deps were silently dropped from ever getting queued while the mise/github-releases members kept updating independently (evidenced by the mise pin already sitting at `0.52.0`, ahead of the chart's stale `0.50.0`, from an earlier drifted cycle).
+- Bumped all four version-pin locations to `0.57.0` for consistency (the OCIRepository chart used by the live cluster, its sibling `flux-instance` chart, and both chart pins in the bootstrap helmfile ladder used for disaster recovery).
+- Fixed the Renovate grouping bug by splitting the single cross-datasource `"Flux"` group into two single-datasource groups — `"Flux"` (mise CLI tools + `fluxcd/flux2` distribution, exact-name matched) and `"Flux chart"` (docker-datasource OCI chart, `matchDatasources: ["docker"]` + regex) — mirroring the single-datasource pattern every other working group in the file already uses. Also dropped a dead/incorrect literal (`ghcr.io/fluxcd/flux-operator`, which didn't match any real dependency in this repo) from the rule as cleanup.
+- Validated the `renovate.json5` change with Renovate's own `renovate-config-validator` (via `npx -p renovate`) — passed cleanly.
+- Did all edits in an isolated worktree (`flux-operator-0.57.0-bump`); left changes uncommitted per this repo's `/git-stage`/`/git-commit`-only policy.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/flux-operator.yaml` | Chart tag `0.50.0` → `0.57.0` |
+| `kubernetes/flux/meta/repos/oci/flux-instance.yaml` | Chart tag `0.50.0` → `0.57.0` |
+| `ops/bootstrap/helmfile.d/01-apps.yaml` | `flux-operator` and `flux-instance` release versions `0.50.0` → `0.57.0` |
+| `renovate.json5` | Split cross-datasource `"Flux"` packageRule into `"Flux"` (mise + github-releases) and `"Flux chart"` (docker) groups; dropped a dead literal from the old rule |
+
+### Key decisions
+- Fixed the Renovate grouping rule rather than disabling grouping outright — the underlying cause (mixing `mise`/`github-releases`/`docker` datasources under one `groupName`) has a straightforward single-datasource-per-group fix that matches the pattern already used successfully elsewhere in `renovate.json5` (e.g. `cert-manager`, `CoreDNS`), so no functionality needed to be sacrificed.
+- Bumped all four version-pin locations even though the user only initially named one file, since leaving the sibling chart and bootstrap-ladder pins at `0.50.0` would have reproduced the same drift (and the same grouping bug, pre-fix) on the next Renovate cycle.
+
+---
+
 ## 2026-08-04 — `smtp-relay-l2-announcement-troubleshoot`
 
 ### Goal
