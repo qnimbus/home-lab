@@ -1,12 +1,18 @@
 ---
 installCRDs: true
 # 2 replicas + topology spread: pre-places one pod per two nodes so a cp-03 failure causes
-# zero downtime. ESO runs in concurrent mode (no leader election — verified: no Lease objects,
-# no --enable-leader-election flag) — both replicas are always active simultaneously and writes
-# to Kubernetes Secrets are idempotent. Trade-off: doubles API calls to 1Password Connect.
+# zero application downtime. Leader election is enabled (leaderElect below) so only one
+# replica reconciles at a time — required because PushSecret's 1Password provider does a
+# non-atomic "find item by title, else create" and two concurrent replicas both creating
+# the same not-yet-existing item race into duplicate 1Password items. Cost: on leader-pod
+# disruption, reconciliation pauses for controller-runtime's default lease window (~15s)
+# while the standby replica takes over — existing synced Secrets are unaffected, only new
+# syncs/pushes wait. Benefit: also halves steady-state API calls to 1Password Connect
+# (previously both replicas polled independently).
 # All three components share app.kubernetes.io/instance: external-secrets, giving the scheduler
 # a 6-pod group (3 components x 2 replicas) that targets a clean 2/2/2 split across 3 nodes.
 replicaCount: 2
+leaderElect: true
 topologySpreadConstraints:
   - maxSkew: 1
     topologyKey: kubernetes.io/hostname

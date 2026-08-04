@@ -389,7 +389,7 @@ Group all LAN services under `kubernetes/apps/network/external-services/` — on
 | `onepassword-connect` | 1 | Local 1Password Connect server running in-cluster; proxies secret requests to the 1Password cloud API |
 | `onepassword-store` (`ClusterSecretStore`) | — | ESO store resource named `onepassword` — the reference apps use in `ExternalSecret.spec.secretStoreRef` |
 
-> **Topology spread**: all three ESO pods share `app.kubernetes.io/instance: external-secrets`. 6 pods spread across 5 nodes via `DoNotSchedule`. ESO runs in **concurrent mode** (no leader election) — both controller replicas are always active simultaneously; a node failure causes zero-delay failover.
+> **Topology spread**: all three ESO pods share `app.kubernetes.io/instance: external-secrets`. 6 pods spread across 5 nodes via `DoNotSchedule`. ESO runs with **leader election enabled** (`leaderElect: true`) — only one controller replica reconciles at a time, the other is hot-standby; a leader-pod failure causes a brief (~15s, controller-runtime default lease) reconciliation pause while the standby takes over, but does not affect already-synced Secrets. Required because `PushSecret`'s 1Password provider does a non-atomic find-or-create, which two concurrently-reconciling replicas can race into duplicate 1Password items on first creation of a given item.
 
 Apps define an `ExternalSecret` object pointing at the `onepassword` store and a specific item/field path. ESO resolves the value at reconcile time and writes it into a Kubernetes `Secret` in the app's namespace. Secret values never touch Git.
 

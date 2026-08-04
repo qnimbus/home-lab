@@ -67,10 +67,11 @@ spec:
       namespace: flux-system
     - name: cluster-issuers
       namespace: flux-system
-    # PHASE 2 (rollout step 6): add "certificates-import" here once the PushSecrets
-    # below have confirmed-backfilled 1Password. Adding it before that would deadlock
-    # this Kustomization behind certificates-import's ExternalSecrets, which can't
-    # succeed until 1Password actually holds the items they read from.
+    - name: certificates-import
+      namespace: flux-system
+    # PHASE 2 (rollout step 6) complete: the PushSecrets below confirmed-backfilled
+    # 1Password (2026-08-04), so certificates-import always resolves — restoring these
+    # TLS Secrets from 1Password before cert-manager needs to re-issue anything.
   healthChecks:
     - apiVersion: cert-manager.io/v1
       kind: Certificate

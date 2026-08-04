@@ -1095,12 +1095,12 @@ pattern described above (see `kubernetes/apps/automation/waha/ks.yaml` for a con
 
 ---
 
-#### Multi-Domain Certificate Pipeline (`certificates-export` / `certificates-import`)
+#### Multi-Domain Certificate Pipeline (`certificates-export` / `certificates-import`) ✅ COMPLETE (2026-08-04)
 
 A two-phase push-pull pattern that makes TLS certificates resilient across cluster rebuilds and avoids Let's Encrypt rate limits when managing multiple domains. Sourced from `bykaj/home-ops` (`kubernetes/apps/network/certificates/`).
 
 **Why this matters for us:**
-Currently we have one domain (`${CLUSTER_DOMAIN}`) and one wildcard cert issued directly by cert-manager in `envoy-gateway/config/certificate.yaml`. That is fine for one domain. As soon as a second domain is added, each rebuild risks hitting the Let's Encrypt [duplicate certificate rate limit](https://letsencrypt.org/docs/rate-limits/) (5 identical certs per 7 days). With this pattern, certs are issued once and persisted in 1Password — rebuilds restore from 1Password in seconds.
+Five domains (`vwn-app`, `vwn-casa`, `cluster-vwn-io`, `apps-vwn-io`, `vwn-io`) are now wildcard-certified via this pattern instead of one cert issued directly by cert-manager. Each rebuild used to risk the Let's Encrypt [duplicate certificate rate limit](https://letsencrypt.org/docs/rate-limits/) (5 identical certs per 7 days) once more than one domain was in play. With this pattern, certs are issued once and persisted in 1Password — rebuilds restore from 1Password in seconds. `envoy-gateway-config` now `dependsOn: certificates-import`, so the Gateway never applies before the TLS Secrets exist — closing the ordering gap that existed while the PushSecret backfill was still pending. Backfilling surfaced two follow-on fixes: a 1Password Connect token-permission 403 (vault access needed explicit create/edit rights, not just the token itself) and a duplicate-item creation race from ESO's 2-replica no-leader-election setup, both described in `docs/CLUSTER.md`'s External Secrets section.
 
 **How it works:**
 

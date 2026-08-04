@@ -4,6 +4,39 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-04 — `certificates-pushsecret-1password-permission-fix`
+
+### Goal
+Diagnose and fix a `PushSecret` 403 against 1Password Connect (vault write-permission gap), then chase its downstream effects: an ESO duplicate-item creation race exposed during the retry, fixed via leader election, and completing the deferred `envoy-gateway-config` → `certificates-import` dependency wiring now that the 1Password backfill is confirmed.
+
+### What we did
+- Diagnosed `PushSecret/apps-vwn-io-tls` (and 4 sibling wildcard-cert pushes) failing with `error creating 1Password Item: status 403: ... token does not have permission to perform create on vault vqyi576232amyptf42a56samlq`. Traced the vault ID back to the `homelab` vault via the `onepassword` `ClusterSecretStore`, then ruled out a stale token by decoding the live `onepassword-connect-secrets` Secret and diffing it (sha256) against `op read 'op://homelab/HomeLab Access Token/credential'` — they matched, so the fault was on 1Password Connect's authorization side, not a sync lag. The 403-not-401 status code was the key signal: authentication succeeded (right token, right Connect server), only the `create` action on that vault was denied.
+- User created a new 1Password access token scoped for write access on `homelab` and saved it into the `HomeLab Access Token` item; re-ran `just bootstrap resources` to propagate it into the cluster Secret. Confirmed propagation via a bumped Secret `resourceVersion` and a fresh sha256 match — the 403 cleared on the next reconcile.
+- Force-syncing one `PushSecret` via an annotation nudge (to skip ESO's retry backoff) surfaced a second, previously-latent bug: two concurrently-reconciling ESO replicas both ran the 1Password provider's non-atomic "find item by title, else create" for the same not-yet-existing item, and both created one — `apps-vwn-io-tls` ended up with 2 duplicate items (same timestamp, each holding only the first-written property). Three of the four remaining PushSecrets hit the same race independently once their own retries landed.
+- Root-caused via `kubernetes/apps/external-secrets/external-secrets/app/helm/values.yaml`'s documented design: 2 ESO replicas, **no leader election**, "both always active" — correct for the idempotent `ExternalSecret` pull path, but unsafe for `PushSecret`'s non-atomic push path. Verified via `helm pull external-secrets/external-secrets --version 2.7.0` that enabling `leaderElect: true` needs no RBAC changes (the `coordination.k8s.io/leases` `Role` is rendered unconditionally in the chart) and costs only controller-runtime's default ~15s lease-handover pause on leader-pod disruption — a reconciliation pause, not application downtime, since already-synced `Secret`s are untouched.
+- Enabled `leaderElect: true` in the ESO Helm values, rewrote the design-tradeoff comment to describe the race and the fix, and updated the matching claim in `docs/CLUSTER.md`'s External Secrets topology-spread note.
+- User manually deleted the duplicate 1Password items; verified (via `op item list`/`op item get`) all 5 certificate items settled to exactly one each, each with both `tls.crt` and `tls.key` populated with sane byte lengths, and confirmed all 5 `certificates-import` `ExternalSecret`s report `Ready`/`SecretSynced` live.
+- Answered "is envoy-gateway re-enabled correctly": found `envoy-gateway-config`'s `ks.yaml` still `dependsOn: cluster-issuers` instead of `certificates-import` — the deliberate "Phase 2" step already flagged in commit `9a0030c` and `docs/ROADMAP.md` as pending on a confirmed 1Password backfill. `cluster-issuers` only guarantees the `ClusterIssuer` exists, not that the async cert-manager `Certificate`s (living in the separate `certificates-export` Kustomization) have actually produced their TLS `Secret`s yet — a fresh-bootstrap ordering gap per this repo's own async-prerequisite convention, invisible on the live cluster only because the Secrets already existed from before the refactor.
+- Completed the wiring: swapped `envoy-gateway-config`'s `dependsOn` to `certificates-import`, and added `certificates-import` to `certificates-export`'s `dependsOn` (removing the now-resolved deadlock-avoidance comment, since 1Password now holds all 5 items and `certificates-import` will always resolve).
+- Updated `docs/ROADMAP.md`'s "Multi-Domain Certificate Pipeline" entry to `✅ COMPLETE (2026-08-04)`, replacing its "when a second domain is added" framing with the actual 5 live domains and the closed ordering gap.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/CLUSTER.md` | Updated ESO topology-spread note: leader election now enabled, replacing the stale "no leader election, zero-delay failover" claim with the actual tradeoff |
+| `docs/ROADMAP.md` | Marked "Multi-Domain Certificate Pipeline" `✅ COMPLETE (2026-08-04)`; rewrote the section to reflect 5 live domains and the closed `envoy-gateway-config` ordering gap |
+| `kubernetes/apps/external-secrets/external-secrets/app/helm/values.yaml` | Added `leaderElect: true`; rewrote the design-tradeoff comment explaining the `PushSecret` duplicate-creation race and the fix |
+| `kubernetes/apps/network/certificates/ks.yaml` | `certificates-export` now `dependsOn: certificates-import`; replaced the "Phase 2 pending" comment with a completion note |
+| `kubernetes/apps/network/envoy-gateway/ks.yaml` | `envoy-gateway-config`'s `dependsOn` swapped from `cluster-issuers` to `certificates-import` |
+
+### Key decisions
+- Treated the 403-vs-401 distinction as the load-bearing diagnostic signal (auth success vs. vault-permission gap) and verified the token was actually in sync (sha256 + `resourceVersion`) before escalating — avoided a wasted second `just bootstrap resources` re-run chasing the wrong cause.
+- Chose cluster-wide leader election over a narrower per-item mutex workaround: it also removes the previously-accepted "doubles API calls to 1Password Connect" cost noted in the original design comment, and the chart's RBAC already supports it unconditionally, so there was no infrastructure cost to unlock it.
+- Verified `certificates-import`'s `ExternalSecret`s were actually `Ready` against the live cluster before wiring it in as a hard `dependsOn` for both `certificates-export` and `envoy-gateway-config` — avoided introducing a new deadlock on a resource that might not have actually resolved cleanly.
+- Left the duplicate-1Password-item cleanup to the user rather than automating a delete against their live password vault.
+
+---
+
 ## 2026-08-03 — `smtp-relay-deployment`
 
 ### Goal

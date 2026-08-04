@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-08-04 | `certificates-pushsecret-1password-permission-fix` | Fixed a PushSecret 403 (1Password Connect vault write-permission gap), fixed the ESO duplicate-item creation race it exposed via leaderElect, and wired envoy-gateway-config onto certificates-import |
 > | 2026-08-03 | `smtp-relay-deployment` | Researched homelab SMTP relay patterns, deployed maddy via app-template in a new `mail` namespace, replacing TrueNAS msmtpd for the printer relay |
 > | 2026-08-02 | `openwebui-gitops-deployment` | Researched community OpenWebUI patterns, planned and began implementing GitOps deployment (ai namespace, CNPG DB, Dragonfly, bootstrap-admin Job) — helmrelease/httproute/job still pending |
 > | 2026-07-31 | `paperless-ngx-truenas-restore-v3-upgrade` | Imported TrueNAS export (4059 docs) into vanilla paperless-ngx, upgraded to v3.0.4, fixed archiver OOMs, a Helm-escaping FILENAME_FORMAT bug, and bulk-assigned an Onbekend correspondent |
@@ -11,8 +12,6 @@
 > | 2026-07-28 | `keda-redis-smb-scaler-components` | Added KEDA redis-scaler (wired to paperless-ngx, inert) and smb-scaler (unwired, no consumer yet) Components; added DRAGONFLY_HOST var + blackbox Probe |
 > | 2026-07-28 | `cnpg-accidental-recreation-pitr-recovery` | Recovered forgejo/firefly-iii data after an accidental CNPG Cluster recreation via disposable-scratch-cluster PITR; fixed post-recovery WAL archiving collision |
 > | 2026-07-28 | `keda-postgres-scaler-component` | Added KEDA postgres-scaler Component scaling forgejo/firefly-iii/paperless-ngx to 0 on Postgres outage, 30s cooldown |
-> | 2026-07-28 | `externalsecret-rewrite-convention-cleanup` | Brought all ExternalSecrets onto the extract+rewrite mnemonic-prefix convention; fixed a stale-reference bug and a doc drift along the way |
-
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

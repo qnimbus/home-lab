@@ -49,7 +49,7 @@ spec:
     namespace: flux-system
   dependsOn:
     - name: envoy-gateway
-    - name: cluster-issuers
+    - name: certificates-import
   healthChecks:
     - apiVersion: gateway.networking.k8s.io/v1
       kind: Gateway
