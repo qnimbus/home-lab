@@ -4,6 +4,37 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-04 — `smtp-relay-l2-announcement-troubleshoot`
+
+### Goal
+Diagnose why the printer's `smtp-relay` (maddy) couldn't be reached end-to-end, and fix the underlying issue rather than just the symptom.
+
+### What we did
+- Live-diagnosed a WSL `nc` timeout against `smtp-relay.cluster.vwn.io:25` step by step: ruled out an unpushed-commit theory (Flux was already reconciling the last-known-good revision), confirmed the pod/HelmRelease/ExternalSecret were all healthy via `kubectl`, and traced repeated "connection reset by peer" log lines in the pod to the kubelet's own `tcpSocket` liveness/readiness probe (benign noise, not a real error).
+- Confirmed the first-round timeout was `loadBalancerSourceRanges` working as designed (locked to the printer's `/32` only) by running a temporary `tcpdump` capture pod on the L2-announcing node to get the real client source IP (`10.10.0.71`, WSL's actual on-wire address — not what WSL itself reported), then widened the allow-list with that IP via a Git commit to test further.
+- That test surfaced a second, real bug: after the widen, the connection came back "connection refused" instead of timing out. Found the Cilium `cilium-l2announce-mail-smtp-relay` Lease was held by `talos-cp-02`, while the sole `maddy` pod ran on `talos-cp-01` — a stale leader from initial deploy-time election that never re-balanced. Force-deleted the Lease (with explicit user confirmation, since it's a live-cluster action) and confirmed re-election immediately picked the correct node; the printer test then succeeded.
+- Researched Cilium's L2-announcement leader-election model via its own docs to answer "can this recur?": confirmed it's a documented incompatibility — Lease-holder election is a plain time-based renewal with no local-endpoint health check, and Cilium's own docs recommend `externalTrafficPolicy: Cluster` as the fix for this exact class of bug (a pod reschedule to a different node would otherwise silently repeat the same failure).
+- Verified via research that `loadBalancerSourceRanges` is still enforced against the real client IP at ingress regardless of traffic policy, so switching to `Cluster` costs nothing security-wise (only SNAT'd source-IP visibility inside maddy's own logs on a cross-node-forward, which doesn't happen today with a single replica).
+- Switched `externalTrafficPolicy` to `Cluster`, reverted the temporary test IP, and — per the user's own follow-up merge — replaced the single-IP allowance with a permanent `${LAN_SUBNET}` entry (new SOPS-encrypted var) alongside the printer's IP.
+- Added a `smtp-relay` blackbox-exporter `Probe` for ongoing monitoring, deliberately targeting the in-cluster Service DNS name (not the external hostname) since the external LB IP's source-IP ACL would otherwise cause permanent false alerts from the exporter's own pod IP; this covers pod/Service-level failures (already-existing generic `BlackboxProbeFailed` alert rule picks it up automatically) but not the external-LB path or SMTP-protocol-level relay health, which the user confirmed is acceptable for now.
+- Hit and fixed a self-inflicted deploy issue mid-session: the user's own merge referenced `${LAN_SUBNET}` before it existed in `kubernetes/flux/vars/cluster-secrets.sops.yaml`, which failed Helm's schema validation (`got null, want string`) without touching the live cluster (failed pre-apply); user added the missing SOPS var, re-reconcile then succeeded cleanly.
+- Verified the full fix live: Service shows `Cluster` policy with `["10.30.0.51/32","10.10.0.0/24"]`, Flux `Kustomization` and `HelmRelease` both `Ready`/`Released`, pod never restarted through any of this, and the new Probe reports `probe_success 1` in Prometheus (confirmed via a temporary port-forward).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/mail/smtp-relay/app/helmrelease.yaml` | `externalTrafficPolicy: Local` → `Cluster`; `loadBalancerSourceRanges` now printer `/32` + `${LAN_SUBNET}` (temporary single-IP test entry added then removed) |
+| `kubernetes/apps/observability/blackbox-exporter/app/probes.yaml` | Added `smtp-relay` `tcp_connect` Probe against the in-cluster Service DNS name |
+| `kubernetes/flux/vars/cluster-secrets.sops.yaml` | Added `LAN_SUBNET` and `IOT_SUBNET` SOPS-encrypted vars (user-added) |
+
+### Key decisions
+- Diagnosed via live packet capture (`tcpdump` in a throwaway `hostNetwork` debug pod) rather than guessing at WSL's NAT'd source IP — WSL2's virtual networking makes client-reported addresses unreliable for allow-list decisions.
+- Chose `externalTrafficPolicy: Cluster` over pinning the pod to a specific node (`nodeSelector`) — the latter is fragile across Talos/K8s upgrades (any node drain would resurface the exact same bug), while `Cluster` is Cilium's own documented permanent fix with no confirmed security tradeoff.
+- Blackbox Probe targets the in-cluster Service DNS, not the external hostname — testing the printer-restricted external LB IP from inside the cluster would always fail the source-IP ACL and false-alarm; accepted as a known coverage gap (pod/Service health only) per user confirmation.
+- All live-cluster mutations during diagnosis (temporary debug pods, the Lease deletion, forced Flux reconciles) were called out explicitly and the Lease deletion specifically was gated on the user's explicit go-ahead, since it's a destructive-ish action on shared cluster state outside Git.
+
+---
+
 ## 2026-08-04 — `certificates-pushsecret-1password-permission-fix`
 
 ### Goal

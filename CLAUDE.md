@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-08-04 | `smtp-relay-l2-announcement-troubleshoot` | Diagnosed smtp-relay outage to a stale Cilium L2 leader; fixed via externalTrafficPolicy Cluster, added blackbox Probe |
 > | 2026-08-04 | `certificates-pushsecret-1password-permission-fix` | Fixed a PushSecret 403 (1Password Connect vault write-permission gap), fixed the ESO duplicate-item creation race it exposed via leaderElect, and wired envoy-gateway-config onto certificates-import |
 > | 2026-08-03 | `smtp-relay-deployment` | Researched homelab SMTP relay patterns, deployed maddy via app-template in a new `mail` namespace, replacing TrueNAS msmtpd for the printer relay |
 > | 2026-08-02 | `openwebui-gitops-deployment` | Researched community OpenWebUI patterns, planned and began implementing GitOps deployment (ai namespace, CNPG DB, Dragonfly, bootstrap-admin Job) — helmrelease/httproute/job still pending |
@@ -11,7 +12,6 @@
 > | 2026-07-28 | `paperless-ngx-smb-persistence-reenable` | Wired paperless-ngx onto SMB static PV/PVCs for archive/backups, kept VolSync for the regenerable config PVC, re-enabled the app |
 > | 2026-07-28 | `keda-redis-smb-scaler-components` | Added KEDA redis-scaler (wired to paperless-ngx, inert) and smb-scaler (unwired, no consumer yet) Components; added DRAGONFLY_HOST var + blackbox Probe |
 > | 2026-07-28 | `cnpg-accidental-recreation-pitr-recovery` | Recovered forgejo/firefly-iii data after an accidental CNPG Cluster recreation via disposable-scratch-cluster PITR; fixed post-recovery WAL archiving collision |
-> | 2026-07-28 | `keda-postgres-scaler-component` | Added KEDA postgres-scaler Component scaling forgejo/firefly-iii/paperless-ngx to 0 on Postgres outage, 30s cooldown |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
