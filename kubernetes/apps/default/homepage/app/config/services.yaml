@@ -17,9 +17,10 @@
         siteMonitor: "http://truenas.network.svc.cluster.local:8080"
 - Infrastructure:
     - UniFi:
-        href: https://gateway.home.${DOMAIN_NET}
+        href: https://udm.${DOMAIN_APP}
         icon: unifi.png
         description: UniFi UDM Pro Max
+        siteMonitor: "https://udm.${DOMAIN_APP}"
     - WAN Failover:
         icon: "mdi-router-network"
         # Plain http, not https: this hostname bypasses Envoy Gateway entirely (DNS points
