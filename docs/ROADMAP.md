@@ -15,6 +15,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
   - [Future Storage Options](#future-storage-options)
   - [Grafana](#grafana)
   - [Alertmanager Receiver](#alertmanager-receiver)
+  - [e1000e Management-NIC Packet Drops: `netdev_budget` Experiment](#e1000e-management-nic-packet-drops-netdev_budget-experiment)
   - [Prometheus Metric Hygiene: Drop Static and Low-Value Series](#prometheus-metric-hygiene-drop-static-and-low-value-series)
   - [Scheduling Topology: Follow-up Fixes](#scheduling-topology-follow-up-fixes)
   - [Kubernetes Descheduler](#kubernetes-descheduler)
@@ -387,6 +388,74 @@ migration. `sidecar.dashboards`/`sidecar.datasources` enabled (auto-discovers Co
 > - `node_filesystem_avail_bytes / node_filesystem_size_bytes < 0.15` — disk pressure
 > - `ceph_health_status != 0` — Ceph not `HEALTH_OK` (warn on `1`/`HEALTH_WARN`, page on `2`/`HEALTH_ERR`)
 > - `ceph_osd_up < ceph_osd_in` — a Ceph OSD is `in` the CRUSH map but `down` (degraded redundancy)
+
+---
+
+### e1000e Management-NIC Packet Drops: `netdev_budget` Experiment
+
+**Applied live 2026-08-05 ~11:20 UTC** (via `talosctl apply-config`, no reboots needed — confirmed
+via `talosctl read` on all 4 nodes; etcd quorum and Ceph `HEALTH_OK` unaffected throughout the
+rollout). `talconfig.yaml`/the patch file are still uncommitted in git — commit before this drifts
+from the repo's "no changes not reflected in Git" rule. `CephNodeNetworkPacketDrops` recurs on the 4 nodes with an Intel
+I219-LM (`e1000e`) management NIC (`cp-02`, `cp-03`, `worker-01`, `worker-02`) but never on `cp-01`
+(newer Intel I225/I226, `igc`) — full root-cause writeup in
+[QA.md](QA.md#why-did-a-ceph-alert-cephnodenetworkpacketdrops-fire-for-packet-drops-on-a-management-nic-when-ceph-traffic-runs-on-the-storage-vlan).
+Confirmed the drops are receive-only with zero FIFO/hardware-ring errors (a software RX-path
+symptom, not link saturation), and that `net.core.netdev_max_backlog` — already bumped to 300000
+fleet-wide for the Ceph storage bond — has no effect on it (confirmed live via `talosctl read` on
+`cp-02`, still at kernel defaults: `netdev_budget=300`, `netdev_budget_usecs=8000`, unaffected by
+the backlog change).
+
+Staged `talos/patches/node/machine-sysctl-netdev-budget.yaml` (wired onto the 4 affected nodes
+only) raises `net.core.netdev_budget` to `1000` and `net.core.netdev_budget_usecs` to `16000` —
+this governs how much the `NET_RX` softirq drains from *all* polled NAPI devices (every physical
+NIC and every Cilium-managed pod veth) per pass, which is a more plausible bottleneck than backlog
+depth for a hardware-NAPI driver like `e1000e`. **This is genuinely an experiment** — there's no
+confirmed mechanism for the underlying ~3-minute periodic burst itself, so there's no guarantee
+this sysctl is the right lever — live values now `netdev_budget=1000`, `netdev_budget_usecs=16000`
+on all 4 nodes, verified via `talosctl read`.
+
+#### Metrics to monitor (before/after comparison)
+
+```promql
+# Total RX-dropped packets per node per day — the cleanest, alert-independent signal
+sum by (instance) (increase(node_network_receive_drop_total{device="eno1", instance=~"10.60.0.20[2-5]:9100"}[24h]))
+
+# Peak burst magnitude per node (does the burst itself shrink, even if not eliminated?)
+max_over_time((rate(node_network_receive_drop_total{device="eno1"}[1m]))[24h:15s])
+
+# Did it actually page (crossed the `for: 1m` threshold)?
+count_over_time(ALERTS{alertname="CephNodeNetworkPacketDrops", alertstate="firing"}[24h])
+```
+
+#### Baseline (2026-08-05, pre-patch)
+
+| Node | 24h total RX drops (`eno1`) | 24h firing (paged) count |
+|------|------------------------------|---------------------------|
+| cp-02 (`.202`) | 736,638 | 25 |
+| cp-03 (`.203`) | 748,074 | 0 |
+| worker-01 (`.204`) | 755,388 | 0 |
+| worker-02 (`.205`) | 744,322 | 0 |
+
+Only `cp-02` has ever crossed the `for: 1m` debounce and actually paged; the other 3 nodes
+self-resolve as `pending`. All 4 nodes drop a broadly similar *volume* of packets/day despite that
+difference — `cp-02` apparently just has slightly-longer-duration bursts, not more frequent ones.
+
+**Early read (2026-08-05, ~3h post-apply, matched 08:12-11:20 vs 11:20-14:28 windows):** all 4
+nodes moved the same direction on every metric — total RX-drop volume down 13-16%, peak burst
+magnitude down 15-33% (bigger effect on `cp-03`/`worker-01`/`worker-02` than `cp-02`), and `cp-02`'s
+firing count went 4 → 1. Encouraging, but **not conclusive**: the two windows are adjacent
+different times of day rather than the same hour on different days, so some of this could be
+diurnal traffic variation rather than the patch, and 3h/4-firings is a small sample. Needs the full
+1-2 week checkpoint below to separate signal from noise.
+
+**Checkpoint:** re-run the queries above ~1-2 weeks after applying, per-node against this baseline.
+A meaningful win looks like the 24h drop totals dropping by an order of magnitude and/or `cp-02`'s
+firing count trending toward 0. A `netdev_budget` bump that changes nothing across all 3 metrics
+means the softirq-budget theory was wrong too, and it's time to stop chasing kernel-level fixes and
+just widen `CephNodeNetworkPacketDrops`'s `for:` window (or add per-node threshold overrides) to
+stop it paging — the alert would then just reflect known, harmless noise rather than something
+worth further OS-level tuning.
 
 ---
 
