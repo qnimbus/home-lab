@@ -8,11 +8,13 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
   - [Forgejo: Deferred Follow-ups (Actions Runner, WAN Exposure)](#forgejo-deferred-follow-ups-actions-runner-wan-exposure)
   - [WAN Failover Router: Host Header Rewrite](#wan-failover-router-host-header-rewrite)
   - [Renovate PR-Review Workflow: Cost/Bug Investigation, Re-enable](#renovate-pr-review-workflow-costbug-investigation-re-enable)
-  - [CloudNativePG: Backup, PITR, and Per-App Provisioning](#cloudnative-pg-backup-pitr-and-per-app-provisioning)
+  - [CloudNativePG: Backup, PITR, and Per-App Provisioning](#cloudnativepg-backup-pitr-and-per-app-provisioning)
   - [Postgres NFS Backup: Restore Drill](#postgres-nfs-backup-restore-drill)
-  - [~~Longhorn Storage Network (Multus + Storage VLAN)~~ — ABANDONED](#longhorn-storage-network-multus--storage-vlan--abandoned-superseded-by-rook-ceph)
+  - [~~Longhorn Storage Network (Multus + Storage VLAN)~~ — ABANDONED, superseded by Rook-Ceph](#longhorn-storage-network-multus--storage-vlan--abandoned-superseded-by-rook-ceph)
   - [Rook-Ceph Migration](#rook-ceph-migration)
+  - [~~cp-02 Thermal Stability (Lenovo M920Q)~~ — RESOLVED](#cp-02-thermal-stability-lenovo-m920q--resolved)
   - [Future Storage Options](#future-storage-options)
+  - [Storage VLAN Performance Benchmarking](#storage-vlan-performance-benchmarking)
   - [Grafana](#grafana)
   - [Alertmanager Receiver](#alertmanager-receiver)
   - [e1000e Management-NIC Packet Drops: `netdev_budget` Experiment](#e1000e-management-nic-packet-drops-netdev_budget-experiment)
@@ -440,6 +442,14 @@ count_over_time(ALERTS{alertname="CephNodeNetworkPacketDrops", alertstate="firin
 Only `cp-02` has ever crossed the `for: 1m` debounce and actually paged; the other 3 nodes
 self-resolve as `pending`. All 4 nodes drop a broadly similar *volume* of packets/day despite that
 difference — `cp-02` apparently just has slightly-longer-duration bursts, not more frequent ones.
+
+**Early read (2026-08-05, ~3h post-apply, matched 08:12-11:20 vs 11:20-14:28 windows):** all 4
+nodes moved the same direction on every metric — total RX-drop volume down 13-16%, peak burst
+magnitude down 15-33% (bigger effect on `cp-03`/`worker-01`/`worker-02` than `cp-02`), and `cp-02`'s
+firing count went 4 → 1. Encouraging, but **not conclusive**: the two windows are adjacent
+different times of day rather than the same hour on different days, so some of this could be
+diurnal traffic variation rather than the patch, and 3h/4-firings is a small sample. Needs the full
+1-2 week checkpoint below to separate signal from noise.
 
 **Checkpoint:** re-run the queries above ~1-2 weeks after applying, per-node against this baseline.
 A meaningful win looks like the 24h drop totals dropping by an order of magnitude and/or `cp-02`'s
