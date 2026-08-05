@@ -29,6 +29,7 @@ nodes:
     controlPlane: false
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
+      - "@./patches/node/machine-sysctl-netdev-budget.yaml"
       # FALLBACK (commented out) — VLAN 200 on eno1 (RJ45) stood in for bond-storage
       # 2026-06-25 → 2026-07-07 while X520 cards were down/replaced. Re-enable this patch
       # (and comment out bond-storage's `addresses:` below) if the X520 fails again.
@@ -95,6 +96,7 @@ nodes:
     controlPlane: false
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
+      - "@./patches/node/machine-sysctl-netdev-budget.yaml"
       # FALLBACK (commented out) — VLAN 200 on eno1 (RJ45) stood in for bond-storage
       # 2026-06-25 → 2026-07-07 while X520 cards were down/replaced. Re-enable this patch
       # (and comment out bond-storage's `addresses:` below) if the X520 fails again.
@@ -228,6 +230,7 @@ nodes:
       topology.kubernetes.io/zone: homelab-cp-02
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
+      - "@./patches/node/machine-sysctl-netdev-budget.yaml"
       # FALLBACK (commented out) — VLAN 200 on eno1 (RJ45) stood in for bond-storage
       # 2026-06-25 → 2026-07-07 while X520 cards were down/replaced. Re-enable this patch
       # (and comment out bond-storage's `addresses:` below) if the X520 fails again.
@@ -298,6 +301,7 @@ nodes:
       topology.kubernetes.io/zone: homelab-cp-03
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
+      - "@./patches/node/machine-sysctl-netdev-budget.yaml"
       # FALLBACK (commented out) — VLAN 200 on eno1 (RJ45) stood in for bond-storage
       # 2026-06-25 → 2026-07-07 while cp-03 had no X520 card installed (replacement fitted
       # 2026-07-07). Re-enable this patch (and comment out bond-storage's `addresses:` below)

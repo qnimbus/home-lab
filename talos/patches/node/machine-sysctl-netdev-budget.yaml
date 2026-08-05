@@ -1,0 +1,27 @@
+machine:
+  sysctls:
+    # Experiment (2026-08-05) — targets recurring CephNodeNetworkPacketDrops on this node's
+    # e1000e (Intel I219-LM) management NIC. Full history: docs/QA.md's
+    # "Why did a 'Ceph' alert (CephNodeNetworkPacketDrops) fire..." entry; tracked as a watch
+    # item in docs/ROADMAP.md.
+    #
+    # net.core.netdev_max_backlog is already 300000 fleet-wide (patches/global/machine-sysctls.yaml,
+    # sized for the Ceph storage bond) with no observed effect on these drops — confirmed live via
+    # `talosctl read /proc/sys/net/core/netdev_max_backlog` on cp-02 (2026-08-05). That backlog queue
+    # is mainly a landing zone for netif_rx()/RPS-forwarded packets; a hardware NAPI driver like
+    # e1000e drains its own RX ring directly and mostly bypasses it, which is consistent with the
+    # ceiling bump not helping.
+    #
+    # netdev_budget / netdev_budget_usecs bound something different: the NET_RX softirq handler
+    # itself, across ALL currently-scheduled NAPI pollers on a CPU (every physical NIC AND every
+    # Cilium-managed pod veth) in a single pass. Both were still at kernel defaults (confirmed live
+    # on cp-02: budget=300, budget_usecs=8000) despite the backlog tuning above. On a node running
+    # many pods, e1000e's own NAPI poll competes for this shared per-pass budget against veth
+    # interrupts — raising it gives the softirq loop more room to fully drain eno1's ring during a
+    # burst before yielding to the next scheduling round.
+    #
+    # Unconfirmed whether this actually helps — see docs/ROADMAP.md watch item for the before/after
+    # comparison plan. If it doesn't move the needle within ~1-2 weeks, revert and fall back to
+    # widening the alert's `for:` window instead of chasing the kernel layer further.
+    net.core.netdev_budget: "1000" # default 300 — packets drained per NET_RX softirq pass (all NAPI devices)
+    net.core.netdev_budget_usecs: "16000" # default 8000 — time budget (µs) per NET_RX softirq pass

@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-08-05 | `ceph-packetdrops-diagnosis-netdev-budget-experiment` | Root-caused CephNodeNetworkPacketDrops to e1000e NIC hardware; refreshed CLAUDE.md/QA.md; staged netdev_budget tune |
 > | 2026-08-04 | `flux-operator-0.57.0-bump` | Bumped flux-operator/flux-instance chart pins to 0.57.0; fixed cross-datasource Renovate grouping bug dropping chart PRs |
 > | 2026-08-04 | `smtp-relay-l2-announcement-troubleshoot` | Diagnosed smtp-relay outage to a stale Cilium L2 leader; fixed via externalTrafficPolicy Cluster, added blackbox Probe |
 > | 2026-08-04 | `certificates-pushsecret-1password-permission-fix` | Fixed a PushSecret 403 (1Password Connect vault write-permission gap), fixed the ESO duplicate-item creation race it exposed via leaderElect, and wired envoy-gateway-config onto certificates-import |
@@ -11,7 +12,6 @@
 > | 2026-08-02 | `openwebui-gitops-deployment` | Researched community OpenWebUI patterns, planned and began implementing GitOps deployment (ai namespace, CNPG DB, Dragonfly, bootstrap-admin Job) — helmrelease/httproute/job still pending |
 > | 2026-07-31 | `paperless-ngx-truenas-restore-v3-upgrade` | Imported TrueNAS export (4059 docs) into vanilla paperless-ngx, upgraded to v3.0.4, fixed archiver OOMs, a Helm-escaping FILENAME_FORMAT bug, and bulk-assigned an Onbekend correspondent |
 > | 2026-07-28 | `paperless-ngx-smb-persistence-reenable` | Wired paperless-ngx onto SMB static PV/PVCs for archive/backups, kept VolSync for the regenerable config PVC, re-enabled the app |
-> | 2026-07-28 | `keda-redis-smb-scaler-components` | Added KEDA redis-scaler (wired to paperless-ngx, inert) and smb-scaler (unwired, no consumer yet) Components; added DRAGONFLY_HOST var + blackbox Probe |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
@@ -94,21 +94,32 @@ Version bumps are handled by **Renovate** via the `# renovate: datasource=...` c
 
 ## Cluster Hardware
 
-Three bare-metal control-plane nodes; no dedicated workers (`allowSchedulingOnControlPlanes: true`).
-This table is a quick agent-reference for node identity and IPs. **Source of truth for current-state
-hardware, NIC topology, and disk inventory is [CLUSTER.md](docs/CLUSTER.md#cluster-overview)** — keep
-detail there, not here. For the *planned* 5-node expansion see [HARDWARE-ARCHITECTURE.md](docs/HARDWARE-ARCHITECTURE.md).
+Five bare-metal nodes — 3 control-plane + 2 workers, scheduling allowed on all
+(`allowSchedulingOnControlPlanes: true`). This table is a quick agent-reference for node identity,
+IPs, and management NIC chipset. **Source of truth for current-state hardware, NIC topology, and
+disk inventory is [CLUSTER.md](docs/CLUSTER.md#cluster-overview)** — keep detail there, not here.
+The 5-node build itself is complete; see [HARDWARE-ARCHITECTURE.md](docs/HARDWARE-ARCHITECTURE.md)
+for the original sizing rationale and tier breakdown.
 
-| Hostname       | Hardware                              | Mgmt IP       | Storage IP     | Notes                        |
-|----------------|---------------------------------------|---------------|----------------|------------------------------|
-| talos-cp-01    | Minisforum MS-A2 (AMD, 32c, 96GB ECC)| 10.60.0.201   | 10.200.0.201   | bond0: 2x RTL8125+igc, bond1: 2x i40e (X710) |
-| talos-cp-02    | Lenovo M90q #1 (i5-10500T, 64GB)     | 10.60.0.202   | 10.200.0.202   | mgmt: eno1 1GbE (VLAN 60+200 on single port) |
-| talos-worker-01| Lenovo M920Q #1 (i5-8500T, 64GB)     | 10.60.0.204   | 10.200.0.204   | mgmt: e1000e, bond0: 2x ixgbe (X520); temp CP |
-| talos-worker-02| Lenovo M920Q #2 (i5-8600T, 64GB)     | 10.60.0.205   | 10.200.0.205   | mgmt: e1000e, bond0: 2x ixgbe (X520) |
+| Hostname        | Hardware                              | Mgmt IP     | Storage IP   | Mgmt NIC                     |
+|-----------------|----------------------------------------|-------------|--------------|-------------------------------|
+| talos-cp-01     | Minisforum MS-A2 (AMD Ryzen 9 9955HX, 16c/32t, 96GB ECC) | 10.60.0.201 | 10.200.0.201 | `enp4s0` Intel I225/I226 (`igc`) |
+| talos-cp-02     | Lenovo M90q #1 (i5-10500T, 64GB)      | 10.60.0.202 | 10.200.0.202 | `eno1` Intel I219-LM (`e1000e`) |
+| talos-cp-03     | Lenovo M90q #3 (i5-10500T, 64GB)      | 10.60.0.203 | 10.200.0.203 | `eno1` Intel I219-LM (`e1000e`) |
+| talos-worker-01 | Lenovo M920Q #1 (i5-8500T, 32GB)      | 10.60.0.204 | 10.200.0.204 | `eno1` Intel I219-LM (`e1000e`) |
+| talos-worker-02 | Lenovo M920Q #2 (i5-8600T, 64GB)      | 10.60.0.205 | 10.200.0.205 | `eno1` Intel I219-LM (`e1000e`) |
 
-- **VIP**: `10.60.0.2` (kube-vip via ARP; cp-01, cp-02, worker-01 compete — worker-01 is temporary CP)
+All 5 nodes carry Ceph storage traffic over a dedicated `bond-storage` LACP bond (802.3ad, MTU
+9000) on `10.200.0.0/24` — see CLUSTER.md for per-node SFP+ card/driver detail. The `e1000e` vs
+`igc` management-NIC split above matters operationally: `CephNodeNetworkPacketDrops` fires
+recurringly on the four `e1000e` nodes and never on cp-01 — see
+[QA.md](docs/QA.md#why-did-a-ceph-alert-cephnodenetworkpacketdrops-fire-for-packet-drops-on-a-management-nic-when-ceph-traffic-runs-on-the-storage-vlan).
+
+- **VIP**: `10.60.0.2` (Talos-native VIP via ARP, configured on each control-plane node's mgmt
+  interface — not the separate kube-vip project/pod. cp-01, cp-02, cp-03 are eligible; workers do
+  not participate)
 - **Pod CIDR**: `10.42.0.0/16` | **Service CIDR**: `10.43.0.0/16`
-- **Storage network**: `10.200.0.0/24` (SFP+, LACP) — jumbo frames (9000 MTU) live on all 3 nodes
+- **Storage network**: `10.200.0.0/24` (SFP+, LACP) — jumbo frames (9000 MTU) live on all 5 nodes
 
 ---
 

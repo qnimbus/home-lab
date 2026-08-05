@@ -4,6 +4,39 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-05 — `ceph-packetdrops-diagnosis-netdev-budget-experiment`
+
+### Goal
+Diagnose the recurring `CephNodeNetworkPacketDrops` alert (last seen 11:48 CEST), document root cause, and figure out whether an OS-level fix exists — plus a way to measure whether it actually helps.
+
+### What we did
+- Investigated the alert against live Prometheus/Alertmanager state (manually, following the `/diagnose-alerts` methodology): confirmed the rule is Rook's bundled `ceph-mixin` rule with no Ceph-network scoping (`device!="lo"` only), and that a `for: 1m` debounce was already applied in a prior 2026-07-18 session.
+- Found the underlying periodic ~3-minute traffic burst on the management NIC (`eno1`) hits `cp-02`, `cp-03`, `worker-01`, and `worker-02` but never `cp-01`. Cross-referenced `talos/talconfig.yaml` and identified the differentiator: the 4 affected nodes all use an Intel I219-LM (`e1000e` driver) management NIC, while `cp-01` alone uses a newer Intel I225/I226 (`igc`) — a finding not previously documented anywhere in the repo.
+- Confirmed via `rate(node_network_receive_fifo_total[1m])` that the drops are receive-only with zero FIFO/hardware-ring errors, pointing to a software RX-path (kernel softirq) bottleneck rather than link saturation or a bad NIC.
+- Found `CLAUDE.md`'s top-of-file hardware table was stale — missing `talos-cp-03` entirely, wrong NIC/bond details for `cp-01`/`cp-02`, and a wrong VIP participant list (still referencing `worker-01` as "temporary CP"). Refreshed it against `talconfig.yaml`/`CLUSTER.md` ground truth, including correcting "kube-vip" to "Talos-native VIP" (no kube-vip pods actually exist in the cluster).
+- Appended two follow-up paragraphs to the existing `docs/QA.md` entry on this alert, documenting the 2026-07-18 debounce tuning and the 2026-08-05 NIC-hardware correlation.
+- Investigated an OS/Talos-level fix: found `net.core.netdev_max_backlog` was already bumped to `300000` fleet-wide (for Ceph's storage bond) with no observed effect on these drops; verified live via `talosctl read` on `cp-02` that `netdev_budget` (300), `netdev_budget_usecs` (8000), and `dev_weight` (64) were all still at kernel defaults.
+- Drafted `talos/patches/node/machine-sysctl-netdev-budget.yaml` (`net.core.netdev_budget` 300→1000, `net.core.netdev_budget_usecs` 8000→16000) wired onto the 4 affected nodes only in `talconfig.yaml`; validated with `talhelper genconfig` — clean render, correct per-node sysctl merge, `cp-01` correctly excluded.
+- Added a new "In Progress" watch-item section to `docs/ROADMAP.md` with 3 PromQL monitoring queries and a captured pre-patch baseline (24h RX-drop totals ~736K–755K packets/node; only `cp-02` has ever paged, 25 times in 24h) so the patch's effect — or lack of one — can be measured after it's applied.
+- Did all edits in worktree `ceph-packetdrops-docs-refresh`; left changes uncommitted per this repo's `/git-stage`/`/git-commit`-only policy. The sysctl patch was not applied to live nodes — that's a live network-stack change awaiting explicit user go-ahead.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `CLAUDE.md` | Refreshed hardware table: added `talos-cp-03`, corrected NIC chipsets/drivers, fixed VIP participant list and terminology, fixed node/scheduling count (3 CP + 2 workers, not "no dedicated workers") |
+| `docs/QA.md` | Appended 2026-07-18 debounce and 2026-08-05 NIC-correlation follow-ups to the `CephNodeNetworkPacketDrops` Q&A entry |
+| `docs/ROADMAP.md` | Added "e1000e Management-NIC Packet Drops: `netdev_budget` Experiment" watch item with monitoring queries and baseline; added TOC entry |
+| `talos/talconfig.yaml` | Wired the new sysctl patch onto `cp-02`/`cp-03`/`worker-01`/`worker-02` |
+| `talos/patches/node/machine-sysctl-netdev-budget.yaml` | New: raises `netdev_budget`/`netdev_budget_usecs` on the 4 `e1000e` nodes |
+
+### Key decisions
+- Chose `netdev_budget`/`netdev_budget_usecs` over further `netdev_max_backlog` tuning because the backlog ceiling was already maxed with no effect — backlog mainly serves `netif_rx()`/RPS-forwarded packets, not hardware NAPI drivers like `e1000e`, whereas the softirq-wide budget genuinely bounds hardware NIC polling across all devices on a CPU.
+- Scoped the sysctl patch to only the 4 affected nodes rather than fleet-wide, to keep a clean before/after comparison and avoid touching the already-healthy `cp-01`.
+- Explicitly framed the fix as an unconfirmed experiment (the burst's actual source has never been captured live) and set a concrete checkpoint/fallback in ROADMAP.md: if the metrics don't move within 1-2 weeks, stop chasing kernel-level tuning and widen the alert's `for:` window instead.
+- Caught and reverted an accidental `git add` mid-session — this repo's `CLAUDE.md` reserves staging for `/git-stage` only, even at apparent task completion.
+
+---
+
 ## 2026-08-04 — `flux-operator-0.57.0-bump`
 
 ### Goal
