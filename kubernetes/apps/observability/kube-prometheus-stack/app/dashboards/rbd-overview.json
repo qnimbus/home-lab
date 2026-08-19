@@ -67,7 +67,7 @@
          "bars": false,
          "dashLength": 10,
          "dashes": false,
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "RBD per-image IO statistics are disabled by default.\n\nPlease refer to https://docs.ceph.com/en/latest/mgr/prometheus/#rbd-io-statistics for information about how to enable those optionally.",
          "fieldConfig": {
             "defaults": {
@@ -169,7 +169,7 @@
          "bars": false,
          "dashLength": 10,
          "dashes": false,
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "RBD per-image IO statistics are disabled by default.\n\nPlease refer to https://docs.ceph.com/en/latest/mgr/prometheus/#rbd-io-statistics for information about how to enable those optionally.",
          "fieldConfig": {
             "defaults": {
@@ -271,7 +271,7 @@
          "bars": false,
          "dashLength": 10,
          "dashes": false,
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "RBD per-image IO statistics are disabled by default.\n\nPlease refer to https://docs.ceph.com/en/latest/mgr/prometheus/#rbd-io-statistics for information about how to enable those optionally.",
          "fieldConfig": {
             "defaults": {
@@ -370,7 +370,7 @@
       },
       {
          "columns": [ ],
-         "datasource": "${datasource}",
+         "datasource": "$${datasource}",
          "description": "RBD per-image IO statistics are disabled by default.\n\nPlease refer to https://docs.ceph.com/en/latest/mgr/prometheus/#rbd-io-statistics for information about how to enable those optionally.",
          "fieldConfig": {
             "defaults": {
@@ -519,7 +519,7 @@
       },
       {
          "columns": [ ],
-         "datasource": "${datasource}",
+         "datasource": "$${datasource}",
          "description": "RBD per-image IO statistics are disabled by default.\n\nPlease refer to https://docs.ceph.com/en/latest/mgr/prometheus/#rbd-io-statistics for information about how to enable those optionally.",
          "fieldConfig": {
             "defaults": {
@@ -668,7 +668,7 @@
       },
       {
          "columns": [ ],
-         "datasource": "${datasource}",
+         "datasource": "$${datasource}",
          "description": "RBD per-image IO statistics are disabled by default.\n\nPlease refer to https://docs.ceph.com/en/latest/mgr/prometheus/#rbd-io-statistics for information about how to enable those optionally.",
          "fieldConfig": {
             "defaults": {
@@ -843,7 +843,7 @@
          {
             "allValue": null,
             "current": { },
-            "datasource": "$datasource",
+            "datasource": "$$datasource",
             "hide": 0,
             "includeAll": false,
             "label": "cluster",

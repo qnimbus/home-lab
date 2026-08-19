@@ -65,7 +65,7 @@
             "rgba(237, 129, 40, 0.89)",
             "#d44a3a"
          ],
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "format": "none",
          "gauge": {
             "maxValue": 100,
@@ -147,7 +147,7 @@
             "rgba(237, 129, 40, 0.89)",
             "#d44a3a"
          ],
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "Average CPU busy across all hosts (OSD, RGW, MON etc) within the cluster",
          "format": "percentunit",
          "gauge": {
@@ -230,7 +230,7 @@
             "rgba(237, 129, 40, 0.89)",
             "#d44a3a"
          ],
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "Average Memory Usage across all hosts in the cluster (excludes buffer/cache usage)",
          "format": "percentunit",
          "gauge": {
@@ -313,7 +313,7 @@
             "rgba(237, 129, 40, 0.89)",
             "#d44a3a"
          ],
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "IOPS Load at the device as reported by the OS on all OSD hosts",
          "format": "none",
          "gauge": {
@@ -396,7 +396,7 @@
             "rgba(237, 129, 40, 0.89)",
             "#d44a3a"
          ],
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "Average Disk utilization for all OSD data devices (i.e. excludes journal/WAL)",
          "format": "percent",
          "gauge": {
@@ -479,7 +479,7 @@
             "rgba(237, 129, 40, 0.89)",
             "#d44a3a"
          ],
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "Total send/receive network load across all hosts in the ceph cluster",
          "format": "bytes",
          "gauge": {
@@ -554,7 +554,7 @@
          "valueName": "current"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -634,7 +634,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -741,7 +741,7 @@
          {
             "allValue": null,
             "current": { },
-            "datasource": "$datasource",
+            "datasource": "$$datasource",
             "hide": 0,
             "includeAll": false,
             "label": "cluster",
@@ -761,7 +761,7 @@
          {
             "allValue": null,
             "current": { },
-            "datasource": "$datasource",
+            "datasource": "$$datasource",
             "hide": 0,
             "includeAll": true,
             "label": null,
@@ -781,7 +781,7 @@
          {
             "allValue": null,
             "current": { },
-            "datasource": "$datasource",
+            "datasource": "$$datasource",
             "hide": 0,
             "includeAll": true,
             "label": null,
@@ -801,7 +801,7 @@
          {
             "allValue": null,
             "current": { },
-            "datasource": "$datasource",
+            "datasource": "$$datasource",
             "hide": 0,
             "includeAll": true,
             "label": null,
@@ -821,7 +821,7 @@
          {
             "allValue": null,
             "current": { },
-            "datasource": "$datasource",
+            "datasource": "$$datasource",
             "hide": 0,
             "includeAll": true,
             "label": null,

@@ -65,7 +65,7 @@
             "rgba(237, 129, 40, 0.89)",
             "#d44a3a"
          ],
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "format": "percentunit",
          "gauge": {
             "maxValue": 1,
@@ -146,7 +146,7 @@
             "rgba(237, 129, 40, 0.89)",
             "#d44a3a"
          ],
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "Time till pool is full assuming the average fill rate of the last 6 hours",
          "format": "s",
          "gauge": {
@@ -220,7 +220,7 @@
          "valueName": false
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -299,7 +299,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -390,7 +390,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -481,7 +481,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -586,7 +586,7 @@
          {
             "allValue": null,
             "current": { },
-            "datasource": "$datasource",
+            "datasource": "$$datasource",
             "hide": 0,
             "includeAll": false,
             "label": "cluster",
@@ -606,7 +606,7 @@
          {
             "allValue": null,
             "current": { },
-            "datasource": "$datasource",
+            "datasource": "$$datasource",
             "hide": 0,
             "includeAll": false,
             "label": "Pool Name",

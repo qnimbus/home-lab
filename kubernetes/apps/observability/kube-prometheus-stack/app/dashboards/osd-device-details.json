@@ -70,7 +70,7 @@
          "type": "row"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -161,7 +161,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -252,7 +252,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -362,7 +362,7 @@
          "type": "row"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -453,7 +453,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -544,7 +544,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -635,7 +635,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -740,7 +740,7 @@
          {
             "allValue": null,
             "current": { },
-            "datasource": "$datasource",
+            "datasource": "$$datasource",
             "hide": 0,
             "includeAll": false,
             "label": "cluster",
@@ -760,7 +760,7 @@
          {
             "allValue": null,
             "current": { },
-            "datasource": "$datasource",
+            "datasource": "$$datasource",
             "hide": 0,
             "includeAll": false,
             "label": "OSD",

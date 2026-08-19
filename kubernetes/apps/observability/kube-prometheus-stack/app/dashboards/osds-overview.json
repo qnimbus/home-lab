@@ -63,7 +63,7 @@
    ],
    "panels": [
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -157,7 +157,7 @@
       },
       {
          "columns": [ ],
-         "datasource": "${datasource}",
+         "datasource": "$${datasource}",
          "fieldConfig": {
             "defaults": {
                "custom": {
@@ -292,7 +292,7 @@
          "type": "table"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -386,7 +386,7 @@
       },
       {
          "columns": [ ],
-         "datasource": "${datasource}",
+         "datasource": "$${datasource}",
          "description": "This table shows the osd's that are delivering the 10 highest write latencies within the cluster",
          "fieldConfig": {
             "defaults": {
@@ -556,7 +556,7 @@
          "type": "table"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -615,7 +615,7 @@
          "type": "piechart"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -681,7 +681,7 @@
          "type": "piechart"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "The pie chart shows the various OSD sizes used within the cluster",
          "fieldConfig": {
             "defaults": {
@@ -800,7 +800,7 @@
          "bars": true,
          "dashLength": 10,
          "dashes": false,
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "fieldConfig": {
             "defaults": {
                "custom": {
@@ -899,7 +899,7 @@
             "rgba(237, 129, 40, 0.89)",
             "#d44a3a"
          ],
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "This gauge panel shows onode Hits ratio to help determine if increasing RAM per OSD could help improve the performance of the cluster",
          "format": "percentunit",
          "gauge": {
@@ -992,7 +992,7 @@
          "type": "row"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -1079,7 +1079,7 @@
       },
       {
          "columns": [ ],
-         "datasource": "${datasource}",
+         "datasource": "$${datasource}",
          "description": "This table shows the 10 OSDs with the highest number of slow ops",
          "fieldConfig": {
             "defaults": {
@@ -1246,7 +1246,7 @@
          {
             "allValue": null,
             "current": { },
-            "datasource": "$datasource",
+            "datasource": "$$datasource",
             "hide": 0,
             "includeAll": false,
             "label": "cluster",

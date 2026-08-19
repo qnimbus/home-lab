@@ -59,7 +59,7 @@
         "rgba(237, 129, 40, 0.9)",
         "rgb(255, 0, 0)"
       ],
-      "datasource": "$datasource",
+      "datasource": "$$datasource",
       "editable": false,
       "error": false,
       "format": "none",
@@ -158,7 +158,7 @@
         "warn": "rgba(237, 129, 40, 0.9)"
       },
       "cornerRadius": 0,
-      "datasource": "$datasource",
+      "datasource": "$$datasource",
       "displayName": "",
       "flipCard": false,
       "flipTime": 5,
@@ -368,7 +368,7 @@
         "warn": "rgba(237, 129, 40, 0.9)"
       },
       "cornerRadius": 1,
-      "datasource": "$datasource",
+      "datasource": "$$datasource",
       "displayName": "",
       "flipCard": false,
       "flipTime": 5,
@@ -462,7 +462,7 @@
         "warn": "rgba(237, 129, 40, 0.9)"
       },
       "cornerRadius": 1,
-      "datasource": "$datasource",
+      "datasource": "$$datasource",
       "displayName": "",
       "flipCard": false,
       "flipTime": 5,
@@ -538,7 +538,7 @@
         "rgba(237, 129, 40, 0.89)",
         "#d44a3a"
       ],
-      "datasource": "$datasource",
+      "datasource": "$$datasource",
       "decimals": 2,
       "format": "percentunit",
       "gauge": {
@@ -616,7 +616,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "$datasource",
+      "datasource": "$$datasource",
       "fieldConfig": {
         "defaults": {
            "custom": {
@@ -781,7 +781,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "$datasource",
+      "datasource": "$$datasource",
       "fieldConfig": {
         "defaults": {
            "custom": {
@@ -896,7 +896,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "$datasource",
+      "datasource": "$$datasource",
       "fieldConfig": {
         "defaults": {
            "custom": {
@@ -997,7 +997,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "$datasource",
+      "datasource": "$$datasource",
       "fieldConfig": {
         "defaults": {
            "custom": {
@@ -1094,7 +1094,7 @@
         "mode": "spectrum"
       },
       "dataFormat": "timeseries",
-      "datasource": "$datasource",
+      "datasource": "$$datasource",
       "gridPos": {
         "h": 9,
         "w": 6,
@@ -1157,7 +1157,7 @@
         "mode": "spectrum"
       },
       "dataFormat": "timeseries",
-      "datasource": "$datasource",
+      "datasource": "$$datasource",
       "gridPos": {
         "h": 9,
         "w": 6,
@@ -1208,7 +1208,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "$datasource",
+      "datasource": "$$datasource",
       "fieldConfig": {
         "defaults": {
            "custom": {
@@ -1315,7 +1315,7 @@
       {
         "datasource": {
           "type": "prometheus",
-          "uid": "${datasource}"
+          "uid": "$${datasource}"
         },
         "definition": "label_values(ceph_health_status, cluster)",
         "hide": 0,

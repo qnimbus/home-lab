@@ -84,7 +84,7 @@
             "rgba(237, 129, 40, 0.89)",
             "#d44a3a"
          ],
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "format": "none",
          "gauge": {
             "maxValue": 100,
@@ -157,7 +157,7 @@
          "valueName": "current"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -236,7 +236,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -344,7 +344,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -435,7 +435,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -534,7 +534,7 @@
             "rgba(237, 129, 40, 0.89)",
             "#d44a3a"
          ],
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "Each OSD consists of a Journal/WAL partition and a data partition. The RAW Capacity shown is the sum of the data partitions across all OSDs on the selected OSD hosts.",
          "format": "bytes",
          "gauge": {
@@ -608,7 +608,7 @@
          "valueName": "current"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -718,7 +718,7 @@
          "type": "row"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -809,7 +809,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -900,7 +900,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -979,7 +979,7 @@
          "type": "timeseries"
       },
       {
-         "datasource": "$datasource",
+         "datasource": "$$datasource",
          "description": "",
          "fieldConfig": {
             "defaults": {
@@ -1059,7 +1059,7 @@
       },
       {
          "columns": [ ],
-         "datasource": "${datasource}",
+         "datasource": "$${datasource}",
          "fieldConfig": {
             "defaults": {
                "custom": {
@@ -1215,7 +1215,7 @@
          {
             "allValue": null,
             "current": { },
-            "datasource": "$datasource",
+            "datasource": "$$datasource",
             "hide": 0,
             "includeAll": false,
             "label": "cluster",
@@ -1235,7 +1235,7 @@
          {
             "allValue": null,
             "current": { },
-            "datasource": "$datasource",
+            "datasource": "$$datasource",
             "hide": 0,
             "includeAll": true,
             "label": null,

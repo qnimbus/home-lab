@@ -4,6 +4,41 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-19 — `ceph-dashboards-envsubst-buildfailed-fix`
+
+### Goal
+Diagnose why the `kube-prometheus-stack` Flux Kustomization was stuck `Ready: False` / `BuildFailed`, and fix the root cause.
+
+### What we did
+- Used the `gitops-cluster-debug` skill's Kustomization workflow (falling back to `kubectl` directly, since the `flux-operator-mcp` MCP server tools weren't available this session) to inspect the `kube-prometheus-stack` Flux Kustomization in `flux-system` — found `Ready: False`, reason `BuildFailed`, stuck since the last successful reconcile on 2026-08-04, with the error `envsubst error: variable substitution failed: variable not set (strict mode): "datasource"` on the `ceph-grafana-dashboards` ConfigMap.
+- Root-caused it: the 9 ceph-mixin Grafana dashboard JSON files (added in commit `9350749`) use Grafana's native `$datasource`/`${datasource}` templating-variable syntax, which Flux's `postBuild.substituteFrom` envsubst pass treats as unresolved variable references — `datasource` isn't a key in `cluster-settings` or `cluster-secrets`. This silently failed the entire Kustomization build (not just the one ConfigMap), cascading `Ready: False` to 5 dependent Kustomizations (`fluent-bit`, `flux-alerts`, `grafana-operator-instance`, `unpoller`, `victoria-logs`).
+- Confirmed the repo already has a working convention for this exact class of problem: `node-exporter-full.json` escapes Grafana's `$hashKey` as `$$hashKey` for the same reason — the ceph-mixin dashboards were never escaped.
+- Ruled out the same-day `renovate.json5` "datasource" fix (commit `3814b20`) as the cause — that's an unrelated Renovate `transformTemplates` datasource metadata key, coincidentally same word.
+- Applied the `$$`-escape fix (`$datasource` → `$$datasource`, `${datasource}` → `$${datasource}`) across all 9 affected dashboard JSON files; verified zero un-escaped occurrences remain and all 9 files still parse as valid JSON.
+- Kustomization still failed to reconcile after that fix, now on `ConfigMap.v1.[noGrp]/node-exporter-grafana-dashboard-km6gk84m7b`, same `"datasource"` envsubst error — Flux's `postBuild` fails fast on the *first* unresolved variable per build attempt, so the initial ceph-mixin fix only let the build progress to the next offending ConfigMap rather than surfacing every failure at once.
+- Found `node-exporter-full.json` (Grafana.com dashboard 1860, 23.9k lines) uses `"uid": "${datasource}"` 371 times, all unescaped despite the file already containing an escaped `$$hashKey` elsewhere for the same class of problem. Applied the same `${datasource}` → `$${datasource}` escape across all 371 occurrences via a single blanket replace; verified 0 remaining unescaped and JSON still valid.
+- Ran a final repo-wide sweep across all 10 dashboard JSON files confirming zero un-escaped `$datasource`/`${datasource}` remain anywhere in the Kustomization's manifest tree.
+- Left changes uncommitted per this repo's `/git-stage`/`/git-commit`-only policy.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/observability/kube-prometheus-stack/app/dashboards/host-details.json` | Escaped `$datasource`/`${datasource}` to `$$`/`$${}` form |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/dashboards/hosts-overview.json` | Escaped `$datasource` to `$$datasource` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/dashboards/ceph-cluster.json` | Escaped `$datasource`/`${datasource}` to `$$`/`$${}` form |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/dashboards/pool-overview.json` | Escaped `$datasource`/`${datasource}` to `$$`/`$${}` form |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/dashboards/osd-device-details.json` | Escaped `$datasource` to `$$datasource` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/dashboards/osds-overview.json` | Escaped `$datasource`/`${datasource}` to `$$`/`$${}` form |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/dashboards/pool-detail.json` | Escaped `$datasource` to `$$datasource` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/dashboards/rbd-details.json` | Escaped `$datasource` to `$$datasource` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/dashboards/node-exporter-full.json` | Escaped all 371 occurrences of `${datasource}` to `$${datasource}` |
+| `kubernetes/apps/observability/kube-prometheus-stack/app/dashboards/rbd-overview.json` | Escaped `$datasource`/`${datasource}` to `$$`/`$${}` form |
+
+### Key decisions
+- Fixed by escaping the dashboard JSON to match the repo's existing `$$hashKey` convention, rather than weakening `postBuild.substituteFrom` (e.g. dropping strict mode) — keeps other legitimate substitutions (`cluster-settings`) working and unblocks the five dependent Kustomizations without loosening the substitution mechanism repo-wide.
+
+---
+
 ## 2026-08-19 — `arc-runner-image-staleness-fix`
 
 ### Goal
