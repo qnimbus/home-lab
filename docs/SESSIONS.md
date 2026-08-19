@@ -4,6 +4,29 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-19 — `open-webui-bootstrap-envsubst-fix`
+
+### Goal
+Diagnose and fix a `BuildFailed` on the `open-webui` Flux Kustomization caused by an envsubst strict-mode failure on the `open-webui-bootstrap-admin` Job manifest.
+
+### What we did
+- Investigated the reported error — `post build failed for 'Job.v1.batch/open-webui-bootstrap-admin': envsubst error: variable substitution failed: variable not set (strict mode): "VAR"` — by reading `job-bootstrap-admin.yaml`.
+- Root-caused it to a variant of the same bug class as the same-day `ceph-dashboards-envsubst-buildfailed-fix` session, but in a different location: a shell comment (not executable code) explaining the file's `$$`-escaping convention used `${VAR}` and `${NAME}` as illustrative placeholder examples. Flux's `postBuild.substituteFrom` does a blind textual scan of the entire rendered manifest, including comment lines inside multi-line block scalars — it has no notion of shell comments, so the prose examples were treated as unresolved variable references.
+- Escaped both occurrences (`${VAR}` → `$${VAR}`, `${NAME}` → `$${NAME}`) to match the file's existing `$$`-escaping convention already used elsewhere in the same comment block (e.g. `$${BOOTSTRAP_ADMIN_NAME}`).
+- Swept the rest of the `open-webui` app directory for the same unescaped-`$VAR` pattern; confirmed all remaining `${...}` references (`DOMAIN_CLUSTER`, `PG_HOST`, `DRAGONFLY_HOST`, `APP`) are legitimate Flux substitution variables defined in `cluster-secrets.sops.yaml`/`cluster-settings.yaml` or the Kustomization's own `postBuild.substitute` block — no further whack-a-mole rounds expected.
+- Verified the file still parses as valid YAML after the edit.
+- Left the change uncommitted per this repo's `/git-stage`/`/git-commit`-only policy.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/ai/open-webui/app/job-bootstrap-admin.yaml` | Escaped `${VAR}`/`${NAME}` comment placeholders to `$${VAR}`/`$${NAME}` to fix envsubst `BuildFailed` |
+
+### Key decisions
+- Recorded as a separate session entry rather than folding into `ceph-dashboards-envsubst-buildfailed-fix` — same underlying bug class (unescaped `$VAR` colliding with Flux's strict-mode envsubst) but a different app, file, and manifestation (a comment, not a data value), so it's a distinct fix worth its own record.
+
+---
+
 ## 2026-08-19 — `ceph-dashboards-envsubst-buildfailed-fix`
 
 ### Goal
