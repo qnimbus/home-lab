@@ -4,6 +4,42 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-19 — `arc-runner-image-staleness-fix`
+
+### Goal
+Fix a Renovate JSONata syntax error, then diagnose and permanently fix a GitHub Actions self-hosted runner (ARC) outage that had left `renovate-pr-review.yml` unable to get a runner — traced through several false leads to a stale, untracked runner image aging past GitHub's minimum-version enforcement and triggering an upstream `Outdated`-phase reconcile bug.
+
+### What we did
+- Fixed a JSONata syntax error in `renovate.json5`'s grafana-dashboard `transformTemplates` rule (missing `$string()` prefix) — committed as `3814b20`.
+- Diagnosed the "Auto-review Renovate PRs" GitHub Action job hanging indefinitely waiting for a runner — traced to ARC's `home-lab-readonly` `AutoscalingRunnerSet` stuck in phase `Outdated`.
+- Restarted the controller pod and applied the upstream-documented status-patch workaround — the patch instead triggered a tight infinite create/delete loop hammering GitHub's live Actions API; stopped by scaling the controller `Deployment` to 0 and suspending its Flux `HelmRelease` (repeated 4+ times across the session as the loop kept re-triggering).
+- Live-tested and falsified two hypotheses: (a) a genuinely fresh install via full uninstall+reinstall of `home-lab-readonly` still hit the loop within ~16s of a runner registering; (b) an RBAC/`containerMode` mismatch — removing `containerMode` from the live values didn't prevent the loop, which recurred within ~75s (reverted after testing).
+- Considered simplifying by merging `home-lab-readonly` into `home-lab`; discovered `home-lab`'s ServiceAccount is bound to `cluster-admin` (reserved for future manually-dispatched ops workflows, with an explicit repo comment forbidding auto-triggered workflows from using it) — rejected the merge to avoid granting cluster-admin to a workflow that processes untrusted third-party Renovate PR content via an LLM agent.
+- User force-deleted the `actions-runner-system` namespace directly; it stuck mid-delete because the controller owning the relevant finalizers had already been torn down — unstuck by manually stripping finalizers from the remaining `AutoscalingListener`, `EphemeralRunnerSet`, and 4 `Role`/`RoleBinding` objects. Flux auto-recreated the whole namespace from git within ~90s.
+- Diagnosed a dashboard screenshot showing 4 HelmReleases as "Not Ready" as a UI misread of the `Drifted=False` condition (which means healthy/no-drift) — not a real cluster problem, no fix needed.
+- A user-triggered real job re-run reproduced the same `Outdated` loop a third time, confirming it's deterministic on any actual job dispatch, independent of prior test conditions.
+- Researched `qnimbus/home-ops-bykaj`'s ARC setup (same chart/image version, no evidence they'd hit or mitigated the bug) and the upstream `actions/actions-runner-controller` repo (issues #4595/#4596/#4600) — found the real root cause: the runner image (`ghcr.io/home-operations/actions-runner:2.334.0`) had aged past GitHub's rolling 30-day minimum-runner-version enforcement, causing an exit-code-7 → phase-`Outdated` cascade; multiple community reports confirmed bumping to `2.336.0` resolves it.
+- Found the image was never tracked by Renovate — no `# renovate: datasource=` comment, and the tag sits inside an arbitrary Helm `values:` blob that Renovate's default `kubernetes` manager doesn't parse — so a `renovate.json5` auto-merge rule written specifically to prevent this failure mode had been dead the whole session (and likely much longer) for lack of a manager to match against.
+- Mid-fix, discovered a same-day commit (`04cf84b`) had redirected `renovate-pr-review.yml`'s `runs-on:` from `home-lab-readonly` to `home-lab` (cluster-admin), contradicting the earlier RBAC rejection — confirmed with the user and reverted it.
+- Re-froze the live controller (it had been manually scaled back up outside Flux in the interim, and both scale-sets had wedged into `Outdated` again), bumped the runner image to `2.336.0` with the missing Renovate tracking comment in both `home-lab` and `home-lab-readonly` HelmReleases, and reverted the `runs-on` redirect. Left uncommitted per this repo's `/git-stage`/`/git-commit`-only policy.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `renovate.json5` | Fixed JSONata `$string()` syntax error in the grafana-dashboard `transformTemplates` rule (committed `3814b20`) |
+| `.github/workflows/renovate-pr-review.yml` | Reverted the `runs-on:` redirect (`04cf84b`) back to `home-lab-readonly` to preserve RBAC isolation from untrusted PR content |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab/helmrelease.yaml` | Bumped runner image `2.334.0` → `2.336.0`, added missing Renovate tracking comment |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab-readonly/helmrelease.yaml` | Same image bump + tracking comment |
+| `CLAUDE.md` | Session log table entry |
+| `docs/SESSIONS.md` | This session record |
+
+### Key decisions
+- Rejected merging `home-lab-readonly` into `home-lab` despite an earlier "yes, go ahead," after discovering `home-lab` carries `cluster-admin` RBAC — kept the two-scale-set security separation intact.
+- Root cause is the runner image tag, not the chart version or RBAC/containerMode config — both were live-tested and ruled out first. Chart stays pinned at `0.14.2` (still latest upstream release); the fix is solely the image bump plus the Renovate tracking comment that was missing.
+- Reverted the `home-lab` redirect back to `home-lab-readonly`, per explicit user confirmation, to preserve the "no auto-triggered workflow on the cluster-admin group" guardrail documented in `runners/home-lab/rbac.yaml`.
+
+---
+
 ## 2026-08-19 — `cnpg-barman-backup-alert`
 
 ### Goal
