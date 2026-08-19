@@ -67,7 +67,7 @@
   customDatasources: {
     "grafana-dashboard": {
       defaultRegistryUrlTemplate: "https://grafana.com/api/dashboards/{{packageName}}/revisions",
-      transformTemplates: ['{"releases": items.{"version": string(revision)}}'],
+      transformTemplates: ['{"releases": items.{"version": $string(revision)}}'],
     },
   },
 
