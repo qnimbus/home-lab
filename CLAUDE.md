@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-08-19 | `cnpg-barman-backup-alert` | Added CNPG barman-cloud S3/B2 backup dead-man's-switch alert; `cnpg_collector_*` metric was stuck at 0 |
 > | 2026-08-05 | `ceph-packetdrops-diagnosis-netdev-budget-experiment` | Root-caused CephNodeNetworkPacketDrops to e1000e NIC hardware; refreshed CLAUDE.md/QA.md; staged netdev_budget tune |
 > | 2026-08-04 | `flux-operator-0.57.0-bump` | Bumped flux-operator/flux-instance chart pins to 0.57.0; fixed cross-datasource Renovate grouping bug dropping chart PRs |
 > | 2026-08-04 | `smtp-relay-l2-announcement-troubleshoot` | Diagnosed smtp-relay outage to a stale Cilium L2 leader; fixed via externalTrafficPolicy Cluster, added blackbox Probe |
@@ -11,7 +12,6 @@
 > | 2026-08-03 | `smtp-relay-deployment` | Researched homelab SMTP relay patterns, deployed maddy via app-template in a new `mail` namespace, replacing TrueNAS msmtpd for the printer relay |
 > | 2026-08-02 | `openwebui-gitops-deployment` | Researched community OpenWebUI patterns, planned and began implementing GitOps deployment (ai namespace, CNPG DB, Dragonfly, bootstrap-admin Job) — helmrelease/httproute/job still pending |
 > | 2026-07-31 | `paperless-ngx-truenas-restore-v3-upgrade` | Imported TrueNAS export (4059 docs) into vanilla paperless-ngx, upgraded to v3.0.4, fixed archiver OOMs, a Helm-escaping FILENAME_FORMAT bug, and bulk-assigned an Onbekend correspondent |
-> | 2026-07-28 | `paperless-ngx-smb-persistence-reenable` | Wired paperless-ngx onto SMB static PV/PVCs for archive/backups, kept VolSync for the regenerable config PVC, re-enabled the app |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

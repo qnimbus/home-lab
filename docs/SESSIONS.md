@@ -4,6 +4,37 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-19 — `cnpg-barman-backup-alert`
+
+### Goal
+Add a missing dead-man's-switch Prometheus alert for CloudNativePG's barman-cloud S3/B2 backup path (`ScheduledBackup/postgres-v17`), which currently has no alerting despite the separate `postgres-backup-local` CronJob already having one.
+
+### What we did
+- Reviewed the existing `postgres-backup-local` alert pattern (`PostgresBackupMissed` dead-man's-switch + `PostgresBackupJobFailed`) and how `severity: critical`/`warning` route to Alertmanager (`pushover-critical` vs `pushover` receivers in `kube-prometheus-stack/app/alertmanagerconfig.yaml`).
+- Confirmed `Cluster/postgres-v17` already has `monitoring.enablePodMonitor: true`, so CNPG's PodMonitor scrapes the exporter on every instance pod — no new scrape config needed.
+- Port-forwarded to `kube-prometheus-stack-prometheus` and queried live metrics rather than guessing. Found `cnpg_collector_last_available_backup_timestamp` (the metric name the task suggested checking) is permanently stuck at `0` on this cluster — a known upstream gap (`cloudnative-pg/plugin-barman-cloud#380`) where that legacy collector metric is never populated when backups run via a CNPG-I plugin. Using it would have produced a rule that fires immediately and permanently.
+- Found the correct, actively-updating metric: `barman_cloud_cloudnative_pg_io_last_available_backup_timestamp` (and its `_last_failed_backup_timestamp` sibling), exposed by the barman-cloud plugin's own exporter. Confirmed via web search against the plugin's official observability docs and a real GitHub issue thread describing the exact `_last_failed_backup_timestamp - _last_available_backup_timestamp > 1` comparison pattern.
+- Verified via `kubectl get backups.postgresql.cnpg.io` that there's no per-backup `Job` object for plugin-method backups (unlike the CronJob-based local path), so the `kube_job_status_failed` approach used by `PostgresBackupJobFailed` doesn't map — used the failed-vs-available timestamp comparison instead.
+- Wrote `PostgresScheduledBackupMissed` (critical, `time() - max(...) > 90000`, `for: 15m`, mirroring the local alert's 25h/15m dead-man's-switch shape) and `PostgresScheduledBackupFailed` (warning, `for: 5m`) into a new `PrometheusRule`, aggregating with `max()` across the 3 instance pods (primary + 2 replicas each export an identical cluster-wide value) to avoid tripling alert instances on a lagging replica's exporter.
+- Wired the new `prometheusrule.yaml` into `cluster/app/kustomization.yaml` — confirmed via `kubectl kustomize` that it renders cleanly, and confirmed the `cloudnative-pg-cluster` Kustomization has `wait: false`/no explicit `healthChecks`, so no additional Flux wiring was needed for a plain CRD resource.
+- Re-queried both finished expressions against live Prometheus and confirmed neither is currently firing (last backup ~1.4h old, no failed attempts) — won't page immediately on merge.
+- Left changes uncommitted per this repo's `/git-stage`/`/git-commit`-only policy.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/prometheusrule.yaml` | New — `PostgresScheduledBackupMissed`/`PostgresScheduledBackupFailed` dead-man's-switch + failure alerts for the barman-cloud S3/B2 backup path |
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/kustomization.yaml` | Added `./prometheusrule.yaml` to resources |
+| `CLAUDE.md` | Session log table entry |
+| `docs/SESSIONS.md` | This session stub |
+
+### Key decisions
+- Deliberately did not alert on `cnpg_collector_last_available_backup_timestamp` despite it being the name the task suggested checking first — live verification showed it's permanently `0` under this cluster's plugin-based backup architecture, which would have made the alert fire immediately and forever. Used `barman_cloud_cloudnative_pg_io_last_available_backup_timestamp` instead, confirmed live and against upstream docs/issues.
+- Used `max()` aggregation across the 3 CNPG instance pods rather than alerting on the raw per-pod metric, since all three export an identical cluster-wide value and an un-aggregated rule would fire one alert instance per pod (tripling Pushover notifications) if one replica's exporter briefly lagged.
+- Modeled the failure alert on `barman_cloud_cloudnative_pg_io_last_failed_backup_timestamp > last_available_backup_timestamp` rather than trying to reuse the local path's `kube_job_status_failed` pattern — plugin-method backups don't create Kubernetes `Job` objects, so there's no Job-based signal to key off.
+
+---
+
 ## 2026-08-05 — `ceph-packetdrops-diagnosis-netdev-budget-experiment`
 
 ### Goal
