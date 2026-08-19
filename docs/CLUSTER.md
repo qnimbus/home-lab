@@ -41,6 +41,8 @@ All 5 storage bonds run **802.3ad LACP** (fast rate, `layer3+4` hash policy) at 
 
 > **2026-06-25 → 2026-07-07 (resolved — table above reflects current live state again):** cp-02's X520-DA2 failed HW init (`ixgbe HW Init failed: -114` on both ports, confirmed unrecoverable across reboot/cold power-cycle/reseat). Its card was swapped with cp-03's for fault isolation, then cp-03 itself was physically replaced (2026-07-01) with a unit that had no X520 card installed. During this window, **all 5 nodes** carried storage traffic over a tagged VLAN 200 sub-interface on their management NIC instead of `bond-storage`, and three `silence-operator` Silences suppressed the resulting `CephNodeNetworkBondDegraded`/`CephNodeNetworkPacketDrops` noise. **2026-07-07:** a replacement X520-DA2 was installed in cp-03 (clean ixgbe HW init, both ports verified up at 10 Gbit/s beforehand); `talos/talconfig.yaml`'s VLAN-200 patches were reverted to commented-out (kept in place for easy fallback) and `bond-storage` `addresses:` restored fleet-wide. Applied live via `talosctl apply-config`, no reboots required; Ceph briefly showed the same `OSD_SLOW_PING_TIME_BACK`/`_FRONT`-style slow-heartbeat `HEALTH_WARN` seen during the original 2026-06-18 cutover (MAC-table/ARP relearning), self-clearing to `HEALTH_OK` within ~30s. The 3 fallback Silences were deactivated (dropped from `silence-operator`'s `kustomization.yaml`, kept on disk as `INACTIVE` for reference). Watch item: cp-03's `enp2s0f0` showed more boot-time SFP+ link flaps (8x) than its sibling port (2x) before settling — not blocking, but worth checking first if `CephNodeNetworkBondDegraded` ever reappears on cp-03 specifically. Full incident detail: `.claude/agent-memory/cluster-doctor/project_cp02_storage_bond_ixgbe_failure.md`; session log: `docs/SESSIONS.md` → `x520-nic-failure-vlan200-fallback`.
 
+> **2026-08-19 (resolved — cold-boot init timing, not a hardware fault):** after a ~2-week full cluster power-off, cp-02 **and** cp-03 both hit the identical `ixgbe 0000:02:00.0/1: HW Init failed: -114` signature on every port, on both nodes simultaneously, during Full-Cluster Cold Start. Unlike the 2026-06-25 incident (isolated to one card, confirmed unrecoverable across reboot/power-cycle/reseat at the time), this hit two independently-replaced cards identically — the symmetry pointed to an environmental cold-boot cause rather than two coincidental hardware deaths. Fix: a plain `talosctl reboot` (not reset/wipe) on each affected node — both came back with clean `ixgbe` init, both SFP+ ports at 10 Gbit/s, `bond-storage` at 20000 Mbit. **Takeaway:** if `ixgbe HW Init failed: -114` appears on cp-02/cp-03 right after a long power-off, try one `talosctl reboot` before assuming card failure — it's a distinct failure mode from the June incident. Diagnosed and fixed live during a `Full-Cluster Shutdown / Cold Start` (see [below](#full-cluster-shutdown-cold-start)); the freeze-flag re-set/retry pattern used to safely diagnose while OSDs flapped is worth reusing for any future in-flight hardware surprise during a cold start.
+
 > etcd peer traffic is restricted to the management subnet (`advertisedSubnets: ["10.60.0.0/24"]`) — it never crosses the storage VLAN.
 
 ---
@@ -1678,7 +1680,12 @@ talosctl -n 10.60.0.201,10.60.0.202,10.60.0.203 shutdown # control-plane (last)
 
 ```sh
 # 1. Power on the 3 CPs (front button / AMT / WoL). Wait for etcd quorum + API:
-talosctl -n 10.60.0.201,10.60.0.202,10.60.0.203 health
+#    (`talosctl health` connects via a single node — `-n`/`--nodes` (or, if
+#    omitted, this cluster's talosconfig `nodes:` default, which lists 3 IPs)
+#    must resolve to exactly one. --control-plane-nodes/--worker-nodes are a
+#    separate, purely informational pair describing expected topology, not
+#    the connection target — passing them alone does not fix a multi-node -n.)
+talosctl health -n 10.60.0.201 --control-plane-nodes 10.60.0.201,10.60.0.202,10.60.0.203
 kubectl get nodes                  # cp-01/02/03 reach Ready
 
 # 2. Power on the 2 workers. Wait for all 5 Ready:
