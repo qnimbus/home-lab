@@ -15,27 +15,42 @@ theme: dark
 color: slate
 headerStyle: underlined
 
-useEqualHeights: true
+maxGroupColumns: 6
+maxBookmarkGroupColumns: 4
+useEqualHeights: false
 statusStyle: dot
+fullWidth: false
 layout:
-  Observability:
-    style: row
-    columns: 4
-  Storage:
-    style: row
-    columns: 4
-  Database:
-    style: row
-    columns: 4
-  Automation:
-    style: row
-    columns: 4
-  Network:
-    style: row
-    columns: 4
-  Infrastructure:
+  Home Automation:
     style: row
     columns: 3
+  Infrastructure:
+    style: row
+    columns: 4
+  RowA:
+    style: row
+    columns: 5
+    header: false
+    useEqualHeights: true
+    Observability: {}
+    Documents: {}
+    Database: {}
+    Development: {}
+  RowB:
+    style: row
+    columns: 5
+    header: false
+    useEqualHeights: true
+    Storage: {}
+    AI: {}
+    Automation: {}
+    Finance: {}
+  RowC:
+    header: false
+    useEqualHeights: true
+    Bookmarks:
+      style: row
+      columns: 2
 
 quicklaunch:
   searchDescriptions: true

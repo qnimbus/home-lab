@@ -1,2 +1,17 @@
 ---
-[]
+- Bookmarks:
+    - Github:
+        - abbr: GH
+          icon: si-github
+          href: https://github.com/
+
+    - Reddit:
+        - abbr: RD
+          icon: si-reddit
+          href: https://reddit.com/
+          description: The front page of the internet
+
+    - YouTube:
+        - abbr: YT
+          icon: si-youtube.svg
+          href: https://youtube.com/

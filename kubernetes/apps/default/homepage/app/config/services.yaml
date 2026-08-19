@@ -15,20 +15,20 @@
         # refuses to follow a https->http downgrade redirect and errors — browsers tolerate it
         # fine on the href above, so only siteMonitor needs to route around it.
         siteMonitor: "http://truenas.network.svc.cluster.local:8080"
+- Home Automation:
+    - Home Assistant:
+        icon: home-assistant.png
+        href: "https://ha.${DOMAIN_CLUSTER}"
+        description: Home automation & smart home control
+        # url points at the in-cluster Service (network/external-services/home-assistant), not
+        # HOME_ASSISTANT_LAN_HOST directly or the https:// href above — same reasoning as
+        # TrueNAS's siteMonitor: a direct hop to the already-proxied Service avoids routing the
+        # widget's polling traffic through Envoy for no benefit.
+        # widget:
+        #   type: homeassistant
+        #   url: "http://home-assistant.network.svc.cluster.local:8123"
+        #   key: {{HOMEPAGE_VAR_HOMEASSISTANT_TOKEN}}
 - Infrastructure:
-    - UniFi:
-        href: https://udm.${DOMAIN_APP}
-        icon: unifi.png
-        description: UniFi UDM Pro Max
-        siteMonitor: "https://udm.${DOMAIN_APP}"
-    - WAN Failover:
-        icon: "mdi-router-network"
-        # Plain http, not https: this hostname bypasses Envoy Gateway entirely (DNS points
-        # straight at the router's LAN IP — see network/external-services/wan-failover), and the
-        # router only serves plain HTTP with no TLS termination in front of it.
-        href: "http://wan-failover.${DOMAIN_CLUSTER}"
-        description: "Failover link status"
-        siteMonitor: "http://wan-failover.${DOMAIN_CLUSTER}"
     - Cloudflared:
         href: https://dash.cloudflare.com/
         icon: cloudflare-zero-trust.png
@@ -38,3 +38,21 @@
           accountid: {{HOMEPAGE_VAR_CLOUDFLARE_ACCOUNT_ID}}
           tunnelid: {{HOMEPAGE_VAR_CLOUDFLARE_TUNNEL_ID}}
           key: {{HOMEPAGE_VAR_CLOUDFLARE_API_TOKEN}}
+    - UniFi Network:
+        href: https://udm.${DOMAIN_APP}
+        icon: si-ubiquiti.svg-#0559C9
+        description: UniFi SkyNet Site
+        siteMonitor: "https://udm.${DOMAIN_APP}/network"
+    - UniFi Protect:
+        href: https://udm.${DOMAIN_APP}
+        icon: si-ubiquiti.svg
+        description: UniFi Protect
+        siteMonitor: "https://udm.${DOMAIN_APP}/protect"
+    - WAN Failover:
+        icon: "mdi-router-network"
+        # Plain http, not https: this hostname bypasses Envoy Gateway entirely (DNS points
+        # straight at the router's LAN IP — see network/external-services/wan-failover), and the
+        # router only serves plain HTTP with no TLS termination in front of it.
+        href: "http://wan-failover.${DOMAIN_CLUSTER}"
+        description: "Failover link status"
+        siteMonitor: "http://wan-failover.${DOMAIN_CLUSTER}"

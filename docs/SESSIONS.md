@@ -4,6 +4,41 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-19 — `homepage-ha-external-service`
+
+### Goal
+Add a Home Assistant service card to Homepage, and the `network/external-services` proxy plumbing needed to reach it, since Home Assistant runs outside the cluster.
+
+### What we did
+- Reviewed the existing `homepage/app/config/services.yaml`, its `externalsecret.yaml`, and `widgets.yaml` to understand the `{{HOMEPAGE_VAR_*}}` runtime-substitution pattern (Homepage's own env-var templating, backed by a `homepage-secret` Secret built from the `homepage` 1Password item) and to distinguish the top-bar `widgets.yaml` from per-card `services.yaml` widgets.
+- Recommended — and, on confirmation, created — a new `Home Automation` group rather than folding Home Assistant into `Infrastructure`, since the existing groups are semantically scoped (`Storage`, network/connectivity `Infrastructure`) and Home Assistant is a different domain likely to grow its own entries over time.
+- Found `network/external-services/truenas/` as the closest prior art for proxying a non-Kubernetes, physical/LAN device (Service + EndpointSlice + HTTPRoute, no `gethomepage.dev/*` annotations since there's no pod to match) and mirrored it for Home Assistant.
+- Confirmed `HOME_ASSISTANT_LAN_HOST` (and `HOME_ASSISTANT_IOT_HOST`) already exist as SOPS-encrypted vars in `kubernetes/flux/vars/cluster-secrets.sops.yaml` — no secrets-file edit needed there.
+- Created `kubernetes/apps/network/external-services/home-assistant/` (`service.yaml` port 8123, `endpoint.yaml` EndpointSlice → `${HOME_ASSISTANT_LAN_HOST}`, `httproute.yaml` for `ha.${DOMAIN_CLUSTER}` via the `envoy-internal` gateway, `kustomization.yaml`), and registered a matching Flux Kustomization block in `network/external-services/ks.yaml` (`dependsOn: envoy-gateway-config`, same as TrueNAS's).
+- Added the `Home Automation` group with a Home Assistant card to `homepage/app/config/services.yaml`: `href` goes through Envoy (`https://ha.${DOMAIN_CLUSTER}`) for browser use, while the `homeassistant` widget's `url` hits the new in-cluster Service directly (`home-assistant.network.svc.cluster.local:8123`) — following the same direct-hop precedent as TrueNAS's `siteMonitor`.
+- Added `HOMEPAGE_VAR_HOMEASSISTANT_TOKEN` to `homepage/app/externalsecret.yaml`, pulling `HOMEASSISTANT_TOKEN` from the (user-populated) `homepage` 1Password item, and added the field to `docs/EXTERNAL-SECRETS.yaml`'s `known_fields` list for that item.
+- Validated every touched/added Kustomize directory with `kubectl kustomize` (`home-assistant`, `truenas`, `homepage/app`) and parsed `ks.yaml` with PyYAML to confirm all 5 multi-document Kustomization blocks are well-formed.
+- Flagged two open items for the user: confirm the 1Password field name is exactly `HOMEASSISTANT_TOKEN` (ESO sync will fail silently otherwise), and that Home Assistant's own `http.trusted_proxies`/Host-header validation may need configuring on the HA side for the Envoy-proxied hostname to work.
+- Left all changes uncommitted in worktree `homepage-ha-external-service` per this repo's `/git-stage`/`/git-commit`-only policy.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/network/external-services/home-assistant/service.yaml` | New — ClusterIP Service, port 8123 |
+| `kubernetes/apps/network/external-services/home-assistant/endpoint.yaml` | New — EndpointSlice pointing at `${HOME_ASSISTANT_LAN_HOST}` |
+| `kubernetes/apps/network/external-services/home-assistant/httproute.yaml` | New — routes `ha.${DOMAIN_CLUSTER}` via `envoy-internal` |
+| `kubernetes/apps/network/external-services/home-assistant/kustomization.yaml` | New — lists the three resources above |
+| `kubernetes/apps/network/external-services/ks.yaml` | Added `home-assistant` Flux Kustomization block |
+| `kubernetes/apps/default/homepage/app/config/services.yaml` | Added `Home Automation` group with a Home Assistant service card + `homeassistant` widget |
+| `kubernetes/apps/default/homepage/app/externalsecret.yaml` | Added `HOMEPAGE_VAR_HOMEASSISTANT_TOKEN` field mapping |
+| `docs/EXTERNAL-SECRETS.yaml` | Added `HOMEASSISTANT_TOKEN` to the `homepage` item's `known_fields` |
+
+### Key decisions
+- New `Home Automation` homepage group instead of reusing `Infrastructure` — the existing groups are semantically scoped by domain (storage vs. network/connectivity tooling), and Home Assistant doesn't fit either; a dedicated group also leaves room for future HA-related entries without diluting `Infrastructure`.
+- Widget's `url` targets the new in-cluster Service rather than `${HOME_ASSISTANT_LAN_HOST}` or the public href — consistent with the precedent already set by TrueNAS's `siteMonitor`, and avoids routing internal polling traffic through Envoy's TLS termination for no benefit.
+
+---
+
 ## 2026-08-19 — `open-webui-bootstrap-envsubst-fix`
 
 ### Goal
