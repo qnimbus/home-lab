@@ -3,18 +3,19 @@
 # with siteMonitor (HTTP check) rather than via gethomepage.dev/* annotations + pod-selector,
 # which would never resolve. Everything else on the dashboard is auto-discovered — see the
 # gethomepage.dev/* annotations on each app's own HTTPRoute.
-- Storage:
-    - TrueNAS:
-        icon: "mdi-nas"
-        href: "https://truenas.${DOMAIN_CLUSTER}"
-        description: "NAS storage & NFS/iSCSI targets"
-        # Plain HTTP, straight to the in-cluster Service, not the https:// href above: Envoy
-        # terminates TLS and forwards plain HTTP to TrueNAS's backend (see
-        # network/external-services/truenas/httproute.yaml), and TrueNAS's UI replies to that
-        # plain-HTTP leg with an absolute http:// redirect. Homepage's server-side fetch (undici)
-        # refuses to follow a https->http downgrade redirect and errors — browsers tolerate it
-        # fine on the href above, so only siteMonitor needs to route around it.
-        siteMonitor: "http://truenas.network.svc.cluster.local:8080"
+- RowA:
+    - Storage:
+        - TrueNAS:
+            icon: "mdi-nas"
+            href: "https://truenas.${DOMAIN_CLUSTER}"
+            description: "NAS storage & NFS/iSCSI targets"
+            # Plain HTTP, straight to the in-cluster Service, not the https:// href above: Envoy
+            # terminates TLS and forwards plain HTTP to TrueNAS's backend (see
+            # network/external-services/truenas/httproute.yaml), and TrueNAS's UI replies to that
+            # plain-HTTP leg with an absolute http:// redirect. Homepage's server-side fetch (undici)
+            # refuses to follow a https->http downgrade redirect and errors — browsers tolerate it
+            # fine on the href above, so only siteMonitor needs to route around it.
+            siteMonitor: "http://truenas.network.svc.cluster.local:8080"
 - Home Automation:
     - Home Assistant:
         icon: home-assistant.png
