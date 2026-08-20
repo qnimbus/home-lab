@@ -181,6 +181,102 @@ ip route get 10.60.0.2                                         # mtu 1280 → Ta
 
 ---
 
+### Why does the cluster have a tagged VLAN 30 sub-interface on every node's mgmt NIC and a `pool-iot` Cilium pool — isn't 10.30.0.0/24 supposed to be IOT-only?
+
+**Short answer:** to let a Canon printer on the IOT VLAN reach `smtp-relay` without crossing the UniFi
+inter-VLAN firewall — which only permits IOT→mgmt *return* traffic, not IOT-*initiated* connections. Giving
+every node a direct L2 presence on 10.30.0.0/24 means the printer's connection to `smtp-relay`'s IOT-side
+LB IP (`10.30.0.240`, `pool-iot`) never has to cross that fence at all — it's answered by ARP and delivered
+directly on the same L2 segment. `smtp-relay` pins two LB IPs (`10.60.0.240` from `pool`, `10.30.0.240` from
+`pool-iot`), each published under its own hostname (`smtp-relay.cluster.vwn.io` / `smtp-relay.iot.vwn.io`)
+via an `external-dns` `target` override + a separate `ExternalName` Service, so neither hostname publishes
+both addresses.
+
+IPv6 is disabled on the VLAN 30 sub-interfaces (`net.ipv6.conf.<iface>/30.disable_ipv6: "1"` in
+`talos/talconfig.yaml`) — the IOT gateway's RA/SLAAC was assigning a routable ULA the interface has no use
+for. Gotcha: the sysctl **key** must escape the interface name's embedded dot as `/` (the `/proc` **path**
+still uses the literal dotted name, `/proc/sys/net/ipv6/conf/eno1.30/disable_ipv6`) — get this backwards and
+Talos silently ignores the sysctl.
+
+**The side effect this created — and why it's *not* fully closed yet:** every 0.0.0.0-bound host service
+(kube-apiserver `:6443`, kubelet `:10250`, etcd metrics, Talos `apid`/`trustd`) is now *also* reachable from
+any IOT device, because the node's VLAN 30 address makes that traffic **L2-local** — it never touches the
+UniFi gateway, so no gateway/router firewall rule can see or filter it. Confirmed directly: browsing to
+`https://10.30.0.20x:6443/` from an IOT-connected laptop returns a normal `401 Unauthorized` from
+kube-apiserver, not a connection failure.
+
+A first fix attempt used a `CiliumClusterwideNetworkPolicy` host-firewall (`nodeSelector` targeting the
+`reserved:host` identity, "allow all except 10.30.0.0/24") plus widening Cilium's `devices:` Helm value to
+attach both the physical NIC and its `.30` VLAN child. **Reverted** — it didn't work (`cilium-dbg policy get`
+resolved the rule correctly with `DefaultDeny: true`, but the host endpoint's `policy-enabled` stayed
+`"none"`, matching a known class of silent Cilium host-identity/label-matching failures — e.g. upstream
+issue #24415 — though not confirmed as the exact same bug), and it broke something else (widening `devices:`
+to two interfaces per node made masquerade/egress-device selection ambiguous, breaking pod egress to the
+storage VLAN — NAS SMB started timing out, which KEDA misread as an outage and scaled `paperless-ngx` to
+zero). Cilium issues #19497, #36803, and #40521 confirm `devices:` conflating "BPF attach interfaces" with
+"masquerade interface" is a real, still-open upstream gap, not a one-off misconfiguration — don't retry
+widening `devices:` as part of any future fix here.
+
+**Layer 1 mitigation (2026-08-20):** a UniFi Traffic Rule blocks the IOT network from initiating *routed*
+connections to every other internal network (mgmt `10.60.0.0/24`, storage `10.200.0.0/24`, home LAN
+`10.10.0.0/24`) — stateful, so it only blocks new IOT→elsewhere connections, not replies to LAN-initiated
+sessions (casting, printing, Sonos control keep working). UniFi's Multicast DNS (mDNS reflector) stays
+enabled between IOT and the home LAN so Chromecast/Sonos/printer discovery keeps working across the VLAN
+boundary despite the block. This closes lateral movement to other VLANs, but on its own does **not** close
+the kube-apiserver/kubelet exposure — that traffic is L2-local within VLAN 30 itself and a gateway rule
+simply never sees it (see Layer 2 below for what actually closes that). UniFi Client Isolation was
+considered and rejected as a substitute: it's all-or-nothing at L2 within a VLAN, so enabling it would also
+block the printer's `smtp-relay` path (same L2-local mechanism). A MAC-based isolation allowlist, if the
+controller supports it, could narrow the exposed population from "any IOT device" to "just the printer" —
+but still exposes every port on the node to that one device, not just `smtp-relay`'s port, so it's a partial
+layer at best.
+
+**Layer 2 — the actual fix (implemented and verified 2026-08-20):** Talos's native declarative ingress
+firewall (`NetworkDefaultActionConfig` / `NetworkRuleConfig`, nftables-based) closes the L2-local exposure
+directly at the node, without touching Cilium's `devices:`/masquerade path at all — avoiding the confirmed
+root cause of the earlier regression. `talos/patches/global/network-firewall.yaml` and
+`talos/patches/controller/network-firewall.yaml` add `NetworkRuleConfig` allow rules for kubelet (`10250`),
+`apid` (`50000`), `trustd` (`50001`) on every node, plus kube-apiserver (`6443`), etcd client/peer
+(`2379-2380`), etcd metrics (`2381`), controller-manager (`10257`), and scheduler (`10259`) on control-plane
+nodes — each scoped to `10.60.0.0/24` (and `10.10.0.0/24` where a workstation legitimately needs direct
+access), never `10.30.0.0/24`.
+
+The open question from the original research — whether a per-port `NetworkRuleConfig` restricts only that
+port while leaving every other port untouched, or whether it only takes effect once the *global* default is
+flipped to `block` — is resolved: **a `NetworkRuleConfig` is a self-contained allowlist for the port it
+names, regardless of the global default action.** Confirmed two ways: (1) inspecting the live
+`talosctl get nftableschain -o yaml` output directly showed `policy: accept` at the chain level with
+explicit per-port `DROP` rules matching an inverted source-subnet set — exactly this mechanism, not
+inferred; (2) a closed Talos GitHub issue (siderolabs/talos#12955) showing a port-scoped rule correctly
+restricting that port under a global `accept` default. This means the global default was deliberately left
+at `accept` — no need to enumerate Ceph/Spegel/node-exporter/app-LoadBalancer ports, and no risk to future
+services on any port without its own rule. The historical Talos NodePort/hostPort firewall-bypass concern
+(discussion #10347) doesn't apply here either — that bug was fixed in Talos v1.9.4 (this cluster runs
+v1.13.2), and separately this cluster has no NodePort usage at all (Cilium fully replaces kube-proxy).
+
+Rolled out node-by-node (workers first, then control-plane nodes one at a time) via
+`talosctl apply-config --mode=try` (auto-reverts if a node becomes unreachable) before persisting, with an
+etcd-quorum health check between every step. **Verified end-to-end from an actual IOT-connected device**:
+`10.30.0.202:6443` is now unreachable (previously returned a `401`), while `10.10.0.0/24` (home LAN) can
+still reach it — exactly the intended split.
+
+**Gotcha found ~20 minutes after rollout: Prometheus scrapes host ports directly by node IP, sourced from
+its own pod IP — not a host IP.** `kube-prometheus-stack`'s `kubelet`, `kube-controller-manager`,
+`kube-scheduler`, and `apiserver` jobs all connect straight to `<node-ip>:<port>` (e.g. `10.60.0.201:10250`)
+from the Prometheus pod's own address (`10.42.0.0/16`), not through any Service/ClusterIP indirection. Since
+`10.42.0.0/16` wasn't in any of those four rules' `ingress` list, the firewall silently blocked Prometheus's
+own scrapes the moment it went live — firing `KubeletInstanceUnreachable`, `KubeControllerManagerInstanceUnreachable`,
+`KubeSchedulerInstanceUnreachable`, and `KubeAPIInstanceUnreachable` within ~15 minutes (the alerts' `for:`
+duration). Fixed by adding `10.42.0.0/16` (the pod CIDR) as an allowed source subnet on all four rules —
+strictly additive, so no re-verification of the IOT-block itself was needed. **If a future
+`NetworkRuleConfig` is added for any other port that kube-prometheus-stack scrapes directly by node IP
+(check `kubectl get servicemonitors -n observability -o yaml` for `job` labels using node/host addressing
+rather than a Service), add `10.42.0.0/16` to it up front** — this class of breakage is easy to reproduce
+and easy to miss until the alert fires. `etcd` metrics (`2381`) escaped this only because
+`kubeEtcd.enabled: false` in this cluster's values — nothing scrapes that port at all.
+
+---
+
 ### A single iperf3 stream over the storage bond tops out at ~9.7 Gbit/s — is the LACP bond broken?
 
 **Short answer:** No. LACP (802.3ad) never splits a single TCP flow across both member links — it hashes

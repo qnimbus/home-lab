@@ -453,9 +453,11 @@ patches:
   - "@./patches/global/machine-network.yaml"
   - "@./patches/global/machine-sysctls.yaml"
   - "@./patches/global/machine-time.yaml"
+  - "@./patches/global/network-firewall.yaml"
 
 controlPlane:
   patches:
     - "@./patches/controller/machine-features.yaml"
     - "@./patches/controller/admission-controller-patch.yaml"
     - "@./patches/controller/cluster.yaml"
+    - "@./patches/controller/network-firewall.yaml"

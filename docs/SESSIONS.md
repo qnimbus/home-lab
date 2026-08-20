@@ -4,6 +4,63 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-20 — `talos-ingress-firewall-iot`
+
+### Goal
+Research and implement a Talos-native fix for the IOT VLAN node-port exposure gap left open after the prior session's UniFi gateway mitigation.
+
+### What we did
+- Researched Talos's native declarative ingress firewall (`NetworkDefaultActionConfig`/`NetworkRuleConfig`) via the official v1.13 docs (WebFetched directly, not paraphrased) and GitHub issues/discussions, resolving both open questions left from the previous session: confirmed `NetworkRuleConfig` is allow-only (under a global `accept` default, unmatched/`except`-carved traffic falls through to accept — there's no standalone deny), and confirmed the historical NodePort/hostPort DNAT-ordering bug (Talos discussion #10347) was fixed in v1.9.4, well before this cluster's v1.13.2, and doesn't apply to this cluster's threat model anyway since kube-proxy is fully replaced by Cilium with no NodePort usage.
+- Spawned an Explore agent to survey the cluster's actual host-listening service inventory (Cilium routing mode, LoadBalancer/NodePort services, hostNetwork/hostPort pods, Rook-Ceph network exposure, existing Talos patches) to size an initial design.
+- Drafted and got plan-mode approval for a first implementation: `NetworkDefaultActionConfig: block` globally plus ~16 `NetworkRuleConfig` allow rules covering every host-listening service found (kubelet, apid, trustd, Cilium health/healthz, Spegel, node-exporter, Ceph mon/OSD/mgr, smtp-relay, victoria-logs-syslog, envoy-gateway). Implemented as two new Talos patch files wired into `talconfig.yaml`, validated via `task talos:genconfig` (rendered cleanly; confirmed correct per-node-type document counts and that `10.30.0.0/24` appeared only in the deliberate smtp-relay exception).
+- User questioned whether restricting `10.60.0.0/24` broadly was necessary and flagged the risk to future service deployments — this prompted further research that found a materially better mechanism: a `NetworkRuleConfig` scoped to one port is a self-contained allowlist for that port alone, regardless of the global default action, confirmed via siderolabs/talos#12955 (closed "not planned" — a port-scoped rule correctly restricted that port under a global `accept` default).
+- Revised the implementation to a much narrower, lower-risk design: dropped `NetworkDefaultActionConfig: block` entirely (global default stays at Talos's own `accept`), reduced from ~16 rules to 8 covering only the ports in the originally-confirmed exposure (kubelet/apid/trustd globally; kube-apiserver/etcd client+metrics/controller-manager/scheduler on control-plane nodes only). Re-validated via `task talos:genconfig`.
+- Committed the config (`209f94a`) via `/git-commit`, then — at the user's explicit request — carried out the phased rollout live: for every node, `apply-config --dry-run` (confirmed the diff was exactly the new firewall documents), then `--mode=try` with an etcd-quorum health check and a direct `talosctl get nftableschain` read of the compiled ruleset while the transient config was active, then a persistent `apply-config --mode=no-reboot`. Workers first (`talos-worker-01`, `-02`), then control-plane nodes one at a time (`cp-01` → `cp-02` → `cp-03`), never more than one CP node changed concurrently. Finished with a full-cluster `kubectl get nodes` (all 5 `Ready`, reached via the VIP — itself now covered by the new `kube-apiserver-ingress` rule) and a Flux `Kustomizations` spot-check (all still `True`) — no regressions.
+- User independently verified from an actual IOT-connected device: `10.30.0.202:6443` is now unreachable (previously returned a `401`), while `10.10.0.0/24` (home LAN) can still reach it — closing the loop on the original vulnerability report with a real-world test, not just the compiled-ruleset inspection. Updated `docs/QA.md` and `docs/CLUSTER.md` to record the fix as implemented and verified rather than deferred.
+- ~20 minutes after the rollout, the user reported `KubeletInstanceUnreachable` firing in Alertmanager. Root-caused immediately: `kube-prometheus-stack` scrapes kubelet, kube-controller-manager, kube-scheduler, and kube-apiserver metrics directly by node IP, sourced from the Prometheus pod's own IP (`10.42.0.0/16`) — not through any Service, and not a host IP — so none of those four `NetworkRuleConfig` rules' `ingress` lists covered it. Confirmed via Alertmanager's API that all four alert types were firing (14 individual alert instances across kubelet/controller-manager/scheduler/apiserver), not just the one reported. Fixed by adding `10.42.0.0/16` to all four rules (strictly additive — no re-verification of the IOT block needed) and rolling out to all 5 nodes with etcd-quorum checks between each. Confirmed resolution directly against Prometheus's own `/api/v1/query` (`up==1` on every affected target) and Alertmanager (all four alert types gone from the active list), rather than waiting for the alerts to self-clear. Ruled out the other `up==0` targets found during triage (`flux-controllers`, `kube-state-metrics`, `metrics-server`, etc.) as unrelated — those are pod-to-pod scrapes that never traverse the host firewall at all.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | Registered the two new firewall patch files in the global and control-plane `patches:` lists |
+| `talos/patches/global/network-firewall.yaml` | New — `kubelet`/`apid`/`trustd` `NetworkRuleConfig` allow rules (all 5 nodes) |
+| `talos/patches/controller/network-firewall.yaml` | New — `kube-apiserver`/`etcd`/`controller-manager`/`scheduler` `NetworkRuleConfig` allow rules (control-plane only) |
+
+### Key decisions
+- Chose the narrower "per-port self-contained allow rule, global default left at `accept`" design over the initially-implemented "global default `block` + exhaustive allowlist" design — confirmed via a closed GitHub issue, not an explicit maintainer statement, so flagged in the patch file's own comments as needing empirical verification (via `--mode=try` on a low-stakes port) before being trusted for kube-apiserver/etcd.
+- Deliberately excluded Ceph, Spegel, node-exporter, and all app LoadBalancer ports (smtp-relay, envoy-gateway, victoria-logs-syslog) from the final rule set — none were part of the originally-confirmed exposure, and restricting them would have added enumeration risk (especially Ceph's dynamic 6800-7300 port range) for no benefit under the user's stated goal.
+- Did not run `talosctl apply-config` unprompted — waited for the user's explicit "let's do the talos apply now" before touching live hardware, then leaned entirely on `--mode=try`'s auto-revert as the safety net for each node rather than any manual rollback plan, since a lockout on this bare-metal cluster needs physical/console recovery.
+
+---
+
+## 2026-08-20 — `iot-vlan-unifi-isolation`
+
+### Goal
+Root-cause why the reverted Cilium host-firewall attempt failed and caused a regression, then replace it with a properly-scoped IOT VLAN isolation plan.
+
+### What we did
+- Investigated why the previous `CiliumClusterwideNetworkPolicy` host-firewall attempt (commit `f68b9be`, reverted earlier this session-day) failed to enforce and caused the NAS-SMB/`paperless-ngx` regression, via two parallel research agents: one surveying this repo's existing NetworkPolicy patterns (found none exist anywhere, by explicit design comment in the Dragonfly HelmRelease) and the committed Cilium baseline config; one researching Cilium's own docs/GitHub issues, which confirmed `devices:` conflates BPF-attach-interface selection with masquerade/SNAT-interface selection — a known, still-open upstream gap (GH#19497, #36803, #40521) — and that the host endpoint's `policy-enabled` staying `"none"` matches a known class of silent Cilium host-identity enforcement bugs (GH#24415), though not confirmed as the exact same bug.
+- Cleaned up this worktree: discarded the reverted host-firewall's still-staged file changes (`cilium/app/helm/values.yaml`, `cilium/config/host-firewall.yaml`, `cilium/config/kustomization.yaml`, plus stale doc text) left over from an earlier mid-incident `git reset --soft HEAD~1`, restoring the worktree to match `main` (`d4a6255`).
+- Drafted and got approval for a plan to move IOT isolation to the UniFi gateway instead of Cilium/Talos — zero cluster blast radius, since the printer's `smtp-relay` traffic stays L2-local on VLAN 30 and never crosses the router.
+- Caught, before writing any doc claiming success, that the UniFi gateway rule alone does **not** close the originally-reported exposure: kube-apiserver/kubelet/etc. remain reachable via each node's own VLAN 30 address, because that traffic is L2-local and never reaches the gateway for a router ACL to filter — verified against the user's own earlier test (`https://10.30.0.201:6443/` returning a normal `401`, not a connection failure).
+- Surfaced this correction to the user via `AskUserQuestion` rather than proceeding on a flawed premise; user chose to ship the UniFi rule now (closes lateral movement to other VLANs) and track the node-level fix as separate follow-up work.
+- Answered the user's follow-up on whether UniFi Client Isolation could substitute — explained it's all-or-nothing at L2 within a VLAN (enabling it would also break the printer's `smtp-relay` path, which relies on the same L2-local mechanism), though a MAC-based isolation allowlist, if the controller supports it, could narrow exposure from "any IOT device" to "just the printer" as a partial extra layer.
+- Rewrote `docs/QA.md`'s IOT-VLAN Q&A entry from scratch (it had only ever existed in the reverted, uncommitted `f68b9be` staging, never in `main`) with the full corrected story, and updated `docs/CLUSTER.md` to match — including a concrete UniFi Traffic Rule + Multicast DNS runbook for the user to apply manually, and flagging Talos's native declarative ingress firewall (`NetworkDefaultActionConfig`/`NetworkRuleConfig`) as the leading candidate for actually closing the remaining gap, with one unresolved semantics question flagged before attempting it (whether a narrow per-port allow rule works standalone, or requires flipping the global default to block).
+- Left everything uncommitted per this repo's git-staging policy — user to run `/git-stage`/`/git-commit` when ready, and to apply the UniFi rule themselves (outside git/kubectl/talosctl).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/QA.md` | New Q&A entry: VLAN 30/`pool-iot` design, the reverted host-firewall attempt's two root causes, the UniFi gateway mitigation and its L2-local blind spot, Client Isolation's rejection as a substitute, and the deferred Talos-native ingress-firewall fix |
+| `docs/CLUSTER.md` | Networks table row + `2026-08-20` narrative note updated to state IOT is blocked from routing to other VLANs, but node control-plane ports remain reachable via each node's own VLAN 30 address (not yet closed) |
+
+### Key decisions
+- Chose UniFi gateway-level isolation over retrying/fixing the Cilium host-firewall or building a Talos-native default-deny firewall immediately: zero cluster blast radius and trivially reversible, even though it only partially closes the exposure — real progress now, deferring the higher-effort/higher-lockout-risk full fix rather than rushing it after the last incident.
+- Did not ship documentation claiming the exposure was fully closed once the L2-local blind spot was discovered mid-implementation — paused and asked the user to choose the path forward instead of guessing on a security-relevant claim.
+- Rejected UniFi Client Isolation as the primary control since it's all-or-nothing at L2 within a VLAN and would break the `smtp-relay` path it's meant to protect alongside.
+
+---
+
 ## 2026-08-20 — `canon-printer-external-service`
 
 ### Goal

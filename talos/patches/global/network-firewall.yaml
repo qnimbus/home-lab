@@ -1,0 +1,57 @@
+# Talos-native ingress firewall — closes the IOT VLAN (10.30.0.0/24) node-port exposure gap
+# left open by the UniFi gateway rule alone (see docs/QA.md — kube-apiserver/kubelet/apid are
+# L2-local reachable from IOT since 10.30.0.0/24 is a tagged sub-interface on every node's mgmt
+# NIC; the UniFi rule only blocks routed traffic, and this VLAN never crosses the router).
+#
+# Deliberately does NOT set NetworkDefaultActionConfig — the global default stays at Talos's own
+# default (`accept`). A NetworkRuleConfig for a given port is a self-contained allowlist for that
+# port only: traffic to that port from a subnet not listed in its `ingress` is blocked regardless
+# of the global default action, but every OTHER port — with no NetworkRuleConfig of its own — is
+# completely unaffected and stays reachable from anywhere, exactly as today. Confirmed via
+# siderolabs/talos#12955 (closed "not planned"): a rule scoped to one port correctly blocked
+# unlisted subnets on that port under a global `accept` default.
+#
+# This means: no need to enumerate Ceph/Spegel/node-exporter/app-LoadBalancer ports, no risk to
+# future services on 10.60.0.0/24, and no risk of a global lockout — only the specific ports
+# below (the ones confirmed reachable from IOT — 401, not timeout — in the original report) are
+# restricted. NEVER add 10.30.0.0/24 to any rule here — that's the entire point of this file.
+#
+# Not yet empirically verified on this cluster's exact Talos version — test the first rollout
+# (via `talosctl apply-config --mode=try`) against kubelet on one worker before trusting this for
+# kube-apiserver/etcd (see talos/patches/controller/network-firewall.yaml).
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: kubelet-ingress
+portSelector:
+  ports:
+    - 10250
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24
+  # Prometheus scrapes kubelet metrics directly by node IP:10250, sourced from the Prometheus
+  # pod's own IP (not a host IP) — without this, KubeletInstanceUnreachable fires. Confirmed live
+  # 2026-08-20 after the first rollout broke this.
+  - subnet: 10.42.0.0/16
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: apid-ingress
+portSelector:
+  ports:
+    - 50000
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24
+  - subnet: 10.10.0.0/24
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: trustd-ingress
+portSelector:
+  ports:
+    - 50001
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24
+  - subnet: 10.10.0.0/24
