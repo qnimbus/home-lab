@@ -22,26 +22,33 @@ statusStyle: dot
 fullWidth: false
 layout:
   Home Automation:
+    useEqualHeights: true
     style: row
-    columns: 3
+    columns: 2
+    ColA:
+      header: false
+      style: column
+    ColB:
+      header: false
+      style: column
   Infrastructure:
     style: row
     columns: 4
   RowA:
     style: row
-    columns: 5
+    columns: 4
     header: false
     useEqualHeights: true
     Observability: {}
     Storage: {}
     Documents: {}
     Database: {}
-    Development: {}
   RowB:
     style: row
-    columns: 5
+    columns: 4
     header: false
     useEqualHeights: true
+    Development: {}
     AI: {}
     Automation: {}
     Finance: {}

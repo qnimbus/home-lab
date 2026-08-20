@@ -17,18 +17,28 @@
             # fine on the href above, so only siteMonitor needs to route around it.
             siteMonitor: "http://truenas.network.svc.cluster.local:8080"
 - Home Automation:
-    - Home Assistant:
-        icon: home-assistant.png
-        href: "https://ha.${DOMAIN_CLUSTER}"
-        description: Home automation & smart home control
-        # url points at the in-cluster Service (network/external-services/home-assistant), not
-        # HOME_ASSISTANT_LAN_HOST directly or the https:// href above — same reasoning as
-        # TrueNAS's siteMonitor: a direct hop to the already-proxied Service avoids routing the
-        # widget's polling traffic through Envoy for no benefit.
-        # widget:
-        #   type: homeassistant
-        #   url: "http://home-assistant.network.svc.cluster.local:8123"
-        #   key: {{HOMEPAGE_VAR_HOMEASSISTANT_TOKEN}}
+    - ColA:
+        - Home Assistant:
+            icon: home-assistant.png
+            href: "https://ha.${DOMAIN_CLUSTER}"
+            description: Home automation & smart home control
+            # url points at the in-cluster Service (network/external-services/home-assistant), not
+            # HOME_ASSISTANT_LAN_HOST directly or the https:// href above — same reasoning as
+            # TrueNAS's siteMonitor: a direct hop to the already-proxied Service avoids routing the
+            # widget's polling traffic through Envoy for no benefit.
+            # widget:
+            #   type: homeassistant
+            #   url: "http://home-assistant.network.svc.cluster.local:8123"
+            #   key: {{HOMEPAGE_VAR_HOMEASSISTANT_TOKEN}}
+    - ColB:
+        - Gateway:
+            icon: "mdi-thermostat"
+            href: "http://gw-adam.iot.vwn.io"
+            description: "Plugwise Adam gateway"
+        - Thermostat:
+            icon: "mdi-thermostat"
+            href: "https://gw-anna.iot.vwn.io"
+            description: "Plugwise Anna thermostat & heating control"
 - Infrastructure:
     - Cloudflared:
         href: https://dash.cloudflare.com/
