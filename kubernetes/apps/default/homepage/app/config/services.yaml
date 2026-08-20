@@ -40,15 +40,15 @@
           tunnelid: {{HOMEPAGE_VAR_CLOUDFLARE_TUNNEL_ID}}
           key: {{HOMEPAGE_VAR_CLOUDFLARE_API_TOKEN}}
     - UniFi Network:
-        href: https://udm.${DOMAIN_APP}
+        href: https://udm.${DOMAIN_APP}/network
         icon: si-ubiquiti.svg-#0559C9
         description: UniFi SkyNet Site
-        siteMonitor: "https://udm.${DOMAIN_APP}/network"
+        siteMonitor: "https://udm.${DOMAIN_APP}"
     - UniFi Protect:
-        href: https://udm.${DOMAIN_APP}
+        href: https://udm.${DOMAIN_APP}/protect
         icon: si-ubiquiti.svg
         description: UniFi Protect
-        siteMonitor: "https://udm.${DOMAIN_APP}/protect"
+        siteMonitor: "https://udm.${DOMAIN_APP}"
     - WAN Failover:
         icon: "mdi-router-network"
         # Plain http, not https: this hostname bypasses Envoy Gateway entirely (DNS points
