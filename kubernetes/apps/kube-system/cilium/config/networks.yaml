@@ -25,6 +25,23 @@ spec:
       "io.kubernetes.service.namespace": kube-system
       "io.kubernetes.service.name": kube-api
 ---
+# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/cilium.io/ciliumloadbalancerippool_v2.json
+# Single-IP pool reserved for smtp-relay's IOT-facing VIP only (serviceSelector below).
+# Announced via the tagged VLAN 30 sub-interface each node carries on its mgmt trunk NIC
+# (talos/talconfig.yaml) — gives the IOT-VLAN printer an in-segment path to smtp-relay
+# that never crosses the UniFi inter-VLAN firewall. See docs/QA.md.
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: pool-iot
+spec:
+  blocks:
+    - cidr: "10.30.0.240/32"
+  serviceSelector:
+    matchLabels:
+      "io.kubernetes.service.namespace": mail
+      "io.kubernetes.service.name": smtp-relay
+---
 # yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/cilium.io/ciliuml2announcementpolicy_v2alpha1.json
 apiVersion: cilium.io/v2alpha1
 kind: CiliumL2AnnouncementPolicy
@@ -35,7 +52,9 @@ spec:
   # Interfaces intentionally unspecified: Cilium announces on all interfaces.
   # Storage bonds (bond0 on cp-01/02, bond1 on cp-03) are on an isolated L2
   # network (10.200.0.0/24) with no route back to the management subnet, so
-  # ARP announcements on those interfaces are harmless.
+  # ARP announcements on those interfaces are harmless. The IOT VLAN 30
+  # sub-interfaces (pool-iot, above) are deliberately reachable from the IOT
+  # segment — that's the point — but scoped to a single pinned Service.
   nodeSelector:
     matchLabels:
       kubernetes.io/os: linux

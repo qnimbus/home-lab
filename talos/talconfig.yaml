@@ -30,6 +30,29 @@ nodes:
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
       - "@./patches/node/machine-sysctl-netdev-budget.yaml"
+      # IOT VLAN 30 — tagged sub-interface on the mgmt trunk NIC, giving this node a direct
+      # L2 presence on 10.30.0.0/24 so Cilium (pool-iot) can announce smtp-relay's IOT-side
+      # LoadBalancer IP there. See docs/QA.md for why: the UniFi firewall only allows return
+      # traffic from IOT to 10.60.0.0/24, not IOT-initiated connections — staying on the IOT
+      # L2 segment bypasses that rule entirely instead of widening it.
+      - |-
+        machine:
+          network:
+            interfaces:
+              - interface: eno1
+                vlans:
+                  - vlanId: 30
+                    dhcp: false
+                    addresses:
+                      - "10.30.0.204/24"
+                    mtu: 1500
+          sysctls:
+            # RA/SLAAC from the IOT VLAN's gateway was assigning this interface a routable
+            # ULA. This interface only exists to carry the IPv4 IOT VIP address — no reason
+            # for it to have any IPv6 presence. The embedded VLAN dot in the interface name
+            # must be escaped as "/" (eno1/30, not eno1.30) or sysctl misparses it as an
+            # extra path segment — see docs/QA.md.
+            net.ipv6.conf.eno1/30.disable_ipv6: "1"
       # FALLBACK (commented out) — VLAN 200 on eno1 (RJ45) stood in for bond-storage
       # 2026-06-25 → 2026-07-07 while X520 cards were down/replaced. Re-enable this patch
       # (and comment out bond-storage's `addresses:` below) if the X520 fails again.
@@ -97,6 +120,22 @@ nodes:
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
       - "@./patches/node/machine-sysctl-netdev-budget.yaml"
+      # IOT VLAN 30 — tagged sub-interface on the mgmt trunk NIC. See talos-worker-01's
+      # comment above / docs/QA.md for the full rationale.
+      - |-
+        machine:
+          network:
+            interfaces:
+              - interface: eno1
+                vlans:
+                  - vlanId: 30
+                    dhcp: false
+                    addresses:
+                      - "10.30.0.205/24"
+                    mtu: 1500
+          sysctls:
+            # See talos-worker-01's comment above / docs/QA.md.
+            net.ipv6.conf.eno1/30.disable_ipv6: "1"
       # FALLBACK (commented out) — VLAN 200 on eno1 (RJ45) stood in for bond-storage
       # 2026-06-25 → 2026-07-07 while X520 cards were down/replaced. Re-enable this patch
       # (and comment out bond-storage's `addresses:` below) if the X520 fails again.
@@ -165,6 +204,22 @@ nodes:
       topology.kubernetes.io/zone: homelab-cp-01
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
+      # IOT VLAN 30 — tagged sub-interface on the mgmt trunk NIC. See talos-worker-01's
+      # comment (talconfig.yaml) / docs/QA.md for the full rationale.
+      - |-
+        machine:
+          network:
+            interfaces:
+              - interface: enp4s0
+                vlans:
+                  - vlanId: 30
+                    dhcp: false
+                    addresses:
+                      - "10.30.0.201/24"
+                    mtu: 1500
+          sysctls:
+            # See talos-worker-01's comment (talconfig.yaml) / docs/QA.md.
+            net.ipv6.conf.enp4s0/30.disable_ipv6: "1"
       # FALLBACK (commented out) — VLAN 200 on enp4s0 (RJ45) stood in for bond-storage
       # 2026-06-25 → 2026-07-07 while X520 cards were down/replaced. Re-enable this patch
       # (and comment out bond-storage's `addresses:` below) if the X710 fails again.
@@ -231,6 +286,22 @@ nodes:
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
       - "@./patches/node/machine-sysctl-netdev-budget.yaml"
+      # IOT VLAN 30 — tagged sub-interface on the mgmt trunk NIC. See talos-worker-01's
+      # comment (talconfig.yaml) / docs/QA.md for the full rationale.
+      - |-
+        machine:
+          network:
+            interfaces:
+              - interface: eno1
+                vlans:
+                  - vlanId: 30
+                    dhcp: false
+                    addresses:
+                      - "10.30.0.202/24"
+                    mtu: 1500
+          sysctls:
+            # See talos-worker-01's comment (talconfig.yaml) / docs/QA.md.
+            net.ipv6.conf.eno1/30.disable_ipv6: "1"
       # FALLBACK (commented out) — VLAN 200 on eno1 (RJ45) stood in for bond-storage
       # 2026-06-25 → 2026-07-07 while X520 cards were down/replaced. Re-enable this patch
       # (and comment out bond-storage's `addresses:` below) if the X520 fails again.
@@ -320,6 +391,23 @@ nodes:
       #               addresses:
       #                 - "10.200.0.203/24"
       #               mtu: 1500
+      # IOT VLAN 30 — tagged sub-interface on the mgmt trunk NIC. Same interface: eno1 (not
+      # deviceSelector) rule as the fallback above applies here too. See talos-worker-01's
+      # comment (talconfig.yaml) / docs/QA.md for the full rationale.
+      - |-
+        machine:
+          network:
+            interfaces:
+              - interface: eno1
+                vlans:
+                  - vlanId: 30
+                    dhcp: false
+                    addresses:
+                      - "10.30.0.203/24"
+                    mtu: 1500
+          sysctls:
+            # See talos-worker-01's comment (talconfig.yaml) / docs/QA.md.
+            net.ipv6.conf.eno1/30.disable_ipv6: "1"
     networkInterfaces:
       # Management — single Intel I219-LM RJ45 (driver: e1000e) — VLAN 60 (management) is
       # native/untagged on the switch port; address configured directly on the physical interface.
