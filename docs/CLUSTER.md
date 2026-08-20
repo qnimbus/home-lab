@@ -20,6 +20,7 @@ Five-node bare-metal Talos Linux cluster (3 control-plane + 2 workers, schedulin
 |--------|---------|
 | `10.60.0.0/24` | Management / Kubernetes API |
 | `10.200.0.0/24` | Storage bond — Rook-Ceph cluster replication traffic |
+| `10.30.0.0/24` | IOT (external devices) — every node also carries a tagged VLAN 30 sub-interface here (`10.30.0.20x/24`) so `smtp-relay` can be reached in-segment; see [QA.md](QA.md#why-does-the-cluster-have-a-tagged-vlan-30-sub-interface-on-every-nodes-mgmt-nic-and-a-pool-iot-cilium-pool--isnt-10300024-supposed-to-be-iot-only) |
 | `10.42.0.0/16` | Pod network (Cilium) |
 | `10.43.0.0/16` | Service network |
 
@@ -29,13 +30,15 @@ All 5 nodes use a dedicated storage bond on the `10.200.0.0/24` subnet. This bon
 
 | Node | Management | Storage |
 |------|------------|---------|
-| talos-cp-01 | `enp4s0` — Intel I225-V (igc), `10.60.0.201/24` (+ kube-vip `10.60.0.2`) | `bond-storage` — 2× Intel X710 SFP+ (i40e) `enp5s0f0np0`+`enp5s0f1np1`, `10.200.0.201/24` |
-| talos-cp-02 | `eno1` — Intel I219-LM (e1000e), `10.60.0.202/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp2s0f0`+`enp2s0f1`, `10.200.0.202/24` |
-| talos-cp-03 | `eno1` — Intel I219-LM (e1000e), `10.60.0.203/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp2s0f0`+`enp2s0f1`, `10.200.0.203/24` |
-| talos-worker-01 | `eno1` — Intel I219-LM (e1000e), `10.60.0.204/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp1s0f0`+`enp1s0f1`, `10.200.0.204/24` |
-| talos-worker-02 | `eno1` — Intel I219-LM (e1000e), `10.60.0.205/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp1s0f0`+`enp1s0f1`, `10.200.0.205/24` |
+| talos-cp-01 | `enp4s0` — Intel I225-V (igc), `10.60.0.201/24` (+ kube-vip `10.60.0.2`) + tagged VLAN 30 `10.30.0.201/24` | `bond-storage` — 2× Intel X710 SFP+ (i40e) `enp5s0f0np0`+`enp5s0f1np1`, `10.200.0.201/24` |
+| talos-cp-02 | `eno1` — Intel I219-LM (e1000e), `10.60.0.202/24` + tagged VLAN 30 `10.30.0.202/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp2s0f0`+`enp2s0f1`, `10.200.0.202/24` |
+| talos-cp-03 | `eno1` — Intel I219-LM (e1000e), `10.60.0.203/24` + tagged VLAN 30 `10.30.0.203/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp2s0f0`+`enp2s0f1`, `10.200.0.203/24` |
+| talos-worker-01 | `eno1` — Intel I219-LM (e1000e), `10.60.0.204/24` + tagged VLAN 30 `10.30.0.204/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp1s0f0`+`enp1s0f1`, `10.200.0.204/24` |
+| talos-worker-02 | `eno1` — Intel I219-LM (e1000e), `10.60.0.205/24` + tagged VLAN 30 `10.30.0.205/24` | `bond-storage` — 2× Intel X520-DA2 SFP+ (ixgbe) `enp1s0f0`+`enp1s0f1`, `10.200.0.205/24` |
 
 All 5 storage bonds run **802.3ad LACP** (fast rate, `layer3+4` hash policy) at **MTU 9000 (jumbo frames)**, aggregating to a 20 Gbit/s link per node (`speedMbit: 20000` on the bond master). Management interfaces run at MTU 1500. cp-01 also has an unused `enp3s0` (RTL8125B, r8169) that is down.
+
+> **2026-08-20:** added a tagged VLAN 30 sub-interface (`10.30.0.20x/24`) to every node's mgmt NIC, giving the cluster a direct L2 presence on the IOT subnet so `smtp-relay` can be reached by the Canon printer without crossing the UniFi inter-VLAN firewall (which only allows IOT→mgmt *return* traffic, not IOT-initiated connections). See [QA.md](QA.md#why-does-the-cluster-have-a-tagged-vlan-30-sub-interface-on-every-nodes-mgmt-nic-and-a-pool-iot-cilium-pool--isnt-10300024-supposed-to-be-iot-only) for the full design rationale and the `pool-iot`/dual-LB-IP DNS trap to watch for.
 
 > **2026-06-18:** cp-02 and cp-03 each had an Intel X520-DA2 SFP+ 10GbE card added, replacing their previous `eno1.200` VLAN-200 storage trunk (single 1GbE NIC, MTU 1500). Cut over to `bond-storage` live with zero pod restarts on the affected mon/OSD pods; briefly surfaced `OSD_SLOW_PING_TIME_BACK`/`_FRONT` warnings (MAC-table/ARP relearning on the switch after the interface swap) that self-cleared within ~1 minute back to `HEALTH_OK`.
 
@@ -82,9 +85,11 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 | Resource | Kind | Detail |
 |----------|------|--------|
 | `pool` | `CiliumLoadBalancerIPPool` | IP range `10.60.0.230–10.60.0.249` — allocated to `LoadBalancer` Services by Cilium IPAM |
+| `pool-kube-api` | `CiliumLoadBalancerIPPool` | Single `/32` (`10.60.0.250`), `serviceSelector`-scoped to the `kube-api` Service only |
+| `pool-iot` | `CiliumLoadBalancerIPPool` | Single `/32` (`10.30.0.240`) on the IOT VLAN, `serviceSelector`-scoped to `smtp-relay` only — announced via each node's tagged VLAN 30 sub-interface. `smtp-relay` holds two pinned IPs (`10.60.0.240` from `pool`, `10.30.0.240` from `pool-iot`), each published under its own hostname (`smtp-relay.cluster.vwn.io` / `smtp-relay.iot.vwn.io`) |
 | `l2-policy` | `CiliumL2AnnouncementPolicy` | Announces LoadBalancer IPs via ARP on all interfaces of every Linux node; storage bonds are on an isolated L2 so spurious ARP on them is harmless |
 
-Gateways request specific IPs from this pool via the `lbipam.cilium.io/ips` annotation.
+Gateways/pinned Services request specific IPs from these pools via the `lbipam.cilium.io/ips` annotation.
 
 ---
 

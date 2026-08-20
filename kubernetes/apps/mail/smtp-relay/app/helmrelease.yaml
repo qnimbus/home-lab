@@ -102,11 +102,20 @@ spec:
         # visibility in maddy's own logs on the (now harmless) cross-node-forward path.
         externalTrafficPolicy: Cluster
         annotations:
-          # external-dns-unifi watches plain Services (sources: [gateway-httproute, service]);
-          # publishes a stable record so LAN devices point at a hostname, not the LB IP,
-          # which can change if the Service is ever recreated.
+          # external-dns-unifi watches plain Services (sources: [gateway-httproute, service]).
+          # `target` pins this hostname to the mgmt-side IP only — without it, both of this
+          # Service's ingress IPs (mgmt + IOT, see lbipam.cilium.io/ips below) would publish
+          # as separate A records under the same name, and a client resolving it could get
+          # handed either one. The IOT-side name (smtp-relay.iot.${DOMAIN_IO}) is published
+          # separately by the smtp-relay-iot ExternalName Service (service-iot-dns.yaml).
           external-dns.alpha.kubernetes.io/hostname: "smtp-relay.${DOMAIN_CLUSTER}"
+          external-dns.alpha.kubernetes.io/target: "10.60.0.240"
+          # Pin both LB IPs explicitly: mgmt (default pool, matches the target above) and
+          # IOT (pool-iot, serviceSelector-scoped to this Service) — see docs/QA.md.
+          lbipam.cilium.io/ips: "10.60.0.240,10.30.0.240"
         # Restrict to the printer's known IP; widen when a second appliance needs this relay.
+        # Enforced against the real client IP regardless of which of the two LB IPs (10.60.x
+        # or the IOT 10.30.0.240) was used to reach the Service.
         loadBalancerSourceRanges:
           - "${PRINTER_IOT_HOST}/32"
           - "${LAN_SUBNET}"
