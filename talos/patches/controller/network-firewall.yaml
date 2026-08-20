@@ -13,6 +13,11 @@ portSelector:
 ingress:
   - subnet: 10.60.0.0/24
   - subnet: 10.10.0.0/24
+  # Prometheus scrapes kube-apiserver's /metrics directly by node IP:6443 (its own ServiceMonitor,
+  # separate from the in-cluster "kubernetes" Service pods use for real API calls), sourced from
+  # the Prometheus pod's own IP — see kubelet-ingress in patches/global/network-firewall.yaml for
+  # the same issue/fix.
+  - subnet: 10.42.0.0/16
 ---
 apiVersion: v1alpha1
 kind: NetworkRuleConfig
@@ -47,6 +52,9 @@ portSelector:
   protocol: tcp
 ingress:
   - subnet: 10.60.0.0/24
+  # Prometheus scrapes this directly by node IP, sourced from its own pod IP — see
+  # kubelet-ingress in patches/global/network-firewall.yaml for the same issue/fix.
+  - subnet: 10.42.0.0/16
 ---
 apiVersion: v1alpha1
 kind: NetworkRuleConfig
@@ -57,3 +65,4 @@ portSelector:
   protocol: tcp
 ingress:
   - subnet: 10.60.0.0/24
+  - subnet: 10.42.0.0/16
