@@ -1,0 +1,59 @@
+# Talos-native ingress firewall — control-plane-only rules. See
+# talos/patches/global/network-firewall.yaml for the shared design rationale: no global default
+# change, each rule below is a self-contained allowlist for the one port it names, every other
+# port is untouched.
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: kube-apiserver-ingress
+portSelector:
+  ports:
+    - 6443
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24
+  - subnet: 10.10.0.0/24
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: etcd-ingress
+portSelector:
+  ports:
+    - 2379-2380
+  protocol: tcp
+ingress:
+  # Restricted to the 3 control-plane node IPs specifically — only they are legitimate etcd
+  # client/peers.
+  - subnet: 10.60.0.201/32
+  - subnet: 10.60.0.202/32
+  - subnet: 10.60.0.203/32
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: etcd-metrics-ingress
+portSelector:
+  ports:
+    - 2381
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: kube-controller-manager-ingress
+portSelector:
+  ports:
+    - 10257
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: kube-scheduler-ingress
+portSelector:
+  ports:
+    - 10259
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24

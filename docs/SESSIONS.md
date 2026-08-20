@@ -4,6 +4,33 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-20 — `talos-ingress-firewall-iot`
+
+### Goal
+Research and implement a Talos-native fix for the IOT VLAN node-port exposure gap left open after the prior session's UniFi gateway mitigation.
+
+### What we did
+- Researched Talos's native declarative ingress firewall (`NetworkDefaultActionConfig`/`NetworkRuleConfig`) via the official v1.13 docs (WebFetched directly, not paraphrased) and GitHub issues/discussions, resolving both open questions left from the previous session: confirmed `NetworkRuleConfig` is allow-only (under a global `accept` default, unmatched/`except`-carved traffic falls through to accept — there's no standalone deny), and confirmed the historical NodePort/hostPort DNAT-ordering bug (Talos discussion #10347) was fixed in v1.9.4, well before this cluster's v1.13.2, and doesn't apply to this cluster's threat model anyway since kube-proxy is fully replaced by Cilium with no NodePort usage.
+- Spawned an Explore agent to survey the cluster's actual host-listening service inventory (Cilium routing mode, LoadBalancer/NodePort services, hostNetwork/hostPort pods, Rook-Ceph network exposure, existing Talos patches) to size an initial design.
+- Drafted and got plan-mode approval for a first implementation: `NetworkDefaultActionConfig: block` globally plus ~16 `NetworkRuleConfig` allow rules covering every host-listening service found (kubelet, apid, trustd, Cilium health/healthz, Spegel, node-exporter, Ceph mon/OSD/mgr, smtp-relay, victoria-logs-syslog, envoy-gateway). Implemented as two new Talos patch files wired into `talconfig.yaml`, validated via `task talos:genconfig` (rendered cleanly; confirmed correct per-node-type document counts and that `10.30.0.0/24` appeared only in the deliberate smtp-relay exception).
+- User questioned whether restricting `10.60.0.0/24` broadly was necessary and flagged the risk to future service deployments — this prompted further research that found a materially better mechanism: a `NetworkRuleConfig` scoped to one port is a self-contained allowlist for that port alone, regardless of the global default action, confirmed via siderolabs/talos#12955 (closed "not planned" — a port-scoped rule correctly restricted that port under a global `accept` default).
+- Revised the implementation to a much narrower, lower-risk design: dropped `NetworkDefaultActionConfig: block` entirely (global default stays at Talos's own `accept`), reduced from ~16 rules to 8 covering only the ports in the originally-confirmed exposure (kubelet/apid/trustd globally; kube-apiserver/etcd client+metrics/controller-manager/scheduler on control-plane nodes only). Re-validated via `task talos:genconfig`.
+- Left everything uncommitted per this repo's git-staging policy, and did not run `talosctl apply-config` against any live node — handed back to the user for `/git-stage`/`/git-commit` and the phased `--mode=try` rollout (workers first, one control-plane node at a time) described in the plan, since this firewall is host-wide (not per-interface) and a wrong rule risks locking out etcd/kube-apiserver across all 3 CP nodes simultaneously.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/talconfig.yaml` | Registered the two new firewall patch files in the global and control-plane `patches:` lists |
+| `talos/patches/global/network-firewall.yaml` | New — `kubelet`/`apid`/`trustd` `NetworkRuleConfig` allow rules (all 5 nodes) |
+| `talos/patches/controller/network-firewall.yaml` | New — `kube-apiserver`/`etcd`/`controller-manager`/`scheduler` `NetworkRuleConfig` allow rules (control-plane only) |
+
+### Key decisions
+- Chose the narrower "per-port self-contained allow rule, global default left at `accept`" design over the initially-implemented "global default `block` + exhaustive allowlist" design — confirmed via a closed GitHub issue, not an explicit maintainer statement, so flagged in the patch file's own comments as needing empirical verification (via `--mode=try` on a low-stakes port) before being trusted for kube-apiserver/etcd.
+- Deliberately excluded Ceph, Spegel, node-exporter, and all app LoadBalancer ports (smtp-relay, envoy-gateway, victoria-logs-syslog) from the final rule set — none were part of the originally-confirmed exposure, and restricting them would have added enumeration risk (especially Ceph's dynamic 6800-7300 port range) for no benefit under the user's stated goal.
+- Stopped at a validated-but-unapplied config rather than running `talosctl apply-config` myself — this is bare-metal hardware where a lockout needs physical/console recovery, and the repo's convention is IaC reviewed-then-applied, not ad hoc changes from a background session.
+
+---
+
 ## 2026-08-20 — `iot-vlan-unifi-isolation`
 
 ### Goal
