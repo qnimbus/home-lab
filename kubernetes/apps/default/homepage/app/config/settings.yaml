@@ -33,6 +33,7 @@ layout:
     header: false
     useEqualHeights: true
     Observability: {}
+    Storage: {}
     Documents: {}
     Database: {}
     Development: {}
@@ -41,7 +42,6 @@ layout:
     columns: 5
     header: false
     useEqualHeights: true
-    Storage: {}
     AI: {}
     Automation: {}
     Finance: {}

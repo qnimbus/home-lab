@@ -26,6 +26,11 @@ spec:
               TZ: "${CLUSTER_TIMEZONE}"
               LOG_LEVEL: "info"
               HOMEPAGE_ALLOWED_HOSTS: "homepage.${DOMAIN_CLUSTER}"
+              # https://gethomepage.dev/configs/mcp/ — read-only; HOMEPAGE_MCP_ALLOW_WRITE is
+              # skipped since /app/config is a ConfigMap mount (always read-only in-cluster).
+              # No HOMEPAGE_AUTH_ENABLED session auth is configured, so the endpoint relies on
+              # HOMEPAGE_MCP_TOKEN (from homepage-secret via envFrom below) for auth instead.
+              HOMEPAGE_MCP_ENABLED: "true"
             envFrom:
               - secretRef:
                   name: &secret homepage-secret

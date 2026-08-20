@@ -4,6 +4,35 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-20 — `homepage-mcp-endpoint`
+
+### Goal
+Enable Homepage's MCP endpoint (gethomepage.dev) with authentication, since the cluster's homepage instance has no `HOMEPAGE_AUTH_ENABLED` session auth configured.
+
+### What we did
+- Fetched the gethomepage.dev MCP docs to learn the required env vars: `HOMEPAGE_MCP_ENABLED`, `HOMEPAGE_MCP_TOKEN` (or session auth), and the opt-in `HOMEPAGE_MCP_ALLOW_WRITE`.
+- Asked the user whether to enable write access; user reasoned the config is GitOps-managed so write access shouldn't make sense — confirmed this is also enforced at the Kubernetes level, since `/app/config` is mounted from a `configMap` persistence source (`helmrelease.yaml`), which Kubernetes always mounts read-only regardless of the app-level flag, and `readOnlyRootFilesystem: true` reinforces it. Kept the endpoint read-only.
+- Added `HOMEPAGE_MCP_ENABLED: "true"` to `helmrelease.yaml`'s container `env` block.
+- Added a `HOMEPAGE_MCP_TOKEN` field to `externalsecret.yaml`'s `target.template.data`, distinct from the existing `HOMEPAGE_VAR_*` keys — those are Homepage's own `{{HOMEPAGE_VAR_*}}` config-template placeholders, while `HOMEPAGE_MCP_TOKEN` is read directly by the server process, so it must not carry the `VAR_` prefix.
+- Generated a token with `openssl rand -base64 32`.
+- Attempted to write the new `MCP_TOKEN` field to the `homepage` 1Password item via `op item edit`; found the devcontainer's `OP_SERVICE_ACCOUNT_TOKEN` has read-only access to the `homelab` vault (edits fail with an opaque "Couldn't update the item" error, confirmed via `--debug`). Left the field addition as a manual step for the user and handed off the generated token value.
+- Added `MCP_TOKEN` to `docs/EXTERNAL-SECRETS.yaml`'s `known_fields` list for the `homepage` item.
+- Confirmed homepage's `HTTPRoute` is only exposed via `envoy-internal` (no cloudflared tunnel), so the new MCP endpoint remains LAN-only.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/default/homepage/app/helmrelease.yaml` | Added `HOMEPAGE_MCP_ENABLED: "true"` env var |
+| `kubernetes/apps/default/homepage/app/externalsecret.yaml` | Added `HOMEPAGE_MCP_TOKEN` template field sourced from a new `MCP_TOKEN` 1Password field |
+| `docs/EXTERNAL-SECRETS.yaml` | Added `MCP_TOKEN` to the `homepage` item's `known_fields` |
+
+### Key decisions
+- Read-only MCP (no `HOMEPAGE_MCP_ALLOW_WRITE`) — config is GitOps-managed and mounted from a ConfigMap, which Kubernetes always mounts read-only in-cluster regardless of the app-level flag, so write access would just fail on every attempt.
+- Token-based auth chosen over enabling `HOMEPAGE_AUTH_ENABLED` — the latter would add a session-login requirement to the entire dashboard, a much larger scope change than requested.
+- 1Password field addition left to the user — the devcontainer's service-account token is read-only for the vault; a generated token was handed off for convenience rather than blocking on it.
+
+---
+
 ## 2026-08-19 — `homepage-ha-external-service`
 
 ### Goal
