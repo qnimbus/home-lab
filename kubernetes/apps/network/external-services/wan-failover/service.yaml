@@ -12,9 +12,9 @@ metadata:
     # an IP literal (URLRewrite.hostname rejects IP literals; RequestHeaderModifier silently
     # strips "Host" as disallowed — see docs/ROADMAP.md history). This Service carries no real
     # endpoints; it exists only so external-dns points wan-failover.${DOMAIN_CLUSTER} straight
-    # at the router's LAN IP, same as browsing to http://192.168.8.1 directly — no proxy, no
-    # TLS, no Host rewrite needed. type: ExternalName means no ClusterIP is ever allocated.
+    # at the router's LAN IP (${WAN_FAILOVER_HOST}), same as browsing to it directly — no proxy,
+    # no TLS, no Host rewrite needed. type: ExternalName means no ClusterIP is ever allocated.
     external-dns.alpha.kubernetes.io/hostname: "wan-failover.${DOMAIN_CLUSTER}"
 spec:
   type: ExternalName
-  externalName: "192.168.8.1"
+  externalName: "${WAN_FAILOVER_HOST}"

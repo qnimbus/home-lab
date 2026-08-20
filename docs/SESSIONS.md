@@ -4,6 +4,39 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-20 — `canon-printer-external-service`
+
+### Goal
+Add an external-service for the Canon MF753Cdw laser printer and extract the hardcoded LAN/IOT IPs across similar `external-services` entries into `cluster-secrets.sops.yaml`.
+
+### What we did
+- Surveyed the `external-services` directory pattern (`anna`, `adam`, `truenas`, `home-assistant`, `wan-failover`) and found `PRINTER_LAN_HOST` already existed in `cluster-secrets.sops.yaml` (added during the smtp-relay session) at the exact IP the user gave for the printer.
+- Found via `SESSIONS.md` history that a dedicated `home.vwn.io` subdomain had already been proposed and rejected in a prior session — domain-filter suffix matching means it buys no real isolation. Asked the user to pick between the established `gw-<name>.iot.${DOMAIN_IO}` convention, a `gw-canon` variant, and their originally typed `canon.iot.home.vwn.io`; user chose the convention-matching `canon.iot.vwn.io`.
+- Created the `canon` external-service (`Service` + `Kustomization`) as an `ExternalName` pointing at `${PRINTER_IOT_HOST}`, and added its Flux `Kustomization` block to `ks.yaml`.
+- Extracted anna/adam's hardcoded IPs (`10.30.0.72`, `10.30.0.71`) and wan-failover's hardcoded router IP (`192.168.8.1`) into `cluster-secrets.sops.yaml` via `sops set`/`sops unset` (no manual decrypt/re-encrypt round-trip).
+- Mid-session, user asked that IOT-subnet (`10.30.0.0/24`) devices use an `_IOT_HOST` suffix rather than `_LAN_HOST`, matching the existing `HOME_ASSISTANT_LAN_HOST`/`HOME_ASSISTANT_IOT_HOST` split. Renamed `ANNA_LAN_HOST`→`ANNA_IOT_HOST`, `ADAM_LAN_HOST`→`ADAM_IOT_HOST`, and also renamed the pre-existing `PRINTER_LAN_HOST`→`PRINTER_IOT_HOST` for the same reason (it was a `10.30.x` address mislabeled `LAN` since the smtp-relay session), updating its other consumer in `smtp-relay`'s `helmrelease.yaml`.
+- Validated every touched Kustomization builds cleanly with `kubectl kustomize` (`canon`, `anna`, `adam`, `wan-failover`, `smtp-relay/app`); confirmed the decrypted secret has no stale `_LAN_HOST` keys for IOT devices and the raw file still carries a valid `sops:` metadata block with all values `ENC`-wrapped.
+- Work was done in worktree `worktree-canon-printer-external-service`; left uncommitted per `CLAUDE.md`'s git-staging policy — user to run `/git-stage` + `/git-commit`.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/network/external-services/canon/service.yaml` | New — `ExternalName` Service for the Canon printer, `canon.iot.${DOMAIN_IO}` → `${PRINTER_IOT_HOST}` |
+| `kubernetes/apps/network/external-services/canon/kustomization.yaml` | New — Kustomize entry-point for `canon` |
+| `kubernetes/apps/network/external-services/ks.yaml` | Added the `canon` Flux `Kustomization` block |
+| `kubernetes/apps/network/external-services/anna/service.yaml` | `externalName` hardcoded IP → `${ANNA_IOT_HOST}` |
+| `kubernetes/apps/network/external-services/adam/service.yaml` | `externalName` hardcoded IP → `${ADAM_IOT_HOST}` |
+| `kubernetes/apps/network/external-services/wan-failover/service.yaml` | `externalName` hardcoded IP → `${WAN_FAILOVER_HOST}`; comment de-duplicated |
+| `kubernetes/apps/mail/smtp-relay/app/helmrelease.yaml` | `loadBalancerSourceRanges` entry renamed `${PRINTER_LAN_HOST}` → `${PRINTER_IOT_HOST}` |
+| `kubernetes/flux/vars/cluster-secrets.sops.yaml` | Added `ANNA_IOT_HOST`, `ADAM_IOT_HOST`, `WAN_FAILOVER_HOST`; renamed `PRINTER_LAN_HOST` → `PRINTER_IOT_HOST` |
+
+### Key decisions
+- Chose `canon.iot.vwn.io` over `gw-canon.iot.vwn.io` or the user's originally typed `canon.iot.home.vwn.io` — matches the anna/adam `<name>.iot.${DOMAIN_IO}` convention without the `gw-` prefix (which appears tied to the Plugwise product line, not a generic "external device" marker), and a prior session had already rejected the `home.vwn.io` subdomain idea as providing no real isolation.
+- Extracted `wan-failover`'s hardcoded IP too, even though the user only named anna/adam as examples — same anti-pattern, same directory; left no straggler.
+- Renamed the pre-existing `PRINTER_LAN_HOST` to `PRINTER_IOT_HOST` rather than only fixing the newly-added vars — it lives on the IOT subnet, so the user's naming rule applies to it too; updated both of its consumers (`canon`'s new `service.yaml` and the pre-existing `smtp-relay` `helmrelease.yaml`).
+
+---
+
 ## 2026-08-20 — `homepage-mcp-endpoint`
 
 ### Goal

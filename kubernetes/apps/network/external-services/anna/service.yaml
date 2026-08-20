@@ -19,4 +19,4 @@ metadata:
     external-dns.alpha.kubernetes.io/hostname: "gw-anna.iot.${DOMAIN_IO}"
 spec:
   type: ExternalName
-  externalName: "10.30.0.72"
+  externalName: "${ANNA_IOT_HOST}"
