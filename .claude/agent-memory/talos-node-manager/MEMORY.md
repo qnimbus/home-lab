@@ -5,3 +5,4 @@
 - [tuppr Restart Behaviour](feedback_tuppr_restart_behaviour.md) — tuppr losing leader election causes immediate pod restart; on reconnect it re-validates upgrade CRs and may re-trigger applies if node versions don't match
 - [Etcd Member State](project_etcd_members.md) — All 3 members are voters (no learners); peer URLs use mgmt subnet 10.60.0.x
 - worker-02's recurring hard-downs (5+ occurrences, 06-02→06-21) — RESOLVED 2026-06-22, root cause was a failing external power brick (MemTest86 hardware isolation), now replaced. Full writeup: `docs/history/cp02-worker02-hardware-faults.md` in the repo. Do not re-investigate as a node/Talos-layer fault if it resurfaces — check the brick first.
+- [2026-08-19 e1000e CRC link flap](project_20260819_e1000e_crc_link_flap.md) — cp-03 stuck at 10Mbit fixed by reboot (now 1000Mbit, cluster/etcd healthy); worker-02 steady CRC rate at correct gigabit still needs physical cable/connector inspection
