@@ -15,7 +15,7 @@
   // Renovate runs every ~1h during the weekend window; prHourlyLimit caps new PRs per run,
   // prConcurrentLimit caps total open PRs. A backlog drains at 2/hour, max 5 open at once.
   prHourlyLimit: 2,
-  prConcurrentLimit: 5,
+  prConcurrentLimit: 10,
 
   // Only scan on weekends — avoids noise during the week; change to "at any time" to run continuously
   schedule: ["every weekend"],
@@ -232,6 +232,20 @@
       matchUpdateTypes: ["minor", "patch"],
       minimumReleaseAge: "3 days",
       matchPackageNames: ["!/siderolabs/installer/", "!/siderolabs/kubelet/"],
+    },
+    {
+      // Curated list of minimal base/utility images — no app logic of our own runs in these,
+      // they're only ever used as init/sidecar containers (curl calls, static busybox tooling).
+      // Combines with the 3-day soak gate above (minimumReleaseAge isn't repeated here — rules
+      // merge). Add more depNames here as other low-risk utility images come up; do NOT widen
+      // this to app images (grafana, open-webui, etc.) — those can carry real breaking changes.
+      description: "Auto-merge minor/patch bumps for trusted utility/base images",
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["minor", "patch"],
+      matchPackageNames: ["alpine", "curlimages/curl"],
+      automerge: true,
+      automergeType: "branch",
+      ignoreTests: true,
     },
 
     // ── Semantic commit message formatting ──────────────────────────────────────
