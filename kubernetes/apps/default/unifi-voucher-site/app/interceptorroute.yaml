@@ -1,0 +1,48 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/http.keda.sh/interceptorroute_v1beta1.json
+apiVersion: http.keda.sh/v1beta1
+kind: InterceptorRoute
+metadata:
+  name: unifi-voucher-site
+spec:
+  target:
+    service: unifi-voucher-site
+    port: 3000
+  rules:
+    - hosts:
+        - "voucher.${DOMAIN_CLUSTER}"
+  # requestRate, not concurrency — see pgadmin/app/interceptorroute.yaml and
+  # docs/QA.md for the full trace: coldStart.placeholder serves in microseconds,
+  # so a concurrency gauge is back at 0 before the scaler's poll ever samples it
+  # and scale-up never fires. requestRate's monotonic counter survives that.
+  scalingMetric:
+    requestRate:
+      targetValue: 1
+  coldStart:
+    placeholder:
+      response:
+        statusCode: 503
+        headers:
+          Content-Type: text/html; charset=utf-8
+        body: |
+          <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>Starting UniFi Vouchers…</title>
+            <meta http-equiv="refresh" content="3">
+            <style>
+              body { font-family: system-ui, sans-serif; display: flex; align-items: center;
+                     justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #e2e8f0; }
+              .card { text-align: center; }
+              h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+              p { color: #94a3b8; margin: 0; }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h1>Starting UniFi Vouchers…</h1>
+              <p>Scaled down while idle — this page refreshes automatically.</p>
+            </div>
+          </body>
+          </html>

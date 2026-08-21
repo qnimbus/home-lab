@@ -6,6 +6,15 @@ metadata:
   name: &app unifi-voucher-site
 spec:
   interval: 1h
+  # KEDA (interceptorroute.yaml + the http-scaler component's ScaledObject) scales
+  # this Deployment's replicas directly; without this, Flux's drift detection
+  # reverts it back to the chart's desired replica count on the next reconcile,
+  # undoing scale-to-zero within the hour.
+  driftDetection:
+    ignore:
+      - paths: ["/spec/replicas"]
+        target:
+          kind: Deployment
   chartRef:
     kind: OCIRepository
     name: app-template
