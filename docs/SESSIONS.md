@@ -4,6 +4,40 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-21 — `unifi-voucher-site-deploy`
+
+### Goal
+Plan and implement a Flux-managed deployment of [unifi-voucher-site](https://github.com/glenndehaan/unifi-voucher-site), a guest-network voucher web UI that talks directly to the UniFi controller API.
+
+### What we did
+- Used plan mode: WebFetched the upstream GitHub README (purpose, Docker image, full env-var reference, port, volumes, docker-compose example) and the releases page/Docker Hub tags API to pick a pinned version (`8.12.0`) with its manifest-list digest, rather than tracking `latest`.
+- Ran an Explore agent in parallel to survey existing deployment patterns in-repo: found `unpoller` and `external-dns-unifi` already call the same UniFi controller in-cluster (proving reachability), identified the `bjw-s/app-template` v5 HelmRelease shape (`unpoller`/`homepage` as references), the `envoy-internal`/`envoy-external` HTTPRoute pattern, and the 1Password `unifi` item (`HOST`/`API_KEY`) already shared by two consumers via `ClusterSecretStore: onepassword`.
+- Read `docs/EXTERNAL-SECRETS.yaml` to understand the wildcard-extract + `rewrite` convention, and confirmed via `kubernetes/apps/default/kustomization.yaml` that new default-namespace apps must be explicitly registered (not auto-discovered).
+- Asked the user 4 scoped decisions via `AskUserQuestion`: namespace (`default`, matching `homepage`/`whoami`), exposure (`envoy-internal` only — internal LAN/VPN, not public), UniFi credential (reuse the existing shared `unifi` 1Password item rather than minting a new dedicated API key), and portal auth (`AUTH_DISABLE=true`, accepted specifically because exposure is internal-only).
+- Wrote the plan file, then on user feedback added every other documented upstream env var (OIDC, kiosk mode, printing, SMTP, voucher types, translations, cleanup tasks) as commented-out entries at their documented defaults, for in-repo discoverability without re-checking the README later.
+- After plan approval, created the full `kubernetes/apps/default/unifi-voucher-site/` tree (`ks.yaml` + `app/{kustomization,externalsecret,helmrelease,httproute}.yaml`), registered it in `kubernetes/apps/default/kustomization.yaml`, and added a new consumer entry (with a template-reshape note) to `docs/EXTERNAL-SECRETS.yaml` under the existing `unifi` item.
+- The `ExternalSecret`'s `target.template` reshapes the shared item's fields for this app's different naming: `UNIFI_HOST` (a full base URL like `unpoller`/`external-dns-unifi` expect) is split via Sprig `trimPrefix`/`trimSuffix` into a bare `UNIFI_IP` plus a hardcoded `UNIFI_PORT: "443"`, and `UNIFI_API_KEY` is renamed to `UNIFI_TOKEN` to match this app's env-var names.
+- Validated both the new `app/` Kustomization and the parent `kubernetes/apps/default/` Kustomization with `kustomize build` — confirmed YAML anchors (probe/port) resolved correctly and the commented-out env block rendered cleanly with no stray syntax.
+- User independently ran `op item get "unifi" --vault homelab` and confirmed the live `HOST` field is `https://192.168.1.1` (no embedded port) — validating the `trimPrefix`/hardcoded-443 assumption in the `ExternalSecret` template was correct, not just plausible.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/default/unifi-voucher-site/ks.yaml` | New — Flux Kustomization, `targetNamespace: default` |
+| `kubernetes/apps/default/unifi-voucher-site/app/kustomization.yaml` | New — resource list |
+| `kubernetes/apps/default/unifi-voucher-site/app/externalsecret.yaml` | New — reshapes the shared `unifi` 1Password item into `UNIFI_IP`/`UNIFI_PORT`/`UNIFI_TOKEN` |
+| `kubernetes/apps/default/unifi-voucher-site/app/helmrelease.yaml` | New — `app-template` v5 HelmRelease, pinned `8.12.0` image, full commented-out env-var reference |
+| `kubernetes/apps/default/unifi-voucher-site/app/httproute.yaml` | New — internal-only route at `voucher.${DOMAIN_CLUSTER}` via `envoy-internal` |
+| `kubernetes/apps/default/kustomization.yaml` | Registered the new app's `ks.yaml` |
+| `docs/EXTERNAL-SECRETS.yaml` | Added `unifi-voucher-site` as a third consumer of the `unifi` item, with a note on the template reshape |
+
+### Key decisions
+- Reused the existing shared `unifi` 1Password item instead of minting a dedicated least-privilege API key for voucher creation — user's explicit choice, trading a cleaner blast-radius boundary for simplicity (no new UniFi API key/1Password item to create).
+- `AUTH_DISABLE=true` (no in-app login) — deliberately paired with internal-only exposure; flagged in the HelmRelease as needing revisiting if exposure is ever widened to `envoy-external`.
+- Not yet committed — all changes are in the working tree pending user review via `/git-stage`/`/git-commit`. Also not yet applied to the live cluster; `docs/EXTERNAL-SECRETS.yaml`'s `HOST`-format assumption was verified live by the user post-write, but the deployment itself has not yet been reconciled/tested end-to-end (see the plan's Verification section for the remaining steps: `ExternalSecret` sync, pod health, UI voucher-creation test).
+
+---
+
 ## 2026-08-20 — `talos-ingress-firewall-iot`
 
 ### Goal
