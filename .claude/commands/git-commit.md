@@ -5,11 +5,12 @@ Stage and commit changes following this repository's git conventions — analyse
 Before doing anything else, determine why this command is running:
 
 - **User-invoked** — the user's message this turn typed `/git-commit`, or otherwise explicitly asked to stage/commit right now. Skip to Step 1.
-- **Claude-invoked** — Claude is running this command on its own initiative, without an explicit ask this turn (e.g. tidying up before a task or session ends). This is only permitted when **both** of the following hold:
+- **Claude-invoked** — Claude is running this command on its own initiative, without an explicit ask this turn (e.g. tidying up before a task or session ends). This is only permitted when **all three** of the following hold:
   1. The working directory is a git worktree Claude itself entered — its path contains `.claude/worktrees/` — not the primary repo checkout.
   2. `git branch --show-current` is that worktree's own feature branch, never `main` (or the repo's default branch).
+  3. **The worktree/branch was actually created for the current task** — not a pre-existing worktree the session merely happened to be launched into (a background job's working directory can be pinned at launch to a worktree left over from earlier, unrelated work). Check this explicitly: does the branch name, and the topic of `git log --oneline -5` (already pulled in Step 1), match what this conversation has actually been doing? A worktree named after — and with a commit history about — a different feature/task fails this condition even though 1 and 2 hold.
 
-  Check both explicitly (`pwd` / `git rev-parse --show-toplevel`, and `git branch --show-current`) before proceeding. If either check fails — primary checkout, or currently on `main` — **stop and ask the user** to run `/git-commit` themselves instead of committing. Do not rationalize around this ("the change is small", "the task is done" are never sufficient on their own).
+  Check all three explicitly (`pwd` / `git rev-parse --show-toplevel`, `git branch --show-current`, and the branch-name/log-topic comparison) before proceeding. If any check fails — primary checkout, currently on `main`, or a topically mismatched worktree — **stop and ask the user** whether to commit here anyway or set up a fresh worktree/branch for this task first. Do not rationalize around this ("the change is small", "the task is done", "it's already isolated in *a* worktree" are never sufficient on their own).
 
 ## Step 1 — Survey the working tree
 
