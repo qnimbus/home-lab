@@ -1,0 +1,103 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: plex
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: app-template
+    namespace: flux-system
+  values:
+    controllers:
+      plex:
+        # Required: /config is an RWO ceph-block PVC.
+        strategy: Recreate
+        containers:
+          app:
+            image:
+              # renovate: datasource=docker depName=ghcr.io/home-operations/plex
+              repository: ghcr.io/home-operations/plex
+              tag: 1.43.3.10896@sha256:4f1d88882a9883cc525e7c84b22c67c57416b7d3b35c3412329eeb07786433a7 # verify current tag/digest at implementation time
+            env:
+              TZ: "${CLUSTER_TIMEZONE}"
+              # Deliberately not setting PLEX_CLAIM_TOKEN — plex.tv claim tokens expire in
+              # ~4 minutes, incompatible with async GitOps/ESO reconcile timing. Claim via
+              # the web setup wizard post-deploy instead.
+              # Trusted CIDRs that skip Plex's own sign-in prompt: mgmt LAN, pod network,
+              # service network.
+              PLEX_NO_AUTH_NETWORKS: "10.60.0.0/24,10.42.0.0/16,10.43.0.0/16"
+              PLEX_PREFERENCE_1: "AllowMediaDeletion=0"
+              PLEX_PREFERENCE_2: "EnableIPv6=0"
+              PLEX_PREFERENCE_3: "FriendlyName=Plex"
+              PLEX_PREFERENCE_4: "sendCrashReports=0"
+            probes:
+              # /identity is Plex's unauthenticated health/discovery endpoint.
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /identity
+                    port: 32400
+                  # First boot (library load, plugin init) can take a while; generous
+                  # failureThreshold avoids a false-positive restart loop under Recreate.
+                  initialDelaySeconds: 30
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+              readiness: *probes
+            resources:
+              requests:
+                cpu: 100m
+                memory: 1Gi
+                gpu.intel.com/i915: 1
+              limits:
+                memory: 4Gi
+                # Extended resources require request == limit.
+                gpu.intel.com/i915: 1
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: "OnRootMismatch"
+      # Excludes cp-01 (AMD Ryzen, no Intel iGPU) — the other 4 nodes carry this label via
+      # the GPU device plugin's NodeFeatureRule.
+      nodeSelector:
+        intel.feature.node.kubernetes.io/gpu: "true"
+    service:
+      app:
+        controller: plex
+        ports:
+          http:
+            port: 32400
+    persistence:
+      config:
+        existingClaim: "${VOLSYNC_CLAIM:=${APP}}"
+        globalMounts:
+          - path: /config
+      # Native in-tree NFS volume (no PVC/StorageClass) — deliberately not the dynamic nfs
+      # StorageClass, which provisions/deletes a per-PVC subdirectory and would be wrong
+      # for a persistent, hand-managed media library.
+      media:
+        type: nfs
+        server: "${NAS_HOST}"
+        path: /mnt/tank/Media
+        globalMounts:
+          - path: /mnt/media
+      # Bounded scratch space for transcode segments — disk-backed rather than tmpfs
+      # since the smallest worker nodes have only 32GB RAM shared with other workloads,
+      # and node disks are already NVMe.
+      transcode:
+        type: emptyDir
+        sizeLimit: 20Gi
+        globalMounts:
+          - path: /transcode

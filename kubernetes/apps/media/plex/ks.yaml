@@ -1,0 +1,53 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app plex
+  namespace: flux-system
+spec:
+  targetNamespace: media
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  components:
+    - ../../../../components/volsync
+  interval: 1h
+  path: ./kubernetes/apps/media/plex/app
+  postBuild:
+    substitute:
+      APP: *app
+      # No PUID/PGID env convention on this image (runs as nobody:nogroup by default) —
+      # UID/GID enforcement is via the pod securityContext below. 1000:1000 matches n8n's
+      # existing precedent so a future *arr stack can share this NFS mount's ownership.
+      APP_UID: "1000"
+      APP_GID: "1000"
+      # /config only (metadata DB, thumbnails, subtitle cache) — the media library itself
+      # is a separate raw NFS mount, not part of this PVC. Cluster has ~3TiB usable
+      # ceph-block capacity total; kept conservative. Resizing later requires patching the
+      # PVC directly (kustomize.toolkit.fluxcd.io/ssa: IfNotPresent means Flux only
+      # creates it once and never reconciles size changes).
+      VOLSYNC_CAPACITY: 20Gi
+  prune: true
+  wait: false
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  dependsOn:
+    # Plex itself needs no ExternalSecret, but the volsync component's own
+    # externalsecret.yaml pulls the shared "volsync-restic" 1Password item and needs the
+    # ClusterSecretStore to exist first.
+    - name: onepassword-store
+    - name: rook-ceph-cluster
+    # ReplicationSource/ReplicationDestination CRDs don't exist until the operator
+    # installs them — see bootstrap-ordering rule in CLAUDE.md.
+    - name: volsync
+    # Provides the intel.feature.node.kubernetes.io/gpu node label and the
+    # gpu.intel.com/i915 extended resource this HelmRelease relies on.
+    - name: intel-device-plugins-gpu
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: *app
+      namespace: media

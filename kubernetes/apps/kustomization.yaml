@@ -25,3 +25,4 @@ resources:
   - ./development
   - ./node-feature-discovery
   - ./intel-device-plugins
+  - ./media
