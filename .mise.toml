@@ -6,7 +6,7 @@ MINIJINJA_CONFIG_FILE = "{{config_root}}/.minijinja.toml"
 just = "1.56.0"
 gum = "0.17.0"
 "aqua:mitsuhiko/minijinja" = "2.21.0"
-kubectl = "1.36.2"
+kubectl = "1.36.4"
 talosctl = "1.13.0"
 # etcd version must match the etcd bundled with the running Talos version — check with: talosctl etcd status
 etcd = "3.5.21"
