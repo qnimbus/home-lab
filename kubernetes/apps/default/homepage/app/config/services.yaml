@@ -3,7 +3,7 @@
 # with siteMonitor (HTTP check) rather than via gethomepage.dev/* annotations + pod-selector,
 # which would never resolve. Everything else on the dashboard is auto-discovered — see the
 # gethomepage.dev/* annotations on each app's own HTTPRoute.
-- RowA:
+- RowB:
     - Storage:
         - TrueNAS:
             icon: "mdi-nas"
@@ -39,31 +39,33 @@
             icon: "mdi-thermostat"
             href: "https://gw-anna.iot.vwn.io"
             description: "Plugwise Anna thermostat & heating control"
-- Infrastructure:
-    - Cloudflared:
-        href: https://dash.cloudflare.com/
-        icon: cloudflare-zero-trust.png
-        description: Cloudflared Tunnel
-        widget:
-          type: cloudflared
-          accountid: {{HOMEPAGE_VAR_CLOUDFLARE_ACCOUNT_ID}}
-          tunnelid: {{HOMEPAGE_VAR_CLOUDFLARE_TUNNEL_ID}}
-          key: {{HOMEPAGE_VAR_CLOUDFLARE_API_TOKEN}}
-    - UniFi Network:
-        href: https://udm.${DOMAIN_APP}/network
-        icon: si-ubiquiti.svg-#0559C9
-        description: UniFi SkyNet Site
-        siteMonitor: "https://udm.${DOMAIN_APP}"
-    - UniFi Protect:
-        href: https://udm.${DOMAIN_APP}/protect
-        icon: si-ubiquiti.svg
-        description: UniFi Protect
-        siteMonitor: "https://udm.${DOMAIN_APP}"
-    - WAN Failover:
-        icon: "mdi-router-network"
-        # Plain http, not https: this hostname bypasses Envoy Gateway entirely (DNS points
-        # straight at the router's LAN IP — see network/external-services/wan-failover), and the
-        # router only serves plain HTTP with no TLS termination in front of it.
-        href: "http://wan-failover.${DOMAIN_CLUSTER}"
-        description: "Failover link status"
-        siteMonitor: "http://wan-failover.${DOMAIN_CLUSTER}"
+- RowA:
+    - Infrastructure:
+        - Cloudflared:
+            href: https://dash.cloudflare.com/
+            icon: cloudflare-zero-trust.png
+            description: Cloudflared Tunnel
+            widget:
+                type: cloudflared
+                accountid: {{HOMEPAGE_VAR_CLOUDFLARE_ACCOUNT_ID}}
+                tunnelid: {{HOMEPAGE_VAR_CLOUDFLARE_TUNNEL_ID}}
+                key: {{HOMEPAGE_VAR_CLOUDFLARE_API_TOKEN}}
+        - WAN Failover:
+            icon: "mdi-router-network"
+            # Plain http, not https: this hostname bypasses Envoy Gateway entirely (DNS points
+            # straight at the router's LAN IP — see network/external-services/wan-failover), and the
+            # router only serves plain HTTP with no TLS termination in front of it.
+            href: "http://wan-failover.${DOMAIN_CLUSTER}"
+            description: "Failover link status"
+            siteMonitor: "http://wan-failover.${DOMAIN_CLUSTER}"
+    - Unifi:
+        - UniFi Network:
+            href: https://udm.${DOMAIN_APP}/network
+            icon: si-ubiquiti.svg-#0559C9
+            description: UniFi SkyNet Site
+            siteMonitor: "https://udm.${DOMAIN_APP}"
+        - UniFi Protect:
+            href: https://udm.${DOMAIN_APP}/protect
+            icon: si-ubiquiti.svg-#DDDDDD
+            description: UniFi Protect
+            siteMonitor: "https://udm.${DOMAIN_APP}"

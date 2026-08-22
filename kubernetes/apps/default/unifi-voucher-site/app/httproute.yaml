@@ -8,8 +8,8 @@ metadata:
     gethomepage.dev/enabled: "true"
     gethomepage.dev/name: "UniFi Vouchers"
     gethomepage.dev/description: "Guest WiFi voucher generation"
-    gethomepage.dev/group: "Infrastructure"
-    gethomepage.dev/icon: "mdi-ticket-confirmation"
+    gethomepage.dev/group: "Unifi"
+    gethomepage.dev/icon: "mdi-ticket-confirmation-#0559C9"
 spec:
   parentRefs:
     - name: envoy-internal

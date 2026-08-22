@@ -31,10 +31,16 @@ layout:
     ColB:
       header: false
       style: column
-  Infrastructure:
-    style: row
-    columns: 4
   RowA:
+    style: row
+    columns: 2
+    header: false
+    useEqualHeights: true
+    Infrastructure:
+      header: true
+      style: column
+    Unifi: {}
+  RowB:
     style: row
     columns: 4
     header: false
@@ -43,7 +49,7 @@ layout:
     Storage: {}
     Documents: {}
     Database: {}
-  RowB:
+  RowC:
     style: row
     columns: 4
     header: false
@@ -52,7 +58,7 @@ layout:
     AI: {}
     Automation: {}
     Finance: {}
-  RowC:
+  RowD:
     header: false
     useEqualHeights: true
     Bookmarks:
