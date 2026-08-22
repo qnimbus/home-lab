@@ -4,6 +4,46 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-22 — `n8n-deploy`
+
+### Goal
+Investigate and draft a Flux-managed deployment of n8n (workflow automation) into the `automation` namespace, following this repo's own conventions rather than the community reference wholesale.
+
+### What we did
+- Created worktree `.claude/worktrees/n8n` on branch `worktree-n8n` via `EnterWorktree`.
+- Ran three parallel Explore agents to survey: (1) `open-webui`'s full app-template + CNPG + ExternalSecret + Gateway API pattern as the primary reference, (2) docs/archive for any prior n8n context — found `docs/POTENTIAL-DEPLOYMENTS.md:168` already lists n8n as an approved candidate, and found a gitignored community reference clone at `tmp/home-ops-bykaj/` (origin `qnimbus/home-ops-bykaj`, the user's own repo) containing a working n8n deployment, (3) the existing `automation` namespace, confirming its sole sibling app `waha` is a clean precedent (VolSync-backed PVC, no separate `-db` Kustomization since it isn't Postgres-backed).
+- Launched a Plan agent to turn the findings into a file-by-file plan; it corrected a wrong assumption fed to it — every `app-template` consumer in this repo (`open-webui`, `waha`, `paperless-ngx`, `pgadmin`, `cloudflared`, `smtp-relay`, etc.) inlines Helm `values:` in `helmrelease.yaml` rather than using CLAUDE.md's documented separate-`values.yaml` pattern, which only applies to apps with their own per-app chart source.
+- Asked the user 3 scoped decisions via `AskUserQuestion`: webhook exposure (internal-only, no external route/`WEBHOOK_URL`), execution mode (regular, not queue mode), and task scope (draft full manifests uncommitted, matching the prior paperless-ngx precedent).
+- Read the full bykaj n8n reference in detail per user follow-up request; deliberately diverged from its Postgres-provisioning approach (a `postgres-init` initContainer using superuser creds) in favor of this repo's own declarative CNPG `Database` CRD + `managed.roles` pattern (matching `open-webui`'s `db/` split), and from its webhook-exposure/queue-mode choices per the user's decisions above.
+- Discovered a cluster-specific simplification while reading `kubernetes/apps/mail/smtp-relay/app/helmrelease.yaml`: its `loadBalancerSourceRanges` restriction only gates the Service's external LoadBalancer IPs, not in-cluster ClusterIP traffic, and its `maddy` config accepts inbound mail unauthenticated — so n8n can relay mail through it with zero SMTP credentials, simpler than bykaj's design (which pulls external SMTP creds into n8n's own secret).
+- User asked whether `smtp-relay` should be a Flux `dependsOn` target; concluded no — it's a runtime call n8n makes lazily when sending mail (not tested at boot, unlike `open-webui`'s eager Redis-at-import-time dependency on `dragonfly`), so coupling the rollout to it would add no safety and only add fragility.
+- Resolved the current n8n image tag/digest live via `crane digest ghcr.io/n8n-io/n8n:2.35.7` rather than guessing one (confirmed current stable release via a GitHub releases fetch first).
+- Wrote the full manifest set, registered the app in `kubernetes/apps/automation/kustomization.yaml`, and added the `n8n` role to the shared CNPG cluster's `managed.roles` list.
+- Validated with `kustomize build` on both the `app/` and `db/` overlays and a full `task validate` run across the repo — zero errors; `ExternalSecret`/`HTTPRoute`/`Database` "skipped" lines are the same expected no-bundled-schema false positive already documented for sibling apps.
+- Left all changes uncommitted per the user's chosen task scope — a 1Password item named `n8n` (`username`, `password`, `encryption_key`) must be created out-of-band before this is safe to merge/deploy.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/automation/n8n/ks.yaml` | New — two Flux Kustomizations (`n8n-db` in `database`, `n8n` in `automation`), VolSync component with `APP_UID`/`APP_GID` overridden to `1000` to match the image's non-root user |
+| `kubernetes/apps/automation/n8n/app/kustomization.yaml` | New — resource list |
+| `kubernetes/apps/automation/n8n/app/helmrelease.yaml` | New — `app-template` v5 HelmRelease, pinned `2.35.7` image+digest, CNPG env vars, internal-only routing, unauthenticated SMTP relay via `smtp-relay.mail.svc.cluster.local` |
+| `kubernetes/apps/automation/n8n/app/externalsecret.yaml` | New — `N8N_ENCRYPTION_KEY` from the `n8n` 1Password item |
+| `kubernetes/apps/automation/n8n/app/httproute.yaml` | New — internal-only route at `n8n.${DOMAIN_CLUSTER}` via `envoy-internal`, homepage annotations |
+| `kubernetes/apps/automation/n8n/db/kustomization.yaml` | New — resource list |
+| `kubernetes/apps/automation/n8n/db/database.yaml` | New — CNPG `Database` CRD on the shared `postgres-v17` cluster |
+| `kubernetes/apps/automation/n8n/db/externalsecret.yaml` | New — CNPG role credentials, `cnpg.io/reload: "true"` |
+| `kubernetes/apps/automation/kustomization.yaml` | Registered `./n8n/ks.yaml` |
+| `kubernetes/apps/database/cloudnative-pg/cluster/app/cluster.yaml` | Added `n8n` role to `spec.managed.roles` |
+
+### Key decisions
+- Followed this repo's own CNPG `Database` CRD + `managed.roles` convention instead of the bykaj reference's `postgres-init` initContainer — more declarative and consistent with every other CNPG-backed app here.
+- Route mail through the existing `smtp-relay` with no dedicated SMTP credentials, based on a verified (not assumed) reading of its Kubernetes-layer traffic restriction vs. its app-layer auth posture.
+- Excluded `smtp-relay` from `dependsOn` — Flux dependency ordering is for build-time/boot-time needs, and n8n's SMTP usage is a lazy runtime call that self-heals if the relay is briefly unavailable.
+- Skipped KEDA scale-to-zero for v1 (unlike `open-webui`/`paperless-ngx`) — n8n is expected to be always-on for scheduled/cron-triggered workflows, and `open-webui` itself doesn't use the shared `components/keda/postgres-scaler` component either (hand-writes its own tailored `ScaledObject`), so there was no drop-in default to adopt without deeper tuning.
+
+---
+
 ## 2026-08-21 — `unifi-voucher-site-deploy`
 
 ### Goal

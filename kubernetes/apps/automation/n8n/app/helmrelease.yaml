@@ -1,0 +1,122 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: n8n
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: app-template
+    namespace: flux-system
+  values:
+    controllers:
+      n8n:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        strategy: Recreate
+        containers:
+          app:
+            image:
+              # renovate: datasource=docker depName=ghcr.io/n8n-io/n8n
+              repository: ghcr.io/n8n-io/n8n
+              tag: 2.35.7@sha256:166d7e3ca384afdffe75394bf00046c299d84a4bf17b19b35d6cf7773af0a147
+            env:
+              # --- Database: CNPG-issued role/secret (n8n-db-secret), not the app-level
+              # n8n-secret — the two-Kustomization split in ks.yaml guarantees this secret
+              # exists before this Deployment is ever applied.
+              DB_TYPE: "postgresdb"
+              DB_POSTGRESDB_HOST: "${PG_HOST}"
+              DB_POSTGRESDB_PORT: "5432"
+              DB_POSTGRESDB_DATABASE: "n8n"
+              DB_POSTGRESDB_USER:
+                valueFrom:
+                  secretKeyRef:
+                    name: n8n-db-secret
+                    key: username
+              DB_POSTGRESDB_PASSWORD:
+                valueFrom:
+                  secretKeyRef:
+                    name: n8n-db-secret
+                    key: password
+              # --- Core runtime config ---
+              GENERIC_TIMEZONE: "${CLUSTER_TIMEZONE}"
+              N8N_HOST: "n8n.${DOMAIN_CLUSTER}"
+              N8N_PORT: &port 5678
+              N8N_PROTOCOL: "https"
+              # Envoy Gateway terminates TLS in front of this pod and is the only hop —
+              # trusting exactly one proxy's X-Forwarded-* headers. Required for correct
+              # generated links/webhook URLs and secure-cookie behavior; wrong value here
+              # is a well-documented source of silent auth/redirect breakage upstream.
+              N8N_PROXY_HOPS: "1"
+              N8N_RUNNERS_ENABLED: "true"
+              N8N_DIAGNOSTICS_ENABLED: "false"
+              N8N_HIDE_USAGE_PAGE: "true"
+              # fsGroup (below) already makes the mounted PVC group-writable; n8n's own
+              # startup permission enforcement on top of that is redundant and has been a
+              # source of boot-time false positives on some volume backends.
+              N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "false"
+              # Execution history lives in Postgres and grows unbounded without pruning.
+              EXECUTIONS_DATA_PRUNE: "true"
+              EXECUTIONS_DATA_MAX_AGE: "168" # 7 days, in hours
+              EXECUTIONS_DATA_PRUNE_MAX_COUNT: "50000"
+              # --- Outbound mail via the cluster's own smtp-relay (mail namespace) ---
+              # maddy's internal listener accepts unauthenticated mail from in-cluster
+              # callers (see kubernetes/apps/mail/smtp-relay) — loadBalancerSourceRanges
+              # only restricts its external LoadBalancer IPs, not ClusterIP traffic — so no
+              # SMTP credentials are needed here at all.
+              N8N_EMAIL_MODE: "smtp"
+              N8N_SMTP_HOST: "smtp-relay.mail.svc.cluster.local"
+              N8N_SMTP_PORT: "25"
+              N8N_SMTP_SSL: "false"
+              N8N_SMTP_SENDER: "n8n <n8n@${DOMAIN_CLUSTER}>"
+            envFrom:
+              - secretRef:
+                  name: n8n-secret
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthz
+                    port: *port
+                  initialDelaySeconds: 0
+                  periodSeconds: 10
+                  timeoutSeconds: 1
+                  failureThreshold: 3
+              readiness:
+                <<: *probes
+                spec:
+                  httpGet:
+                    path: /healthz/readiness
+                    port: *port
+            resources:
+              requests:
+                cpu: 5m
+                memory: 128Mi
+              limits:
+                memory: 1Gi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: "OnRootMismatch"
+    service:
+      app:
+        controller: n8n
+        ports:
+          http:
+            port: *port
+    persistence:
+      config:
+        existingClaim: "${VOLSYNC_CLAIM:=n8n}"
+        globalMounts:
+          - path: /home/node/.n8n
