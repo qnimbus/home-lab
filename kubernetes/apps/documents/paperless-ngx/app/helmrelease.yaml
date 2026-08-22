@@ -62,8 +62,10 @@ spec:
               # with the old pod silently left running. Go templates only recognize
               # {{ }} as delimiters, not Jinja2's {% %}, so only the {{ }} expressions
               # need escaping - confirmed via `helm template` against the real chart.
+              # {% if not correspondent %}None/{{"{{"}} created_year {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}{% else %}{{"{{"}} correspondent {{"}}"}}/{{"{{"}} created_year {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}{% endif %}
               PAPERLESS_FILENAME_FORMAT: >-
-                {% if not correspondent %}None/{{"{{"}} created_year {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}{% else %}{{"{{"}} correspondent {{"}}"}}/{{"{{"}} created_year {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}{% endif %}
+                {{"{{"}} created_year {{"}}"}}/{{"{{"}} correspondent {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}
+              PAPERLESS_FILENAME_FORMAT_REMOVE_NONE: "true"
               PAPERLESS_PORT: &port 8000
               PAPERLESS_TASK_WORKERS: "2"
               PAPERLESS_TIME_ZONE: ${CLUSTER_TIMEZONE}
