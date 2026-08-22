@@ -50,6 +50,11 @@ Concise answers to questions that came up during cluster operation. Each entry c
 **Database / Backups**
 - [Why did Backblaze B2 WAL archiving fail with `IncompleteBody: The request body was too small` after migrating off Storj?](#why-did-backblaze-b2-wal-archiving-fail-with-incompletebody-the-request-body-was-too-small-after-migrating-off-storj)
 
+**Autoscaling (KEDA)**
+- [pgadmin's homepage tile shows "Not Found" when it's scaled to zero — is the KEDA HTTP Add-on broken?](#pgadmins-homepage-tile-shows-not-found-when-its-scaled-to-zero--is-the-keda-http-add-on-broken)
+- [Why did the KEDA HTTP Add-on stop scaling pgadmin back up after adding a `coldStart.placeholder`?](#why-did-the-keda-http-add-on-stop-scaling-pgadmin-back-up-after-adding-a-coldstartplaceholder)
+- [A new app's KEDA HTTP Add-on route returns HTTP 500 and never scales up — why?](#a-new-apps-keda-http-add-on-route-returns-http-500-and-never-scales-up--why)
+
 ---
 
 ## Storage
@@ -1261,3 +1266,25 @@ Both confirm the interceptor → KEDA → scale-up chain works end-to-end. The h
 **Encountered 2026-07-10**, same session as the `pgadmin` scale-to-zero deployment (see `docs/dra-gpu-migration-plan.md`'s sibling doc `docs/keda-nfs-scaler-plan.md` for the broader KEDA context).
 
 **Related:** [CONVENTIONS.md → Drift Detection → Ignore rules](CONVENTIONS.md#ignore-rules-preferred-over-full-opt-out) (KEDA `ScaledObject`s need a `driftDetection.ignore` override or Flux reverts the scale-to-zero); `docs/keda-nfs-scaler-plan.md` for the (currently unrelated, NFS-specific) KEDA scaling pattern this cluster may adopt later.
+
+---
+
+### A new app's KEDA HTTP Add-on route returns HTTP 500 and never scales up — why?
+
+**Short answer:** the `ReferenceGrant` that lets an `HTTPRoute` reference `keda-add-ons-http-interceptor-proxy` across namespaces only lists specific source namespaces — `kubernetes/apps/system/keda/app-http-add-on/referencegrant.yaml`. Every app onboarded onto `components/keda/http-scaler` must add its own namespace to that grant's `from` list, or the route fails silently: `Accepted: True` but `ResolvedRefs: False` (`RefNotPermitted`).
+
+**Detail:** every consumer of the `components/keda/http-scaler` component points its `HTTPRoute` at the shared `keda-add-ons-http-interceptor-proxy` Service in the `keda` namespace, not at its own Service — the interceptor has to sit in the request path to hold traffic and report demand while the real pod scales up from 0 (see the entries above). Gateway API requires a `ReferenceGrant` object *in the target namespace* (`keda`) that explicitly allow-lists which *source* namespaces may make that cross-namespace reference. This grant is hand-maintained, one `from` entry per consuming namespace — it does not infer new consumers from any HTTPRoute or Kustomization. Onboard a new app into a namespace that isn't already listed (`database`, `finance` were added for `pgadmin`/`firefly-iii-importer`), and:
+- Envoy Gateway accepts the route syntactically (`status.parents[].conditions[Accepted] == True`)
+- but can't resolve the backend (`conditions[ResolvedRefs] == False`, `reason: RefNotPermitted`, message naming the `keda` Service)
+- the browser gets a plain **HTTP 500** — no proxying happens at all
+- KEDA's `external-push` scaler never sees the request (it never reaches the interceptor to report demand), so the target Deployment stays at 0 replicas indefinitely
+
+The two symptoms together — 500 *and* "scaling is broken" — look like a KEDA problem, but KEDA itself is working correctly; the request simply never got there.
+
+**How to diagnose:** `kubectl get httproute <name> -n <ns> -o yaml`, check `status.parents[].conditions`. A `RefNotPermitted` reason on `ResolvedRefs` confirms this exact cause (checked live before applying the fix, not assumed from the symptom alone).
+
+**Fix:** add a `from` entry for the new namespace to `kubernetes/apps/system/keda/app-http-add-on/referencegrant.yaml`, alongside the existing entries.
+
+**Encountered:** first with `pgadmin`/`firefly-iii-importer` (their namespaces were pre-listed at onboarding time, so the trap itself went undocumented); hit and root-caused for real when `unifi-voucher-site` (namespace `default`) was onboarded on 2026-08-21 — `default` wasn't in the grant yet. The `ReferenceGrant` file now carries an inline comment pointing back to this entry so the next onboarding doesn't repeat it.
+
+**Related:** `kubernetes/components/keda/http-scaler/` (the reusable component every KEDA-HTTP app wires in via its `ks.yaml`'s `components:` list); the two entries above on cold-start/`requestRate` scaling.
