@@ -118,5 +118,5 @@ triaged/silenced/known-benign.
 
 **Do not** create, edit, or apply any `Silence`, `PrometheusRule`, or other cluster resource as
 part of this command — it diagnoses and recommends only. If the user wants a new `Silence` added,
-that's a follow-up edit through the normal GitOps flow (edit the file, `/git-stage`, `/git-commit`
+that's a follow-up edit through the normal GitOps flow (edit the file, `/git-commit`
 when explicitly asked).

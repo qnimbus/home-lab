@@ -37,7 +37,7 @@
 ├── 📁 .archive/          # Previous cluster config — reference only, do not replicate wholesale
 ├── 📁 .claude/
 │   ├── agents/           # Specialized Claude Code agents (cluster-doctor, talos-node-manager)
-│   └── commands/         # Project-local skills (/git-stage, /git-commit, /session-open, /session-close)
+│   └── commands/         # Project-local skills (/git-commit, /session-open, /session-close)
 ├── 📁 .devcontainer/     # VS Code dev container (Python base, mise toolchain)
 ├── Taskfile.yaml         # Root go-task entry-point — run `task` to list all tasks
 ├── 📁 .taskfiles/
@@ -374,11 +374,13 @@ Sessions are opened and closed via user-initiated skills — Claude cannot invok
 ## Working in This Repo
 
 > **STOP — read before touching git:**
-> Never run `git add`, `git commit`, or invoke the git-commit skill autonomously.
-> Only stage or commit when the user **explicitly** types `/git-stage` or `/git-commit`.
-> Completing a task does **not** imply permission to commit. Wait for the explicit instruction.
+> Never run `git add` or `git commit` directly. Only the `/git-commit` skill may stage or commit, and only in one of two ways:
+> 1. **User-invoked** — the user's message this turn explicitly typed `/git-commit` (or otherwise explicitly asked to stage/commit right now).
+> 2. **Claude-invoked, worktree exception** — Claude may run `/git-commit` on its own initiative (e.g. to leave work committed before a task or session ends) **only** when both hold: the working directory is a git worktree Claude itself entered (path under `.claude/worktrees/`), and the current branch is that worktree's own feature branch, never `main`.
+>
+> Outside that exception — the primary checkout, or any worktree currently on `main` — completing a task does **not** imply permission to commit. Wait for the user to type `/git-commit` explicitly. The `/git-commit` skill itself re-checks this gate (its Step 0) before touching the index, so it is the safety net if this rule is ever misapplied.
 
-- **Do not** stage or commit outside of `/git-stage` and `/git-commit` — use those skills only, and only when the user explicitly asks. Finishing a task is not permission to commit.
+- **Do not** stage or commit outside of `/git-commit` — use that skill only, respecting the authorization gate above. Finishing a task is not permission to commit in the primary checkout or on `main`.
 - **Do not** `git push` automatically — always ask for explicit confirmation before every push, no exceptions.
 - **Do not** `git fetch` or `git pull` automatically — ask for explicit confirmation before fetching or pulling.
 - **Do not** run `kubectl apply` directly — all changes go through Git → Flux
