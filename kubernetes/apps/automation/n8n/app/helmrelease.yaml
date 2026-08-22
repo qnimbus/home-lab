@@ -41,6 +41,13 @@ spec:
               # generated links/webhook URLs and secure-cookie behavior; wrong value here
               # is a well-documented source of silent auth/redirect breakage upstream.
               N8N_PROXY_HOPS: "1"
+              # n8n derives generated URLs (editor "Test/Production URL" display, and the
+              # actual webhook routing base) from N8N_PROTOCOL/N8N_HOST/N8N_PORT and always
+              # appends the port verbatim — it doesn't special-case 443. Externally this is
+              # reachable on envoy-internal's standard https port (443), not the container's
+              # own listen port (5678) above, so WEBHOOK_URL overrides the generated base to
+              # match what's actually reachable.
+              WEBHOOK_URL: "https://n8n.${DOMAIN_CLUSTER}/"
               N8N_RUNNERS_ENABLED: "true"
               N8N_DIAGNOSTICS_ENABLED: "false"
               N8N_HIDE_USAGE_PAGE: "true"
@@ -61,7 +68,7 @@ spec:
               N8N_SMTP_HOST: "smtp-relay.mail.svc.cluster.local"
               N8N_SMTP_PORT: "25"
               N8N_SMTP_SSL: "false"
-              N8N_SMTP_SENDER: "n8n <n8n@${DOMAIN_CLUSTER}>"
+              N8N_SMTP_SENDER: "n8n <${MAIL_FROM_ADDRESS}>"
             envFrom:
               - secretRef:
                   name: n8n-secret

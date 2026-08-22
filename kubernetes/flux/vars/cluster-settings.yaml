@@ -9,6 +9,11 @@ metadata:
 data:
   CLUSTER_NAME: "home-lab"
   CLUSTER_TIMEZONE: "Europe/Amsterdam"
+  # Verified SES sending identity (see kubernetes/apps/mail/smtp-relay, whose upstream is
+  # AWS SES) — SES hard-rejects any From address outside a verified domain/identity, so
+  # this must stay in sync with whatever's actually verified in the SES console, not with
+  # DOMAIN_CLUSTER or any other in-cluster-only domain.
+  MAIL_FROM_ADDRESS: "noreply@bvw.email"
   # VolSync defaults — single source of truth for every consumer of components/volsync.
   # Variable names must match the ${VAR:=default} tokens in that Component's templates
   # exactly, or Flux's substitution simply won't override the inline fallback.
