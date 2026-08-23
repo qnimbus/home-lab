@@ -39,6 +39,9 @@ spec:
               PLEX_PREFERENCE_2: "EnableIPv6=0"
               PLEX_PREFERENCE_3: "FriendlyName=Plex"
               PLEX_PREFERENCE_4: "sendCrashReports=0"
+              # Temporary: diagnosing a hang on the MyPlex account handshake that leaves
+              # PMS unreachable on non-loopback interfaces. Revert once root-caused.
+              PLEX_PREFERENCE_5: "logDebug=1"
             probes:
               # /identity is Plex's unauthenticated health/discovery endpoint.
               # startupProbe gates liveness/readiness until first pass — needed because
