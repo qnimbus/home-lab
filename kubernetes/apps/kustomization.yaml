@@ -26,3 +26,4 @@ resources:
   - ./node-feature-discovery
   - ./intel-device-plugins
   - ./media
+  - ./downloads

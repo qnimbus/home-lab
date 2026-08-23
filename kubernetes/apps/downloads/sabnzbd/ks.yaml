@@ -1,0 +1,41 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app sabnzbd
+  namespace: flux-system
+spec:
+  targetNamespace: downloads
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  components:
+    - ../../../../components/volsync
+  interval: 1h
+  path: ./kubernetes/apps/downloads/sabnzbd/app
+  postBuild:
+    substitute:
+      APP: *app
+      # 1000:1000 matches media/plex and n8n's precedent — see that ks.yaml's comment. Also
+      # the UID/GID the /mnt/media NFS mount is expected to be writable by.
+      APP_UID: "1000"
+      APP_GID: "1000"
+      # /config (queue db, history, categories) — download staging itself is the same raw
+      # NFS mount media/plex already uses, not part of this PVC.
+      VOLSYNC_CAPACITY: 5Gi
+  prune: true
+  wait: false
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  dependsOn:
+    - name: onepassword-store
+    - name: rook-ceph-cluster
+    - name: volsync
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: *app
+      namespace: downloads

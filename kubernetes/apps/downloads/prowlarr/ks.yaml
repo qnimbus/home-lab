@@ -1,0 +1,47 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app prowlarr
+  namespace: flux-system
+spec:
+  targetNamespace: downloads
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  components:
+    - ../../../../components/volsync
+  interval: 1h
+  path: ./kubernetes/apps/downloads/prowlarr/app
+  postBuild:
+    substitute:
+      APP: *app
+      # 1000:1000 matches media/plex and n8n's precedent — see that ks.yaml's comment. Kept
+      # here even though Prowlarr itself has no NFS mount, so the volsync component's backup
+      # job owns the /config PVC contents with the same UID/GID as every other app in this
+      # stack, for consistency.
+      APP_UID: "1000"
+      APP_GID: "1000"
+      # /config only (indexer defs, sqlite db, logs) — small, no media library involved.
+      VOLSYNC_CAPACITY: 2Gi
+  prune: true
+  wait: false
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  dependsOn:
+    # Prowlarr itself needs no ExternalSecret beyond its own (see app/externalsecret.yaml),
+    # but the volsync component's own externalsecret.yaml pulls the shared "volsync-restic"
+    # 1Password item and needs the ClusterSecretStore to exist first.
+    - name: onepassword-store
+    - name: rook-ceph-cluster
+    # ReplicationSource/ReplicationDestination CRDs don't exist until the operator installs
+    # them — see bootstrap-ordering rule in CLAUDE.md.
+    - name: volsync
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: *app
+      namespace: downloads
