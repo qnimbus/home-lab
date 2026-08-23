@@ -23,6 +23,14 @@ spec:
               tag: 5.1.1@sha256:8f90c25c7ee2773112c76b209ba0c32f089ced996f0dd0683cdfeaf07df365f8 # verify current tag/digest at implementation time
             env:
               TZ: "${CLUSTER_TIMEZONE}"
+              # Sabnzbd rejects any request whose Host header isn't on this list (DNS-rebind
+              # protection) — without it, browsing to the HTTPRoute hostname fails with
+              # "Hostname verification failed". The entrypoint script (home-operations/
+              # containers) sed's this into sabnzbd.ini's host_whitelist on every start,
+              # prefixed with the pod's own hostname automatically. Both the external
+              # hostname (browser) and the in-cluster FQDN (Sonarr/Radarr/Prowlarr's
+              # download-client calls) need to be listed.
+              SABNZBD__HOST_WHITELIST_ENTRIES: "sabnzbd.${DOMAIN_CLUSTER},sabnzbd.downloads.svc.cluster.local"
             envFrom:
               - secretRef:
                   name: sabnzbd-secret
