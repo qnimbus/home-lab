@@ -4,6 +4,61 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-23 — `arr-stack-deploy`
+
+### Goal
+Investigate and draft a Flux-managed deployment of the *arr media-automation stack (Prowlarr, Sonarr, Radarr, Sabnzbd) into a new `downloads` namespace.
+
+### What we did
+- Created worktree `.claude/worktrees/arr-stack-deploy` on branch `worktree-arr-stack-deploy` via `EnterWorktree`.
+- Ran two parallel Explore agents: one surveyed this repo's own storage/secrets/app-template conventions (found `media/plex`'s ceph-block+VolSync `/config` PVC plus raw-NFS-mount pattern, and a planted comment in its `ks.yaml` explicitly anticipating this *arr-stack deployment's UID/GID choice — "1000:1000 matches n8n's existing precedent so a future *arr stack can share this NFS mount's ownership"); the other researched external patterns from kubesearch.dev and the qnimbus/home-ops-bykaj reference repo's `kubernetes/apps/downloads/` tree the user pointed at.
+- Confirmed via TRaSH Guides research that Sonarr/Radarr's hardlink-based import requires the download-staging folder and media library to live on one filesystem — ruled out giving the *arr stack its own PVC/export or introducing a CephFS RWX StorageClass, and designed instead around reusing Plex's existing raw NFS mount (`${NAS_HOST}:/mnt/tank/Media`).
+- Asked the user one scoped decision via `AskUserQuestion` (new `downloads` namespace vs. folding into `media`) — user chose the new namespace, matching both `docs/POTENTIAL-DEPLOYMENTS.md`'s own category split and the reference repo's convention.
+- Wrote the full design to a plan-mode file and got user approval via `ExitPlanMode` before implementing.
+- Pulled real current image tags/digests for `ghcr.io/home-operations/{prowlarr,sonarr,radarr,sabnzbd}` from the qnimbus reference repo via `WebFetch` rather than guessing, including each image's actual health-check endpoint (`/ping`, or `/api?mode=version` for Sabnzbd) and normalized container port (80, not each app's historical default like 8989/7878).
+- Wrote the full manifest set for all four apps, following `media/plex`'s exact shape (ceph-block `/config` PVC via `components/volsync`, `1000:1000` securityContext, internal-only `HTTPRoute` via `envoy-internal`, Homepage annotations); validated every new Kustomization with `kustomize build` and committed via the `/git-commit` skill (worktree-exception path) as `7ef3056`.
+- User asked for the four `ExternalSecret`s to follow this repo's `waha`-style `dataFrom.extract`/`rewrite`/`target.template` convention instead of the explicit `data`/`remoteRef` form used initially — reworked all four, re-validated, committed as `e7e1b70`.
+- Documented all four new 1Password items (`prowlarr`, `sonarr`, `radarr`, `sabnzbd`) in `docs/EXTERNAL-SECRETS.yaml` including their `volsync-restic` consumer entries; deliberately left `docs/POTENTIAL-DEPLOYMENTS.md` unmarked, matching the precedent that `n8n` (also drafted-but-uncommitted at the time) stays unmarked there too.
+- Left the branch unpushed pending explicit user confirmation, per this repo's push rule. Outstanding manual follow-ups: create the four 1Password items, confirm the actual TrueNAS folder names under Plex's library before setting Sonarr/Radarr root folders, create `downloads/{incomplete,complete}` subdirectories under the existing NFS export, and wire up Prowlarr Applications / Sonarr-Radarr download client / Sabnzbd categories post-deploy.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/EXTERNAL-SECRETS.yaml` | New — 4 items (`prowlarr`, `sonarr`, `radarr`, `sabnzbd`), wildcard+rewrite mode, plus their `volsync-restic` consumer entries |
+| `kubernetes/apps/kustomization.yaml` | Registered `./downloads` |
+| `kubernetes/apps/downloads/namespace.yaml` | New — `downloads` Namespace |
+| `kubernetes/apps/downloads/kustomization.yaml` | New — lists namespace + 4 apps' `ks.yaml` |
+| `kubernetes/apps/downloads/prowlarr/ks.yaml` | New — Flux Kustomization, volsync component, 2Gi `/config` |
+| `kubernetes/apps/downloads/prowlarr/app/kustomization.yaml` | New — resource list |
+| `kubernetes/apps/downloads/prowlarr/app/helmrelease.yaml` | New — `app-template` HelmRelease, no media mount (Prowlarr only calls APIs) |
+| `kubernetes/apps/downloads/prowlarr/app/externalsecret.yaml` | New — wildcard+rewrite, `PROWLARR__AUTH__APIKEY` |
+| `kubernetes/apps/downloads/prowlarr/app/httproute.yaml` | New — internal-only route, Homepage annotations |
+| `kubernetes/apps/downloads/sonarr/ks.yaml` | New — same shape, 5Gi `/config` |
+| `kubernetes/apps/downloads/sonarr/app/kustomization.yaml` | New — resource list |
+| `kubernetes/apps/downloads/sonarr/app/helmrelease.yaml` | New — HelmRelease + shared NFS `/mnt/media` mount |
+| `kubernetes/apps/downloads/sonarr/app/externalsecret.yaml` | New — wildcard+rewrite, `SONARR__AUTH__APIKEY` |
+| `kubernetes/apps/downloads/sonarr/app/httproute.yaml` | New — internal-only route |
+| `kubernetes/apps/downloads/radarr/ks.yaml` | New — same shape, 5Gi `/config` |
+| `kubernetes/apps/downloads/radarr/app/kustomization.yaml` | New — resource list |
+| `kubernetes/apps/downloads/radarr/app/helmrelease.yaml` | New — HelmRelease + shared NFS `/mnt/media` mount |
+| `kubernetes/apps/downloads/radarr/app/externalsecret.yaml` | New — wildcard+rewrite, `RADARR__AUTH__APIKEY` |
+| `kubernetes/apps/downloads/radarr/app/httproute.yaml` | New — internal-only route |
+| `kubernetes/apps/downloads/sabnzbd/ks.yaml` | New — same shape, 5Gi `/config` |
+| `kubernetes/apps/downloads/sabnzbd/app/kustomization.yaml` | New — resource list |
+| `kubernetes/apps/downloads/sabnzbd/app/helmrelease.yaml` | New — HelmRelease + shared NFS `/mnt/media` mount, higher memory ceiling for par2 repair |
+| `kubernetes/apps/downloads/sabnzbd/app/externalsecret.yaml` | New — wildcard+rewrite, `SABNZBD__API_KEY` + `SABNZBD__NZB_KEY` |
+| `kubernetes/apps/downloads/sabnzbd/app/httproute.yaml` | New — internal-only route |
+
+### Key decisions
+- Reused Plex's existing NFS export instead of adding a new one or introducing CephFS RWX — hardlinked imports require the download-staging folder and library to share one filesystem, and this repo already has exactly one shared library mount that fits.
+- New `downloads` namespace rather than folding into `media` — user-confirmed, matches `docs/POTENTIAL-DEPLOYMENTS.md`'s own category split and the reference repo's convention.
+- `ghcr.io/home-operations/*` images (fixed non-root UID, no PUID/PGID) over `linuxserver.io` — matches the existing Plex precedent and fits this cluster's hardened/no-root Talos posture better.
+- API keys pre-seeded via 1Password rather than left to auto-generate on first boot — deterministic for Prowlarr's Applications config and any future cross-app automation (e.g. a future `configarr` deployment).
+- Left `docs/POTENTIAL-DEPLOYMENTS.md` unmarked — confirmed that doc only reflects what's actually live by checking how the still-uncommitted `n8n` entry is (not) marked there.
+- ExternalSecrets switched mid-session from explicit `data`/`remoteRef` to `waha`'s wildcard `dataFrom.extract`+`rewrite`+`target.template` convention, per explicit user direction.
+
+---
+
 ## 2026-08-22 — `n8n-deploy`
 
 ### Goal
