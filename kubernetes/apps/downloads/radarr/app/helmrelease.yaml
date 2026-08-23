@@ -27,13 +27,16 @@ spec:
               - secretRef:
                   name: radarr-secret
             probes:
+              # Confirmed live: this image listens on Radarr's traditional default port
+              # (7878), not 80 — an earlier assumption that home-operations images normalize
+              # to 80 was wrong and caused a probe-port mismatch / CrashLoopBackOff.
               liveness: &probes
                 enabled: true
                 custom: true
                 spec:
                   httpGet:
                     path: /ping
-                    port: 80
+                    port: 7878
                   initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 1
@@ -61,7 +64,7 @@ spec:
         controller: radarr
         ports:
           http:
-            port: 80
+            port: 7878
     persistence:
       config:
         existingClaim: "${VOLSYNC_CLAIM:=${APP}}"

@@ -27,13 +27,16 @@ spec:
               - secretRef:
                   name: sonarr-secret
             probes:
+              # Confirmed live: this image listens on Sonarr's traditional default port
+              # (8989), not 80 — an earlier assumption that home-operations images normalize
+              # to 80 was wrong and caused a probe-port mismatch / CrashLoopBackOff.
               liveness: &probes
                 enabled: true
                 custom: true
                 spec:
                   httpGet:
                     path: /ping
-                    port: 80
+                    port: 8989
                   initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 1
@@ -61,7 +64,7 @@ spec:
         controller: sonarr
         ports:
           http:
-            port: 80
+            port: 8989
     persistence:
       config:
         existingClaim: "${VOLSYNC_CLAIM:=${APP}}"

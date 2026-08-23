@@ -27,15 +27,17 @@ spec:
               - secretRef:
                   name: prowlarr-secret
             probes:
-              # home-operations images listen on 80 regardless of the app's historical
-              # default port, and expose an unauthenticated /ping health endpoint.
+              # Confirmed live: this image listens on Prowlarr's traditional default port
+              # (9696), not 80 — an earlier assumption that home-operations images normalize
+              # to 80 was wrong and caused a probe-port mismatch / CrashLoopBackOff. Exposes
+              # an unauthenticated /ping health endpoint.
               liveness: &probes
                 enabled: true
                 custom: true
                 spec:
                   httpGet:
                     path: /ping
-                    port: 80
+                    port: 9696
                   initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 1
@@ -63,7 +65,7 @@ spec:
         controller: prowlarr
         ports:
           http:
-            port: 80
+            port: 9696
     persistence:
       config:
         existingClaim: "${VOLSYNC_CLAIM:=${APP}}"
