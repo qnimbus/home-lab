@@ -42,6 +42,11 @@ spec:
               # Temporary: diagnosing a hang on the MyPlex account handshake that leaves
               # PMS unreachable on non-loopback interfaces. Revert once root-caused.
               PLEX_PREFERENCE_5: "logDebug=1"
+              # Required (the default once claimed) rejects plaintext connections from
+              # anywhere but loopback — breaks kubelet's probes (fixed via HTTPS scheme
+              # above) and Envoy's backend connection (plain HTTP, no BackendTLSPolicy in
+              # this repo). Preferred keeps HTTPS available without rejecting plaintext.
+              PLEX_PREFERENCE_6: "secureConnections=1"
             probes:
               # /identity is Plex's unauthenticated health/discovery endpoint. scheme:
               # HTTPS is required — PMS rejects every plaintext non-loopback connection
