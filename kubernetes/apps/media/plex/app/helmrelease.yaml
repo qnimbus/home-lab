@@ -26,15 +26,36 @@ spec:
               # Deliberately not setting PLEX_CLAIM_TOKEN — plex.tv claim tokens expire in
               # ~4 minutes, incompatible with async GitOps/ESO reconcile timing. Claim via
               # the web setup wizard post-deploy instead.
-              # Trusted CIDRs that skip Plex's own sign-in prompt: mgmt LAN, pod network,
-              # service network.
-              PLEX_NO_AUTH_NETWORKS: "10.60.0.0/24,10.42.0.0/16,10.43.0.0/16"
+              # Trusted CIDRs that skip Plex's own sign-in prompt: mgmt LAN, user's actual
+              # LAN (routed separately from mgmt), pod network, service network.
+              PLEX_NO_AUTH_NETWORKS: "10.60.0.0/24,10.10.0.0/24,10.42.0.0/16,10.43.0.0/16"
+              # The pod has no host networking, so PMS can only see its own pod IP
+              # (10.42.0.0/16) — useless to real clients. Without this, PMS advertises
+              # that pod IP to plex.tv as the "local" connection, so LAN/mobile clients
+              # outside the cluster network can never reach it. This maps to the
+              # `customConnections` Preferences.xml key (see entrypoint.sh).
+              PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443"
               PLEX_PREFERENCE_1: "AllowMediaDeletion=0"
               PLEX_PREFERENCE_2: "EnableIPv6=0"
               PLEX_PREFERENCE_3: "FriendlyName=Plex"
               PLEX_PREFERENCE_4: "sendCrashReports=0"
             probes:
               # /identity is Plex's unauthenticated health/discovery endpoint.
+              # startupProbe gates liveness/readiness until first pass — needed because
+              # first-boot library scanning/metadata indexing against a populated NFS
+              # library can take well past a minute, and liveness alone (with no startup
+              # gate) kills PMS mid-scan before it ever finishes, causing a permanent
+              # restart loop. periodSeconds x failureThreshold = 10m budget.
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /identity
+                    port: 32400
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 60
               liveness: &probes
                 enabled: true
                 custom: true
@@ -42,9 +63,6 @@ spec:
                   httpGet:
                     path: /identity
                     port: 32400
-                  # First boot (library load, plugin init) can take a while; generous
-                  # failureThreshold avoids a false-positive restart loop under Recreate.
-                  initialDelaySeconds: 30
                   periodSeconds: 10
                   timeoutSeconds: 5
                   failureThreshold: 6
