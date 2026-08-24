@@ -4,6 +4,41 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-24 — `configarr-deploy`
+
+### Goal
+Draft a Flux-managed Configarr deployment into the existing `downloads` namespace to sync TRaSH-Guide quality profiles and custom formats into Sonarr and Radarr.
+
+### What we did
+- Reviewed the existing `downloads` namespace apps (`sonarr`, `radarr`, `prowlarr`, `sabnzbd`) — their `ks.yaml`/`helmrelease.yaml`/`externalsecret.yaml`/`kustomization.yaml` shape — to match established conventions before writing anything new.
+- Fetched the user-referenced `qnimbus/home-ops-bykaj` `kubernetes/apps/downloads/configarr/` tree via `gh api` and deliberately did not copy it wholesale — cross-checked each piece against this repo's own patterns instead.
+- Adapted rather than copied: reused this repo's existing cosign-verified `app-template` OCIRepository (v5.0.1) instead of adding a redundant per-app `ocirepository.yaml`; corrected `config.yml`'s `base_url` ports to each app's real Service port (Sonarr 8989, Radarr 7878 — confirmed from their own `helmrelease.yaml`s) instead of the reference's port-80 assumption; reused the existing `sonarr`/`radarr` 1Password items via a second `ExternalSecret` rather than provisioning a new `configarr` item; dropped the reference's `reloader.stakater.com/auto` annotation as a no-op on a CronJob (which reads its ConfigMap fresh every scheduled run regardless).
+- Asked the user two scoped `AskUserQuestion` decisions before writing `config.yml`, since both have live-cluster consequences: TRaSH quality tier (chose "Full: Bluray+WEB, 1080p+2160p") and whether Configarr may delete unmanaged quality profiles/custom formats in Sonarr/Radarr (chose fully declarative sync, `delete_unmanaged_*: true`).
+- Verified every `trash_id` written into `config.yml` directly against `github.com/TRaSH-Guides/Guides` via `gh api` rather than trusting the reference repo's copied hashes — discovered Sonarr's TRaSH taxonomy has no Bluray-only tier the way Radarr's does, and substituted the closest equivalent (`Remux + WEB`), documented inline.
+- Verified the Configarr image digest (`1.30.2`) against ghcr.io's registry API directly (anonymous token + manifest HEAD) rather than trusting the reference's copied digest — confirmed it was accurate.
+- Wrote the full manifest set (`ks.yaml`, `app/kustomization.yaml`, `app/externalsecret.yaml`, `app/helmrelease.yaml`, `app/resources/config.yml`) and wired it into `kubernetes/apps/downloads/kustomization.yaml`; documented Configarr as a second consumer of the `sonarr`/`radarr` 1Password items in `docs/EXTERNAL-SECRETS.yaml`.
+- Validated with `kustomize build` and `task validate` (kubeconform) — all resources valid.
+- Attempted to commit via the `/git-commit` skill (worktree-exception path); the commit itself failed — `ssh-add` can't reach the signing identity from this sandboxed job (`error fetching identities: communication with agent failed`). Did not bypass with `--no-gpg-sign`. All 7 files remain staged, uncommitted.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/EXTERNAL-SECRETS.yaml` | Documented `configarr` as a second consumer of the existing `sonarr`/`radarr` 1Password items |
+| `kubernetes/apps/downloads/kustomization.yaml` | Added `./configarr/ks.yaml` to the resource list |
+| `kubernetes/apps/downloads/configarr/ks.yaml` | New — Flux Kustomization, `dependsOn: [onepassword-store]` only (no PVC/volsync needed) |
+| `kubernetes/apps/downloads/configarr/app/kustomization.yaml` | New — resources + `configMapGenerator` for `config.yml` |
+| `kubernetes/apps/downloads/configarr/app/externalsecret.yaml` | New — `dataFrom` from `sonarr`+`radarr` items, `template` remaps to `SONARR_API_KEY`/`RADARR_API_KEY` |
+| `kubernetes/apps/downloads/configarr/app/helmrelease.yaml` | New — `app-template` CronJob (every 12h), ConfigMap + emptyDir persistence, `readOnlyRootFilesystem: true` |
+| `kubernetes/apps/downloads/configarr/app/resources/config.yml` | New — TRaSH-Guide sync config for Sonarr/Radarr, Full tier, fully declarative (`delete_unmanaged_*: true`) |
+
+### Key decisions
+- Quality tier and `delete_unmanaged` behavior were left to the user's explicit choice via `AskUserQuestion` rather than inferred, since both affect what gets deleted from a live Sonarr/Radarr instance on first sync.
+- Every TRaSH-Guides `trash_id` and the Configarr image digest were independently re-verified against source (GitHub API, ghcr.io registry API) rather than trusted from the reference repo, per the user's explicit "don't blindly copy" instruction.
+- Sonarr has no direct Bluray-only TRaSH tier (unlike Radarr); used `Remux + WEB` as the closest equivalent and documented the discrepancy inline in `config.yml` rather than silently forcing parity.
+- Left the commit unfinished rather than bypassing GPG/SSH signing — the sandboxed job's SSH agent couldn't reach the signing identity; work stays staged pending user action.
+
+---
+
 ## 2026-08-23 — `arr-stack-deploy`
 
 ### Goal
