@@ -136,10 +136,19 @@ spec:
         annotations:
           lbipam.cilium.io/ips: "${LB_IP_PLEX}"
           external-dns.alpha.kubernetes.io/hostname: "plex.${DOMAIN_APPS}"
-        # Preserves the real client source IP all the way to the pod, instead of
-        # SNAT'ing to the node IP — matters for Plex's own LAN-vs-WAN connection
-        # classification, which is based on the actual peer IP it sees.
-        externalTrafficPolicy: Local
+        # Deliberately NOT externalTrafficPolicy: Local. Cilium's L2 announcement is
+        # documented as incompatible with it (cilium/cilium#27800, upstream docs):
+        # leader election for the announcing node is unaware of endpoint placement, so
+        # the node that wins ARP for LB_IP_PLEX can easily differ from whichever of the
+        # 4 GPU-labeled nodes Plex's pod actually lands on — confirmed live 2026-08-24
+        # (lease holder was talos-worker-02, pod was on talos-cp-02: every external
+        # connection got refused, since a Local-policy node with no local endpoint
+        # correctly declines rather than forwarding). Cluster (the default, so this
+        # field is just omitted) always routes to a healthy backend regardless of which
+        # node receives the traffic, at the cost of not preserving the real client IP —
+        # a trade worth making here, since that IP-preservation benefit was unconfirmed
+        # to even fix Plex's own LAN/WAN connection labeling in the first place (see
+        # docs/QA.md → Media, the interface-adjacency finding).
         ports:
           http:
             port: *port
