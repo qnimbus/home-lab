@@ -37,10 +37,15 @@ spec:
               # hostname via a different path: external-dns-unifi publishes it straight
               # at the LoadBalancer IP below (see service.app.annotations), so it gets
               # its own plain-HTTP:32400 candidate here, same reasoning as the raw IP.
+              # ${LB_IP_PLEX_IOT} candidate: IOT clients (e.g. a Google TV streamer on
+              # 10.30.0.0/24) can't route to 10.60.0.0/24 at all — the UniFi gateway
+              # blocks IOT-initiated cross-VLAN traffic by design — so without this,
+              # plex.tv's "resources" list has no address an IOT device can actually
+              # reach. Confirmed 2026-08-24. See docs/QA.md.
               # ${DOMAIN_TAILSCALE} candidate commented out alongside the `ingress` block
               # below — uncomment both together once that's actually built this session.
-              PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://plex.${DOMAIN_APPS}:32400,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
-              # PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://plex.${DOMAIN_APPS}:32400,https://${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}:443,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
+              PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://${LB_IP_PLEX_IOT}:32400,http://plex.${DOMAIN_APPS}:32400,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
+              # PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://${LB_IP_PLEX_IOT}:32400,http://plex.${DOMAIN_APPS}:32400,https://${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}:443,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
               PLEX_NO_AUTH_NETWORKS: "${LAN_CIDR},${POD_CIDR},${SERVICE_CIDR},${TAILSCALE_CIDR}"
               PLEX_PREFERENCE_1: "AllowMediaDeletion=0"
               PLEX_PREFERENCE_2: "EnableIPv6=0"
@@ -134,8 +139,16 @@ spec:
         controller: plex
         type: LoadBalancer
         annotations:
-          lbipam.cilium.io/ips: "${LB_IP_PLEX}"
+          # Pin both LB IPs explicitly: mgmt (default pool) and IOT (pool-iot-plex,
+          # serviceSelector-scoped to this Service) — see docs/QA.md. `target` pins
+          # plex.${DOMAIN_APPS} to the mgmt IP only; without it, both of this Service's
+          # ingress IPs would publish as separate A records under the same name (same
+          # trap smtp-relay hit first — see service-iot-dns.yaml in that app for the
+          # IOT-side-hostname alternative, not needed here since Plex clients get the
+          # IOT IP from PLEX_ADVERTISE_URL/plex.tv, not DNS).
+          lbipam.cilium.io/ips: "${LB_IP_PLEX},${LB_IP_PLEX_IOT}"
           external-dns.alpha.kubernetes.io/hostname: "plex.${DOMAIN_APPS}"
+          external-dns.alpha.kubernetes.io/target: "${LB_IP_PLEX}"
         # Deliberately NOT externalTrafficPolicy: Local. Cilium's L2 announcement is
         # documented as incompatible with it (cilium/cilium#27800, upstream docs):
         # leader election for the announcing node is unaware of endpoint placement, so

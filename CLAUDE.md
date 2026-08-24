@@ -7,6 +7,7 @@
 > | 2026-08-24 | `configarr-deploy` | Drafted Configarr TRaSH-Guide sync into `downloads` ns; reused sonarr/radarr items, verified TRaSH IDs and image digest |
 > | 2026-08-23 | `arr-stack-deploy` | Drafted Flux *arr stack (Prowlarr/Sonarr/Radarr/Sabnzbd) into `downloads` ns; reused Plex's NFS mount for hardlinks |
 > | 2026-08-24 | `plex-deploy` | Deployed Plex (GPU transcode, NFS media); fixed crash loop, secureConnections block, mobile Remote label; added LB IP |
+> | 2026-08-24 | `plex-deploy` | Deployed Plex (GPU transcode, NFS media); fixed crash loop, secureConnections block, mobile Remote label, Cilium L2/Local bug, IOT-VLAN reachability |
 > | 2026-08-22 | `n8n-deploy` | Drafted Flux deployment of n8n into `automation` namespace; CNPG Database CRD pattern, unauthenticated smtp-relay reuse, internal-only exposure, left uncommitted |
 > | 2026-08-21 | `unifi-voucher-site-deploy` | Planned and implemented Flux deployment of unifi-voucher-site; reused shared unifi 1Password item, internal-only exposure, auth disabled |
 > | 2026-08-20 | `talos-ingress-firewall-iot` | Implemented Talos-native NetworkRuleConfig firewall closing the IOT node-port gap; per-port allow rules, no global default-block needed |

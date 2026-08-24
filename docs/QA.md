@@ -59,6 +59,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 - [Plex never becomes Ready — pod crash-loops or Envoy returns "connection termination" — why?](#plex-never-becomes-ready--pod-crash-loops-or-envoy-returns-connection-termination--why)
 - [Plex's mobile app shows "Remote connection" even on the same LAN — is this fixable?](#plexs-mobile-app-shows-remote-connection-even-on-the-same-lan--is-this-fixable)
 - [A new LoadBalancer Service gets "connection refused" from some clients but works fine from inside the cluster — why?](#a-new-loadbalancer-service-gets-connection-refused-from-some-clients-but-works-fine-from-inside-the-cluster--why)
+- [Plex works fine on the LAN but IOT devices (e.g. a Google TV streamer) can't find or connect to the server — why?](#plex-works-fine-on-the-lan-but-iot-devices-eg-a-google-tv-streamer-cant-find-or-connect-to-the-server--why)
 
 ---
 
@@ -1368,3 +1369,21 @@ Confirmed against Cilium's own documentation and `cilium/cilium#27800`: "Cilium 
 **Encountered 2026-08-24**, same session as the previous entry.
 
 **Related:** the previous entry; `docs/ROADMAP.md` → "Cilium BGP Control Plane (replace L2 Announcement)" for the original incident and the long-term fix plan; `kubernetes/apps/media/plex/app/helmrelease.yaml` for the current `service.app` config.
+
+---
+
+### Plex works fine on the LAN but IOT devices (e.g. a Google TV streamer) can't find or connect to the server — why?
+
+**Short answer:** IOT (`10.30.0.0/24`) is deliberately isolated from every other internal network at the UniFi gateway — the gateway only allows IOT→mgmt *return* traffic for connections the mgmt side initiated, never IOT-initiated connections outward. A device on IOT trying to reach Plex's mgmt-LAN LoadBalancer IP (`10.60.0.233`) is blocked by design, the same restriction that first surfaced with the Canon printer needing to reach `smtp-relay` (see the `pool-iot`/VLAN-30-sub-interface entry above). This is not a bug — it's the isolation boundary working as intended — but it means any cluster-hosted service that IOT devices legitimately need has to publish a second, in-segment IP the same way `smtp-relay` already does.
+
+**The fix:** gave Plex a second pinned `LoadBalancer` IP from a new single-IP pool on the IOT VLAN (`pool-iot-plex`, `10.30.0.234/32`, `serviceSelector`-scoped to the `plex` Service only), announced via the tagged VLAN 30 sub-interface every node already carries (added for `smtp-relay`, reused here for free). Unlike `smtp-relay`, no separate IOT-facing DNS hostname was added — Plex clients don't need one. Instead, the IOT IP was added as another `PLEX_ADVERTISE_URL` candidate (`http://${LB_IP_PLEX_IOT}:32400`); Plex publishes every advertised address to `plex.tv`'s `/api/v2/resources` list, and clients (including the Google TV app, which reads that list over the internet regardless of which VLAN it's on) try each candidate and connect through whichever one is actually reachable from where they are. Because `10.30.0.234` is itself a private RFC1918 address, PMS also correctly tags that connection `local: true` at registration — so the "Local Connection" label (see the earlier entry in this section) works correctly from IOT too, not just from the mgmt LAN.
+
+**Why `external-dns.alpha.kubernetes.io/target` was added:** with two ingress IPs on one Service, `external-dns-unifi` would otherwise publish both as separate A records under `plex.${DOMAIN_APPS}`, and a client resolving that name could get handed the IOT IP even from the mgmt LAN (or vice versa) — the identical trap `smtp-relay` hit first. Pinning `target: "${LB_IP_PLEX}"` keeps that hostname resolving to the mgmt IP only; the IOT IP is reachable exclusively via the `PLEX_ADVERTISE_URL` candidate, never via DNS.
+
+**`PLEX_NO_AUTH_NETWORKS` was deliberately left unchanged** (still `${LAN_CIDR},${POD_CIDR},${SERVICE_CIDR},${TAILSCALE_CIDR}`, no IOT CIDR) — that setting skips Plex's own sign-in prompt for trusted networks, and IOT devices are explicitly less trusted than the LAN in this cluster's threat model. IOT clients still authenticate normally through the Plex account; only the *reachability* gap was the bug.
+
+**Verified (2026-08-24):** `kustomize build` clean for both `kubernetes/apps/media/plex/app` and `kubernetes/apps/kube-system/cilium/config`; live verification pending the next Flux reconcile after this change is pushed.
+
+**Encountered 2026-08-24.**
+
+**Related:** the `pool-iot`/VLAN-30 entry above (original design rationale, same UniFi gateway restriction); the two previous Plex entries (local-connection labeling, `Cluster` vs `Local` L2 fix — this Service already runs `externalTrafficPolicy: Cluster`, so the IOT IP is exempt from that bug entirely); `kubernetes/apps/media/plex/app/helmrelease.yaml` and `kubernetes/apps/kube-system/cilium/config/networks.yaml` for the current config.
