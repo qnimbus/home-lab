@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-08-24 | `plex-deploy` | Deployed Plex (GPU transcode, NFS media); fixed crash loop, secureConnections block, mobile Remote label; added LB IP |
 > | 2026-08-22 | `n8n-deploy` | Drafted Flux deployment of n8n into `automation` namespace; CNPG Database CRD pattern, unauthenticated smtp-relay reuse, internal-only exposure, left uncommitted |
 > | 2026-08-21 | `unifi-voucher-site-deploy` | Planned and implemented Flux deployment of unifi-voucher-site; reused shared unifi 1Password item, internal-only exposure, auth disabled |
 > | 2026-08-20 | `talos-ingress-firewall-iot` | Implemented Talos-native NetworkRuleConfig firewall closing the IOT node-port gap; per-port allow rules, no global default-block needed |
@@ -11,7 +12,6 @@
 > | 2026-08-20 | `canon-printer-external-service` | Added canon printer external-service; extracted anna/adam/wan-failover IPs to cluster-secrets as _IOT_HOST vars |
 > | 2026-08-20 | `homepage-mcp-endpoint` | Enabled Homepage's MCP endpoint read-only with token auth; ConfigMap mount + readOnlyRootFilesystem block writes at the k8s level anyway |
 > | 2026-08-19 | `homepage-ha-external-service` | Added Home Assistant homepage card + `Home Automation` group; created external-services proxy for ha.cluster.vwn.io |
-> | 2026-08-19 | `open-webui-bootstrap-envsubst-fix` | Root-caused open-webui Kustomization BuildFailed to `${VAR}`/`${NAME}` placeholder text in a shell comment tripping Flux envsubst; escaped both |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
