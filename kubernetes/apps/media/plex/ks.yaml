@@ -22,6 +22,7 @@ spec:
       # existing precedent so a future *arr stack can share this NFS mount's ownership.
       APP_UID: "1000"
       APP_GID: "1000"
+      APP_SUBDOMAIN: *app
       # /config only (metadata DB, thumbnails, subtitle cache) — the media library itself
       # is a separate raw NFS mount, not part of this PVC. Cluster has ~3TiB usable
       # ceph-block capacity total; kept conservative. Resizing later requires patching the

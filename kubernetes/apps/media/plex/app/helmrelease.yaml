@@ -23,33 +23,29 @@ spec:
               tag: 1.43.3.10896@sha256:4f1d88882a9883cc525e7c84b22c67c57416b7d3b35c3412329eeb07786433a7 # verify current tag/digest at implementation time
             env:
               TZ: "${CLUSTER_TIMEZONE}"
-              # Deliberately not setting PLEX_CLAIM_TOKEN — plex.tv claim tokens expire in
-              # ~4 minutes, incompatible with async GitOps/ESO reconcile timing. Claim via
-              # the web setup wizard post-deploy instead.
-              # Trusted CIDRs that skip Plex's own sign-in prompt: mgmt LAN, user's actual
-              # LAN (routed separately from mgmt), pod network, service network.
-              PLEX_NO_AUTH_NETWORKS: "10.60.0.0/24,10.10.0.0/24,10.42.0.0/16,10.43.0.0/16"
-              # The pod has no host networking, so PMS can only see its own pod IP
-              # (10.42.0.0/16) — useless to real clients. Without this, PMS advertises
-              # that pod IP to plex.tv as the "local" connection, so LAN/mobile clients
-              # outside the cluster network can never reach it. This maps to the
-              # `customConnections` Preferences.xml key (see entrypoint.sh).
-              PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443"
+              # Cluster-local Service URL: fast direct path for other in-cluster pods
+              # (a future *arr stack, say) — bypasses Envoy entirely. Plain HTTP is fine
+              # now that secureConnections=Preferred (see PLEX_PREFERENCE_7) allows it.
+              # Dedicated LoadBalancer IP (below) also gets a plain-HTTP candidate here,
+              # matching bykaj's own pattern — connecting via raw IP over HTTPS would hit
+              # a cert hostname mismatch (Plex's self-signed cert covers its advertised
+              # hostnames, not the bare IP), so plain HTTP sidesteps that entirely; it's
+              # LAN-only traffic so that's an acceptable tradeoff.
+              # Dropped bykaj's ${DOMAIN_APPS} candidate (envoy-external) — we deliberately
+              # kept Plex internal-only, no public route exists for it to be functional.
+              # ${DOMAIN_TAILSCALE} candidate commented out alongside the `ingress` block
+              # below — uncomment both together once that's actually built this session.
+              PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
+              # PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,https://${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}:443,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
+              PLEX_NO_AUTH_NETWORKS: "${LAN_CIDR},${POD_CIDR},${SERVICE_CIDR},${TAILSCALE_CIDR}"
               PLEX_PREFERENCE_1: "AllowMediaDeletion=0"
               PLEX_PREFERENCE_2: "EnableIPv6=0"
-              PLEX_PREFERENCE_3: "FriendlyName=Plex"
-              PLEX_PREFERENCE_4: "sendCrashReports=0"
-              # Required (the default once claimed) rejects plaintext connections from
-              # anywhere but loopback — breaks kubelet's probes (fixed via HTTPS scheme
-              # above) and Envoy's backend connection (plain HTTP, no BackendTLSPolicy in
-              # this repo). Preferred keeps HTTPS available without rejecting plaintext.
-              PLEX_PREFERENCE_5: "secureConnections=1"
-              # Explicit 0 (not removed — Preferences.xml is additively updated, so
-              # removing this var alone wouldn't reset an already-written value). Debug
-              # logging confirmed the "Remote connection" label is a hard architectural
-              # consequence of no host networking, not a fixable config gap — see
-              # docs/QA.md → Media for the full diagnosis. Off to stop the log volume.
-              PLEX_PREFERENCE_6: "logDebug=0"
+              PLEX_PREFERENCE_3: "FriendlyName=SkyNet Plex"
+              PLEX_PREFERENCE_4: "LanNetworksBandwidth=${LAN_CIDR}"
+              PLEX_PREFERENCE_5: "RelayEnabled=0"
+              PLEX_PREFERENCE_6: "sendCrashReports=0"
+              PLEX_PREFERENCE_7: "secureConnections=1"
+              PLEX_PREFERENCE_8: "logDebug=0"
             probes:
               # /identity is Plex's unauthenticated health/discovery endpoint. scheme:
               # HTTPS is required — PMS rejects every plaintext non-loopback connection
@@ -70,7 +66,7 @@ spec:
                 spec:
                   httpGet:
                     path: /identity
-                    port: 32400
+                    port: &port 32400
                     scheme: HTTPS
                   periodSeconds: 10
                   timeoutSeconds: 5
@@ -81,7 +77,7 @@ spec:
                 spec:
                   httpGet:
                     path: /identity
-                    port: 32400
+                    port: *port
                     scheme: HTTPS
                   periodSeconds: 10
                   timeoutSeconds: 5
@@ -111,12 +107,38 @@ spec:
       # the GPU device plugin's NodeFeatureRule.
       nodeSelector:
         intel.feature.node.kubernetes.io/gpu: "true"
+    # Deferred: this cluster's tailscale-operator only runs Connector/subnet-router
+    # mode today — no IngressClass: tailscale support configured, so this would sit
+    # unfulfilled with no controller to process it. Revisit once the operator is
+    # configured for Ingress mode (planned later this session) — uncomment together
+    # with the matching PLEX_ADVERTISE_URL candidate above.
+    # ingress:
+    #   ts:
+    #     className: tailscale
+    #     hosts:
+    #       - host: &host ${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}
+    #         paths:
+    #           - path: /
+    #             service:
+    #               identifier: app
+    #               port: *port
+    #     tls:
+    #       - hosts:
+    #           - *host
     service:
       app:
         controller: plex
+        type: LoadBalancer
+        annotations:
+          lbipam.cilium.io/ips: "${LB_IP_PLEX}"
+          external-dns.alpha.kubernetes.io/hostname: "plex.${DOMAIN_APPS}"
+        # Preserves the real client source IP all the way to the pod, instead of
+        # SNAT'ing to the node IP — matters for Plex's own LAN-vs-WAN connection
+        # classification, which is based on the actual peer IP it sees.
+        externalTrafficPolicy: Local
         ports:
           http:
-            port: 32400
+            port: *port
     persistence:
       config:
         existingClaim: "${VOLSYNC_CLAIM:=${APP}}"

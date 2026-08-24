@@ -19,6 +19,25 @@ Draft a Flux-managed Configarr deployment into the existing `downloads` namespac
 - Wrote the full manifest set (`ks.yaml`, `app/kustomization.yaml`, `app/externalsecret.yaml`, `app/helmrelease.yaml`, `app/resources/config.yml`) and wired it into `kubernetes/apps/downloads/kustomization.yaml`; documented Configarr as a second consumer of the `sonarr`/`radarr` 1Password items in `docs/EXTERNAL-SECRETS.yaml`.
 - Validated with `kustomize build` and `task validate` (kubeconform) — all resources valid.
 - Attempted to commit via the `/git-commit` skill (worktree-exception path); the commit itself failed — `ssh-add` can't reach the signing identity from this sandboxed job (`error fetching identities: communication with agent failed`). Did not bypass with `--no-gpg-sign`. All 7 files remain staged, uncommitted.
+## 2026-08-24 — `plex-deploy`
+
+### Goal
+Deploy Plex Media Server (GPU transcode passthrough, NFS-backed media library) into the `media` namespace, then diagnose and fix a series of live networking failures — a crash loop, total unreachability, and mobile "Remote connection" labeling — before giving it a dedicated LoadBalancer IP.
+
+### What we did
+- Researched community patterns (kubesearch.dev, the user's own `qnimbus/home-ops-bykaj` repo) and settled the deployment architecture via `AskUserQuestion`: Plex-only (not paired with Jellyfin — the docs list them as alternatives, never a planned pair), a new TrueNAS NFS dataset for media, internal-only exposure via `envoy-internal` (reachable remotely through the existing Tailscale subnet router, not a public Cloudflare Tunnel route — Plex's CVE history was the explicit reason), and GPU transcode via the already-deployed-but-idle Intel iGPU device-plugin pool. No 1Password item/`ExternalSecret` for Plex — `PLEX_CLAIM_TOKEN` expires in ~4 minutes, incompatible with async GitOps reconcile timing, so the server was claimed manually via the web setup wizard post-deploy.
+- Wrote and committed the full manifest set; guided the user through TrueNAS NFS export configuration (`mapall` vs `maproot`, since Plex's pod presents UID 1000 with no matching local TrueNAS user) and the claim-token exchange (corrected an initially wrong guess about the claim mechanism by fetching the actual `entrypoint.sh` source rather than continuing to guess). Verified GPU hardware transcoding end-to-end via a live `ps aux` inspection of the real VAAPI `ffmpeg` process during an actual 4K HDR transcode.
+- User reported the mobile app couldn't locate/connect to the server on the LAN. Root-caused a genuine crash loop separately from the reachability issue: the original `liveness` probe (90s total budget) was killing PMS mid first-boot library scan against the newly-populated NFS library, forever, before it could finish starting — fixed with a dedicated `startupProbe` (10-minute budget) gating `liveness`/`readiness`.
+- Fixed a second, independent issue: PMS was advertising its own ephemeral pod IP to plex.tv as its "local" connection instead of the actual reachable Gateway hostname — fixed via `PLEX_ADVERTISE_URL`/`customConnections`.
+- Chased a `403` from `servers.plex.tv` and a mysterious `EventSourceClient` retry loop as a suspected plex.tv rate-limit issue (scaled the Deployment to 0, suspended the HelmRelease, cooldown, resumed) — later determined both were red herrings unrelated to the actual blocker.
+- Root-caused total unreachability via re-enabled Plex debug logging (`logDebug=1`): `secureConnections` defaults to `Required` once claimed (the value `0`, counterintuitively the *strictest* setting — confirmed against python-plexapi's docs), which silently rejected every plaintext connection from anywhere but loopback, including kubelet's own HTTP probes and Envoy's plaintext backend connection. Fixed via `httpGet.scheme: HTTPS` on all probes (kubelet doesn't validate the server cert) plus `secureConnections=Preferred`.
+- Diagnosed the mobile app's "Remote connection" label: found via the plex.tv account API a genuinely separate, forgotten Plex server ("Plex Home") running natively on the user's TrueNAS since January, still registered under the same account — its inter-server `EventSourceClient` retry attempts were the actual source of the earlier mysterious `10.10.0.41` address. Deauthorized it via `DELETE https://plex.tv/devices/{id}.xml`. Root-caused the remaining "Remote" label (confirmed via debug logs during a real, live streaming session from the user's phone) as an architectural limitation — Plex's LAN/WAN classification is based on adjacency to its own pod-network interface, not `allowedNetworks`/`LanNetworksBandwidth` or `X-Forwarded-For` — and documented it as unfixable without host networking, with no actual playback impact.
+- Documented both major root causes as new entries under a "Media" section in `docs/QA.md`, including the dead ends chased along the way.
+- Reviewed `docs/dra-gpu-migration-plan.md` at the user's request: corrected a factual error (bykaj's `plex-image-cleanup` maintenance job was cited as needing GPU co-access — checked its actual manifests directly and found no GPU request at all, just a `podAffinity` for RWO PVC co-location) and shelved the plan, since its stated trigger (Plex and Jellyfin sharing one iGPU) no longer applies given the Plex-only decision.
+- Compared bykaj's Plex deployment to ours in detail at the user's request (ingress/listening surfaces, GPU model via DRA vs. device-plugin, user/group, persistence, maintenance tooling). Reviewed a set of bykaj-inspired edits the user made directly in their editor and caught several issues before they landed: two undefined cluster variables, a wrong variable name (`TAILSCALE_DOMAIN` vs. the repo's actual `DOMAIN_TAILSCALE`), a `className: tailscale` Ingress this cluster's `tailscale-operator` doesn't support (Connector/subnet-router mode only — deferred, commented out for a later session), and a broken YAML anchor reference.
+- Added new `*_CIDR` cluster-secrets variables (`LAN_CIDR`, `POD_CIDR`, `SERVICE_CIDR`, `TAILSCALE_CIDR`) additively alongside the existing `*_SUBNET` names, migration to remove the old names deferred to later.
+- Gave Plex a dedicated Cilium LB-IPAM `LoadBalancer` IP (`10.60.0.233`, from the existing `pool` range) with `externalTrafficPolicy: Local` (preserves the real client source IP to the pod, unlike the Envoy-proxied path) and an `external-dns-unifi`-published internal hostname on `DOMAIN_APPS` — chosen over `DOMAIN_APP` after confirming directly (not assuming) which variable is actually wired into cert-manager and both `external-dns` instances.
+- Hit persistent SSH-agent/1Password commit-signing flakiness throughout (agent unreachable, several rounds of "communication with agent failed" / "Couldn't find key in agent") — repeatedly handed `git commit`/`git push` off to the user's own terminal when retries didn't clear it.
 
 ### Files changed
 | File | Change |
@@ -91,6 +110,24 @@ Investigate and draft a Flux-managed deployment of the *arr media-automation sta
 - API keys pre-seeded via 1Password rather than left to auto-generate on first boot — deterministic for Prowlarr's Applications config and any future cross-app automation (e.g. a future `configarr` deployment).
 - Left `docs/POTENTIAL-DEPLOYMENTS.md` unmarked — confirmed that doc only reflects what's actually live by checking how the still-uncommitted `n8n` entry is (not) marked there.
 - ExternalSecrets switched mid-session from explicit `data`/`remoteRef` to `waha`'s wildcard `dataFrom.extract`+`rewrite`+`target.template` convention, per explicit user direction.
+| `kubernetes/apps/media/namespace.yaml` | New — `media` Namespace |
+| `kubernetes/apps/media/kustomization.yaml` | New — lists the namespace and `plex/ks.yaml` |
+| `kubernetes/apps/kustomization.yaml` | Registered the new `media` app |
+| `kubernetes/apps/media/plex/ks.yaml` | New — Flux Kustomization, VolSync component, `dependsOn`, health checks; later added an `APP_SUBDOMAIN` substitute var for the deferred Tailscale ingress |
+| `kubernetes/apps/media/plex/app/kustomization.yaml` | New — resource list |
+| `kubernetes/apps/media/plex/app/helmrelease.yaml` | New, then heavily iterated: GPU device-plugin wiring, NFS media mount, `startupProbe` fix, HTTPS probe scheme, `secureConnections=Preferred`, `PLEX_ADVERTISE_URL` iterations, adopted new `*_CIDR` vars, dedicated `LoadBalancer` Service + Cilium LB-IPAM + `external-dns` hostname, deferred Tailscale ingress (commented out) |
+| `kubernetes/apps/media/plex/app/httproute.yaml` | New — internal-only `HTTPRoute` on `envoy-internal` |
+| `kubernetes/flux/vars/cluster-secrets.sops.yaml` | Added `LAN_CIDR`/`POD_CIDR`/`SERVICE_CIDR`/`TAILSCALE_CIDR`/`LB_IP_PLEX`, additive alongside existing `*_SUBNET` vars |
+| `docs/QA.md` | New "Media" section — two entries documenting the `secureConnections`/probe-scheme root cause and the architectural LAN-detection limitation |
+| `docs/dra-gpu-migration-plan.md` | Marked shelved; corrected the `plex-image-cleanup` GPU-access claim |
+
+### Key decisions
+- Plex-only, not paired with Jellyfin — considered a redundant alternative, never a planned pair.
+- Internal-only exposure (no public Cloudflare Tunnel route) — deliberate, given Plex's CVE history; remote reachability comes from the existing Tailscale subnet router instead.
+- `secureConnections=Preferred` (not `Required`) chosen over building Envoy backend TLS from scratch — a one-line fix versus introducing an unproven `BackendTLSPolicy` pattern into this repo.
+- The mobile "Remote connection" label accepted as a permanent, cosmetic architectural limitation rather than chasing host networking — playback is unaffected.
+- New `*_CIDR` variables added additively rather than renaming the existing `*_SUBNET` ones in place — avoids a flag-day migration across every consumer at once.
+- `DOMAIN_APPS` chosen over `DOMAIN_APP` for the LoadBalancer's DNS hostname after directly checking which one is actually wired into cert-manager/`external-dns`/`cloudflared`, rather than assuming from bykaj's naming.
 
 ---
 
