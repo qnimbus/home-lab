@@ -42,6 +42,23 @@ spec:
       "io.kubernetes.service.namespace": mail
       "io.kubernetes.service.name": smtp-relay
 ---
+# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/cilium.io/ciliumloadbalancerippool_v2.json
+# Single-IP pool reserved for Plex's IOT-facing VIP only (serviceSelector below). Same
+# rationale as pool-iot above: a Google TV streamer on 10.30.0.0/24 can't route to
+# 10.60.0.0/24 at all (UniFi gateway blocks IOT-initiated cross-VLAN traffic by design),
+# so Plex needs an in-segment IOT-side VIP too. See docs/QA.md.
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: pool-iot-plex
+spec:
+  blocks:
+    - cidr: "10.30.0.234/32"
+  serviceSelector:
+    matchLabels:
+      "io.kubernetes.service.namespace": media
+      "io.kubernetes.service.name": plex
+---
 # yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/cilium.io/ciliuml2announcementpolicy_v2alpha1.json
 apiVersion: cilium.io/v2alpha1
 kind: CiliumL2AnnouncementPolicy
@@ -53,8 +70,9 @@ spec:
   # Storage bonds (bond0 on cp-01/02, bond1 on cp-03) are on an isolated L2
   # network (10.200.0.0/24) with no route back to the management subnet, so
   # ARP announcements on those interfaces are harmless. The IOT VLAN 30
-  # sub-interfaces (pool-iot, above) are deliberately reachable from the IOT
-  # segment — that's the point — but scoped to a single pinned Service.
+  # sub-interfaces (pool-iot, pool-iot-plex, above) are deliberately reachable
+  # from the IOT segment — that's the point — but each scoped to a single
+  # pinned Service.
   nodeSelector:
     matchLabels:
       kubernetes.io/os: linux

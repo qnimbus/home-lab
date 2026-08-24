@@ -87,6 +87,7 @@ Managed by Talos as **static pods** — one instance per control-plane node, no 
 | `pool` | `CiliumLoadBalancerIPPool` | IP range `10.60.0.230–10.60.0.249` — allocated to `LoadBalancer` Services by Cilium IPAM |
 | `pool-kube-api` | `CiliumLoadBalancerIPPool` | Single `/32` (`10.60.0.250`), `serviceSelector`-scoped to the `kube-api` Service only |
 | `pool-iot` | `CiliumLoadBalancerIPPool` | Single `/32` (`10.30.0.240`) on the IOT VLAN, `serviceSelector`-scoped to `smtp-relay` only — announced via each node's tagged VLAN 30 sub-interface. `smtp-relay` holds two pinned IPs (`10.60.0.240` from `pool`, `10.30.0.240` from `pool-iot`), each published under its own hostname (`smtp-relay.cluster.vwn.io` / `smtp-relay.iot.vwn.io`) |
+| `pool-iot-plex` | `CiliumLoadBalancerIPPool` | Single `/32` (`10.30.0.234`) on the IOT VLAN, `serviceSelector`-scoped to `plex` only — same rationale as `pool-iot`: IOT clients (e.g. a Google TV streamer) can't route to `10.60.0.0/24` at all. `plex` holds two pinned IPs (`10.60.0.233` from `pool`, `10.30.0.234` from `pool-iot-plex`); the IOT IP is advertised to clients via `PLEX_ADVERTISE_URL`, not DNS |
 | `l2-policy` | `CiliumL2AnnouncementPolicy` | Announces LoadBalancer IPs via ARP on all interfaces of every Linux node; storage bonds are on an isolated L2 so spurious ARP on them is harmless |
 
 Gateways/pinned Services request specific IPs from these pools via the `lbipam.cilium.io/ips` annotation.
