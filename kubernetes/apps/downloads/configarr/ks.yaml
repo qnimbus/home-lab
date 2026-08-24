@@ -1,0 +1,25 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app configarr
+  namespace: flux-system
+spec:
+  targetNamespace: downloads
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  interval: 1h
+  path: ./kubernetes/apps/downloads/configarr/app
+  prune: true
+  wait: false
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  dependsOn:
+    # Only ESO/1Password Connect is required: configarr's ExternalSecret reads the same
+    # sonarr/radarr 1Password items those apps' own ExternalSecrets already consume (see
+    # app/externalsecret.yaml) — no new item, no PVC, no volsync component needed.
+    - name: onepassword-store

@@ -1,0 +1,81 @@
+---
+# Settings
+sonarrEnabled: true
+radarrEnabled: true
+whisparrEnabled: false
+readarrEnabled: false
+lidarrEnabled: false
+telemetry: false
+
+# All trash_ids below are verified against github.com/TRaSH-Guides/Guides at deploy time —
+# do not copy hashes from other repos without re-checking, they occasionally get replaced
+# upstream when a recipe is restructured.
+
+sonarr:
+  series:
+    # In-cluster Service port, not 80 — see ../../sonarr/app/helmrelease.yaml, whose
+    # `service.app.ports.http.port` is Sonarr's real default (8989).
+    base_url: http://sonarr.downloads.svc.cluster.local:8989
+    api_key: !env SONARR_API_KEY
+    delete_unmanaged_custom_formats:
+      enabled: true
+    delete_unmanaged_quality_profiles:
+      enabled: true
+      ignore:
+        - Any # never delete Sonarr's stock fallback profile
+    quality_definition:
+      type: series
+    include:
+      - # Remux + WEB 1080p — TRaSH doesn't publish a separate Bluray-only tier for TV the
+        # way it does for Radarr; Remux is the closest TV equivalent (bundles Bluray/Remux
+        # sources with WEB into one profile), kept for parity with Radarr's Bluray+WEB tier.
+        template: fe9470e577c300a5ad9a3274f6d1cdf2
+        source: TRASH
+      - # Remux 2160p (Combined)
+        template: 911df0e05a395c19d8b3efc76a7467c1
+        source: TRASH
+    custom_formats:
+      - # Unwanted — TRaSH-Guides' standard baseline hygiene filters
+        trash_ids:
+          - 32b367365729d530ca1c124a0b180c64 # Bad Dual Groups
+          - 82d40da2bc6923f41e14394075dd4b03 # No-RlsGroup
+          - 06d66ab109d4d2eddb2794d21526d140 # Retags
+          - ae575f95ab639ba5d15f663bf019e3e8 # Language: Not Original
+        assign_scores_to:
+          - name: "Remux + WEB 1080p"
+          - name: "Remux 2160p (Combined)"
+
+radarr:
+  movies:
+    # In-cluster Service port, not 80 — see ../../radarr/app/helmrelease.yaml, whose
+    # `service.app.ports.http.port` is Radarr's real default (7878).
+    base_url: http://radarr.downloads.svc.cluster.local:7878
+    api_key: !env RADARR_API_KEY
+    delete_unmanaged_custom_formats:
+      enabled: true
+    delete_unmanaged_quality_profiles:
+      enabled: true
+      ignore:
+        - Any # never delete Radarr's stock fallback profile
+    quality_definition:
+      type: movie
+    include:
+      - # HD Bluray + WEB
+        template: d1d67249d3890e49bc12e275d989a7e9
+        source: TRASH
+      - # Remux 2160p (Combined)
+        template: d1d310673359205736b4b84acd5ea8c8
+        source: TRASH
+    custom_formats:
+      - # Unwanted — TRaSH-Guides' standard baseline hygiene filters
+        trash_ids:
+          - b6832f586342ef70d9c128d40c07b872 # Bad Dual Groups
+          - cc444569854e9de0b084ab2b8b1532b2 # Black and White Editions
+          - ae9b7c9ebde1f3bd336a8cbd1ec4c5e5 # No-RlsGroup
+          - 5c44f52a8714fdd79bb4d98e2673be1f # Retags
+          - f537cf427b64c38c8e36298f657e4828 # Scene
+          - ed38b889b31be83fda192888e2286d83 # BR-DISK
+          - d6e9318c875905d6cfb5bee961afcea9 # Language: Not Original
+        assign_scores_to:
+          - name: "HD Bluray + WEB"
+          - name: "Remux 2160p (Combined)"
