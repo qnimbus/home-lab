@@ -69,6 +69,15 @@ spec:
               N8N_SMTP_PORT: "25"
               N8N_SMTP_SSL: "false"
               N8N_SMTP_SENDER: "n8n <${MAIL_FROM_ADDRESS}>"
+              # V8's default old-space sizing looks at total host memory, not the
+              # container's cgroup limit — on this cluster that means V8 will happily
+              # grow toward host RAM (64GB+) instead of GC'ing under pressure, so the
+              # kernel OOM-kills the process with no heap error in the logs (observed
+              # 2026-08-24: clean logs, then OOMKilled after ~49h uptime). Capping
+              # old-space below the container memory limit makes V8 GC proactively and,
+              # if truly exhausted, throw a catchable/logged error instead of a silent
+              # SIGKILL. See https://docs.n8n.io/deploy/host-n8n/configure-n8n/scaling/fix-memory-issues
+              NODE_OPTIONS: "--max-old-space-size=1536"
             envFrom:
               - secretRef:
                   name: n8n-secret
@@ -93,9 +102,9 @@ spec:
             resources:
               requests:
                 cpu: 5m
-                memory: 128Mi
+                memory: 256Mi
               limits:
-                memory: 1Gi
+                memory: 2Gi
             securityContext:
               allowPrivilegeEscalation: false
               capabilities:
