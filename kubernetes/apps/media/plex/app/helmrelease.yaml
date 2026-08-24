@@ -31,12 +31,16 @@ spec:
               # a cert hostname mismatch (Plex's self-signed cert covers its advertised
               # hostnames, not the bare IP), so plain HTTP sidesteps that entirely; it's
               # LAN-only traffic so that's an acceptable tradeoff.
-              # Dropped bykaj's ${DOMAIN_APPS} candidate (envoy-external) — we deliberately
-              # kept Plex internal-only, no public route exists for it to be functional.
+              # Dropped bykaj's original ${DOMAIN_APPS} candidate (https://...:443 via
+              # envoy-external) — deliberately internal-only, no public route exists for
+              # that to be functional. But plex.${DOMAIN_APPS} *is* now a real, working
+              # hostname via a different path: external-dns-unifi publishes it straight
+              # at the LoadBalancer IP below (see service.app.annotations), so it gets
+              # its own plain-HTTP:32400 candidate here, same reasoning as the raw IP.
               # ${DOMAIN_TAILSCALE} candidate commented out alongside the `ingress` block
               # below — uncomment both together once that's actually built this session.
-              PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
-              # PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,https://${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}:443,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
+              PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://plex.${DOMAIN_APPS}:32400,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
+              # PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://plex.${DOMAIN_APPS}:32400,https://${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}:443,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
               PLEX_NO_AUTH_NETWORKS: "${LAN_CIDR},${POD_CIDR},${SERVICE_CIDR},${TAILSCALE_CIDR}"
               PLEX_PREFERENCE_1: "AllowMediaDeletion=0"
               PLEX_PREFERENCE_2: "EnableIPv6=0"
