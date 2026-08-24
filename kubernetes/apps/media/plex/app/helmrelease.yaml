@@ -44,11 +44,11 @@ spec:
               # above) and Envoy's backend connection (plain HTTP, no BackendTLSPolicy in
               # this repo). Preferred keeps HTTPS available without rejecting plaintext.
               PLEX_PREFERENCE_5: "secureConnections=1"
-              # Explicit 0, not just removing the earlier debug env var — Preferences.xml
-              # is additively updated, so simply removing PLEX_PREFERENCE_N doesn't reset
-              # a value already written. Debug logging served its purpose diagnosing the
-              # secureConnections issue above; off now to stop the extra log volume.
-              PLEX_PREFERENCE_6: "logDebug=0"
+              # Temporary, again: capturing the real source IP/headers PMS sees for a
+              # live phone connection through Envoy, to confirm whether X-Forwarded-For
+              # is already being honored or needs explicit Envoy/HTTPRoute config.
+              # Revert to 0 once captured — see prior commit for why explicit, not removed.
+              PLEX_PREFERENCE_6: "logDebug=1"
             probes:
               # /identity is Plex's unauthenticated health/discovery endpoint. scheme:
               # HTTPS is required — PMS rejects every plaintext non-loopback connection
