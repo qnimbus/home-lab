@@ -218,6 +218,16 @@ Both instances use `policy: sync` (records deleted when the resource is removed)
 
 > A `Connector` CR (`subnet-router`) declares the advertised route. Complements rather than duplicates the Cloudflare Tunnel: Tailscale gives the user's own devices private, authenticated LAN access; cloudflared gives the public internet HTTPS access to specific routed hostnames.
 
+**Ingress mode** is also available, alongside (not instead of) the subnet router — the operator
+installs a `tailscale` `IngressClass` (`tailscale.com/ts-ingress`) automatically, no extra
+`operatorConfig` needed; confirmed live via `kubectl get ingressclass` (present since the operator
+was first deployed). An app-template `ingress.<name>.className: tailscale` block gets its own
+stable `<host>.${DOMAIN_TAILSCALE}` hostname and an ephemeral per-Ingress tailnet node, reachable
+from any tailnet device with zero dependency on the mgmt-LAN subnet route — useful for a device
+that's off the LAN entirely. TLS is provisioned automatically via Tailscale's own `tailscale cert`
+(not cert-manager); requires "HTTPS Certificates" enabled tailnet-wide in the Tailscale admin
+console. First consumer: `media/plex` (`plex.${DOMAIN_TAILSCALE}`).
+
 ---
 
 ## Exposing Services (HTTPRoute Workflow)

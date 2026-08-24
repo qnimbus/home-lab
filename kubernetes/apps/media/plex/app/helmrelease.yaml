@@ -42,10 +42,11 @@ spec:
               # blocks IOT-initiated cross-VLAN traffic by design — so without this,
               # plex.tv's "resources" list has no address an IOT device can actually
               # reach. Confirmed 2026-08-24. See docs/QA.md.
-              # ${DOMAIN_TAILSCALE} candidate commented out alongside the `ingress` block
-              # below — uncomment both together once that's actually built this session.
-              PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://${LB_IP_PLEX_IOT}:32400,http://plex.${DOMAIN_APPS}:32400,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
-              # PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://${LB_IP_PLEX_IOT}:32400,http://plex.${DOMAIN_APPS}:32400,https://${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}:443,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
+              # ${DOMAIN_TAILSCALE} candidate: the Tailscale Ingress below terminates its
+              # own TLS via the operator's built-in `tailscale cert` provisioning (no
+              # cert-manager involved) — HTTPS is correct here, unlike the plain-HTTP
+              # candidates above.
+              PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://${LB_IP_PLEX_IOT}:32400,http://plex.${DOMAIN_APPS}:32400,https://${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}:443,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
               PLEX_NO_AUTH_NETWORKS: "${LAN_CIDR},${POD_CIDR},${SERVICE_CIDR},${TAILSCALE_CIDR}"
               PLEX_PREFERENCE_1: "AllowMediaDeletion=0"
               PLEX_PREFERENCE_2: "EnableIPv6=0"
@@ -116,24 +117,31 @@ spec:
       # the GPU device plugin's NodeFeatureRule.
       nodeSelector:
         intel.feature.node.kubernetes.io/gpu: "true"
-    # Deferred: this cluster's tailscale-operator only runs Connector/subnet-router
-    # mode today — no IngressClass: tailscale support configured, so this would sit
-    # unfulfilled with no controller to process it. Revisit once the operator is
-    # configured for Ingress mode (planned later this session) — uncomment together
-    # with the matching PLEX_ADVERTISE_URL candidate above.
-    # ingress:
-    #   ts:
-    #     className: tailscale
-    #     hosts:
-    #       - host: &host ${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}
-    #         paths:
-    #           - path: /
-    #             service:
-    #               identifier: app
-    #               port: *port
-    #     tls:
-    #       - hosts:
-    #           - *host
+    # Tailscale Ingress — gives the user's own tailnet devices a stable HTTPS hostname
+    # (${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}) without depending on the mgmt-LAN
+    # subnet route at all. Complements, doesn't replace, the LoadBalancer IPs above:
+    # this works even for a tailnet device with no LAN/IOT reachability whatsoever
+    # (e.g. off-network). No extra tailscale-operator config was needed — the `tailscale`
+    # IngressClass has existed since the operator was first deployed (confirmed live via
+    # `kubectl get ingressclass`, 2026-08-24); an earlier assumption here that Ingress
+    # mode required separate operator setup was wrong. TLS is provisioned automatically
+    # by the operator via Tailscale's own `tailscale cert` (Let's Encrypt through
+    # Tailscale, not cert-manager) — requires "HTTPS Certificates" to be enabled for
+    # this tailnet in the Tailscale admin console; verify there if the Ingress never
+    # reaches Ready.
+    ingress:
+      ts:
+        className: tailscale
+        hosts:
+          - host: &host ${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}
+            paths:
+              - path: /
+                service:
+                  identifier: app
+                  port: *port
+        tls:
+          - hosts:
+              - *host
     service:
       app:
         controller: plex
