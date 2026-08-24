@@ -58,6 +58,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 **Media**
 - [Plex never becomes Ready — pod crash-loops or Envoy returns "connection termination" — why?](#plex-never-becomes-ready--pod-crash-loops-or-envoy-returns-connection-termination--why)
 - [Plex's mobile app shows "Remote connection" even on the same LAN — is this fixable?](#plexs-mobile-app-shows-remote-connection-even-on-the-same-lan--is-this-fixable)
+- [A new LoadBalancer Service gets "connection refused" from some clients but works fine from inside the cluster — why?](#a-new-loadbalancer-service-gets-connection-refused-from-some-clients-but-works-fine-from-inside-the-cluster--why)
 
 ---
 
@@ -1327,20 +1328,43 @@ DEBUG - Request: plaintext connection from 10.60.0.202:44762 rejected because se
 
 ### Plex's mobile app shows "Remote connection" even on the same LAN — is this fixable?
 
-**Short answer:** No — not without giving the pod host networking, which isn't worth doing for a cosmetic label. Plex determines LAN vs. WAN by comparing the connecting peer's IP against its *own detected network interface's subnet*, not against `allowedNetworks`/`LanNetworksBandwidth` (those only govern auth-bypass and bandwidth limits) and not against `X-Forwarded-For` headers. Inside a pod, the only interface PMS can see is its own isolated pod-network interface — no real LAN device can ever share that subnet, so nothing except `127.0.0.1` can ever be classified "local." Confirmed by `logDebug=1`: across an entire session's log, only two connection tags ever appeared — `Loopback` and `Allowed Network (WAN)` — including for kubelet's own probe traffic from the cluster's management network, and for a real, actively-streaming phone session on the user's own LAN:
+**Short answer: yes** — give Plex a dedicated `LoadBalancer` Service with a real, routable IP (Cilium LB-IPAM), and advertise that raw IP via `PLEX_ADVERTISE_URL`/`customConnections`. Once a client connects through that address, the app correctly shows "Local Connection." An earlier investigation in this same session concluded this was permanently unfixable without host networking — that conclusion was **wrong**, corrected below.
 
-```
-DEBUG - Request: [10.42.2.156:40638 (Allowed Network (WAN))] GET /:/timeline?...state=playing... Signed-in Token (QNimbus)
-```
+**What actually determines the label:** Plex's "local" classification is a *static* property of which advertised connection address a client used, evaluated once when that connection was registered — not a live, per-request analysis of the actual source IP. `plex.tv`'s `/api/v2/resources` reports a `"local"` flag per connection: `false` for a hostname (Plex can't classify a hostname against `allowedNetworks`/its own detected subnets at registration time), `true` for a raw IP that PMS recognizes as belonging to a local range. Once the pod got a dedicated LoadBalancer IP (`10.60.0.233`, within the cluster's `10.60.0.0/24` management subnet, itself part of `allowedNetworks`), PMS auto-generated its own `plex.direct`-style HTTPS candidate for it — correctly tagged `local: true` — and once the mobile client actually used that connection, the app-visible label flipped to "Local."
 
-Note the source IP is an Envoy pod IP, not the phone's real address — Envoy isn't forwarding `X-Forwarded-For` here either — but that's a secondary finding, not the cause: even a correctly-forwarded real client IP wouldn't flip this tag, since it isn't derived from header content, only from adjacency to PMS's own interface.
-
-**Practical impact: none observed.** Playback worked correctly despite the label; this was purely cosmetic in testing. Plex's own docs describe `customConnections`/"Custom server access URLs" (used here to advertise the reachable `HTTPRoute` hostname instead of the pod's own ephemeral IP) as intended for reverse-proxy/unusual-networking scenarios in the first place — consistent with connections sourced that way never being eligible for a "local" classification.
+**The `X-Forwarded-For`/interface-adjacency theory from the original investigation was a red herring.** The `logDebug=1` finding that *every* non-loopback request got tagged `Allowed Network (WAN)` at the per-request level (even from `10.60.0.202`, squarely inside `allowedNetworks`) is real and still true — but it's a separate, lower-level bookkeeping tag from the one the mobile app actually displays. Confirmed directly: the fix that worked (`externalTrafficPolicy: Cluster`, see the next entry) does **not** preserve the real client source IP — PMS still only ever sees a Kubernetes-internal peer for every connection — yet the app now shows "Local" correctly anyway. Real-client-IP preservation was never the mechanism; only the advertised address's own recognizability as a local IP mattered.
 
 **A second, unrelated red herring surfaced in the same debug session:** the mobile app also initially showed a duplicate, similarly-named server ("Plex Home") that it kept trying to connect to. This turned out to be a real, separate Plex Media Server running natively on the user's TrueNAS since 2026-01-10 (`docker container LinuxServer.io`), still registered under the same Plex account — its `EventSourceClient` inter-server retry attempts from *our* new server were the actual source of the mysterious `10.10.0.41` address chased as a dead end in the previous entry. Deauthorized via `DELETE https://plex.tv/devices/{id}.xml` (the account-level device list, `GET https://plex.tv/devices.xml`, is the source of truth for a `Device`'s numeric `id` — distinct from the `clientIdentifier` returned by `/api/v2/resources`) once confirmed as a genuinely forgotten leftover, not the one this deployment was meant to replace.
 
-**Verified (2026-08-24):** confirmed via `logDebug=1` during a real, live streaming session initiated from the user's phone on their actual LAN — not a synthetic test.
+**Verified (2026-08-24):** confirmed via a real, live streaming session from the user's phone on their actual LAN — the app displayed "Local Connection," and `PLEX_ADVERTISE_URL` was corrected to also include the new LoadBalancer IP as a plain-HTTP candidate (`http://${LB_IP_PLEX}:32400`).
 
 **Encountered 2026-08-24**, same session as the previous entry.
 
-**Related:** the previous entry (`secureConnections`/probe-scheme root cause); `kubernetes/apps/media/plex/` for the current manifest.
+**Related:** the previous entry (`secureConnections`/probe-scheme root cause); the next entry (`CiliumL2AnnouncementPolicy` + `externalTrafficPolicy: Local`, hit while building this LoadBalancer); `kubernetes/apps/media/plex/` for the current manifest.
+
+---
+
+### A new `LoadBalancer` Service gets "connection refused" from some clients but works fine from inside the cluster — why?
+
+**Short answer:** `externalTrafficPolicy: Local` on a Cilium-announced `LoadBalancer` Service, combined with more than one candidate node. Cilium's L2 announcement leader election is **not aware of `externalTrafficPolicy: Local`** — a documented upstream limitation, not a config mistake — so the node that wins ARP for the Service's external IP can differ from whichever node the actual backend pod lands on. A node with no local endpoint correctly *refuses* under `Local` policy rather than forwarding elsewhere (that's the entire point of the setting — no extra hop, real client IP preserved) — so any client reaching the announcing node gets a genuine TCP refusal, while traffic from inside the cluster (routed via Cilium's normal Service load-balancing, not subject to this restriction) works fine regardless.
+
+**How this was diagnosed:** Plex's dedicated LoadBalancer IP (`10.60.0.233`) worked from an in-cluster debug pod but got "connection refused" from a phone on a different VLAN — ruled out both the VLAN firewall (UniFi zone confirmed "Allow all" between the two subnets) and Talos's own native ingress firewall (`talos/patches/{global,controller}/network-firewall.yaml` only cover Talos-internal control-plane ports, deliberately not app/LoadBalancer ports). The actual mismatch was found directly in Cilium's leader-election state:
+
+```sh
+kubectl -n kube-system get lease | grep plex
+# cilium-l2announce-media-plex   talos-worker-02   ← ARP leader
+kubectl -n media get pod -o wide
+# plex-...                       talos-cp-02       ← actual pod
+```
+
+Confirmed against Cilium's own documentation and `cilium/cilium#27800`: "Cilium L2 is incompatible with `Service.externalTrafficPolicy: Local`... will announce the service IP on all nodes matching policies" regardless of endpoint placement. The official workaround is exactly what fixed it here: set `externalTrafficPolicy: Cluster` (or simply omit the field — it's the default).
+
+**This is not the first time this cluster has hit this exact bug.** It previously broke `kube-system/kube-api` and `network/envoy-internal` during the `rook-ceph-bgp-investigation` session — see `docs/ROADMAP.md` → "Cilium BGP Control Plane (replace L2 Announcement)" for the full original incident writeup (same root cause, same upstream citations, same `Local`→`Cluster` fix). That entry also lays out the actual long-term fix this cluster has planned: migrating from L2 announcement to Cilium's BGP Control Plane entirely, which is correctly endpoint-aware (a node withdraws its route the moment it has no local ready endpoint — no leader election, no blind spot) rather than waiting on the upstream Cilium bug to be fixed.
+
+**Why this is a real, recurring risk for any single-replica workload with node-selector-based scheduling** (not a one-off fluke — now confirmed twice, independently, on two different Services): this cluster's `CiliumL2AnnouncementPolicy` (`l2-policy`) has a broad `nodeSelector: {kubernetes.io/os: linux}`, matching all 5 nodes — including `talos-cp-01`, which can never run a GPU workload like Plex at all. Any workload that can land on a *subset* of nodes (via its own `nodeSelector`/affinity) is exposed to this drift under `Local` policy; a narrower, per-app `CiliumL2AnnouncementPolicy` scoped to the same node subset would *reduce* the odds of a mismatch but not eliminate them (leader election within the narrowed pool is still unaware of exact pod placement) — only exactly-one-candidate-node pinning (both the L2 policy and the pod) or dropping `Local` entirely actually guarantees correctness. `Cluster` was chosen here — and pinning was explicitly considered and rejected, see `docs/ROADMAP.md` — since the real-client-IP-preservation benefit `Local` exists for turned out to be unnecessary anyway (see the previous entry).
+
+**Verified (2026-08-24):** reachability confirmed from the user's phone on a separate VLAN immediately after switching to `Cluster`, no other change.
+
+**Encountered 2026-08-24**, same session as the previous entry.
+
+**Related:** the previous entry; `docs/ROADMAP.md` → "Cilium BGP Control Plane (replace L2 Announcement)" for the original incident and the long-term fix plan; `kubernetes/apps/media/plex/app/helmrelease.yaml` for the current `service.app` config.

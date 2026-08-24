@@ -817,6 +817,31 @@ its route the moment it has no local ready endpoint — no leader election, no b
 nodes can advertise the same VIP **simultaneously**, with the router doing real load-balancing
 (ECMP) across all of them.
 
+#### Recurrence — Plex's dedicated LoadBalancer (2026-08-24)
+
+Hit again, independently, while giving Plex its own LoadBalancer IP (`plex-deploy` session) — same
+mechanism exactly: the L2-announcement leader for `media/plex` (`talos-worker-02`) didn't match the node
+actually running the pod (`talos-cp-02`), so every external client got "connection refused" while
+in-cluster access worked fine. Same immediate fix applied (`externalTrafficPolicy: Local` → omitted,
+defaulting to `Cluster`). Full diagnosis in
+[docs/QA.md → "A new LoadBalancer Service gets 'connection refused'..."](QA.md#a-new-loadbalancer-service-gets-connection-refused-from-some-clients-but-works-fine-from-inside-the-cluster--why).
+
+Also checked whether Cilium has fixed this upstream since the original incident: **no** — the tracking
+issue ([cilium/cilium#27800](https://github.com/cilium/cilium/issues/27800)) is still open, though a fix
+is in progress ([cilium/cilium#46399](https://github.com/cilium/cilium/pull/46399), unmerged as of
+2026-08-24). Worth checking again whenever `intel-device-plugins`/Cilium version bumps land via Renovate,
+but not something to wait on — this cluster's own BGP migration (below) fixes the root cause directly
+regardless of upstream's timeline, and doesn't depend on it landing at all.
+
+**Decision:** considered pinning Plex's pod and a dedicated `CiliumL2AnnouncementPolicy` to the same
+single node as a stopgap (deterministic, no leader-election ambiguity with only one candidate) — rejected
+for now. It would trade away Plex's ability to reschedule across any of the 4 GPU-capable nodes for a
+benefit that turned out to be unnecessary: real-client-IP preservation isn't what fixed Plex's "Local
+connection" labeling (see the QA.md entry above) — that's driven by the advertised connection address's
+own recognizability, which `Cluster` policy doesn't affect. Two independent hits of the same Cilium
+limitation, on two different Services, in two different sessions, is a stronger argument for finishing
+the BGP migration than for special-casing individual Services with node-pinning workarounds.
+
 #### eBGP primer — for readers new to BGP
 
 This section exists because BGP is unfamiliar territory going in. The goal is to have enough vocabulary
