@@ -56,7 +56,10 @@ spec:
                 memory: 256Mi
               limits:
                 # par2 repair/unpack is memory-hungry — higher ceiling than the other three.
-                memory: 2Gi
+                # 2Gi was OOMKilled by a single large UHD REMUX unrar extraction even with
+                # DirectUnpack disabled (2026-08-24) — raised to give headroom for the biggest
+                # multi-track TrueHD/Atmos/DV HEVC REMUX releases.
+                memory: 6Gi
             securityContext:
               allowPrivilegeEscalation: false
               capabilities:
