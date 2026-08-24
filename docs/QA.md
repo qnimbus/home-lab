@@ -55,6 +55,10 @@ Concise answers to questions that came up during cluster operation. Each entry c
 - [Why did the KEDA HTTP Add-on stop scaling pgadmin back up after adding a `coldStart.placeholder`?](#why-did-the-keda-http-add-on-stop-scaling-pgadmin-back-up-after-adding-a-coldstartplaceholder)
 - [A new app's KEDA HTTP Add-on route returns HTTP 500 and never scales up — why?](#a-new-apps-keda-http-add-on-route-returns-http-500-and-never-scales-up--why)
 
+**Media**
+- [Plex never becomes Ready — pod crash-loops or Envoy returns "connection termination" — why?](#plex-never-becomes-ready--pod-crash-loops-or-envoy-returns-connection-termination--why)
+- [Plex's mobile app shows "Remote connection" even on the same LAN — is this fixable?](#plexs-mobile-app-shows-remote-connection-even-on-the-same-lan--is-this-fixable)
+
 ---
 
 ## Storage
@@ -1288,3 +1292,55 @@ The two symptoms together — 500 *and* "scaling is broken" — look like a KEDA
 **Encountered:** first with `pgadmin`/`firefly-iii-importer` (their namespaces were pre-listed at onboarding time, so the trap itself went undocumented); hit and root-caused for real when `unifi-voucher-site` (namespace `default`) was onboarded on 2026-08-21 — `default` wasn't in the grant yet. The `ReferenceGrant` file now carries an inline comment pointing back to this entry so the next onboarding doesn't repeat it.
 
 **Related:** `kubernetes/components/keda/http-scaler/` (the reusable component every KEDA-HTTP app wires in via its `ks.yaml`'s `components:` list); the two entries above on cold-start/`requestRate` scaling.
+
+---
+
+## Media
+
+### Plex never becomes Ready — pod crash-loops or Envoy returns "connection termination" — why?
+
+**Short answer:** Plex Media Server rejects every plaintext (HTTP) connection from anywhere except `127.0.0.1` once its `secureConnections` preference is `Required` (value `0` — counterintuitively the *strictest* setting, not "never require HTTPS"; confirmed against [python-plexapi's docs](https://python-plexapi.readthedocs.io/en/latest/modules/settings.html): `0=Required, 1=Preferred, 2=Disabled`). This silently breaks two unrelated things at once: kubelet's own `httpGet` probes (plain HTTP by default, sourced from the node IP — not the pod), and Envoy's backend connection to the Service (also plain HTTP, since this repo has no `BackendTLSPolicy`). Both get a TCP-accepted-then-immediately-closed connection with zero bytes back — `curl` reports `Empty reply from server` / `EOF`, Envoy reports `upstream connect error or disconnect/reset before headers... connection termination`.
+
+**Detail — how this was actually root-caused:** loopback (`127.0.0.1`) always worked (`/identity` returned `200` reliably via `kubectl exec`), while the pod's own IP, the Service ClusterIP, and every other pod's attempt to reach it all failed identically — including a genuinely separate ephemeral debug pod on a different node, ruling out any Cilium hairpin/self-connection theory. The rejected connections never appeared in PMS's *own* request log at all (not even as a 401/403), which ruled out Host-header or auth-based rejection — something was closing the connection before it ever reached the logged request pipeline. Enabling Plex's own `logDebug=1` preference (via another `PLEX_PREFERENCE_N` entry — `kubectl logs` stays sparse regardless, since PMS logs almost everything to its own file under `/config`, not stdout) finally surfaced the exact line, repeating every ~10s for the pod's entire lifetime:
+
+```
+DEBUG - Request: plaintext connection from 10.60.0.202:44762 rejected because secure connections are required
+```
+
+`10.60.0.202` is the node's own IP — exactly where kubelet's probe traffic originates. `allowedNetworks` including that CIDR made no difference, because it only governs auth-bypass, not this separate transport-security check.
+
+**Fix** (`kubernetes/apps/media/plex/app/helmrelease.yaml`):
+- All three probes (`startup`/`liveness`/`readiness`) set `httpGet.scheme: HTTPS` — Kubernetes' probe doesn't validate the server certificate, so Plex's self-signed cert needs no further config.
+- `PLEX_PREFERENCE_N: "secureConnections=1"` (Preferred) — fixes Envoy's plain-HTTP backend connection too, since there's no `BackendTLSPolicy` in this repo to make that hop speak HTTPS instead.
+
+**A genuine second, independent bug was found and fixed in the same session:** first-boot library scanning against a populated NFS library took longer than the original `liveness` probe's budget (`initialDelaySeconds: 30` + `failureThreshold: 6 × periodSeconds: 10` = 90s total), causing kubelet to kill PMS mid-scan, forever, before it could ever finish starting — a genuine crash loop, separate from the secure-connections issue above. Fixed with a dedicated `startupProbe` (10-minute budget) that gates `liveness`/`readiness` until first pass, matching the pattern already used by `paperless-ngx` and `smtp-relay` in this repo.
+
+**Dead ends chased first, for anyone hitting a similar symptom:** an unrelated `403` from `servers.plex.tv/api/v2/server/access_tokens` (theorized as plex.tv rate-limiting from the original crash loop's ~80 rapid restarts) and a mysterious `EventSourceClient` retry loop targeting a `10.10.0.41` address turned out to be real but unrelated — the `403` cleared on its own on a later attempt with no config change, and `10.10.0.41` turned out to be a genuinely separate, forgotten Plex server running natively on the user's TrueNAS, registered under the same Plex account (see the next entry). Neither was ever the actual blocker; both looked like plausible causes at the time and cost real debugging time before the `secureConnections` line was found.
+
+**Verified (2026-08-23):** pod reached `1/1 Ready` with zero restarts immediately after the probe-scheme fix; browser access via the `HTTPRoute` worked immediately after the `secureConnections=Preferred` fix.
+
+**Encountered 2026-08-23**, first live deployment of Plex to this cluster (`plex-deploy` session).
+
+**Related:** the next entry, for a second, architectural (non-fixable) Plex networking quirk hit in the same session.
+
+---
+
+### Plex's mobile app shows "Remote connection" even on the same LAN — is this fixable?
+
+**Short answer:** No — not without giving the pod host networking, which isn't worth doing for a cosmetic label. Plex determines LAN vs. WAN by comparing the connecting peer's IP against its *own detected network interface's subnet*, not against `allowedNetworks`/`LanNetworksBandwidth` (those only govern auth-bypass and bandwidth limits) and not against `X-Forwarded-For` headers. Inside a pod, the only interface PMS can see is its own isolated pod-network interface — no real LAN device can ever share that subnet, so nothing except `127.0.0.1` can ever be classified "local." Confirmed by `logDebug=1`: across an entire session's log, only two connection tags ever appeared — `Loopback` and `Allowed Network (WAN)` — including for kubelet's own probe traffic from the cluster's management network, and for a real, actively-streaming phone session on the user's own LAN:
+
+```
+DEBUG - Request: [10.42.2.156:40638 (Allowed Network (WAN))] GET /:/timeline?...state=playing... Signed-in Token (QNimbus)
+```
+
+Note the source IP is an Envoy pod IP, not the phone's real address — Envoy isn't forwarding `X-Forwarded-For` here either — but that's a secondary finding, not the cause: even a correctly-forwarded real client IP wouldn't flip this tag, since it isn't derived from header content, only from adjacency to PMS's own interface.
+
+**Practical impact: none observed.** Playback worked correctly despite the label; this was purely cosmetic in testing. Plex's own docs describe `customConnections`/"Custom server access URLs" (used here to advertise the reachable `HTTPRoute` hostname instead of the pod's own ephemeral IP) as intended for reverse-proxy/unusual-networking scenarios in the first place — consistent with connections sourced that way never being eligible for a "local" classification.
+
+**A second, unrelated red herring surfaced in the same debug session:** the mobile app also initially showed a duplicate, similarly-named server ("Plex Home") that it kept trying to connect to. This turned out to be a real, separate Plex Media Server running natively on the user's TrueNAS since 2026-01-10 (`docker container LinuxServer.io`), still registered under the same Plex account — its `EventSourceClient` inter-server retry attempts from *our* new server were the actual source of the mysterious `10.10.0.41` address chased as a dead end in the previous entry. Deauthorized via `DELETE https://plex.tv/devices/{id}.xml` (the account-level device list, `GET https://plex.tv/devices.xml`, is the source of truth for a `Device`'s numeric `id` — distinct from the `clientIdentifier` returned by `/api/v2/resources`) once confirmed as a genuinely forgotten leftover, not the one this deployment was meant to replace.
+
+**Verified (2026-08-24):** confirmed via `logDebug=1` during a real, live streaming session initiated from the user's phone on their actual LAN — not a synthetic test.
+
+**Encountered 2026-08-24**, same session as the previous entry.
+
+**Related:** the previous entry (`secureConnections`/probe-scheme root cause); `kubernetes/apps/media/plex/` for the current manifest.
