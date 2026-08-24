@@ -1,9 +1,16 @@
 # Intel GPU: Device-Plugin → DRA Migration Plan
 
-> **Status**: 📐 Planning — not scheduled. No cluster changes required by this document.
+> **Status**: 🗄️ Shelved (2026-08-24) — not scheduled, revisit only if the trigger below recurs.
 > **Foundation**: `intel-device-plugins-operator` + `intel-device-plugins-gpu` (chart `0.36.0`) already
 > deployed and healthy on cp-02/cp-03/worker-01/worker-02 (`intel-igpu-quicksync-passthrough` session,
 > 2026-07-09). This plan does **not** touch that deployment until Phase 2 at the earliest.
+>
+> **Why shelved:** this plan's stated trigger — Plex and Jellyfin sharing one iGPU — no longer
+> applies. Plex was deployed 2026-08-22/23 (`plex-deploy` session) as the cluster's sole media
+> server, deliberately Plex-only (Jellyfin considered and rejected as a redundant alternative, not a
+> planned pair — see the `plex-deploy` session log). With only one GPU consumer and no second one
+> planned, DRA's actual payoff (device sharing across contending workloads) has no current use case.
+> Revisit if a second GPU-consuming workload is ever added and needs to share an iGPU with Plex.
 
 ---
 
@@ -21,9 +28,12 @@ and Jellyfin.
 GPU nodes. DRA's payoff — device sharing (`adminAccess`), richer selection criteria, avoiding the
 older API's node-label + extended-resource indirection — only matters once there are multiple GPU
 workloads contending for the same iGPU. Revisit this plan **when that becomes true**, e.g. Plex and
-Jellyfin (or a future transcode consumer) are deployed on the same node and need to share one
-physical iGPU, or a maintenance job (like bykaj's `plex-image-cleanup`) needs GPU co-access without
-displacing the main workload.
+a future transcode consumer are deployed on the same node and need to share one physical iGPU.
+(bykaj's `plex-image-cleanup` maintenance job was checked directly and does **not** request GPU
+access at all — no `resourceClaims`, no `gpu.intel.com` reference anywhere in its manifests. Its
+only special scheduling requirement is a `podAffinity` pinning it to the same node as the `plex`
+pod, needed to mount the same RWO `ceph-block` PVC concurrently — a PVC co-location concern,
+unrelated to GPU sharing. An earlier draft of this doc miscited it as a GPU-sharing example.)
 
 ---
 
