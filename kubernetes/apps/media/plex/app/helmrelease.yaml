@@ -132,6 +132,12 @@ spec:
     ingress:
       ts:
         className: tailscale
+        # Scopes this proxy's tailnet ACL grants to Plex specifically, instead of the
+        # operator's cluster-wide default (tag:k8s — shared with every other operator-
+        # managed proxy, e.g. the subnet router). Tags don't retag an already-exposed
+        # proxy in place — recreating the StatefulSet is required after this lands.
+        annotations:
+          tailscale.com/tags: "tag:plex"
         hosts:
           - host: &host ${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}
             paths:
