@@ -31,7 +31,7 @@ nodes:
       - "@./patches/node/machine-volumes-1tb.yaml"
       - "@./patches/node/machine-sysctl-netdev-budget.yaml"
       # IOT VLAN 30 — tagged sub-interface on the mgmt trunk NIC, giving this node a direct
-      # L2 presence on 10.30.0.0/24 so Cilium (pool-iot) can announce smtp-relay's IOT-side
+      # L2 presence on 10.30.0.0/24 so Cilium (pool-iot-smtp-relay) can announce smtp-relay's IOT-side
       # LoadBalancer IP there. See docs/QA.md for why: the UniFi firewall only allows return
       # traffic from IOT to 10.60.0.0/24, not IOT-initiated connections — staying on the IOT
       # L2 segment bypasses that rule entirely instead of widening it.

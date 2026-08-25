@@ -192,14 +192,14 @@ ip route get 10.60.0.2                                         # mtu 1280 → Ta
 
 ---
 
-### Why does the cluster have a tagged VLAN 30 sub-interface on every node's mgmt NIC and a `pool-iot` Cilium pool — isn't 10.30.0.0/24 supposed to be IOT-only?
+### Why does the cluster have a tagged VLAN 30 sub-interface on every node's mgmt NIC and a `pool-iot-smtp-relay` Cilium pool — isn't 10.30.0.0/24 supposed to be IOT-only?
 
 **Short answer:** to let a Canon printer on the IOT VLAN reach `smtp-relay` without crossing the UniFi
 inter-VLAN firewall — which only permits IOT→mgmt *return* traffic, not IOT-*initiated* connections. Giving
 every node a direct L2 presence on 10.30.0.0/24 means the printer's connection to `smtp-relay`'s IOT-side
-LB IP (`10.30.0.240`, `pool-iot`) never has to cross that fence at all — it's answered by ARP and delivered
+LB IP (`10.30.0.240`, `pool-iot-smtp-relay`) never has to cross that fence at all — it's answered by ARP and delivered
 directly on the same L2 segment. `smtp-relay` pins two LB IPs (`10.60.0.240` from `pool`, `10.30.0.240` from
-`pool-iot`), each published under its own hostname (`smtp-relay.cluster.vwn.io` / `smtp-relay.iot.vwn.io`)
+`pool-iot-smtp-relay`), each published under its own hostname (`smtp-relay.cluster.vwn.io` / `smtp-relay.iot.vwn.io`)
 via an `external-dns` `target` override + a separate `ExternalName` Service, so neither hostname publishes
 both addresses.
 
@@ -1374,7 +1374,7 @@ Confirmed against Cilium's own documentation and `cilium/cilium#27800`: "Cilium 
 
 ### Plex works fine on the LAN but IOT devices (e.g. a Google TV streamer) can't find or connect to the server — why?
 
-**Short answer:** IOT (`10.30.0.0/24`) is deliberately isolated from every other internal network at the UniFi gateway — the gateway only allows IOT→mgmt *return* traffic for connections the mgmt side initiated, never IOT-initiated connections outward. A device on IOT trying to reach Plex's mgmt-LAN LoadBalancer IP (`10.60.0.233`) is blocked by design, the same restriction that first surfaced with the Canon printer needing to reach `smtp-relay` (see the `pool-iot`/VLAN-30-sub-interface entry above). This is not a bug — it's the isolation boundary working as intended — but it means any cluster-hosted service that IOT devices legitimately need has to publish a second, in-segment IP the same way `smtp-relay` already does.
+**Short answer:** IOT (`10.30.0.0/24`) is deliberately isolated from every other internal network at the UniFi gateway — the gateway only allows IOT→mgmt *return* traffic for connections the mgmt side initiated, never IOT-initiated connections outward. A device on IOT trying to reach Plex's mgmt-LAN LoadBalancer IP (`10.60.0.233`) is blocked by design, the same restriction that first surfaced with the Canon printer needing to reach `smtp-relay` (see the `pool-iot-smtp-relay`/VLAN-30-sub-interface entry above). This is not a bug — it's the isolation boundary working as intended — but it means any cluster-hosted service that IOT devices legitimately need has to publish a second, in-segment IP the same way `smtp-relay` already does.
 
 **The fix:** gave Plex a second pinned `LoadBalancer` IP from a new single-IP pool on the IOT VLAN (`pool-iot-plex`, `10.30.0.234/32`, `serviceSelector`-scoped to the `plex` Service only), announced via the tagged VLAN 30 sub-interface every node already carries (added for `smtp-relay`, reused here for free). Unlike `smtp-relay`, no separate IOT-facing DNS hostname was added — Plex clients don't need one. Instead, the IOT IP was added as another `PLEX_ADVERTISE_URL` candidate (`http://${LB_IP_PLEX_IOT}:32400`); Plex publishes every advertised address to `plex.tv`'s `/api/v2/resources` list, and clients (including the Google TV app, which reads that list over the internet regardless of which VLAN it's on) try each candidate and connect through whichever one is actually reachable from where they are. Because `10.30.0.234` is itself a private RFC1918 address, PMS also correctly tags that connection `local: true` at registration — so the "Local Connection" label (see the earlier entry in this section) works correctly from IOT too, not just from the mgmt LAN.
 
@@ -1386,4 +1386,4 @@ Confirmed against Cilium's own documentation and `cilium/cilium#27800`: "Cilium 
 
 **Encountered 2026-08-24.**
 
-**Related:** the `pool-iot`/VLAN-30 entry above (original design rationale, same UniFi gateway restriction); the two previous Plex entries (local-connection labeling, `Cluster` vs `Local` L2 fix — this Service already runs `externalTrafficPolicy: Cluster`, so the IOT IP is exempt from that bug entirely); `kubernetes/apps/media/plex/app/helmrelease.yaml` and `kubernetes/apps/kube-system/cilium/config/networks.yaml` for the current config.
+**Related:** the `pool-iot-smtp-relay`/VLAN-30 entry above (original design rationale, same UniFi gateway restriction); the two previous Plex entries (local-connection labeling, `Cluster` vs `Local` L2 fix — this Service already runs `externalTrafficPolicy: Cluster`, so the IOT IP is exempt from that bug entirely); `kubernetes/apps/media/plex/app/helmrelease.yaml` and `kubernetes/apps/kube-system/cilium/config/networks.yaml` for the current config.
