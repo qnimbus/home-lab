@@ -4,6 +4,34 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-08-27 — `plex-keda-nfs-scaler`
+
+### Goal
+Add a KEDA autoscaler for Plex that scales it to zero when its NFS media mount's NAS is unreachable, following this repo's own pre-existing `docs/keda-nfs-scaler-plan.md` (written in anticipation of exactly this workload).
+
+### What we did
+- Surveyed the repo's existing KEDA patterns before writing anything: the `components/keda/{postgres,redis,smb,http}-scaler` Components, their live consumers (`paperless-ngx`, `open-webui`), and the dormant `docs/keda-nfs-scaler-plan.md` / `docs/ROADMAP.md` entry that named Plex as the intended pilot for an NFS-dependency scaler once a real NFS-backed Deployment existed.
+- Identified that Plex's `/mnt/media` mount is a raw `type: nfs` volume (not Ceph, not the dynamic NFS StorageClass) — exactly the failure mode the plan targets: an NAS reboot/blip leaves kubelet retrying the mount forever with no workload-level backoff.
+- Distinguished this from the repo's other KEDA use case (idle/cost-saving scale-to-zero via `app-http-add-on`, used by `open-webui`/`paperless-ngx`): that mechanism depends on an in-cluster HTTP interceptor queuing cold requests, which doesn't apply to Plex — its `LoadBalancer` Service and Tailscale `Ingress` are connected to directly by real clients, so scaling to zero on idle would mean dead connections with no auto-wake, not a delayed-but-successful one.
+- Presented three possible autoscale scenarios (NFS-dependency scale-to-zero, idle/session-count scale-to-zero, scheduled cron scale-down) via `AskUserQuestion`; user chose the NFS-dependency scenario only, on the recommendation that it's the lowest-risk and already-planned option.
+- Implemented Phase 1 of the existing plan: a standalone `ScaledObject` (not yet a `components/keda/` Component, since Plex is the first NFS-scaler consumer) reusing the already-deployed `nas-nfs` blackbox `Probe` (`probe_success{instance="${NAS_HOST}:2049"}`), `cooldownPeriod: 30` matching the other scaler Components' rationale.
+- Added `driftDetection.ignore` for `/spec/replicas` on Plex's `HelmRelease`, matching the precedent in `paperless-ngx`/`open-webui` — without it, Flux's global drift-detection default would revert KEDA's scale-to-zero within the hour.
+- Validated with `kustomize build` — all resources render cleanly (`${APP}`/`${NAS_HOST}` remain as literal tokens, substituted only at Flux reconcile time via `postBuild`).
+- Left uncommitted per this repo's `/git-commit`-only rule.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/media/plex/app/scaledobject.yaml` | New standalone KEDA `ScaledObject` — scales Plex to 0 when the NAS's NFS port (2049) is unreachable, restores automatically on recovery |
+| `kubernetes/apps/media/plex/app/kustomization.yaml` | Added `scaledobject.yaml` to the resource list |
+| `kubernetes/apps/media/plex/app/helmrelease.yaml` | Added `driftDetection.ignore` for `/spec/replicas` so Flux doesn't fight KEDA's HPA |
+
+### Key decisions
+- Standalone `ScaledObject`, not a shared `components/keda/nfs-scaler` Component: this repo's own plan doc defers promoting to a Component until a second NFS-backed workload needs the same shape (currently only one consumer).
+- Only the NFS-dependency scenario was implemented; idle/session-count and scheduled cron scaling were deliberately declined for now, since neither has an auto-wake path (Plex bypasses KEDA's HTTP interceptor entirely) and only Plex currently reserves the cluster's `gpu.intel.com/i915` resource, weakening the cost-saving case.
+
+---
+
 ## 2026-08-24 — `configarr-deploy`
 
 ### Goal

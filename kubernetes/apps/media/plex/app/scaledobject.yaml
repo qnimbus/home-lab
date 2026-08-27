@@ -1,0 +1,28 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/keda.sh/scaledobject_v1alpha1.json
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: ${APP}-nfs-scaler
+spec:
+  scaleTargetRef:
+    name: ${APP}
+  minReplicaCount: 0
+  maxReplicaCount: 1
+  advanced:
+    restoreToOriginalReplicaCount: true
+  # 30s, matching postgres-scaler/redis-scaler/smb-scaler's rationale: one extra
+  # confirmation window beyond the blackbox probe's own 30s scrape interval
+  # (observability/blackbox-exporter/app/probes.yaml, name: nas-nfs) before committing
+  # to scale-down, so a single transient failed scrape doesn't tear down a healthy Plex.
+  # Standalone ScaledObject, not a components/keda/ Component: Plex is this repo's first
+  # NFS-scaler consumer (see docs/keda-nfs-scaler-plan.md, Phase 1) — promote to a shared
+  # Component only once a second NFS-backed workload needs the same shape.
+  cooldownPeriod: 30
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+        query: probe_success{instance="${NAS_HOST}:2049"}
+        threshold: "1"
+        ignoreNullValues: "0"
