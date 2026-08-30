@@ -27,7 +27,7 @@ spec:
             image:
               repository: docker.io/glenndehaan/unifi-voucher-site
               # renovate: datasource=docker depName=docker.io/glenndehaan/unifi-voucher-site
-              tag: 8.12.0@sha256:f702b8782c8dcb08a9db45e2de67aebaa0b8ffbc4862c71b3f0f07aa3162b0ee
+              tag: 8.13.0@sha256:07a9ca6fe9dbb358f6f3d45d41654d882d03d8770672e47bc0d4734f8857d4f2
             env:
               TZ: "${CLUSTER_TIMEZONE}"
               LOG_LEVEL: info
