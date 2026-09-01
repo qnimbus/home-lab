@@ -18,6 +18,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
   - [Grafana](#grafana)
   - [Alertmanager Receiver](#alertmanager-receiver)
   - [e1000e Management-NIC Packet Drops: `netdev_budget` Experiment](#e1000e-management-nic-packet-drops-netdev_budget-experiment)
+  - [Ceph `public_network`: Move to Storage VLAN](#ceph-public_network-move-to-storage-vlan)
   - [Prometheus Metric Hygiene: Drop Static and Low-Value Series](#prometheus-metric-hygiene-drop-static-and-low-value-series)
   - [Scheduling Topology: Follow-up Fixes](#scheduling-topology-follow-up-fixes)
   - [Kubernetes Descheduler](#kubernetes-descheduler)
@@ -545,27 +546,26 @@ max, `ethtool -G` won't have headroom to help and the real fix is #3 below, not 
 2. Map `sabnzbd`'s RBD image to its live PG/OSD acting set during a future burst (`ceph osd map
    <pool> <rbd-image>` or `rados -p <pool> osdmap`) to fully confirm the OSD-placement mechanism
    rather than inferring it from co-timed metrics.
-3. Consider whether `sabnzbd`'s `/config` PVC needs to be Ceph-backed at all, vs. NFS (trades
-   Ceph replication for the NFS mount already used for the media library) — would remove this
-   traffic source from the management VLAN entirely, sidestepping the ring-buffer limit rather
-   than raising it. **Confirmed 2026-09-01 this is a single shared-component change, not a
-   per-app migration**: all four *arr-stack apps with persistent state (`sabnzbd`, `sonarr`,
-   `radarr`, `prowlarr`) get their `/config` PVC from the same `kubernetes/components/volsync`
-   Kustomize component, whose `pvc.yaml` defaults `storageClassName` to
-   `${VOLSYNC_STORAGECLASS:=ceph-block}` — none of the four `ks.yaml` files override it. Setting
-   `VOLSYNC_STORAGECLASS` per-app (or switching the component's default) would apply to all four
-   in one change. Since `sonarr`/`radarr` also write `/config` on library-import events (which
-   fire right as a download completes), moving all four — not just `sabnzbd` — may be needed to
-   fully address bursts, not only the one already captured.
-4. **Structural alternative to #3 — move Ceph's `public_network` onto the storage VLAN**
-   (`10.200.0.0/24`), so client I/O (CSI/RBD, including `sabnzbd`'s writes) rides the same isolated
-   2x10G LACP bond as `cluster_network` instead of sharing the 1G management NIC. This doubles as
-   a NIC swap, not just a traffic move — the storage bond's cards are multi-queue with materially
-   larger default ring depths, so it plausibly sidesteps this failure mode structurally rather
-   than just relocating it. Still the expensive option: `public_network` is where mons bind, so
-   changing it live means the mon-failover reconfiguration dance the original greenfield choice
-   (`docs/SESSIONS-ARCHIVE.md:435`) was specifically designed to avoid. Revisit only if #1/#3 turn
-   out insufficient.
+3. **IN PROGRESS (2026-09-01), see below** — move `sabnzbd`/`sonarr`/`radarr`/`prowlarr`'s
+   `/config` PVCs off `ceph-block` onto the cluster's existing (previously unused) `nfs`
+   StorageClass. Confirmed this is a single shared-component change, not a per-app migration:
+   all four apps get `/config` from the same `kubernetes/components/volsync` Kustomize
+   component, whose `pvc.yaml` defaults `storageClassName` to `${VOLSYNC_STORAGECLASS:=ceph-block}`
+   — none of the four `ks.yaml` files override it. `sonarr`/`radarr` also write `/config` on
+   library-import events (which fire right as a download completes), so all four needed
+   migrating, not just `sabnzbd`. Drafted as two phased commits in worktree
+   `ceph-packetdrops-checkpoint-4wk`: phase 1 (additive — new `nfs`-backed PVC + one-off copy
+   Job per app, old PVC untouched) and phase 2 (cutover — repoints `persistence.config` at the
+   new PVC, removes `volsync`/the old `ceph-block` PVC). Drops automated backup for this data
+   going forward (small, recreatable state — queue DB, history, indexer defs) rather than
+   retargeting VolSync at NFS, since NFS has no CSI snapshot support in this cluster and the
+   data's value doesn't justify the added complexity of a `Direct`-copyMethod backup path.
+4. **Structural alternative/complement to #3 — move Ceph's entire `public_network` onto the
+   storage VLAN.** See the dedicated [Ceph `public_network`: Move to Storage
+   VLAN](#ceph-public_network-move-to-storage-vlan) entry below — this is a distinct, larger
+   project the user wants to pursue eventually regardless of whether #3 alone resolves the
+   current alert, since it's the structurally-correct end state for the whole cluster, not just
+   the `downloads` namespace.
 5. Check whether other Ceph-backed PVCs with bursty write patterns (e.g. a Plex transcode cache,
    if one is `ceph-block`) show the same signature.
 6. If none of the above are pursued, revisit widening `CephNodeNetworkPacketDrops`'s `for:` window
@@ -575,6 +575,53 @@ max, `ethtool -G` won't have headroom to help and the real fix is #3 below, not 
 **Do not** raise `net.core.netdev_budget`/`netdev_budget_usecs` further on `cp-03`/`worker-02` —
 confirmed above to not be the constrained resource for this failure mode; more budget can't help a
 ring that's already full before softirq gets to drain it.
+
+---
+
+### Ceph `public_network`: Move to Storage VLAN
+
+**Status: desired end state, not started.** This cluster deliberately split Ceph traffic across
+two fabrics at greenfield (`docs/SESSIONS-ARCHIVE.md:435`): `cluster_network` (OSD↔OSD
+replication/heartbeat/backfill) on the storage VLAN (`10.200.0.0/24`, 2x10G LACP bond), but
+`public_network` (client I/O — every CSI/RBD read and write, plus mon traffic and heartbeat-front)
+on the **management VLAN** (`10.60.0.0/24`) instead — the same fabric as `etcd`/`kube-apiserver`/
+`kubelet`/DNS/Cilium control-plane traffic. That choice is what made the `CephNodeNetworkPacketDrops`
+investigation above possible in the first place: Ceph client I/O from `sabnzbd`'s `/config` PVC was
+landing on a 1GbE, single-queue, small-ring-buffer NIC shared with cluster-critical traffic, not on
+the well-provisioned storage bond most people would assume "Ceph traffic" means.
+
+The user has confirmed they want to eventually move `public_network` onto `10.200.0.0/24` too, so
+**all** Ceph traffic — client and replication alike — rides the same isolated, multi-queue, jumbo-frame
+fabric. This is more than a traffic relocation: the storage bond's NICs are multi-queue with
+materially larger default ring depths than the management NICs' `e1000e`/I219-LM, so this plausibly
+sidesteps the ring-exhaustion failure mode structurally (for every current and future `ceph-block`
+consumer cluster-wide), rather than just moving today's specific trigger off Ceph (which is what the
+narrower `sabnzbd`/*arr `/config` migration above accomplishes on its own, separately and sooner).
+
+**Why this is a separate, larger, later project — not a next step:**
+- **Blast radius is the whole cluster, not one namespace.** `public_network` is where *every* Ceph
+  client talks to mons/OSDs — CNPG Postgres, Grafana, Waha, pgAdmin, Firefly-iii, Forgejo, and
+  anything else on `ceph-block` (the default StorageClass) all depend on it. A mistake here risks
+  every stateful workload in the cluster, not four low-stakes SQLite DBs.
+- **Requires a live mon reconfiguration.** Ceph mons bind to `public_network` addresses at startup;
+  changing it on a running cluster means adding mons on the new network and retiring the old ones —
+  exactly the mon-failover dance the original greenfield choice was designed to avoid entirely by
+  getting the network right before the cluster ever had data. How gracefully Rook automates this (if
+  at all) is **not yet researched** — needs its own investigation before this is even safe to plan,
+  let alone schedule.
+- **Unverified prerequisite: pod-to-mon reachability on the storage VLAN.** The current
+  `helmrelease.yaml` comment notes CSI pods on the Cilium pod network reach mon host IPs on
+  `10.60.0.0/24` "via routing" — the mechanism isn't spelled out further. Whether equivalent
+  reachability already exists to `10.200.0.0/24`, or would need new routing/Cilium configuration, is
+  unconfirmed and must be checked before attempting this.
+
+**Suggested pre-work, before scheduling this:** check whether other `ceph-block` consumers —
+CNPG Postgres in particular, given its own backup/vacuum/large-transaction write patterns — can
+reproduce the same ring-exhaustion signature the `sabnzbd` investigation found. If yes, that
+raises the urgency of this project (the `/config` migration above wouldn't be a complete fix,
+just the first instance). If no other consumer shows the same pattern, this remains a
+correctness/future-proofing project rather than an active-incident fix, and can be scheduled
+whenever there's appetite for a live mon migration on a homelab cluster.
 
 ---
 
