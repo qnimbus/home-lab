@@ -13,15 +13,9 @@ spec:
   values:
     controllers:
       radarr:
-        # Required: /config is an RWO ceph-block PVC.
+        # Required: /config is an RWO PVC (nfs StorageClass since the ceph-block ->
+        # NFS migration — see docs/ROADMAP.md).
         strategy: Recreate
-        # PHASE 1 of the ceph-block -> NFS /config migration (docs/ROADMAP.md, e1000e
-        # packet-drops entry): scaled to 0 so the ceph-block PVC below is unattached while
-        # the nfs-config-migrate Job copies its contents to the new nfs-backed PVC — Ceph
-        # RBD RWO only reliably allows same-node multi-attach, which isn't guaranteed
-        # between this pod and the Job. Restore to 1 (or remove the field) in phase 2, at
-        # the same time persistence.config below is cut over to the new PVC.
-        replicas: 0
         containers:
           app:
             image:
@@ -74,7 +68,7 @@ spec:
             port: 7878
     persistence:
       config:
-        existingClaim: "${VOLSYNC_CLAIM:=${APP}}"
+        existingClaim: "${APP}-nfs-config"
         globalMounts:
           - path: /config
       # Same raw NFS export media/plex and downloads/sonarr already mount — see sonarr's
