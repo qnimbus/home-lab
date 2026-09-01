@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-09-01 | `ceph-packetdrops-checkpoint-4wk` | Ran netdev_budget checkpoint; root cause is NIC ring exhaustion; migrated *arr /config to NFS; fixed volsync sync storm |
 > | 2026-08-27 | `plex-keda-nfs-scaler` | Added KEDA ScaledObject scaling Plex to 0 on NAS NFS-port unreachability; reused nas-nfs Probe, added driftDetection.ignore for replicas |
 > | 2026-08-24 | `configarr-deploy` | Drafted Configarr TRaSH-Guide sync into `downloads` ns; reused sonarr/radarr items, verified TRaSH IDs and image digest |
 > | 2026-08-23 | `arr-stack-deploy` | Drafted Flux *arr stack (Prowlarr/Sonarr/Radarr/Sabnzbd) into `downloads` ns; reused Plex's NFS mount for hardlinks |
@@ -11,7 +12,6 @@
 > | 2026-08-24 | `plex-deploy` | Deployed Plex (GPU transcode, NFS media); fixed crash loop, secureConnections block, mobile Remote label, Cilium L2/Local bug, IOT-VLAN reachability |
 > | 2026-08-22 | `n8n-deploy` | Drafted Flux deployment of n8n into `automation` namespace; CNPG Database CRD pattern, unauthenticated smtp-relay reuse, internal-only exposure, left uncommitted |
 > | 2026-08-21 | `unifi-voucher-site-deploy` | Planned and implemented Flux deployment of unifi-voucher-site; reused shared unifi 1Password item, internal-only exposure, auth disabled |
-> | 2026-08-20 | `talos-ingress-firewall-iot` | Implemented Talos-native NetworkRuleConfig firewall closing the IOT node-port gap; per-port allow rules, no global default-block needed |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

@@ -4,6 +4,52 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-01 — `ceph-packetdrops-checkpoint-4wk`
+
+### Goal
+Run the overdue 4-week checkpoint on the `netdev_budget` fix for `CephNodeNetworkPacketDrops`, and act on whatever it found.
+
+### What we did
+- Located the prior investigation's actual Claude Code session transcript (user wanted to resume/reference it) by searching `~/.claude/projects/` directly — found it living under a worktree-scoped project directory (`-workspaces-home-lab--claude-worktrees-ceph-packetdrops-docs-refresh`), not the main repo's own session history, since the original work ran in a since-deleted worktree.
+- Ran the 4-week checkpoint: split result — `netdev_budget` fully resolved the alert on `cp-02`/`worker-01` (zero drops, 13-day clean run) but `cp-03`/`worker-02` regressed to *worse-than-baseline* drop volumes by late August, paging again on 2026-09-01.
+- Root-caused the regression live: a `sabnzbd` Ceph RBD write burst (its `/config` PVC, `ceph-block`) landing on the management VLAN — confirmed via a 5-7x `eno1` packet-rate surge coincident with the burst window.
+- Corrected an initial theory (OSD-daemon CPU competing with softirq for the same core) after live Prometheus data refuted it outright — `node_softnet_times_squeezed_total`/`node_softnet_dropped_total` stayed flat zero throughout; the actual mechanism is NIC RX-ring exhaustion (`node_network_receive_drop_total`, the driver's own `rx_dropped` counter), a layer below softirq that `netdev_budget` was never going to reach.
+- Corrected a second overreach (framed sabnzbd's Ceph write as its "incomplete-download working set") after a peer session read the manifests directly and found downloads land on raw NFS, not Ceph — only `/config` (a small SQLite queue/history DB) is `ceph-block`; walked this back in the docs rather than leaving it stated as fact.
+- Explained to the user why Ceph client I/O rides the management VLAN at all (a deliberate greenfield split between `public_network`/`cluster_network` to avoid a mon-failover migration) and why a 1GbE NIC "can't" absorb an 85MB/s burst well within its rated bandwidth — NIC ring depth and a single-queue `e1000e` chip, not bandwidth or CPU.
+- Migrated `sabnzbd`/`sonarr`/`radarr`/`prowlarr`'s `/config` PVCs off `ceph-block` onto the cluster's existing (previously unused) `nfs` StorageClass, as a phased two-commit rollout: phase 1 (additive — new PVC + a one-off `cp -a` migration Job per app, apps scaled to 0 for the copy window) and phase 2 (cutover — repoints `persistence.config`, drops `volsync`/the old PVC, which Flux then pruned).
+- Verified the migration at every stage via the cluster-doctor agent rather than assuming success: Flux reconciliation, migration Job logs/file counts, a full SHA-256 per-file checksum diff for `sabnzbd` specifically (the one app with a disproportionate `du`-byte-delta, later explained as cross-filesystem directory-inode accounting noise), and post-cutover app log inspection confirming each app's migrated config was genuinely recognized (existing queues/indexer configs/DBs), not fresh-setup state. Caught and documented one real hiccup: `sonarr` restarted once on first NFS-backed boot (probe-timing race, self-resolved, left as a watch item rather than pre-emptively tuning probes off one occurrence.
+- Checked whether other `ceph-block` consumers could reproduce the same failure mode: CNPG Postgres turned out to already be on `openebs-hostpath` (not applicable, correcting the original suggestion to check it); broadened to `victoria-logs`, `kube-prometheus-stack`, and the 8 apps sharing the `volsync` component. Caught a live `CephNodeNetworkPacketDrops` episode mid-investigation and ruled out every monitored candidate (Prometheus's own writes, victoria-logs, volsync, the already-migrated `downloads` namespace) without identifying a definitive trigger — an unattributed Ceph-internal read (`ceph -s`, possibly scrub) is the leading unconfirmed hypothesis.
+- Confirmed live (not just from config) that VolSync's hourly backup was genuinely unstaggered across all 8 `ceph-block`-backed apps — every `ReplicationSource.status.lastSyncTime` landed in the same ~30-second window every hour — a real, independent synchronized-burst risk.
+- Fixed the sync-storm risk with a new deterministic tool (`scripts/volsync-schedule.py`, wired as `task volsync:schedule`/`task volsync:check-schedules`): hashes each app name (CRC32) to a candidate minute avoiding `:00`/`:30`, then resolves collisions by linear-probing in a fixed sorted order so the same set of app names always produces the same collision-free assignment. Immediately caught and auto-resolved a real collision (`open-webui`/`plex` both hashing to `:27`) that an earlier hand-picked assignment hadn't accounted for.
+- Documented the user's eventual goal — moving Ceph's entire `public_network` onto the storage VLAN — as a new, explicitly separate and larger `docs/ROADMAP.md` item (cluster-wide blast radius, unresearched Rook live-mon-reconfiguration behavior, unverified pod-to-mon routing prerequisite), rather than folding it into the narrower fix actually shipped this session.
+- Hit repeated GPG commit-signing failures partway through (self-inflicted: ran `gpgconf --kill gpg-agent` while diagnosing the first failure, which left the agent in a restricted state) — did not bypass signing; handed off several commit messages for the user to run manually instead.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/QA.md` | Appended dated follow-ups: corrected mechanism (ring exhaustion, not softirq), corrected sabnzbd write claim, documented the live inconclusive episode and volsync sync risk |
+| `docs/ROADMAP.md` | Full rewrite of the e1000e packet-drops entry (checkpoint results, corrected mechanism, live episode, volsync finding); added new "Ceph `public_network`: Move to Storage VLAN" item |
+| `.claude/agent-memory/cluster-doctor/MEMORY.md` | Indexed two new cluster-doctor memory entries |
+| `.claude/agent-memory/cluster-doctor/reference_e1000e_ring_buffer_drops_not_softirq.md` | New: ring-exhaustion-not-softirq finding, for future recall |
+| `.claude/agent-memory/cluster-doctor/project_ceph_packetdrops_other_consumers_check.md` | New: other-consumers audit findings, live episode evidence |
+| `kubernetes/components/nfs-config/{pvc.yaml,kustomization.yaml}` | New: permanent nfs-backed `/config` PVC component |
+| `kubernetes/components/nfs-config-migrate/{job.yaml,kustomization.yaml}` | New: one-off ceph-block→nfs copy Job component (temporary, used during cutover) |
+| `kubernetes/apps/downloads/{sabnzbd,sonarr,radarr,prowlarr}/app/helmrelease.yaml` | Phase 1: added `replicas: 0`; Phase 2: removed it, cut `persistence.config` over to the nfs PVC |
+| `kubernetes/apps/downloads/{sabnzbd,sonarr,radarr,prowlarr}/ks.yaml` | Phase 1: added `nfs-config`/`nfs-config-migrate` components + deps; Phase 2: dropped `volsync`/migrate components, updated deps/vars |
+| `kubernetes/apps/{media/plex,documents/paperless-ngx,ai/open-webui,automation/n8n,database/pgadmin,automation/waha,finance/firefly-iii,development/forgejo}/ks.yaml` | Added deterministic `VOLSYNC_SCHEDULE` overrides (from `scripts/volsync-schedule.py`) |
+| `scripts/volsync-schedule.py` | New: deterministic hash + collision-resolution tool for VolSync schedules |
+| `.taskfiles/volsync/Taskfile.yaml` | New: `volsync:schedule` and `volsync:check-schedules` tasks |
+| `Taskfile.yaml` | Registered the new `volsync` taskfile include |
+
+### Key decisions
+- Dropped automated VolSync backup for the 4 migrated `*arr` apps rather than retarget it at NFS with `copyMethod: Direct` — the data is small/recreatable (queue DB, history, indexer defs) and this cluster's NFS CSI driver has no VolumeSnapshot support, so `Direct` was the only viable copyMethod and wasn't judged worth the added complexity for this data's actual value.
+- Used a plain rsync-style migration Job (mounting both the old and new PVC) instead of reusing VolSync's own restore-populator mechanism for the cutover — smaller blast radius (doesn't touch the shared `volsync` component used cluster-wide) and easier to verify step by step, at the cost of not reusing existing tooling.
+- Structured the `*arr` migration as two separately-reviewable commits (additive phase 1, destructive-but-pre-verified phase 2) specifically so the user could confirm the copy — including a full checksum diff for the one app with an unexplained `du` delta — before the old `ceph-block` PVC was pruned and unrecoverable.
+- Chose deterministic hash + collision-resolution (a script, still writes a literal into each `ks.yaml`) over a fully dynamic runtime controller for VolSync scheduling — matches this cluster's actual scale (8 apps, growing slowly); a new always-running component's own failure mode wasn't judged worth it yet.
+- Scoped moving Ceph's `public_network` to the storage VLAN as a separate, later roadmap item rather than pursuing it now, despite a live inconclusive episode arguing the `*arr` migration alone doesn't fully close the underlying risk — cluster-wide blast radius and an unresearched live mon-reconfiguration procedure make it a materially bigger and riskier project than anything shipped this session.
+
+---
+
 ## 2026-08-27 — `plex-keda-nfs-scaler`
 
 ### Goal
