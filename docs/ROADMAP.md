@@ -587,15 +587,69 @@ max, `ethtool -G` won't have headroom to help and the real fix is #3 below, not 
    project the user wants to pursue eventually regardless of whether #3 alone resolves the
    current alert, since it's the structurally-correct end state for the whole cluster, not just
    the `downloads` namespace.
-5. Check whether other Ceph-backed PVCs with bursty write patterns (e.g. a Plex transcode cache,
-   if one is `ceph-block`) show the same signature.
-6. If none of the above are pursued, revisit widening `CephNodeNetworkPacketDrops`'s `for:` window
+5. Check whether other Ceph-backed PVCs with bursty write patterns show the same signature.
+   **Plex's `/config` PVC (20Gi, `ceph-block`, currently on `cp-03` — an affected node) is the
+   leading candidate** — same SQLite-on-Ceph shape as the confirmed `sabnzbd` trigger. Did not
+   fire during the live episode captured below, but remains the closest structural analog and
+   worth checking first at the next occurrence.
+6. **Stagger VolSync's hourly backup schedule across its 8 `ceph-block`-backed consumers**
+   (`paperless-ngx`, `plex`, `open-webui`, `n8n`, `pgadmin`, `waha`, `firefly-iii`, `forgejo`).
+   Confirmed live (2026-09-01) — not just from config — that all 8 apps' `ReplicationSource`
+   `lastSyncTime` lands in the same ~30-second window every hour (`13:00:31`–`13:00:59` UTC
+   observed), since none of their `ks.yaml` files override the shared
+   `kubernetes/components/volsync` component's `VOLSYNC_SCHEDULE:=0 * * * *` default. This is a
+   real synchronized-burst risk on its own — cheap to fix (offset each app's `VOLSYNC_SCHEDULE`
+   by a few minutes) — independent of whether it has caused a page yet; the live episode below
+   did not coincide with a sync window, so this and that episode are two separate findings, not
+   one.
+7. If none of the above are pursued, revisit widening `CephNodeNetworkPacketDrops`'s `for:` window
    further or adding per-node overrides — but only as a last resort now that a real, addressable
    traffic source is identified, not as the first move.
 
 **Do not** raise `net.core.netdev_budget`/`netdev_budget_usecs` further on `cp-03`/`worker-02` —
 confirmed above to not be the constrained resource for this failure mode; more budget can't help a
 ring that's already full before softirq gets to drain it.
+
+**Live episode caught mid-investigation (2026-09-01, 13:51:46–13:53:01 UTC) — trigger not
+identified.** While checking whether OTHER `ceph-block` consumers could reproduce the `sabnzbd`
+failure mode, a real episode fired on `cp-03`+`worker-02` simultaneously — `node_network_receive_drop_total{device="eno1"}`
+spiked on both nodes at `13:51:15` (244/s `cp-03`, 231/s `worker-02`), the same cross-node
+simultaneous-burst signature seen before. Checked and **ruled out** as the cause: Prometheus's own
+pod network TX (flat, ~10-13KB/s throughout — directly refutes "Prometheus's own TSDB writes
+trigger its own alert"), `victoria-logs` (flat, ~1.8-2.1KB/s), VolSync (last sync completed 50+ min
+earlier, nothing active, next not due for an hour), `sabnzbd` (14MB/s of live download traffic at
+the time, but on `cp-01` — the unaffected node — and its whole namespace is already off
+`ceph-block`), and `plex`/`n8n`/`open-webui` (the 3 of the 8 volsync apps currently scheduled on
+the affected nodes — all flat). `ceph -s` showed 36 MiB/s read / 84 op/s at `HEALTH_OK` shortly
+after — unmatched to any monitored pod's traffic, and **not conclusively attributed**: plausibly
+Ceph-internal (scrub/deep-scrub — OSDs are host-networked, invisible to per-pod cAdvisor metrics)
+or an unmonitored client, but unconfirmed.
+
+**Updated historical framing:** across the full available 14-day Prometheus retention
+(2026-08-19 → 2026-09-01), only `cp-03`/`worker-02` show *any* `CephNodeNetworkPacketDrops`
+activity (pending or firing) — `cp-02`/`worker-01` show zero in this window. This refines, not
+contradicts, the 4-week checkpoint above: it's still consistent with "no burst big enough to
+expose ring exhaustion has landed on `cp-02`/`worker-01` since the Aug-19 reboot," now with 14
+days of clean data behind it rather than 13.
+
+**What this means for prioritizing the projects above:** the migration (#3, done) and VolSync
+staggering (#6, not yet done) both remove real, identified traffic sources — but this live episode
+fired *after* the migration completed, with no single-app cause identified among everything
+checked. That argues the ring-exhaustion failure mode is closer to an intrinsic property of running
+Ceph client I/O over this specific NIC/topology than something fully solvable by migrating
+individual apps off `ceph-block` one at a time — each migration closes one door, but the ring stays
+just as small for whatever's left. Doesn't change the recommended order (do the cheap fixes first),
+but is a real data point toward eventually prioritizing item #4 ([Ceph `public_network`: Move to
+Storage VLAN](#ceph-public_network-move-to-storage-vlan)) rather than treating it as indefinitely
+deferrable — that's a cost/urgency call for the user to make, not one this one inconclusive episode
+should force on its own.
+
+**Next safe check, for the next live occurrence:** start `rbd perf image iostat` streaming *before*
+the next episode (it's a live TUI, not capturable via one-shot `kubectl exec`) to finally attribute
+the unexplained 36 MiB/s read to a specific RBD image/PVC:
+```bash
+kubectl -n rook-ceph exec deploy/rook-ceph-tools -- rbd perf image iostat --pool ceph-blockpool -f json
+```
 
 ---
 
@@ -636,13 +690,27 @@ narrower `sabnzbd`/*arr `/config` migration above accomplishes on its own, separ
   reachability already exists to `10.200.0.0/24`, or would need new routing/Cilium configuration, is
   unconfirmed and must be checked before attempting this.
 
-**Suggested pre-work, before scheduling this:** check whether other `ceph-block` consumers —
-CNPG Postgres in particular, given its own backup/vacuum/large-transaction write patterns — can
-reproduce the same ring-exhaustion signature the `sabnzbd` investigation found. If yes, that
-raises the urgency of this project (the `/config` migration above wouldn't be a complete fix,
-just the first instance). If no other consumer shows the same pattern, this remains a
-correctness/future-proofing project rather than an active-incident fix, and can be scheduled
-whenever there's appetite for a live mon migration on a homelab cluster.
+**Pre-work done (2026-09-01) — mixed result, doesn't fully resolve the urgency question.**
+CNPG Postgres was the originally suggested candidate but is **not applicable**: its actual storage
+(`kubernetes/apps/database/cloudnative-pg/cluster/app/cluster.yaml`) is `openebs-hostpath`, local
+disk, not `ceph-block` at all — no Ceph client I/O to investigate. Broadened the check to the
+cluster's real `ceph-block` consumers (`victoria-logs`, `kube-prometheus-stack`'s Prometheus,
+and the 8 apps on the shared `volsync` component) and, during that check, a live episode fired
+(`cp-03`+`worker-02`, 2026-09-01 13:51:46-13:53:01 UTC — full detail in the e1000e packet-drops
+entry above). Prometheus and `victoria-logs` were both directly ruled out for that episode (flat
+traffic throughout); the actual cause was **not identified** among anything monitored, with an
+unattributed 36 MiB/s Ceph-internal read (`ceph -s`, possibly scrub) as the leading unconfirmed
+hypothesis.
+
+**Net effect on urgency:** this is real evidence the ring-exhaustion failure mode isn't fully
+solved by migrating individual apps off `ceph-block` — a fresh, unattributed episode fired *after*
+the `/config` migration completed. That leans toward elevating this project's priority rather than
+treating it as indefinitely deferrable, but it's not conclusive proof either (the episode's actual
+trigger is still unknown, so it's not confirmed to be "another app doing what `sabnzbd` did" — it
+could equally be Ceph-internal activity that `public_network`-to-storage-VLAN would also fix, since
+that migration moves scrub/heartbeat-front traffic off the management VLAN too, not just
+CSI/RBD client I/O). Scheduling this remains the user's call to make explicitly, not something to
+infer from one inconclusive episode.
 
 ---
 
