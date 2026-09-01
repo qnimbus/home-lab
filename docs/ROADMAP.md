@@ -610,6 +610,26 @@ max, `ethtool -G` won't have headroom to help and the real fix is #3 below, not 
 confirmed above to not be the constrained resource for this failure mode; more budget can't help a
 ring that's already full before softirq gets to drain it.
 
+**Ruled out (2026-09-01) — Ceph role placement and EEE, neither differentiates the affected
+nodes.** Checked whether `cp-03`/`worker-02` (affected) have some static Ceph-role or NIC-power
+difference from `cp-02`/`worker-01` (unaffected, same NIC/driver, zero episodes in 14 days):
+- **Ceph roles**: `ceph osd tree`/`ceph mon dump` live — every e1000e node carries exactly 2 OSDs,
+  no count difference. `worker-01` (unaffected) and `worker-02` (affected) both host a mon;
+  `cp-02` (unaffected) and `cp-03` (affected) both host neither mon nor mgr. No pattern.
+- **Energy Efficient Ethernet (802.3az)**: a plausible hypothesis — EEE's PHY low-power idle and
+  LPI wake-latency on burst resumption fits the ring-exhaustion-at-burst-start failure shape, and
+  the Intel I219-LM has a known history of EEE-related issues. Checked live via `ethtool
+  --show-eee eno1` (through a `kubectl debug node/...` pod, `hostNetwork: true`, no
+  nsenter/chroot needed) on all 4 e1000e nodes: byte-for-byte identical everywhere —
+  `EEE status: enabled - inactive` (driver has it on, but it never actually negotiates active
+  since the switch side doesn't advertise EEE support back, so no LPI wake-latency is actually
+  occurring on any of the 4 links). Nothing to disable that would change anything.
+
+Reinforces the standing theory rather than adding a new lever: which specific node(s) page on a
+given burst comes down to burst-timing and hot-PG locality (whichever OSDs are primary for the
+busy PGs at that moment), not a fixed hardware/firmware/role difference between the 4 e1000e
+nodes — they are equally exposed. No BIOS-level fix is currently indicated.
+
 **Live episode caught mid-investigation (2026-09-01, 13:51:46–13:53:01 UTC) — trigger not
 identified.** While checking whether OTHER `ceph-block` consumers could reproduce the `sabnzbd`
 failure mode, a real episode fired on `cp-03`+`worker-02` simultaneously — `node_network_receive_drop_total{device="eno1"}`
