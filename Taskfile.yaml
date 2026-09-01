@@ -18,6 +18,7 @@ env:
 includes:
   talos: .taskfiles/talos
   sops: .taskfiles/sops
+  volsync: .taskfiles/volsync
 
 tasks:
 
