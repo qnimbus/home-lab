@@ -546,20 +546,41 @@ max, `ethtool -G` won't have headroom to help and the real fix is #3 below, not 
 2. Map `sabnzbd`'s RBD image to its live PG/OSD acting set during a future burst (`ceph osd map
    <pool> <rbd-image>` or `rados -p <pool> osdmap`) to fully confirm the OSD-placement mechanism
    rather than inferring it from co-timed metrics.
-3. **IN PROGRESS (2026-09-01), see below** — move `sabnzbd`/`sonarr`/`radarr`/`prowlarr`'s
-   `/config` PVCs off `ceph-block` onto the cluster's existing (previously unused) `nfs`
-   StorageClass. Confirmed this is a single shared-component change, not a per-app migration:
-   all four apps get `/config` from the same `kubernetes/components/volsync` Kustomize
-   component, whose `pvc.yaml` defaults `storageClassName` to `${VOLSYNC_STORAGECLASS:=ceph-block}`
-   — none of the four `ks.yaml` files override it. `sonarr`/`radarr` also write `/config` on
-   library-import events (which fire right as a download completes), so all four needed
-   migrating, not just `sabnzbd`. Drafted as two phased commits in worktree
-   `ceph-packetdrops-checkpoint-4wk`: phase 1 (additive — new `nfs`-backed PVC + one-off copy
-   Job per app, old PVC untouched) and phase 2 (cutover — repoints `persistence.config` at the
-   new PVC, removes `volsync`/the old `ceph-block` PVC). Drops automated backup for this data
-   going forward (small, recreatable state — queue DB, history, indexer defs) rather than
-   retargeting VolSync at NFS, since NFS has no CSI snapshot support in this cluster and the
-   data's value doesn't justify the added complexity of a `Direct`-copyMethod backup path.
+3. **DONE (2026-09-01)** — moved `sabnzbd`/`sonarr`/`radarr`/`prowlarr`'s `/config` PVCs off
+   `ceph-block` onto the cluster's `nfs` StorageClass (previously provisioned but unused). This
+   was a single shared-component change, not a per-app migration: all four apps got `/config`
+   from the same `kubernetes/components/volsync` Kustomize component, whose `pvc.yaml` defaulted
+   `storageClassName` to `${VOLSYNC_STORAGECLASS:=ceph-block}` — none of the four `ks.yaml` files
+   overrode it. `sonarr`/`radarr` also write `/config` on library-import events (which fire right
+   as a download completes), so all four needed migrating, not just `sabnzbd`. Shipped as two
+   phased commits: phase 1 (`3d2b905`, additive — new `nfs`-backed PVC + one-off copy Job per
+   app, old PVC untouched, apps scaled to `replicas: 0` for the copy window) and phase 2
+   (`bea944e`, cutover — repoints `persistence.config` at the new PVC, removes `volsync`/the old
+   `ceph-block` PVC). No automated backup for this data going forward (small, recreatable state —
+   queue DB, history, indexer defs) rather than retargeting VolSync at NFS, since NFS has no CSI
+   snapshot support in this cluster and the data's value doesn't justify a `Direct`-copyMethod
+   backup path.
+
+   **Verification before/after cutover:** phase 1's copy Jobs all completed with matching file
+   counts on all four apps; `sabnzbd` (the one with a disproportionate `du`-reported byte delta —
+   1.57% on only 8 files, vs. ≤0.6% on the other three's larger trees) got a full SHA-256
+   per-file diff via a throwaway read-only pod — byte-for-byte identical, confirming the `du`
+   delta was cross-filesystem directory-inode accounting noise, not lost data. After phase 2,
+   all four apps came back up on the new PVC with their existing config genuinely recognized
+   (not a fresh-setup state) — `sabnzbd` resumed its postproc queue, `radarr` resumed RSS sync
+   with prior indicator state, `prowlarr` immediately queried its actual configured indexers
+   (DrunkenSlug/NZBFinder/NZBgeek), `sonarr` recognized `sonarr.db`/`logs.db` on both boot
+   attempts. Old `ceph-block` PVCs and `volsync` `ReplicationSource`/`ReplicationDestination`/
+   `ExternalSecret` confirmed pruned via the kustomize-controller GC log, not just absence.
+
+   **Watch item, not yet actioned:** `sonarr` restarted once on its first post-cutover boot —
+   the liveness/readiness probe (`period=10s, failureThreshold=3`) killed it ~20-30s after
+   "Application started" before it finished binding, most likely NFS mount/first-access latency
+   being slower than local Ceph RBD was. Both boot attempts show identical, error-free config
+   recognition, so this wasn't a data problem, and it self-resolved on the second attempt.
+   Deliberately left as-is rather than loosening probe timing off a single occurrence — if this
+   recurs on a future restart/reschedule of `sonarr` or any of the other three, that's the signal
+   to actually widen `initialDelaySeconds`/`failureThreshold` for these apps' probes.
 4. **Structural alternative/complement to #3 — move Ceph's entire `public_network` onto the
    storage VLAN.** See the dedicated [Ceph `public_network`: Move to Storage
    VLAN](#ceph-public_network-move-to-storage-vlan) entry below — this is a distinct, larger
