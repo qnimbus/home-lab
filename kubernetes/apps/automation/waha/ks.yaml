@@ -27,6 +27,10 @@ spec:
       # This toggle pauses the hourly ReplicationSource
       # so VolSync stops attempting NFS-backed Restic backups.
       VOLSYNC_PAUSED: "false"
+      # Staggered off the component's :00 default — see docs/ROADMAP.md's e1000e
+      # packet-drops entry (2026-09-01): all 8 volsync-backed apps syncing at the same
+      # top-of-hour minute is a real synchronized-burst risk on the Ceph public_network.
+      VOLSYNC_SCHEDULE: "43 * * * *"
   sourceRef:
     kind: GitRepository
     name: flux-system

@@ -44,6 +44,10 @@ spec:
       APP_UID: "33"
       APP_GID: "33"
       VOLSYNC_CAPACITY: 5Gi
+      # Staggered off the component's :00 default — see docs/ROADMAP.md's e1000e
+      # packet-drops entry (2026-09-01): all 8 volsync-backed apps syncing at the same
+      # top-of-hour minute is a real synchronized-burst risk on the Ceph public_network.
+      VOLSYNC_SCHEDULE: "51 * * * *"
   prune: true
   wait: false
   sourceRef:

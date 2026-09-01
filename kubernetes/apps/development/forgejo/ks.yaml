@@ -48,6 +48,10 @@ spec:
       # with real data; see the retrofit comment in components/volsync/pvc.yaml.
       VOLSYNC_CLAIM: gitea-shared-storage
       VOLSYNC_CAPACITY: 10Gi
+      # Staggered off the component's :00 default — see docs/ROADMAP.md's e1000e
+      # packet-drops entry (2026-09-01): all 8 volsync-backed apps syncing at the same
+      # top-of-hour minute is a real synchronized-burst risk on the Ceph public_network.
+      VOLSYNC_SCHEDULE: "59 * * * *"
   prune: true
   wait: false
   sourceRef:
