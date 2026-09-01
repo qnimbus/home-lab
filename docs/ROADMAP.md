@@ -396,6 +396,49 @@ migration. `sidecar.dashboards`/`sidecar.datasources` enabled (auto-discovers Co
 
 ### e1000e Management-NIC Packet Drops: `netdev_budget` Experiment
 
+**Current status (2026-09-01) — TL;DR.** The full chronological investigation is below; this is
+the current-state summary for anyone (including a future session) who doesn't want to read all of
+it to know where things stand.
+
+- **Confirmed mechanism**: NIC RX-ring exhaustion on `eno1` (Intel I219-LM, `e1000e`,
+  single-queue) — the driver's own `rx_dropped` counter, a layer below softirq. Not CPU/softirq
+  contention, not bandwidth/pps saturation (both directly refuted with live data).
+- **Fixed, shipped, verified**:
+  - `sabnzbd`/`sonarr`/`radarr`/`prowlarr`'s `/config` PVCs migrated off `ceph-block` onto NFS —
+    removed one confirmed Ceph-client-I/O trigger.
+  - VolSync's hourly backup schedule (8 `ceph-block`-backed apps, previously all synchronized to
+    the same ~30s window every hour) staggered via a new deterministic tool
+    (`scripts/volsync-schedule.py`) — removed a second, independently-confirmed synchronized-burst
+    risk.
+- **Ruled out** as explanations for why only `cp-03`/`worker-02` alert (not `cp-02`/`worker-01`,
+  same NIC/driver): Ceph role placement (no pattern), Energy Efficient Ethernet (identical,
+  inactive on all 4 nodes), and the original `netdev_budget`/softirq theory (superseded by the
+  ring-exhaustion finding).
+- **Confirmed viable, not yet implemented**: raising the RX ring buffer (`ethtool -G eno1 rx
+  <N>`) — confirmed 16x headroom (256/4096 descriptors, identical on all 4 nodes) via live
+  `ethtool -g`. This is the most directly-indicated remaining fix. Needs an unsupported Talos
+  workaround (no declarative field for ring sizing) — **deliberately not built yet**, pending an
+  explicit decision to implement. A pre-fix baseline was captured 2026-09-01 for comparison
+  whenever it does get applied — see the baseline table further down this entry.
+- **Still open**: a live episode fired 2026-09-01 13:51 UTC, *after* both shipped fixes above,
+  with no single-app trigger identified among everything checked (Prometheus, victoria-logs,
+  VolSync, the migrated `downloads` apps). An unattributed 36 MiB/s Ceph-internal read (possibly
+  scrub) is the leading unconfirmed hypothesis — `rbd perf image iostat` needs to be running
+  *before* the next occurrence to pin it down (it's a streaming TUI, not capturable after the
+  fact).
+- **Possible troubleshooting steps from here, roughly ranked** (none implemented yet — see the
+  numbered list further down for full detail on each):
+  1. Build the `ethtool -G` ring-size workaround — cleared to proceed, not yet built.
+  2. Start `rbd perf image iostat` streaming ahead of the next live episode.
+  3. Check Plex's `/config` PVC (same `ceph-block`/SQLite shape as the confirmed `sabnzbd`
+     trigger) if it's ever implicated.
+  4. [Move Ceph's `public_network` to the storage VLAN](#ceph-public_network-move-to-storage-vlan)
+     — the structurally-complete fix, but a separate, larger, riskier project (cluster-wide blast
+     radius, unresearched live mon reconfiguration) — not forced by current evidence alone.
+  5. Last resort: widen the alert's `for:` window (masks symptoms, doesn't fix anything).
+
+---
+
 **Applied live 2026-08-05 ~11:20 UTC** (via `talosctl apply-config`, no reboots needed — confirmed
 via `talosctl read` on all 4 nodes; etcd quorum and Ceph `HEALTH_OK` unaffected throughout the
 rollout; committed in `f4d1c8a`). `CephNodeNetworkPacketDrops` recurs on the 4 nodes with an Intel
@@ -541,6 +584,30 @@ uniform across alerting (`cp-03`/`worker-02`) and quiet (`cp-02`/`worker-01`) no
 doesn't by itself explain *which* nodes hit the ceiling under a given burst — that remains
 burst-timing/hot-PG locality (see "Ruled out" below), not a contradiction. Take a
 `node_network_receive_drop_total` baseline per node before applying a bump, for a clean before/after.
+
+**Pre-`ethtool -G` baseline, captured 2026-09-01 20:33:27–20:34:03 UTC** (ring still at
+default 256/4096 — same 3 PromQL queries as the original 2026-08-05 baseline, for methodological
+consistency, plus a 7d window and the raw absolute counter since episodes are sparse enough that
+24h alone can be noisy):
+
+| Node | 24h RX-drop Δ | 7d RX-drop Δ | Peak burst 24h (drops/sec) | Firing samples 24h | Firing samples 7d | Absolute counter |
+|------|---------------:|---------------:|------------------------------:|----------------------:|----------------------:|--------------------:|
+| cp-02 (`.202`) | 0 | 0 | 0 | 0 | 0 | 2,805 |
+| cp-03 (`.203`) | 2,390,153.91 | 5,682,347.86 | 1,556.2 | 83 | 118 | 6,639,382 |
+| worker-01 (`.204`) | 0 | 798.04 | 0 | 0 | 0 | 5,294 |
+| worker-02 (`.205`) | 2,555,397.29 | 6,283,519.68 | 1,645.6 | 73 | 94 | 7,118,182 |
+
+Notes: "firing samples" is `count_over_time` on 30s-scraped `ALERTS` samples (sample count while
+firing, not distinct episode count — same methodology as the original baseline, so the two are
+comparable). The 7d `increase()` values on `cp-03`/`worker-02` (5.68M/6.28M) come in lower than
+their raw absolute counters (6.64M/7.12M), consistent with at least one node-exporter/counter
+reset inside that 7-day window rather than a query artifact — the absolute counter is the more
+reliable long-run reference point precisely because it isn't affected by that. `cp-02` and
+`worker-01` remain essentially silent (0 in every 24h/7d window), consistent with every prior
+finding this session that only `cp-03`/`worker-02` have shown any activity in the available
+retention. **Whenever `ethtool -G` is actually applied, re-run these same 3+2 queries and diff
+against this table** — a meaningful win looks like `cp-03`/`worker-02`'s 24h/7d deltas dropping by
+an order of magnitude, similar to how the original `netdev_budget` checkpoint was judged.
 
 **Follow-up options, ranked by what the evidence now indicates:**
 1. **NOT YET BUILT, cleared to proceed — raise the RX ring buffer size** (`ethtool -G eno1 rx
