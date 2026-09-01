@@ -12,6 +12,14 @@ spec:
       app.kubernetes.io/name: *app
   components:
     - ../../../../components/volsync
+    # --- ceph-block -> NFS /config migration (see docs/ROADMAP.md, e1000e packet-drops
+    # entry, follow-up #3) --- PHASE 1 (additive, safe): provisions the new nfs-backed PVC
+    # and a one-off Job that copies the current ceph-block PVC's contents into it. Remove
+    # both lines, and the app's replicas: 0 override below, once the migration Job has been
+    # confirmed successful (phase 2 also drops the volsync line above and cuts
+    # persistence.config over to the new PVC — see that commit).
+    - ../../../../components/nfs-config
+    - ../../../../components/nfs-config-migrate
   interval: 1h
   path: ./kubernetes/apps/downloads/sabnzbd/app
   postBuild:
@@ -24,6 +32,10 @@ spec:
       # /config (queue db, history, categories) — download staging itself is the same raw
       # NFS mount media/plex already uses, not part of this PVC.
       VOLSYNC_CAPACITY: 5Gi
+      # Matches VOLSYNC_CAPACITY above — sized the same since it's the same logical data,
+      # just moving backend. Drop VOLSYNC_CAPACITY (and the volsync component) once phase 2
+      # of the ceph-block -> NFS migration completes.
+      NFS_CONFIG_CAPACITY: 5Gi
   prune: true
   wait: false
   sourceRef:
@@ -34,6 +46,8 @@ spec:
     - name: onepassword-store
     - name: rook-ceph-cluster
     - name: volsync
+    # nfs StorageClass source — required for the nfs-config PVC above.
+    - name: csi-driver-nfs
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
