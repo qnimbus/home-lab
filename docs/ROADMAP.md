@@ -481,8 +481,14 @@ Timing: `sabnzbd`'s `container_network_receive_bytes_total` ramped from 1.7 MB/s
 (45s into the ramp) and both nodes fired 10:14:45-10:17:00 — squarely inside the sustained-download
 window. But `sabnzbd`/`prowlarr`/`sonarr`/`radarr` all run on **`talos-cp-01`** (the unaffected
 `igc` node) — so this is *not* host-NIC contention between the *arr pods and the alert-affected
-NICs. The actual mechanism: `sabnzbd`'s `config` PVC is `ceph-block` (RWO), so its incomplete-download
-working set is Ceph RBD, not just the NFS `media` mount — and `CephCluster.spec.network.addressRanges.public`
+NICs. The mechanism established so far: `sabnzbd`'s `/config` PVC (5Gi, `ceph-block`, RWO) holds
+its SQLite queue/history database — the only thing it has on Ceph, since (confirmed 2026-09-01 by
+reading the manifests directly) the actual downloaded bytes land on a raw NFS mount, never
+touching Ceph. What's still **inferred, not separately measured**: that `/config`'s DB writes
+during a download are large/frequent enough on their own to produce the observed traffic — a
+timing correlation plus the PVC/network mapping, not a measured RBD byte-volume for this PVC. That
+gap is exactly what follow-up #2 below (map the RBD image to its PG/OSD acting set, or read
+per-OSD write-bytes during a live burst) would close. And `CephCluster.spec.network.addressRanges.public`
 is `10.60.0.0/24`, the **same management VLAN** `eno1`/this alert watches. `cp-03` and `worker-02`
 happened to host the OSDs holding the busy PGs during this burst (`cp-03`: OSD 2/4; `worker-02`:
 OSD 6/9 + mon-d) — confirmed via a genuine packet-rate surge on `eno1` itself
@@ -539,10 +545,18 @@ max, `ethtool -G` won't have headroom to help and the real fix is #3 below, not 
 2. Map `sabnzbd`'s RBD image to its live PG/OSD acting set during a future burst (`ceph osd map
    <pool> <rbd-image>` or `rados -p <pool> osdmap`) to fully confirm the OSD-placement mechanism
    rather than inferring it from co-timed metrics.
-3. Consider whether `sabnzbd`'s working-directory PVC needs to be Ceph-backed at all, vs. NFS
-   (trades Ceph replication for the NFS mount already used for the media library) — would remove
-   this traffic source from the management VLAN entirely, sidestepping the ring-buffer limit
-   rather than raising it.
+3. Consider whether `sabnzbd`'s `/config` PVC needs to be Ceph-backed at all, vs. NFS (trades
+   Ceph replication for the NFS mount already used for the media library) — would remove this
+   traffic source from the management VLAN entirely, sidestepping the ring-buffer limit rather
+   than raising it. **Confirmed 2026-09-01 this is a single shared-component change, not a
+   per-app migration**: all four *arr-stack apps with persistent state (`sabnzbd`, `sonarr`,
+   `radarr`, `prowlarr`) get their `/config` PVC from the same `kubernetes/components/volsync`
+   Kustomize component, whose `pvc.yaml` defaults `storageClassName` to
+   `${VOLSYNC_STORAGECLASS:=ceph-block}` — none of the four `ks.yaml` files override it. Setting
+   `VOLSYNC_STORAGECLASS` per-app (or switching the component's default) would apply to all four
+   in one change. Since `sonarr`/`radarr` also write `/config` on library-import events (which
+   fire right as a download completes), moving all four — not just `sabnzbd` — may be needed to
+   fully address bursts, not only the one already captured.
 4. **Structural alternative to #3 — move Ceph's `public_network` onto the storage VLAN**
    (`10.200.0.0/24`), so client I/O (CSI/RBD, including `sabnzbd`'s writes) rides the same isolated
    2x10G LACP bond as `cluster_network` instead of sharing the 1G management NIC. This doubles as
