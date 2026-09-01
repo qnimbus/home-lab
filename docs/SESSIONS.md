@@ -4,6 +4,35 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-01 — `ceph-packetdrops-ring-headroom-baseline`
+
+### Goal
+Check whether the `CephNodeNetworkPacketDrops` issue has a BIOS-level or Ceph-role-based cause, confirm whether the RX ring buffer has headroom for the leading remaining fix, and capture a pre-fix baseline — without implementing anything yet.
+
+### What we did
+- User asked whether the affected nodes' (`cp-03`/`worker-02`) BIOS could explain the packet-drops issue, and what their roles in the Ceph cluster are. Checked both live via cluster-doctor rather than reciting from possibly-stale investigation notes.
+- Ceph roles: `ceph osd tree`/`ceph mon dump` live — every e1000e node carries exactly 2 OSDs, no count difference; `worker-01` (unaffected) and `worker-02` (affected) both host a mon; `cp-02` (unaffected) and `cp-03` (affected) both host neither mon nor mgr. No role pattern differentiates the affected pair from the unaffected pair.
+- Energy Efficient Ethernet (802.3az): a genuinely plausible candidate given the Intel I219-LM's documented history of PHY-wake-latency-on-burst-resumption issues, which fits the ring-exhaustion-at-burst-start failure shape. Checked live via `ethtool --show-eee eno1` (through a `kubectl debug node/... --image=nicolaka/netshoot` pod — `hostNetwork` automatic, no nsenter/chroot needed) on all 4 e1000e nodes: byte-for-byte identical everywhere — `enabled - inactive` (never actually negotiated, so no LPI wake-latency happening on any of the 4 links). Ruled out.
+- Synthesized a "what are our current leads, is the public_network-to-storage-VLAN migration the only option" answer for the user: no — the RX ring buffer size (`ethtool -G`) is the most directly-indicated, cheapest, lowest-risk untried lever, gated only on a capacity check that had never actually been run.
+- Ran that gating check live: `ethtool -g eno1` on all 4 e1000e nodes — `256` current RX/TX descriptors against a `4096` hardware maximum, identical everywhere, never touched from the `e1000e` driver default. Confirmed 16x headroom. Offload settings (GRO/LRO/checksumming) also came back stock and identical — not a contributing factor.
+- Per explicit instruction, did not implement the ring-size fix — documented findings and possible troubleshooting steps only, and captured a pre-fix baseline for later comparison instead.
+- Added a consolidated "Current status" TL;DR summary to the top of `docs/ROADMAP.md`'s e1000e entry, since it had grown into a long chronological history across many dated updates and a future reader shouldn't have to read all of it to know where things stand.
+- Captured a pre-`ethtool -G` baseline via live PromQL: the same 3 queries as the original 2026-08-05 `netdev_budget` baseline (for direct comparability), plus a 7d window and raw absolute counter values (24h alone risks being unrepresentative for a sparse/bursty failure mode) — recorded per-node in `docs/ROADMAP.md` for a real before/after once the ring-size fix is eventually applied.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/ROADMAP.md` | Added "Ruled out" section (Ceph roles, EEE); added ring-headroom confirmation (16x headroom, cleared item #1 to proceed); added "Current status" TL;DR summary; added pre-`ethtool -G` baseline table |
+| `.claude/agent-memory/cluster-doctor/MEMORY.md` | Indexed the new cluster-doctor memory entry |
+| `.claude/agent-memory/cluster-doctor/project_ceph_packetdrops_eee_and_roles_ruled_out.md` | New: EEE and Ceph-role rule-out findings, for future recall |
+
+### Key decisions
+- Explicitly deferred implementing the `ethtool -G` fix per direct user instruction ("do not implement anything yet") — documented it as "confirmed viable, not yet built" rather than building the Talos unsupported-workaround (privileged DaemonSet/initContainer) despite headroom being confirmed and the fix being otherwise ready to plan.
+- Captured the baseline using the exact same PromQL methodology as the original 2026-08-05 `netdev_budget` baseline, specifically so the two are directly comparable once the fix is eventually applied, rather than inventing a new measurement approach.
+- Extended the original 24h-only baseline format with a longer 7d window and the raw absolute counter, since a single 24h snapshot risks being unrepresentative for a failure mode this sparse/bursty — additive to the established methodology, not a replacement.
+
+---
+
 ## 2026-09-01 — `ceph-packetdrops-checkpoint-4wk`
 
 ### Goal
