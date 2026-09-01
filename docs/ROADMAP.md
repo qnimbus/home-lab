@@ -493,26 +493,74 @@ the run's day-to-day node variance in the table above: which nodes get hit depen
 currently hold the hot PGs, which shifts over time — not a fixed hardware weakness on `cp-03`/`worker-02`
 specifically.
 
-**Verdict:** the `netdev_budget` bump is a genuine fix for the *baseline* periodic softirq burst
-(fully resolved on `cp-02`/`worker-01`, where no competing Ceph-client-I/O burst has landed since).
-It is not sufficient on its own when a large synchronous Ceph RBD write burst also lands on the
-same NIC — that's a distinct, additive traffic source the sysctl bump doesn't fully absorb once
-volume gets high enough (Aug 26-27's 1.1-1.7M/day episodes). This reframes the open question: not
-"does softirq tuning help" (yes, confirmed) but "how to stop `sabnzbd`'s Ceph-client I/O from
-periodically saturating the management NIC's RX path on whichever node holds the hot OSDs."
+**Mechanism, confirmed 2026-09-01 — NIC RX-ring exhaustion, not softirq/CPU contention.** The
+initial working theory (this morning's page = OSD-daemon CPU competing with `eno1`'s softirq for
+the same core) was checked directly against Prometheus for the exact burst window
+(`cp-03`/`worker-02`, 10:05-10:20 UTC) and **refuted**:
+- `rate(node_softnet_times_squeezed_total[1m])` — the direct signal for "`NET_RX` softirq ran out
+  of its `netdev_budget` before finishing"— stayed **flat zero** on every core, the whole window.
+- `rate(node_softnet_dropped_total[1m])` — the `netif_rx`/backlog-overflow counter — also flat
+  zero (consistent with `e1000e` being a NAPI driver that drains its own ring directly and mostly
+  bypasses that backlog path anyway).
+- Busiest core hit only ~8-12% softirq, idle stayed >78% throughout on both nodes. Rook-Ceph OSD
+  pod CPU (`osd-2`/`osd-4` on `cp-03`, `osd-6`/`osd-9` on `worker-02`) sat flat at 0.04-0.2 cores —
+  no OSD-vs-softirq contention.
+- The metric that actually moved: `rate(node_network_receive_drop_total{device="eno1"}[1m])`
+  itself — 0 → 600-1,600 drops/sec, exactly in 10:13:30-10:17:00 UTC. This is the NIC driver's own
+  `rx_dropped` counter, a layer *below* both the softnet backlog and the NAPI budget loop: the
+  RX descriptor ring filling up (or an `skb` allocation failure) before the kernel drains it.
+- The Intel I219-LM (`e1000e`) is hardware **single-queue** — no RSS/multi-queue support, unlike
+  the storage bond's `ixgbe`/`igc`-class NICs — so its entire RX path, ring included, pins to one
+  CPU core with no way to spread load, regardless of how high `netdev_budget` is set.
 
-**Follow-up options, not yet actioned:**
-1. Map `sabnzbd`'s RBD image to its live PG/OSD acting set during a future burst (`ceph osd map
+**This means `netdev_budget` was tuning the wrong layer for this failure mode.** It raises how
+much a CPU processes *per softirq pass* — correct if the bottleneck is backlog/budget exhaustion
+(the `squeezed`/`dropped` counters), but irrelevant if packets are being dropped by the driver
+before they ever reach softirq processing. `cp-02`/`worker-01` showing zero drops since Aug-19
+is genuine — but on current evidence it may mean "no Ceph write burst large enough to expose the
+same ring-exhaustion has landed on their OSDs yet," not "the sysctl fixed the underlying failure
+mode there." All 4 nodes share the identical NIC/driver, so all 4 are presumed equally exposed to
+ring exhaustion under a big enough burst; which ones actually show it depends on CRUSH/PG
+placement at the time, per the mechanism above.
+
+**Immediate next step, not yet done:** confirm actual vs. max RX ring depth via `ethtool -g eno1`
+on an affected node before building any fix — Talos's distroless node-exporter image and lack of
+SSH mean this needs a one-off privileged debug pod (`nsenter --net=/proc/1/ns/net -- ethtool -g
+eno1`) or a `talosctl support` bundle. Do not skip this: if the ring is already near its hardware
+max, `ethtool -G` won't have headroom to help and the real fix is #3 below, not #1.
+
+**Follow-up options, ranked by what the evidence now indicates:**
+1. **Raise the RX ring buffer size** (`ethtool -G eno1 rx <N>`) — directly indicated by the
+   `rx_dropped` spike lining up with ring-layer symptoms. **Not declarative in Talos** — machine
+   config's network schema covers interfaces/routes/bonds/VLANs, not `ethtool` ring sizing — so
+   this needs an unsupported workaround (a privileged DaemonSet/initContainer running the `ethtool
+   -G`/`nsenter` command at boot, since nothing else persists it across reboots) and is mildly
+   disruptive (brief link reset when applied). Gate on the `ethtool -g` check above first.
+2. Map `sabnzbd`'s RBD image to its live PG/OSD acting set during a future burst (`ceph osd map
    <pool> <rbd-image>` or `rados -p <pool> osdmap`) to fully confirm the OSD-placement mechanism
    rather than inferring it from co-timed metrics.
-2. Consider whether `sabnzbd`'s working-directory PVC needs to be Ceph-backed at all, vs. NFS
+3. Consider whether `sabnzbd`'s working-directory PVC needs to be Ceph-backed at all, vs. NFS
    (trades Ceph replication for the NFS mount already used for the media library) — would remove
-   this traffic source from the management VLAN entirely.
-3. Check whether other Ceph-backed PVCs with bursty write patterns (e.g. a Plex transcode cache,
+   this traffic source from the management VLAN entirely, sidestepping the ring-buffer limit
+   rather than raising it.
+4. **Structural alternative to #3 — move Ceph's `public_network` onto the storage VLAN**
+   (`10.200.0.0/24`), so client I/O (CSI/RBD, including `sabnzbd`'s writes) rides the same isolated
+   2x10G LACP bond as `cluster_network` instead of sharing the 1G management NIC. This doubles as
+   a NIC swap, not just a traffic move — the storage bond's cards are multi-queue with materially
+   larger default ring depths, so it plausibly sidesteps this failure mode structurally rather
+   than just relocating it. Still the expensive option: `public_network` is where mons bind, so
+   changing it live means the mon-failover reconfiguration dance the original greenfield choice
+   (`docs/SESSIONS-ARCHIVE.md:435`) was specifically designed to avoid. Revisit only if #1/#3 turn
+   out insufficient.
+5. Check whether other Ceph-backed PVCs with bursty write patterns (e.g. a Plex transcode cache,
    if one is `ceph-block`) show the same signature.
-4. If none of the above are pursued, revisit widening `CephNodeNetworkPacketDrops`'s `for:` window
+6. If none of the above are pursued, revisit widening `CephNodeNetworkPacketDrops`'s `for:` window
    further or adding per-node overrides — but only as a last resort now that a real, addressable
    traffic source is identified, not as the first move.
+
+**Do not** raise `net.core.netdev_budget`/`netdev_budget_usecs` further on `cp-03`/`worker-02` —
+confirmed above to not be the constrained resource for this failure mode; more budget can't help a
+ring that's already full before softirq gets to drain it.
 
 ---
 
