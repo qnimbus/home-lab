@@ -530,19 +530,26 @@ mode there." All 4 nodes share the identical NIC/driver, so all 4 are presumed e
 ring exhaustion under a big enough burst; which ones actually show it depends on CRUSH/PG
 placement at the time, per the mechanism above.
 
-**Immediate next step, not yet done:** confirm actual vs. max RX ring depth via `ethtool -g eno1`
-on an affected node before building any fix — Talos's distroless node-exporter image and lack of
-SSH mean this needs a one-off privileged debug pod (`nsenter --net=/proc/1/ns/net -- ethtool -g
-eno1`) or a `talosctl support` bundle. Do not skip this: if the ring is already near its hardware
-max, `ethtool -G` won't have headroom to help and the real fix is #3 below, not #1.
+**Confirmed (2026-09-01) — real headroom exists, `ethtool -G` is worth pursuing.** Checked
+`ethtool -g eno1` live on all 4 e1000e nodes via `kubectl debug node/... --image=nicolaka/netshoot`
+(same approach as the EEE check below — `hostNetwork` automatic, no nsenter/chroot needed):
+identical everywhere, RX/TX both `256` current against a `4096` pre-set hardware maximum — **16x
+headroom**, never touched from the `e1000e` driver default on any node. Offload settings
+(`rx-checksumming`, `generic-receive-offload`, `large-receive-offload`) also came back stock and
+identical on all 4 — not a contributing factor. One caveat the check surfaced: ring size is
+uniform across alerting (`cp-03`/`worker-02`) and quiet (`cp-02`/`worker-01`) nodes alike, so it
+doesn't by itself explain *which* nodes hit the ceiling under a given burst — that remains
+burst-timing/hot-PG locality (see "Ruled out" below), not a contradiction. Take a
+`node_network_receive_drop_total` baseline per node before applying a bump, for a clean before/after.
 
 **Follow-up options, ranked by what the evidence now indicates:**
-1. **Raise the RX ring buffer size** (`ethtool -G eno1 rx <N>`) — directly indicated by the
-   `rx_dropped` spike lining up with ring-layer symptoms. **Not declarative in Talos** — machine
-   config's network schema covers interfaces/routes/bonds/VLANs, not `ethtool` ring sizing — so
-   this needs an unsupported workaround (a privileged DaemonSet/initContainer running the `ethtool
-   -G`/`nsenter` command at boot, since nothing else persists it across reboots) and is mildly
-   disruptive (brief link reset when applied). Gate on the `ethtool -g` check above first.
+1. **NOT YET BUILT, cleared to proceed — raise the RX ring buffer size** (`ethtool -G eno1 rx
+   <N>`) — directly indicated by the `rx_dropped` spike lining up with ring-layer symptoms, and
+   confirmed 16x headroom exists (see above). **Not declarative in Talos** — machine config's
+   network schema covers interfaces/routes/bonds/VLANs, not `ethtool` ring sizing — so this needs
+   an unsupported workaround (a privileged DaemonSet/initContainer running `ethtool -G` at boot,
+   since nothing else persists it across reboots) and is mildly disruptive (brief link reset when
+   applied).
 2. Map `sabnzbd`'s RBD image to its live PG/OSD acting set during a future burst (`ceph osd map
    <pool> <rbd-image>` or `rados -p <pool> osdmap`) to fully confirm the OSD-placement mechanism
    rather than inferring it from co-timed metrics.
