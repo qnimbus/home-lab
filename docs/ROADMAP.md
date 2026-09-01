@@ -397,8 +397,7 @@ migration. `sidecar.dashboards`/`sidecar.datasources` enabled (auto-discovers Co
 
 **Applied live 2026-08-05 ~11:20 UTC** (via `talosctl apply-config`, no reboots needed — confirmed
 via `talosctl read` on all 4 nodes; etcd quorum and Ceph `HEALTH_OK` unaffected throughout the
-rollout). `talconfig.yaml`/the patch file are still uncommitted in git — commit before this drifts
-from the repo's "no changes not reflected in Git" rule. `CephNodeNetworkPacketDrops` recurs on the 4 nodes with an Intel
+rollout; committed in `f4d1c8a`). `CephNodeNetworkPacketDrops` recurs on the 4 nodes with an Intel
 I219-LM (`e1000e`) management NIC (`cp-02`, `cp-03`, `worker-01`, `worker-02`) but never on `cp-01`
 (newer Intel I225/I226, `igc`) — full root-cause writeup in
 [QA.md](QA.md#why-did-a-ceph-alert-cephnodenetworkpacketdrops-fire-for-packet-drops-on-a-management-nic-when-ceph-traffic-runs-on-the-storage-vlan).
@@ -451,13 +450,69 @@ different times of day rather than the same hour on different days, so some of t
 diurnal traffic variation rather than the patch, and 3h/4-firings is a small sample. Needs the full
 1-2 week checkpoint below to separate signal from noise.
 
-**Checkpoint:** re-run the queries above ~1-2 weeks after applying, per-node against this baseline.
-A meaningful win looks like the 24h drop totals dropping by an order of magnitude and/or `cp-02`'s
-firing count trending toward 0. A `netdev_budget` bump that changes nothing across all 3 metrics
-means the softirq-budget theory was wrong too, and it's time to stop chasing kernel-level fixes and
-just widen `CephNodeNetworkPacketDrops`'s `for:` window (or add per-node threshold overrides) to
-stop it paging — the alert would then just reflect known, harmless noise rather than something
-worth further OS-level tuning.
+**Checkpoint (2026-09-01, ~4 weeks post-patch) — split result, not a uniform fix.** The planned
+1-2 week re-check slipped; by the time it ran, Prometheus's 2-week retention (`storage.tsdb.retention.time=2w`)
+plus a fleet-wide reboot of all 4 nodes on 2026-08-19 (~09:09-11:37 UTC, unrelated maintenance) had
+already reset `node_network_receive_drop_total`'s counters, so a true 27-day trend isn't queryable —
+the longest available continuous window is the 13 days since that reboot, which happens to double
+as a clean before/after split point. Sysctls confirmed still correctly applied on all 4 nodes via
+`talosctl read` (`netdev_budget=1000`, `netdev_budget_usecs=16000` everywhere) — the split below is
+a real behavioral divergence, not config drift.
+
+| Node | Baseline 24h drops (Aug 5) | Baseline firings | 13d total drops (since Aug-19 reboot) | Current 24h drops (Sep 1) | Current 24h firings |
+|------|------------------------------|---------------------------|------------------------------------------|------------------------------|------------------------|
+| cp-02 (`.202`) | 736,638 | 25 | **0** | 0 | 0 |
+| worker-01 (`.204`) | 755,388 | 0 | **1,666** | 0 | 0 |
+| cp-03 (`.203`) | 748,074 | 0 | 4,616,015 | 502,376 | 9 (~2 episodes) |
+| worker-02 (`.205`) | 744,322 | 0 | 5,081,565 | 755,618 | 6 (~2 episodes) |
+
+- **`cp-02`/`worker-01`: the patch worked** — >99.99% reduction, zero alert firings across the full
+  13-day post-reboot window. Order-of-magnitude success, exactly the outcome hoped for.
+- **`cp-03`/`worker-02`: the patch did not hold.** Aug 20-24 looked equally good (10K-40K
+  drops/day, ~95%+ down from baseline), then a regression set in: Aug 25 jumped to 212K-227K/day,
+  Aug 26-27 spiked to **1.1M-1.7M/day — worse than the pre-patch baseline** — partially recovered
+  Aug 28, then climbed steadily again through Aug 31-Sep 1 (176K→253K→377K→502K/day/node),
+  culminating in `cp-03`/`worker-02` paging again this morning (2026-09-01, 10:10-10:17 UTC).
+
+**Root cause of the regression — confirmed, not speculated (2026-09-01 live investigation):** this
+morning's page coincided almost exactly with a `sabnzbd` download burst (`downloads` namespace).
+Timing: `sabnzbd`'s `container_network_receive_bytes_total` ramped from 1.7 MB/s at 10:10 UTC to a
+84.5 MB/s peak at 10:13:30, sustained 60-75 MB/s through 10:16; `cp-03` went `pending` at 10:10:45
+(45s into the ramp) and both nodes fired 10:14:45-10:17:00 — squarely inside the sustained-download
+window. But `sabnzbd`/`prowlarr`/`sonarr`/`radarr` all run on **`talos-cp-01`** (the unaffected
+`igc` node) — so this is *not* host-NIC contention between the *arr pods and the alert-affected
+NICs. The actual mechanism: `sabnzbd`'s `config` PVC is `ceph-block` (RWO), so its incomplete-download
+working set is Ceph RBD, not just the NFS `media` mount — and `CephCluster.spec.network.addressRanges.public`
+is `10.60.0.0/24`, the **same management VLAN** `eno1`/this alert watches. `cp-03` and `worker-02`
+happened to host the OSDs holding the busy PGs during this burst (`cp-03`: OSD 2/4; `worker-02`:
+OSD 6/9 + mon-d) — confirmed via a genuine packet-rate surge on `eno1` itself
+(`node_network_receive_packets_total`: cp-03 921→5,324 pps, worker-02 595→4,210 pps, a 5-7x jump
+matching the burst window exactly, not just alert-threshold noise). Plex (also on `cp-03`) was
+ruled out as the trigger — its own pod-level traffic was <900 B/s throughout. This also explains
+the run's day-to-day node variance in the table above: which nodes get hit depends on which OSDs
+currently hold the hot PGs, which shifts over time — not a fixed hardware weakness on `cp-03`/`worker-02`
+specifically.
+
+**Verdict:** the `netdev_budget` bump is a genuine fix for the *baseline* periodic softirq burst
+(fully resolved on `cp-02`/`worker-01`, where no competing Ceph-client-I/O burst has landed since).
+It is not sufficient on its own when a large synchronous Ceph RBD write burst also lands on the
+same NIC — that's a distinct, additive traffic source the sysctl bump doesn't fully absorb once
+volume gets high enough (Aug 26-27's 1.1-1.7M/day episodes). This reframes the open question: not
+"does softirq tuning help" (yes, confirmed) but "how to stop `sabnzbd`'s Ceph-client I/O from
+periodically saturating the management NIC's RX path on whichever node holds the hot OSDs."
+
+**Follow-up options, not yet actioned:**
+1. Map `sabnzbd`'s RBD image to its live PG/OSD acting set during a future burst (`ceph osd map
+   <pool> <rbd-image>` or `rados -p <pool> osdmap`) to fully confirm the OSD-placement mechanism
+   rather than inferring it from co-timed metrics.
+2. Consider whether `sabnzbd`'s working-directory PVC needs to be Ceph-backed at all, vs. NFS
+   (trades Ceph replication for the NFS mount already used for the media library) — would remove
+   this traffic source from the management VLAN entirely.
+3. Check whether other Ceph-backed PVCs with bursty write patterns (e.g. a Plex transcode cache,
+   if one is `ceph-block`) show the same signature.
+4. If none of the above are pursued, revisit widening `CephNodeNetworkPacketDrops`'s `for:` window
+   further or adding per-node overrides — but only as a last resort now that a real, addressable
+   traffic source is identified, not as the first move.
 
 ---
 
