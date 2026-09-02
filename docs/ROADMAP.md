@@ -584,6 +584,9 @@ uniform across alerting (`cp-03`/`worker-02`) and quiet (`cp-02`/`worker-01`) no
 doesn't by itself explain *which* nodes hit the ceiling under a given burst — that remains
 burst-timing/hot-PG locality (see "Ruled out" below), not a contradiction. Take a
 `node_network_receive_drop_total` baseline per node before applying a bump, for a clean before/after.
+Re-confirmed unchanged on 2026-09-02 (still `256`/`4096` on all 4 nodes, as expected — nothing
+had been applied in between; a reboot alone would not change this, since ring size is a driver-init
+default re-set on every boot, not persisted state a reboot could reset to something different).
 
 **Pre-`ethtool -G` baseline, captured 2026-09-01 20:33:27–20:34:03 UTC** (ring still at
 default 256/4096 — same 3 PromQL queries as the original 2026-08-05 baseline, for methodological
