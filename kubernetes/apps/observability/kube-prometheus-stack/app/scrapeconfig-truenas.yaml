@@ -34,3 +34,24 @@ spec:
   # SMART scans are slow — matches the in-cluster smartctl-exporter's own scrape timeout.
   scrapeInterval: 60s
   scrapeTimeout: 30s
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/scrapeconfig_v1alpha1.json
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: ScrapeConfig
+metadata:
+  name: truenas-doco-cd
+  namespace: observability
+spec:
+  staticConfigs:
+    - targets:
+        # doco-cd is the GitOps agent for the truenas/ compose stacks — it is the thing
+        # that keeps the two exporters above deployed, so its own reconcile health is a
+        # prerequisite for theirs, not a nice-to-have. Requires the 9120 port publish in
+        # truenas/docker/doco-cd/docker-compose.yaml.
+        - "${NAS_LAN_HOST}:9120"
+      labels:
+        job: truenas-doco-cd
+        instance: truenas
+  # Polls run every 8m20s (POLL_CONFIG interval), so counters move slowly — a 60s
+  # scrape is already far finer than the signal being measured.
+  scrapeInterval: 60s

@@ -35,6 +35,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 - [What are the risks of bypassing a Kustomization finalizer, and how should I delete a Flux resource safely?](#what-are-the-risks-of-bypassing-a-kustomization-finalizer-and-how-should-i-delete-a-flux-resource-safely)
 - [How do I choose between HelmRepository and OCIRepository — and what happens if I use the wrong one?](#how-do-i-choose-between-helmrepository-and-ocirepository--and-what-happens-if-i-use-the-wrong-one)
 - [I changed `helm/values.yaml`, pushed, and the Kustomization reconciled — but the HelmRelease never upgraded. Why?](#i-changed-helmvaluesyaml-pushed-and-the-kustomization-reconciled--but-the-helmrelease-never-upgraded-why)
+- [doco-cd reports `healthy` but nothing on TrueNAS is being reconciled (`ref file is empty`)](#doco-cd-reports-healthy-but-nothing-on-truenas-is-being-reconciled-ref-file-is-empty)
 
 **Kubernetes Workloads**
 - [A healthy Deployment shows both `Available` and `Progressing` — is something wrong?](#a-healthy-deployment-shows-both-available-and-progressing--is-something-wrong)
@@ -696,6 +697,37 @@ flux-operator detects the fresh Helm release, verifies its FluxInstance CR, and 
 ---
 
 ## GitOps / Flux
+
+### doco-cd reports `healthy` but nothing on TrueNAS is being reconciled (`ref file is empty`)
+
+**Short answer:** doco-cd caches a git clone in its `data` volume and reuses it on every poll. If the process dies mid-fetch it can leave a zero-length file under `.git/refs/`, and go-git then fails *every* subsequent poll with `ref file is empty`. The cache is never self-healed, so one unlucky crash wedges reconciliation indefinitely. Delete the cached clone and it re-clones cleanly.
+
+**Why `/v1/health` does not catch it:** that endpoint reports process liveness, not reconcile success. doco-cd answers `{"content":"healthy"}` the entire time it is failing every poll — so the container healthcheck and any blackbox Probe pointed at it stay green. Reconcile health only shows in the `doco_cd_*` Prometheus metrics on port 9120.
+
+**Confirm it:**
+
+```sh
+docker compose -f /mnt/tank/Tools/doco-cd/docker-compose.yaml logs | grep "ref file is empty"
+# find the zero-length ref
+docker run --rm -v doco-cd_data:/data alpine \
+  find /data/github.com/qnimbus/home-lab/.git -type f -empty
+```
+
+**Fix** — remove the corrupted clone only, not the whole volume (doco-cd keeps other state in `/data`):
+
+```sh
+docker compose -f /mnt/tank/Tools/doco-cd/docker-compose.yaml stop
+docker run --rm -v doco-cd_data:/data alpine rm -rf /data/github.com/qnimbus/home-lab
+docker compose -f /mnt/tank/Tools/doco-cd/docker-compose.yaml up -d
+```
+
+The first poll after restart re-clones and immediately redeploys any drifted stack.
+
+**Root cause of the crash (2026-09-02):** doco-cd v0.94.0 aborted with `fatal error: found bad pointer in Go heap (incorrect use of unsafe or cgo?)` — a Go runtime heap-corruption fault detected during GC mark, which kills the process instantly with no chance to finish an in-flight write. That is what truncated the ref file. Upgrading past v0.94.0 is the durable fix; the version is pinned in `truenas/docker/doco-cd/.env`.
+
+**Why this went unnoticed for so long:** the only user-visible symptom was an unrelated `TargetDown` on `truenas-node-exporter` — with no agent left to reconcile it, a stopped exporter container was never restored. `DocoCdPollFailing` / `DocoCdNotReconciling` / `DocoCdRestartLoop` (`prometheusrules/doco-cd.yaml`) were added afterwards so the reconcile stall alerts directly instead of surfacing days later as someone else's outage.
+
+**Gotcha — doco-cd cannot update itself.** It is deliberately not listed in `.doco-cd.truenas.yaml` (it would have to tear down the container running the deployment). Bumping `DOCO_CD_VERSION` in Git changes nothing on the host until the manual runbook in `truenas/README.md` is run: `git pull` in `/mnt/tank/Tools/doco-cd/home-lab`, then `docker compose up -d`.
 
 ### How does the full Flux GitOps workflow fit together — what are the moving parts and how do they relate?
 

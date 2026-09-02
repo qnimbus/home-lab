@@ -29,6 +29,12 @@ services:
       # 0.0.0.0 — keeps the health/API listener off the storage VLAN
       # (10.200.0.0/24) entirely, not just unreachable from the internet.
       - "10.10.0.41:18080:18080"
+      # Prometheus metrics (doco_cd_* ), same LAN-IP-only rationale as above. Published
+      # because /v1/health only reports process liveness, not reconciliation success —
+      # doco-cd answered "healthy" for hours on 2026-09-02 while every poll was failing
+      # and no TrueNAS stack was being reconciled. These metrics are what makes that
+      # visible; scraped by kube-prometheus-stack (scrapeconfig-truenas.yaml).
+      - "10.10.0.41:9120:9120"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - data:/data
