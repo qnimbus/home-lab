@@ -7,6 +7,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 ## Table of Contents
 
 **Storage**
+- [I increased a PVC's size in Git, Flux reconciled — but the volume didn't grow](#i-increased-a-statefulset-backed-pvcs-size-in-git-flux-reconciled--but-the-volume-didnt-grow)
 - [Longhorn CSI components are in CrashLoopBackOff / no pods created for `longhorn-csi-plugin`](#longhorn-csi-components-are-in-crashloopbackoff--longhorn-csi-plugin-daemonset-has-0-pods)
 - [Why was routing Longhorn replica traffic onto the storage VLAN abandoned?](#why-was-routing-longhorn-replica-traffic-onto-the-storage-vlan-abandoned)
 
@@ -64,6 +65,64 @@ Concise answers to questions that came up during cluster operation. Each entry c
 ---
 
 ## Storage
+
+### I increased a StatefulSet-backed PVC's size in Git, Flux reconciled — but the volume didn't grow
+
+**Short answer:** Kubernetes cannot expand an *existing* PVC through a StatefulSet. `volumeClaimTemplates` only governs PVCs minted for **new** replicas, so a size increase propagates as far as the template and stops there. The live PVC must be patched once by hand — no amount of Flux reconciliation will ever complete it.
+
+**Detail:** What makes this confusing is that nothing reports an error. Every layer reconciles and reports success:
+
+```
+GitRepository → Kustomization → HelmRelease → Prometheus CR → StatefulSet template   ✓ all 60Gi
+                                                              existing PVC           ✗ still 20Gi
+```
+
+Prometheus Operator documents the limitation explicitly ([docs](https://prometheus-operator.dev/docs/platform/storage/)):
+
+> Kubernetes doesn't support (yet) volume expansion through StatefulSets. This means that when you update the storage requests in the `spec.storage` field of a custom resource such as Prometheus, the operator has to delete/recreate the underlying StatefulSet and the associated PVCs aren't expanded.
+
+The operator *does* recreate the StatefulSet, because `volumeClaimTemplates` is immutable — you will see this in its logs:
+
+```
+msg="recreating StatefulSet because the update operation wasn't possible"
+  reason="Forbidden: updates to statefulset spec for fields other than 'replicas', 'ordinals',
+  'template', 'updateStrategy', 'revisionHistoryLimit', ... are forbidden"
+```
+
+It recreates with `--cascade=orphan`, so the **pod is not restarted** and keeps its original PVC. The net result is a Git state that is correct but unenforced: if that PVC were ever recreated from scratch it would come up at the new size, but the live volume stays at the old one indefinitely.
+
+There is no feature gate for this — automatic PVC expansion does not exist in the operator at any version. It is also **not Prometheus-specific**: the same applies to any operator-managed StatefulSet PVC (Alertmanager, CNPG, Dragonfly, …).
+
+**Confirm it is this, and not a stuck reconcile:**
+
+```bash
+# These will all look healthy and already show the NEW size...
+kubectl -n flux-system get kustomization cluster-apps
+kubectl -n observability get helmrelease kube-prometheus-stack
+kubectl -n observability get prometheus kube-prometheus-stack-prometheus \
+  -o jsonpath='{.spec.storage.volumeClaimTemplate.spec.resources.requests.storage}'
+kubectl -n observability get sts prometheus-kube-prometheus-stack-prometheus \
+  -o jsonpath='{.spec.volumeClaimTemplates[0].spec.resources.requests.storage}'
+
+# ...while the PVC itself still shows the OLD size. That mismatch is the tell.
+kubectl -n observability get pvc <pvc-name> \
+  -o custom-columns='REQUESTED:.spec.resources.requests.storage,ACTUAL:.status.capacity.storage'
+```
+
+**Fix — one-time manual patch** (requires `allowVolumeExpansion: true` on the StorageClass; `ceph-block` has it):
+
+```bash
+kubectl -n observability patch pvc <pvc-name> \
+  -p '{"spec":{"resources":{"requests":{"storage":"60Gi"}}}}'
+```
+
+On `ceph-block` this is an **online** expansion: it completed instantly with the pod still running (0 restarts, no data loss). Watch `status.capacity` — *not* `spec.resources.requests` — because CSI only sets `status.capacity` after the node plugin has finished resizing the filesystem, so it is the real confirmation. Expect usable filesystem space slightly under nominal (58.88 GiB for a 60Gi PVC) due to filesystem metadata and reserved blocks.
+
+This patch is a deliberate, documented exception to the repo's no-imperative-changes rule: it converges a live volume *toward* state already committed in Git rather than introducing drift, and Kubernetes offers no declarative path to it. Changing the number in `values.yaml` alone is necessary but never sufficient.
+
+⚠️ **PVC expansion is irreversible** — volumes can grow but never shrink. Undoing an over-sized volume means a full backup/restore cycle.
+
+Applied once on 2026-09-02 (`prometheus-alerts-triage-pvc-grow`), growing the Prometheus TSDB PVC 20Gi → 60Gi.
 
 ### Longhorn CSI components are in CrashLoopBackOff / `longhorn-csi-plugin` DaemonSet has 0 pods
 
