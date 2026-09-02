@@ -4,6 +4,38 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-02 — `prometheus-alerts-triage-pvc-grow`
+
+### Goal
+Survey every currently-firing and recently-resolved Prometheus alert, then resolve the firing `KubePersistentVolumeFillingUp` by resizing the Prometheus TSDB PVC and raising retention.
+
+### What we did
+- Ran a full alert survey via the `diagnose-alerts` skill: Alertmanager's `/api/v2/alerts` for live state, Prometheus's own `ALERTS{alertstate="firing"}` timeseries over a 24h window for flaps that already resolved (Alertmanager keeps no history, so the live view alone would have missed four of the six alerts found), and `/api/v1/rules` for pending alerts and rule-group `lastError`. Three active (two real plus the intentional `Watchdog` heartbeat), four fired-and-resolved within the window, no pending alerts, no rule evaluation errors.
+- Cross-referenced each alertname against the repo: rule definitions, `silence-operator/silences/`, `docs/QA.md`, `docs/SESSIONS.md`, and `alertmanagerconfig.yaml`'s severity routing (`critical` → `pushover-critical` emergency/repeat-60s-for-1h; `warning|error` → `pushover` once) to state per alert whether it would actually have paged.
+- **`KubePersistentVolumeFillingUp`** (firing, warning): Prometheus's own 20Gi `ceph-block` TSDB PVC at 11.5% free, declining steadily 21% → 11.5% over 48h with one midnight rebound (a compaction). Measured the underlying TSDB state rather than guessing: `prometheus_tsdb_storage_blocks_bytes` = 17.6 GB against the `retentionSize: 18GB` cap, and `prometheus_tsdb_lowest_timestamp_seconds` = 13.36 days against the `retention: 14d` cap — **both limits binding simultaneously**, WAL 0.76 GB.
+- Root-caused it as a config artifact, not a fault or a leak: `retentionSize: 18GB` (decimal) on a 20Gi (= 21.5 GB binary) volume is 84% of the disk by construction. The 15%-free alert trips at 18.25 GB used; steady state was 18 GB blocks + 0.76 GB WAL ≈ 18.76 GB — the hard cap sat roughly 0.5 GB *above* the alert's trigger point, so firing was guaranteed at steady state.
+- Confirmed the resize mechanics before proposing anything: `ceph-block` has `allowVolumeExpansion=true`, Ceph has 9.9 TB free of 10 TB (so 60Gi ×3 replicas = 180 GiB raw is 1.8% of free space), and Prometheus Operator v0.93.1 handles PVC expansion automatically — patches the PVCs and recreates the StatefulSet with `cascade=orphan`, since `volumeClaimTemplates` are immutable. No manual step, online RBD expansion, no downtime.
+- Put the sizing trade-off to the user via `AskUserQuestion` with three costed options rather than implementing the literal "double it" request: doubling to 40Gi alone would have left the extra 23 GiB permanently inert, because TSDB is hard-capped by `retentionSize`, not by disk size. User chose 60Gi + 30d retention + 40GB cap.
+- Implemented in `values.yaml` and validated: YAML parses with all three values as intended, and `kustomize build` on the app directory exits 0 with `retention: 30d` / `retentionSize: 40GB` / `storage: 60Gi` rendering correctly into the HelmRelease. Committed as `949ea68` on the worktree branch; not pushed (CLAUDE.md requires explicit confirmation).
+- **`TargetDown`** (firing, warning, `truenas-node-exporter`): a **new** failure mode, not a recurrence of the 2026-07-17 `node-exporter-hwmon-crash-fix` session's nil-pointer panic. Live scrape error is a parse failure — `expected metric name after HELP, got "\"noatimerw\x00"` — i.e. corrupted output from the `sensors-textfile` sidecar that replaced the panicking `hwmon` collector, not a dropped connection. `truenas-smartctl-exporter` on the same host is healthy, ruling out host-down. Left for TrueNAS-side investigation (the `truenas/` compose stacks are doco-cd-managed, outside Flux).
+- **`PrometheusRuleFailures`** (resolved, **critical**): fired ~16:36–23:10 on 2026-09-01 (~6.5h) against `kube-apiserver-availability.rules` and `kube-apiserver-burnrate.rules`, alongside its warning sibling `PrometheusMissingRuleEvaluations` (14:21–22:33, same rule group). Would have emergency-paged. Ruled out the previously-known cause: the Prometheus pod has 0 restarts and has run continuously since 2026-08-19, so unlike the earlier occurrence recorded in `SESSIONS.md` this is not a pod-restart artifact. Self-resolved, root cause unexplained; flagged as a follow-up rather than diagnosed here.
+- **`CephNodeNetworkPacketDrops`** (resolved): fired 2026-09-01 10:14 → 2026-09-02 04:54 on `worker-01`/`worker-02` (`eno1`, e1000e) — the known, actively-tracked ring-exhaustion issue from the last two sessions; no new action. Noted that the same-named `Silence` file is INACTIVE and covers a *different*, already-fixed root cause (the 2026-06/07 X520 fallback), so it is not evidence this instance is silenced.
+- **`CephNodeNetworkBondDegraded`** (resolved): a single one-point blip on `cp-03`'s `bond-storage` at 15:10 on 2026-09-01, self-resolved within a scrape interval; its X520-era `Silence` is likewise INACTIVE. Too brief to characterize; no action.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/observability/kube-prometheus-stack/app/helm/values.yaml` | `retention` 14d→30d, `retentionSize` 18GB→40GB, PVC `storage` 20Gi→60Gi; rewrote the sizing comments to record why the cap must sit below the alert threshold and what the prior config's failure was |
+
+### Key decisions
+- Declined to implement the literal request (straight doubling to 40Gi) and surfaced the trade-off instead: because `retentionSize` hard-caps the TSDB, growing only the disk would have fixed the alert while leaving ~23 GiB provisioned and permanently unused, with retention still at 14d. The user picked the larger option once the inertness was visible.
+- Sized `retentionSize` (40GB) against the *alert's trigger point* (54.8 GB used = 15% free on a 64.4 GB volume), not merely "below the disk size" as the previous comment framed it. The cap now sits ~14 GB below the trigger instead of ~0.5 GB above it — that sign flip, not the extra capacity, is what makes the fix durable rather than a delay.
+- Kept a byte-based `retentionSize` cap rather than relying on time retention alone: under cardinality growth the failure mode is then a shorter retention window, never a full disk. Noted the silent consequence — you would get <30 days with nothing alerting on it — and offered a retention-window rule as optional follow-up rather than adding unrequested scope.
+- Raised retention to 30d specifically to serve in-flight work: the 4-week Ceph packet-drop checkpoint captured a pre-fix baseline on 2026-09-01 that would have aged out around 2026-09-15 under 14d retention, before its ~2026-09-29 comparison window closed.
+- Skipped the `/git-commit` skill's `git fetch --dry-run` step, since CLAUDE.md forbids fetching without explicit confirmation and the worktree branch has no upstream — reported the deviation rather than silently following either rule.
+
+---
+
 ## 2026-09-01 — `ceph-packetdrops-ring-headroom-baseline`
 
 ### Goal

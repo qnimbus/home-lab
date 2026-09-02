@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-09-02 | `prometheus-alerts-triage-pvc-grow` | Triaged 6 Prometheus alerts; grew Prometheus PVC 20Gi→60Gi, retention 14d→30d; flagged new truenas TargetDown |
 > | 2026-09-01 | `ceph-packetdrops-ring-headroom-baseline` | Ruled out EEE/Ceph-role causes for packet drops; confirmed 16x ring headroom; captured pre-fix baseline |
 > | 2026-09-01 | `ceph-packetdrops-checkpoint-4wk` | Ran netdev_budget checkpoint; root cause is NIC ring exhaustion; migrated *arr /config to NFS; fixed volsync sync storm |
 > | 2026-08-27 | `plex-keda-nfs-scaler` | Added KEDA ScaledObject scaling Plex to 0 on NAS NFS-port unreachability; reused nas-nfs Probe, added driftDetection.ignore for replicas |
@@ -11,7 +12,6 @@
 > | 2026-08-23 | `arr-stack-deploy` | Drafted Flux *arr stack (Prowlarr/Sonarr/Radarr/Sabnzbd) into `downloads` ns; reused Plex's NFS mount for hardlinks |
 > | 2026-08-24 | `plex-deploy` | Deployed Plex (GPU transcode, NFS media); fixed crash loop, secureConnections block, mobile Remote label; added LB IP |
 > | 2026-08-24 | `plex-deploy` | Deployed Plex (GPU transcode, NFS media); fixed crash loop, secureConnections block, mobile Remote label, Cilium L2/Local bug, IOT-VLAN reachability |
-> | 2026-08-22 | `n8n-deploy` | Drafted Flux deployment of n8n into `automation` namespace; CNPG Database CRD pattern, unauthenticated smtp-relay reuse, internal-only exposure, left uncommitted |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
