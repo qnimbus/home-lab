@@ -2,7 +2,7 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
 
   extends: [
-    "config:recommended",    // Sensible defaults: PR limits, grouping minor+patch, etc.
+    "config:recommended",    // Sensible defaults: PR limits, grouping minor+patch, etc..
     "docker:enableMajor",    // Also open PRs for major Docker image bumps (Talos, k8s use docker datasource)
     ":dependencyDashboard",  // Maintain a GitHub Issue listing every pending update — your control panel
     ":semanticCommits",      // Conventional commit messages on Renovate's own commits
@@ -246,6 +246,29 @@
       automerge: true,
       automergeType: "branch",
       ignoreTests: true,
+    },
+    {
+      // Upstreams that ship faster than the 3-day gate above can ever clear. Renovate
+      // always retargets to the newest release and minimumReleaseAge restarts from it,
+      // so against a ~2.5-day cadence the timer never expires; `schedule: every weekend`
+      // narrows it further to two scan days a week. The result is silent starvation
+      // rather than a safety gate — doco-cd sat 20 minors stale under the dashboard's
+      // "Pending Status Checks" while a heap-corruption bug already fixed upstream
+      // wedged all TrueNAS reconciliation (docs/QA.md, 2026-09-02).
+      //
+      // MUST stay after the 3-day rule: later packageRules win, and this only narrows
+      // that gate for the listed names. 1 day still soaks out an immediately-yanked
+      // release while reliably clearing before the next upstream tag lands.
+      //
+      // Deliberately no automerge — unlike the utility images above these are
+      // infrastructure agents that can break deployment itself, so the PR still gets
+      // reviewed. Add a depName here only once an upstream's cadence is demonstrably
+      // shorter than the 3-day gate; the fix for a merely-noisy repo is grouping.
+      description: "Shorter soak for fast-releasing infrastructure",
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["minor", "patch"],
+      matchPackageNames: ["ghcr.io/kimdre/doco-cd"],
+      minimumReleaseAge: "1 day",
     },
 
     // ── Semantic commit message formatting ──────────────────────────────────────
