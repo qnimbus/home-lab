@@ -4,7 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
-> | 2026-09-02 | `prometheus-alerts-triage-pvc-grow` | Triaged 6 Prometheus alerts; grew Prometheus PVC 20Gi→60Gi, retention 14d→30d; flagged new truenas TargetDown |
+> | 2026-09-02 | `prometheus-alerts-triage-pvc-grow` | Triaged 6 Prometheus alerts; grew Prometheus PVC 20Gi→60Gi + retention 30d; found StatefulSet PVCs need manual expand |
 > | 2026-09-01 | `ceph-packetdrops-ring-headroom-baseline` | Ruled out EEE/Ceph-role causes for packet drops; confirmed 16x ring headroom; captured pre-fix baseline |
 > | 2026-09-01 | `ceph-packetdrops-checkpoint-4wk` | Ran netdev_budget checkpoint; root cause is NIC ring exhaustion; migrated *arr /config to NFS; fixed volsync sync storm |
 > | 2026-08-27 | `plex-keda-nfs-scaler` | Added KEDA ScaledObject scaling Plex to 0 on NAS NFS-port unreachability; reused nas-nfs Probe, added driftDetection.ignore for replicas |
