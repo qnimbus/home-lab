@@ -104,10 +104,17 @@ prometheus:
     ruleSelectorNilUsesHelmValues: false
     scrapeConfigSelectorNilUsesHelmValues: false
     serviceMonitorSelectorNilUsesHelmValues: false
-    retention: 14d
-    # Hard cap below the 20 Gi PVC size so Prometheus deletes old blocks before the disk fills,
-    # rather than running out of space and crashing.
-    retentionSize: 18GB
+    # 30d chosen over the previous 14d so multi-week investigations can still compare against
+    # their own baseline -- the 4-week Ceph packet-drop checkpoint outlived 14d retention and
+    # lost its pre-fix baseline before the comparison window closed.
+    retention: 30d
+    # Hard cap below the 60 Gi PVC size so Prometheus deletes old blocks before the disk fills,
+    # rather than running out of space and crashing. At the current ~1.26 GB/day ingest rate,
+    # 30d lands near 38 GB, so this cap is the backstop rather than the usual binding limit --
+    # deliberately left with headroom for compaction and WAL (~62% steady-state disk use).
+    # Previously 18GB on a 20 Gi PVC, which sat at ~85% full and kept
+    # KubePersistentVolumeFillingUp firing as a permanent config artifact.
+    retentionSize: 40GB
     # All nodes are control-plane only — no workers.
     tolerations:
       - key: node-role.kubernetes.io/control-plane
@@ -129,7 +136,7 @@ prometheus:
           accessModes: [ReadWriteOnce]
           resources:
             requests:
-              storage: 20Gi
+              storage: 60Gi
 
 prometheusOperator:
   # All nodes are control-plane only — no workers.
