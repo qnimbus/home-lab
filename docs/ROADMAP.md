@@ -416,25 +416,43 @@ it to know where things stand.
   ring-exhaustion finding).
 - **Confirmed viable, not yet implemented**: raising the RX ring buffer (`ethtool -G eno1 rx
   <N>`) — confirmed 16x headroom (256/4096 descriptors, identical on all 4 nodes) via live
-  `ethtool -g`. This is the most directly-indicated remaining fix. Needs an unsupported Talos
-  workaround (no declarative field for ring sizing) — **deliberately not built yet**, pending an
-  explicit decision to implement. A pre-fix baseline was captured 2026-09-01 for comparison
-  whenever it does get applied — see the baseline table further down this entry.
-- **Still open**: a live episode fired 2026-09-01 13:51 UTC, *after* both shipped fixes above,
-  with no single-app trigger identified among everything checked (Prometheus, victoria-logs,
-  VolSync, the migrated `downloads` apps). An unattributed 36 MiB/s Ceph-internal read (possibly
-  scrub) is the leading unconfirmed hypothesis — `rbd perf image iostat` needs to be running
-  *before* the next occurrence to pin it down (it's a streaming TUI, not capturable after the
-  fact).
+  `ethtool -g`, re-confirmed unchanged 2026-09-02. This is the most directly-indicated remaining
+  fix. Needs an unsupported Talos workaround (no declarative field for ring sizing) —
+  **deliberately not built yet**, pending an explicit decision to implement. A pre-fix baseline
+  was captured 2026-09-01 for comparison whenever it does get applied — see the baseline table
+  further down this entry.
+- **Escalated overnight, cause still unresolved — and the working traffic-source theory just got
+  a serious complication (2026-09-02).** `cp-03`/`worker-02` had a much rougher stretch than the
+  baseline (5-6 firing clusters each between 2026-09-01 15:42 and 2026-09-02 04:55 UTC, peak
+  burst magnitude 3.6-3.8x higher, roughly as many drops in ~12h as their entire prior history).
+  Checked every specific-workload hypothesis (Ceph scrub, client op-rate, CNPG, Envoy, Plex,
+  victoria-logs, VolSync, CronJobs) and **all came back negative** — nothing correlates. What *did*
+  turn up, unexpectedly: the bursty small-packet (127-585 byte, well under MTU) traffic pattern
+  also exists on `cp-01` — the node that has never once alerted — at 10-100x higher packet rate,
+  continuously, even when `cp-03`/`worker-02` are quiet. `cp-01` just has a bigger NIC/ring and
+  absorbs it. Which nodes see this traffic at all lines up exactly with which node currently holds
+  a Cilium L2-announcement leader lease for some Service (`cp-02`/`worker-01` hold none and have
+  never shown this pattern) — but the actual *application* traffic behind those leases (Envoy
+  requests, syslog rows, Plex bytes) wasn't elevated during the bursts, so it isn't simply "more
+  legitimate traffic." **This means the traffic causing most of these drops may not be Ceph
+  client I/O at all** — the `sabnzbd` episode was confirmed as genuine Ceph RBD traffic, but this
+  broader, more persistent pattern looks like Cilium/datapath-adjacent chatter instead (plausible
+  guess: L2-announcement-related ARP traffic; unconfirmed). **Real implication**: if this traffic
+  isn't Ceph, moving Ceph's `public_network` to the storage VLAN (item #4 below) wouldn't touch
+  it — that project's rationale needs re-examining before it gets more weight as "the fix."
 - **Possible troubleshooting steps from here, roughly ranked** (none implemented yet — see the
   numbered list further down for full detail on each):
-  1. Build the `ethtool -G` ring-size workaround — cleared to proceed, not yet built.
-  2. Start `rbd perf image iostat` streaming ahead of the next live episode.
+  1. Build the `ethtool -G` ring-size workaround — cleared to proceed, not yet built. Still likely
+     to help regardless of the traffic source, since it directly addresses the ring layer.
+  2. Live packet capture on `cp-01`'s `enp4s0` (or `cilium monitor`/BPF-level metrics) during a
+     future burst, to positively identify the small-packet traffic — supersedes the earlier
+     `rbd perf image iostat` plan now that the leading hypothesis has shifted away from Ceph.
   3. Check Plex's `/config` PVC (same `ceph-block`/SQLite shape as the confirmed `sabnzbd`
-     trigger) if it's ever implicated.
+     trigger) if it's ever implicated — still open, though now a secondary lead behind #2.
   4. [Move Ceph's `public_network` to the storage VLAN](#ceph-public_network-move-to-storage-vlan)
-     — the structurally-complete fix, but a separate, larger, riskier project (cluster-wide blast
-     radius, unresearched live mon reconfiguration) — not forced by current evidence alone.
+     — **re-evaluate its rationale in light of the Cilium/L2-lease finding above** before treating
+     it as "the" structural fix; still cluster-wide blast radius and an unresearched live mon
+     reconfiguration regardless.
   5. Last resort: widen the alert's `for:` window (masks symptoms, doesn't fix anything).
 
 ---
@@ -642,6 +660,68 @@ applied" — whether that's meaningful escalation or just this failure mode's na
 showing a rough night isn't something one overnight window can settle on its own, but it's worth
 weighing when deciding how urgently to move on item #1 below.
 
+**Investigated why the overnight window was worse (2026-09-02) — inconclusive, but surfaced a
+significant new lead that complicates the "it's Ceph client I/O" framing.** User asked two
+things: is a switch/router issue possible, and what actually changed overnight. On the first: no
+— structurally ruled out. `node_network_receive_drop_total` counts packets that *arrived* at the
+NIC and got dropped by the driver; a switch/upstream drop would never reach the node at all, so
+it's invisible to this specific counter by construction. Combined with the zero FIFO/hardware-ring
+errors confirmed early in this investigation (rules out signal integrity/bad cable/failing port)
+and stable negotiated link state (1000Mb/s full duplex, no flapping, confirmed during the EEE
+check) — this is unambiguously a host-side phenomenon, not upstream network infrastructure.
+
+On the second — checked every specific-workload hypothesis for the four overnight firing clusters
+(`cp-03`: 16:09-17:05, 20:07-21:08, 21:18-21:19, 21:50-22:54 UTC 2026-09-01; `worker-02`: same
+set plus a fresh 04:54-04:55 UTC 2026-09-02 episode) and **all came back negative**:
+- Ceph scrub/deep-scrub: `ceph_pg_scrubbing`/`ceph_pg_deep` zero for the entire 13.5h window checked.
+- Ceph client op-rate (`ceph_osd_op_r`/`_w`): flat 150-700 ops/s all night, no spike lining up.
+- Per-OSD latency on osd.2/4 (`cp-03`)/osd.6/9 (`worker-02`): flat 2-8ms, comparable to unaffected OSDs.
+- Bulk throughput: RX bytes/s on `eno1` never exceeded ~2MB/s even at peaks. **Average packet size
+  during bursts was 127-585 bytes — well under MTU.** This is a packet-*rate* phenomenon with
+  trivial payload, not a bulk transfer — a materially different shape than the confirmed `sabnzbd`
+  episode.
+- TCP retransmits/connection churn/kube-apiserver request rate: all flat, no storm.
+- CNPG Postgres: confirmed on `openebs-hostpath`, not `ceph-block` at all — can't be a Ceph client.
+- Envoy Gateway (external + internal) request rate, victoria-logs ingestion, Plex RX bytes: all
+  essentially zero/flat during every burst window — no elevated application traffic.
+- The 3 cluster-wide CronJobs and VolSync's per-app-staggered hourly syncs: no schedule lines up
+  with all four windows (one CronJob partially overlaps only the *last* cluster).
+
+**What turned up instead, unexpectedly:**
+1. `cp-03` and `worker-02`'s drop timing tracks nearly sample-for-sample identically all night —
+   a shared trigger, not two nodes independently noisy.
+2. **The same bursty small-packet pattern exists on `cp-01` too** — the node that has never once
+   alerted — at 10-100x higher packet rate (up to 160k pkt/s vs. ~1-7k on the affected nodes),
+   continuously, including during stretches where `cp-03`/`worker-02` show nothing. `cp-01`
+   absorbs it because its NIC/ring is bigger, not because it doesn't see the traffic.
+3. Which nodes see this pattern *at all* lines up exactly with which node currently holds a
+   Cilium L2-announcement leader lease for some Service: `cp-01` holds `kube-api`/`envoy-external`,
+   `cp-03` holds `envoy-internal`/`victoria-logs-syslog`, `worker-02` holds `plex`. `cp-02` and
+   `worker-01` hold **zero** leases and have never shown this pattern in the entire investigation
+   — a cleaner, more concrete differentiator than the earlier "burst-timing/hot-PG locality"
+   framing, though it explains node *selection*, not the traffic's origin.
+4. However — the actual application traffic riding those leased Services (Envoy HTTP requests,
+   syslog rows, Plex streaming bytes) was checked directly and was **not** elevated during the
+   bursts. So it isn't "more legitimate service traffic through the leader" — something tied to
+   holding the lease itself, separate from the service traffic behind it.
+
+**Why this matters beyond just this one overnight window:** the working assumption through most
+of this investigation has been that the traffic exhausting the ring is Ceph client I/O riding the
+management VLAN (confirmed true for the `sabnzbd` episode specifically). This finding suggests
+that assumption doesn't hold for most of what's actually been observed — small-packet,
+low-throughput, Cilium-lease-correlated chatter looks like a materially different phenomenon,
+plausibly Cilium/datapath-adjacent (a plausible but unconfirmed guess: L2-announcement-related
+ARP re-defense traffic). **This is genuinely unresolved** — a strong lead, not a diagnosis. But it
+directly affects how much weight the `public_network`-to-storage-VLAN project (item #4 below)
+deserves as "the fix": if this traffic isn't Ceph traffic at all, moving Ceph's client I/O to a
+different network doesn't touch it.
+
+**Next diagnostic step**: a live packet capture on `cp-01`'s `enp4s0` (or `cilium monitor`/BPF-level
+metrics) during a future burst — `cp-01` is the best node to capture on since it shows this
+pattern continuously at high amplitude, not just during rare alerting episodes. This supersedes
+the earlier `rbd perf image iostat` plan, which was built on the now-uncertain assumption that the
+traffic is Ceph-related.
+
 **Follow-up options, ranked by what the evidence now indicates:**
 1. **NOT YET BUILT, cleared to proceed — raise the RX ring buffer size** (`ethtool -G eno1 rx
    <N>`) — directly indicated by the `rx_dropped` spike lining up with ring-layer symptoms, and
@@ -781,6 +861,19 @@ kubectl -n rook-ceph exec deploy/rook-ceph-tools -- rbd perf image iostat --pool
 ---
 
 ### Ceph `public_network`: Move to Storage VLAN
+
+**Caveat added 2026-09-02 — re-examine this project's rationale before treating it as "the"
+fix.** The `CephNodeNetworkPacketDrops` investigation this section's status was originally scoped
+against found new evidence that most of the observed packet-drop bursts (not the originally
+confirmed `sabnzbd` episode, but the broader recurring pattern) may not be Ceph client I/O at all —
+small-packet, low-throughput traffic that correlates with Cilium L2-announcement leader-lease
+ownership instead, present on `cp-01` too at much higher amplitude with no alert (bigger ring
+absorbs it). See the e1000e packet-drops entry above ("Investigated why the overnight window was
+worse") for the full finding. **If that holds up, moving Ceph's `public_network` to the storage
+VLAN would not fix most of what's actually been observed**, since the traffic wouldn't be Ceph
+traffic to begin with — it's still worth doing eventually for the traffic that *is* confirmed
+Ceph (the `sabnzbd`-shaped kind), but the case for treating it as the comprehensive fix needs the
+Cilium/datapath lead run down first, not assumed.
 
 **Status: desired end state, not started.** This cluster deliberately split Ceph traffic across
 two fabrics at greenfield (`docs/SESSIONS-ARCHIVE.md:435`): `cluster_network` (OSD↔OSD
