@@ -136,6 +136,13 @@ prometheus:
           accessModes: [ReadWriteOnce]
           resources:
             requests:
+              # Changing this number alone does NOT grow the existing volume. Kubernetes cannot
+              # expand a PVC through a StatefulSet, so the operator updates volumeClaimTemplates
+              # (which only governs PVCs for new replicas) and recreates the StatefulSet with
+              # --cascade=orphan, leaving the live PVC untouched at its old size. Growing it
+              # needs a one-time `kubectl patch pvc` -- see docs/QA.md, "I increased a
+              # StatefulSet-backed PVC's size in Git, Flux reconciled -- but the volume
+              # didn't grow". Irreversible: volumes can grow but never shrink.
               storage: 60Gi
 
 prometheusOperator:
