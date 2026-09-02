@@ -612,6 +612,36 @@ retention. **Whenever `ethtool -G` is actually applied, re-run these same 3+2 qu
 against this table** — a meaningful win looks like `cp-03`/`worker-02`'s 24h/7d deltas dropping by
 an order of magnitude, similar to how the original `netdev_budget` checkpoint was judged.
 
+**Caveat on the baseline above, discovered 2026-09-02:** the 20:33-20:34 UTC snapshot window
+landed *inside* one of `cp-03`'s active firing clusters (20:07-21:08 UTC) — it's a real, honest
+instant-in-time snapshot, not a query error, but it means "baseline" here is "state at that
+moment," not "representative quiet-state." Sound for the delta math below; worth knowing if
+eyeballing the absolute numbers alone.
+
+**Trend check, 2026-09-02 ~08:21 UTC (~11h47m after the baseline) — still nothing applied, but
+the picture has moved substantially, not stayed flat:**
+
+| Node | Absolute counter now | Δ since 20:33 UTC baseline | Peak burst 24h now (drops/sec) | Firing samples 24h now |
+|------|--------------------------:|-------------------------------:|-----------------------------------:|----------------------------:|
+| cp-02 (`.202`) | 2,805 | 0 | 0 | 0 |
+| cp-03 (`.203`) | 9,769,424 | **+3,130,042** | 5,904.8 (**3.8x** baseline's 1,556.2) | 158 (**~2x** baseline's 83) |
+| worker-01 (`.204`) | 5,412 | +118 (noise) | 3.93 | negligible |
+| worker-02 (`.205`) | 10,459,042 | **+3,340,860** | 6,257.8 (**3.6x** baseline's 1,645.6) | 152 (**~2x** baseline's 73) |
+
+`cp-03`/`worker-02` each accumulated roughly as many drops in this ~12h window as they had in
+their *entire* history up to the baseline. This wasn't one continuing episode either — clustering
+the `ALERTS` series (gap >10min = new cluster) found **5 distinct firing clusters on `cp-03`** and
+**6 on `worker-02`** between 15:42 and 22:54 UTC on 2026-09-01 (roughly hour-long each, with
+quiet gaps between), plus a fresh one on `worker-02` at **04:54-04:55 UTC on 2026-09-02** — about
+3.5h before this check. `cp-02`/`worker-01` remained essentially silent throughout, unchanged from
+every prior finding. Ring buffer confirmed still untouched (256/4096) during this same window —
+see the re-confirmation note above.
+
+This is real data pointing toward *worse*, not toward "stable and waiting for a fix to be
+applied" — whether that's meaningful escalation or just this failure mode's natural burstiness
+showing a rough night isn't something one overnight window can settle on its own, but it's worth
+weighing when deciding how urgently to move on item #1 below.
+
 **Follow-up options, ranked by what the evidence now indicates:**
 1. **NOT YET BUILT, cleared to proceed — raise the RX ring buffer size** (`ethtool -G eno1 rx
    <N>`) — directly indicated by the `rx_dropped` spike lining up with ring-layer symptoms, and
