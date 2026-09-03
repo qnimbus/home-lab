@@ -8,23 +8,31 @@ cgroup:
   automount:
     enabled: false
   hostRoot: /sys/fs/cgroup
-# Bond layout (all nodes use bond-storage for storage after talconfig.yaml rename):
-#   cp-01/02: management=e1000e (single port), storage=bond-storage (ixgbe X520)
-#   cp-03:    management=bond0 (RTL8125+igc),  storage=bond-storage (i40e X710)
-# Cilium auto-detects the primary interface via the default route (management).
-# Uncomment and adjust if Cilium attaches to the wrong interface:
-# devices: bond+ enp+
+# Bond/mgmt-NIC layout, confirmed live via `talosctl get links` (2026-09-03):
+#   cp-01:                management=enp4s0 (I225/I226 igc), storage=bond-storage
+#   cp-02/03/worker-01/02: management=eno1  (I219-LM e1000e), storage=bond-storage
+# Explicit device list (not a wildcard): a glob like `enp+` would also match
+# bond-storage's own slave NICs on some nodes (e.g. cp-01's enp5s0f0np0/
+# enp5s0f1np1), which must NOT be attached to directly — only the bond master.
+# Listed explicitly so Cilium attaches to both the management NIC and the
+# storage bond, giving pods a routed path to Ceph's public_network migration
+# target (10.200.0.0/24) — see docs/ROADMAP.md "Ceph public_network: Move to
+# Storage Bond".
+devices: eno1 enp4s0 bond-storage
 #
-# MTU must match the management NICs (1500), not the storage bond (9000): Cilium
-# attaches to the management interface above for all pod traffic, so a 9000 MTU
-# here made pods believe they could send 9000-byte frames over a path that's
-# actually capped at 1500 end-to-end. Any packet in between needs PMTUD (ICMP
-# fragmentation-needed) to recover, and that round-trip was silently failing —
-# small packets (e.g. plaintext pg_isready) worked while larger ones (e.g. the
-# mutual-TLS streaming_replica handshake between CNPG instances) intermittently
-# black-holed for minutes at a time before self-clearing. Rook-Ceph's jumbo
-# frames are unaffected: it uses host networking on bond-storage directly,
-# never the Cilium pod network this MTU governs.
+# MTU stays at 1500 even though bond-storage carries jumbo frames (9000) at
+# the host level: Cilium's MTU is a single cluster-wide scalar in this chart
+# version (1.20.1), not per-device, so raising it would also apply to the
+# management path. It was pinned here after a real incident — a 9000 MTU on
+# the mgmt-only pod path made pods believe they could send 9000-byte frames
+# over a route capped at 1500 end-to-end; every packet needing PMTUD (ICMP
+# fragmentation-needed) to recover triggered black-holes (e.g. the mutual-TLS
+# streaming_replica handshake between CNPG instances stalled for minutes at a
+# time before self-clearing) while small packets kept working, which made it
+# hard to diagnose. Ceph's own host-networked mon/OSD/replication traffic on
+# bond-storage is unaffected — it never goes through Cilium's pod-network MTU.
+# Only pod-originated traffic to 10.200.0.0/24 (e.g. CSI plugin pods, since
+# CSI_ENABLE_HOST_NETWORK defaults to false here) is capped at 1500 by this.
 MTU: 1500
 endpointRoutes:
   enabled: true

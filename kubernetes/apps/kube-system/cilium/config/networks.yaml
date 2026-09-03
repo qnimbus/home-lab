@@ -67,9 +67,14 @@ metadata:
 spec:
   loadBalancerIPs: true
   # Interfaces intentionally unspecified: Cilium announces on all interfaces.
-  # Storage bonds (bond0 on cp-01/02, bond1 on cp-03) are on an isolated L2
-  # network (10.200.0.0/24) with no route back to the management subnet, so
-  # ARP announcements on those interfaces are harmless. The IOT VLAN 30
+  # The storage bond (`bond-storage`, all 5 nodes, 10.200.0.0/24) has no
+  # gateway/default route back to the management subnet, so ARP announcements
+  # on it are harmless — that's still true after `bond-storage` was added to
+  # Cilium's `devices:` list (kube-system/cilium/app/helm/values.yaml) to give
+  # pods a routed path to Ceph's public_network. "No route back" is an L3
+  # statement about that subnet's own config (no gateway configured on it),
+  # not a claim that pods can't reach it — Cilium's own datapath now routes
+  # pod traffic there directly once attached as a device. The IOT VLAN 30
   # sub-interfaces (pool-iot-smtp-relay, pool-iot-plex, above) are deliberately reachable
   # from the IOT segment — that's the point — but each scoped to a single
   # pinned Service.
