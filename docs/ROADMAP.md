@@ -440,6 +440,23 @@ it to know where things stand.
   guess: L2-announcement-related ARP traffic; unconfirmed). **Real implication**: if this traffic
   isn't Ceph, moving Ceph's `public_network` to the storage VLAN (item #4 below) wouldn't touch
   it — that project's rationale needs re-examining before it gets more weight as "the fix."
+- **2026-09-03 — a fresh episode reconfirms genuine Ceph `public_network` traffic as (at least) a
+  contributing mechanism, via a disambiguation method that's now repeatable.** A `cp-03`+`worker-02`
+  episode (04:20-04:42 UTC) traced to `rook-ceph-mon-a`/`osd-0`/`osd-3` write activity on `cp-01`
+  (real counters, not the gauge-`rate()` mistake caught mid-investigation), and — checked directly
+  against live Cilium L2-announcement lease holders — `cp-03` held **zero** leases at the time yet
+  mirrored `worker-02`'s burst shape in lockstep. That rules out L2-lease chatter as *this* episode's
+  explanation (cp-03 has none to chatter about) and points back to Ceph mon-quorum/OSD
+  heartbeat-front traffic between `cp-01` and its `public_network` peers on `cp-03`/`worker-02`.
+  Also newly confirmed: this failure mode now has a second victim beyond the alert itself —
+  Prometheus's own rule-group evaluation stalled 216s and missed 34 iterations because its
+  Ceph-RBD-backed TSDB PVC contended for I/O during the same window (`PrometheusMissingRuleEvaluations`,
+  previously flagged unexplained in the 2026-09-01 triage session). Full writeup:
+  [QA.md](QA.md#why-did-a-ceph-alert-cephnodenetworkpacketdrops-fire-for-packet-drops-on-a-management-nic-when-ceph-traffic-runs-on-the-storage-vlan).
+  Doesn't overturn the 2026-09-02 Cilium/L2 finding for *other* episodes, but restores weight to
+  item #4 below rather than leaving it fully discounted — and **the user has now said (2026-09-03)
+  they want to actively move toward implementing it**, not just track it as a someday project. See
+  the dedicated section for the status change and concrete next steps this triggers.
 - **Possible troubleshooting steps from here, roughly ranked** (none implemented yet — see the
   numbered list further down for full detail on each):
   1. Build the `ethtool -G` ring-size workaround — cleared to proceed, not yet built. Still likely
@@ -450,9 +467,10 @@ it to know where things stand.
   3. Check Plex's `/config` PVC (same `ceph-block`/SQLite shape as the confirmed `sabnzbd`
      trigger) if it's ever implicated — still open, though now a secondary lead behind #2.
   4. [Move Ceph's `public_network` to the storage VLAN](#ceph-public_network-move-to-storage-vlan)
-     — **re-evaluate its rationale in light of the Cilium/L2-lease finding above** before treating
-     it as "the" structural fix; still cluster-wide blast radius and an unresearched live mon
-     reconfiguration regardless.
+     — reconfirmed (2026-09-03) as addressing at least a real subset of episodes, and now the
+     user's explicitly stated direction of travel; still cluster-wide blast radius and an
+     unresearched live mon reconfiguration, which is exactly what the dedicated section below is
+     now scoping as concrete next steps rather than open-ended caveats.
   5. Last resort: widen the alert's `for:` window (masks symptoms, doesn't fix anything).
 
 ---
@@ -875,7 +893,25 @@ traffic to begin with — it's still worth doing eventually for the traffic that
 Ceph (the `sabnzbd`-shaped kind), but the case for treating it as the comprehensive fix needs the
 Cilium/datapath lead run down first, not assumed.
 
-**Status: desired end state, not started.** This cluster deliberately split Ceph traffic across
+**Update 2026-09-03 — the caveat above still stands for the *broader* recurring pattern, but a
+fresh episode reconfirms genuine Ceph traffic as a real, distinct contributing mechanism, via a
+disambiguation method other episodes can now reuse.** A `cp-03`+`worker-02` episode (04:20-04:42
+UTC) traced to `rook-ceph-mon-a`/`osd-0`/`osd-3` write activity on `cp-01`. Checked live against
+Cilium L2-announcement lease holders: `cp-03` held **zero** leases at the time yet mirrored
+`worker-02`'s burst shape in lockstep — ruling out L2-lease chatter as *this* episode's cause (there
+was nothing for cp-03 to be chattering about) and pointing to Ceph mon-quorum/OSD heartbeat-front
+traffic between `cp-01` and its `public_network` peers instead — a different mechanism than the
+`sabnzbd` RBD-client-PVC case (confirmed 2026-09-01), not a re-run of it. Also newly observed: this
+failure mode now has a second victim beyond the alert itself — Prometheus's own rule-group
+evaluation stalled 216s and missed 34 scheduled iterations because its own Ceph-RBD-backed TSDB PVC
+contended for I/O during the same window. Full writeup:
+[QA.md](QA.md#why-did-a-ceph-alert-cephnodenetworkpacketdrops-fire-for-packet-drops-on-a-management-nic-when-ceph-traffic-runs-on-the-storage-vlan).
+**The user has confirmed (2026-09-03) they want to actively move toward implementing this
+project now**, rather than continue treating it as an indefinitely deferrable someday-item — see
+"Next steps to unblock a start," below, for what that means concretely.
+
+**Status: prioritized by the user (2026-09-03) — not yet started; two research prerequisites
+currently block scheduling a start.** This cluster deliberately split Ceph traffic across
 two fabrics at greenfield (`docs/SESSIONS-ARCHIVE.md:435`): `cluster_network` (OSD↔OSD
 replication/heartbeat/backfill) on the storage VLAN (`10.200.0.0/24`, 2x10G LACP bond), but
 `public_network` (client I/O — every CSI/RBD read and write, plus mon traffic and heartbeat-front)
@@ -885,15 +921,17 @@ investigation above possible in the first place: Ceph client I/O from `sabnzbd`'
 landing on a 1GbE, single-queue, small-ring-buffer NIC shared with cluster-critical traffic, not on
 the well-provisioned storage bond most people would assume "Ceph traffic" means.
 
-The user has confirmed they want to eventually move `public_network` onto `10.200.0.0/24` too, so
-**all** Ceph traffic — client and replication alike — rides the same isolated, multi-queue, jumbo-frame
+The user has confirmed (2026-09-03: now as an active priority, not just an eventual one) they want
+to move `public_network` onto `10.200.0.0/24` too, so **all** Ceph traffic — client and replication
+alike — rides the same isolated, multi-queue, jumbo-frame
 fabric. This is more than a traffic relocation: the storage bond's NICs are multi-queue with
 materially larger default ring depths than the management NICs' `e1000e`/I219-LM, so this plausibly
 sidesteps the ring-exhaustion failure mode structurally (for every current and future `ceph-block`
 consumer cluster-wide), rather than just moving today's specific trigger off Ceph (which is what the
 narrower `sabnzbd`/*arr `/config` migration above accomplishes on its own, separately and sooner).
 
-**Why this is a separate, larger, later project — not a next step:**
+**Why this remains a large, careful project even with the go-ahead — blast radius, not
+willingness, is the constraint:**
 - **Blast radius is the whole cluster, not one namespace.** `public_network` is where *every* Ceph
   client talks to mons/OSDs — CNPG Postgres, Grafana, Waha, pgAdmin, Firefly-iii, Forgejo, and
   anything else on `ceph-block` (the default StorageClass) all depend on it. A mistake here risks
@@ -901,14 +939,33 @@ narrower `sabnzbd`/*arr `/config` migration above accomplishes on its own, separ
 - **Requires a live mon reconfiguration.** Ceph mons bind to `public_network` addresses at startup;
   changing it on a running cluster means adding mons on the new network and retiring the old ones —
   exactly the mon-failover dance the original greenfield choice was designed to avoid entirely by
-  getting the network right before the cluster ever had data. How gracefully Rook automates this (if
-  at all) is **not yet researched** — needs its own investigation before this is even safe to plan,
-  let alone schedule.
-- **Unverified prerequisite: pod-to-mon reachability on the storage VLAN.** The current
-  `helmrelease.yaml` comment notes CSI pods on the Cilium pod network reach mon host IPs on
-  `10.60.0.0/24` "via routing" — the mechanism isn't spelled out further. Whether equivalent
-  reachability already exists to `10.200.0.0/24`, or would need new routing/Cilium configuration, is
-  unconfirmed and must be checked before attempting this.
+  getting the network right before the cluster ever had data.
+
+**Next steps to unblock a start (2026-09-03 — these are the two things standing between
+"prioritized" and an actual implementation plan):**
+1. **Research how Rook automates (or doesn't) a live mon network migration.** Not yet
+   investigated at all. Needs answers to: does Rook support adding mons on a new
+   `public_network` CIDR and draining the old ones without a full cluster rebuild? What does the
+   `CephCluster.spec.network` change trigger operationally — a rolling mon replacement Rook
+   manages, or something requiring manual `ceph mon` commands via the toolbox? Is there a
+   documented/tested upstream procedure for this specific network-only migration (vs. a
+   host-address change), and does our Rook/Ceph version (v1.19.6) support it cleanly? This is the
+   higher-risk unknown of the two and should be researched first — it may reveal the migration
+   needs to wait for a specific Rook feature or a maintenance-window full redeploy instead of an
+   in-place change.
+2. **Verify pod-to-mon reachability on the storage VLAN before relying on it.** The current
+   `helmrelease.yaml` comment notes CSI pods on the Cilium pod network reach mon host IPs on
+   `10.60.0.0/24` "via routing" — the mechanism isn't spelled out further. Whether equivalent
+   reachability already exists to `10.200.0.0/24`, or would need new routing/Cilium configuration
+   (e.g. a route or BGP/L2 advertisement for the storage VLAN into the pod network), is
+   unconfirmed. This is checkable live and cheaply (e.g. a debug pod pinging/curling a mon's
+   `10.200.0.0/24` address, if mons even have one yet) — worth doing before or alongside #1 since
+   a "no" here changes the shape of the whole plan (may need a Cilium-level networking change
+   first, independent of anything Ceph-side).
+
+Neither of these has been started — this section records the plan and why it's not a quick fix,
+not evidence that work is underway. The next session on this topic should pick one of the two
+above and report back before any `CephCluster` change is drafted.
 
 **Pre-work done (2026-09-01) — mixed result, doesn't fully resolve the urgency question.**
 CNPG Postgres was the originally suggested candidate but is **not applicable**: its actual storage
@@ -929,8 +986,16 @@ treating it as indefinitely deferrable, but it's not conclusive proof either (th
 trigger is still unknown, so it's not confirmed to be "another app doing what `sabnzbd` did" — it
 could equally be Ceph-internal activity that `public_network`-to-storage-VLAN would also fix, since
 that migration moves scrub/heartbeat-front traffic off the management VLAN too, not just
-CSI/RBD client I/O). Scheduling this remains the user's call to make explicitly, not something to
-infer from one inconclusive episode.
+CSI/RBD client I/O).
+
+**2026-09-03 — the user has now made the scheduling call explicitly: actively move toward this
+project.** The 2026-09-03 episode (see "Update 2026-09-03" above) adds a second, mechanistically
+distinct confirmed-Ceph data point (mon-quorum/OSD heartbeat-front, disambiguated from the
+Cilium/L2 theory via live lease-holder checking) alongside the earlier `sabnzbd` RBD-client-PVC
+case, plus a new collateral symptom (Prometheus's own rule evaluation stalling on its own
+Ceph-backed PVC). That's enough for the user to decide this is worth actively pursuing now rather
+than waiting for more evidence — see "Next steps to unblock a start" above for the two concrete
+research items this unlocks next; nothing has been implemented against the live cluster yet.
 
 ---
 

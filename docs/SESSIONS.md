@@ -4,6 +4,31 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-03 — `ceph-packetdrops-prometheus-correlation`
+
+### Goal
+Triage current/recent Prometheus alerts, investigate why `CephNodeNetworkPacketDrops` and `PrometheusMissingRuleEvaluations` fired together, and update documentation to reflect new evidence for prioritizing the Ceph `public_network`-to-storage-VLAN migration.
+
+### What we did
+- Ran two rounds of alert triage via the `diagnose-alerts` skill workflow (Alertmanager `/api/v2/alerts`, Prometheus `ALERTS{}` history, `/api/v1/rules`) across the conversation. Found a new `CephNodeDiskspaceWarning` firing on `cp-01`'s `/var` — not the known `/etc/nfsmount.conf` false positive. Traced via `node_boot_time_seconds` (node up ~15 days, ruling out the existing post-boot guard) and a 48h `node_filesystem_avail_bytes` trend to a sharp one-time ~9GB write 19-22h earlier that had already gone flat — diagnosed as a `predict_linear` step-change misread (same failure class as the original fix, different trigger), not an ongoing fill risk. Confirmed `TargetDown` (`truenas-node-exporter`) and the prior session's `PrometheusTSDBCompactionsFailing` pending alert had both self-resolved.
+- Investigated whether a brief `CephNodeNetworkPacketDrops` flap (`cp-03`/`worker-02`, 04:20-04:42 UTC) and a co-occurring `PrometheusMissingRuleEvaluations` flap (`kube-apiserver-burnrate.rules`, previously flagged unexplained in the 2026-09-02 session) were linked. Confirmed via `prometheus_rule_group_last_duration_seconds` (216s, should be sub-second) and `prometheus_rule_group_iterations_missed_total` (+34) that Prometheus's own rule evaluator stalled — not a scrape failure (`up`/`scrape_duration_seconds` stayed normal). Traced the stall to Prometheus's own Ceph-RBD-backed TSDB PVC (`rbd3` on `cp-01`) being ~100% I/O-busy, matching the drop-burst windows.
+- Identified the actual write source on `cp-01` via `container_fs_writes_bytes_total` (a true counter): `rook-ceph-mon-a` and `osd-0`/`osd-3`, all scheduled on `cp-01`. Caught and discarded a bad first attempt that used `rate()` on the gauge metric `kubelet_volume_stats_used_bytes`, which produced bogus billion-byte/s figures. Ruled out CNPG Postgres as an alternative explanation (WAL/replication counters flat) despite a superficially matching primary/replica topology.
+- Disambiguated this episode from the 2026-09-02 Cilium L2-announcement-lease theory by checking live lease holders: `cp-03` held zero L2 leases yet dropped in lockstep with `worker-02` (which holds one) — evidence against L2 chatter explaining this specific episode, and consistent instead with genuine Ceph `public_network` traffic (`mon-a`/`osd-0`/`osd-3` on `cp-01` exchanging mon-quorum and OSD heartbeat-front traffic with their peers — `osd-2`/`osd-4` on `cp-03`, `mon-d`/`osd-6`/`osd-9` on `worker-02`).
+- Updated `docs/QA.md`'s `CephNodeNetworkPacketDrops` entry and `docs/ROADMAP.md`'s e1000e packet-drops and "Ceph `public_network`: Move to Storage VLAN" sections with this finding. At the user's explicit direction to move toward implementing the VLAN migration, changed the project's status from "desired end state, not started" to "prioritized by the user — not yet started," and restructured its open blockers into a concrete two-item "Next steps to unblock a start" list (research Rook's live mon-network migration support; verify pod-to-mon reachability on the storage VLAN).
+- Answered the user's question about whether the four affected nodes' NICs could be reused for this migration: queried live Talos link state (`talosctl get links`) on all four and confirmed each has exactly one onboard RJ45 (`eno1`, `e1000e`/I219-LM, 1Gbit) plus a discrete 2-port X520-DA2 SFP+ card (`ixgbe`, 10Gbit) already bonded into `bond-storage` — no second onboard RJ45 or idle NIC exists to repurpose; the only viable path is sharing the existing storage bond, as already planned.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/QA.md` | Added a 2026-09-03 finding to the `CephNodeNetworkPacketDrops` entry: the `PrometheusMissingRuleEvaluations` correlation, the mon-a/osd-0/osd-3 write-burst trace, and the Cilium L2-lease disambiguation |
+| `docs/ROADMAP.md` | Updated the e1000e packet-drops entry and the "Ceph `public_network`: Move to Storage VLAN" section with the 2026-09-03 finding; changed status to "prioritized by the user"; restructured open blockers into a concrete two-item next-steps list |
+
+### Key decisions
+- Kept the existing "item #4" numbering in `ROADMAP.md`'s ranked troubleshooting list unchanged rather than reordering to reflect elevated priority, since other sections cross-reference "item #4" by number — added emphasis in the surrounding text instead.
+- Declined to start the VLAN migration's actual research prerequisites (Rook mon-migration mechanics, storage-VLAN reachability check) even though the user said they want to move toward the project — the request was specifically to update documentation, so left both as clearly flagged next steps rather than beginning them unprompted.
+
+---
+
 ## 2026-09-02 — `prometheus-alerts-triage-pvc-grow`
 
 ### Goal
