@@ -11,14 +11,24 @@ cgroup:
 # Bond/mgmt-NIC layout, confirmed live via `talosctl get links` (2026-09-03):
 #   cp-01:                management=enp4s0 (I225/I226 igc), storage=bond-storage
 #   cp-02/03/worker-01/02: management=eno1  (I219-LM e1000e), storage=bond-storage
-# Explicit device list (not a wildcard): a glob like `enp+` would also match
-# bond-storage's own slave NICs on some nodes (e.g. cp-01's enp5s0f0np0/
-# enp5s0f1np1), which must NOT be attached to directly — only the bond master.
-# Listed explicitly so Cilium attaches to both the management NIC and the
-# storage bond, giving pods a routed path to Ceph's public_network migration
-# target (10.200.0.0/24) — see docs/ROADMAP.md "Ceph public_network: Move to
-# Storage Bond".
-devices: eno1 enp4s0 bond-storage
+# Scoped wildcards, not exact names: `eno1+`/`enp4s0+` match the management NIC
+# itself *and* its own `.30` VLAN sub-interface (eno1.30 / enp4s0.30 — the IOT
+# VLAN, talos/talconfig.yaml) — required for Cilium's L2-announcement feature,
+# which only ARP-announces LoadBalancer IPs (e.g. pool-iot-plex's 10.30.0.234,
+# pool-iot-smtp-relay's 10.30.0.240) on interfaces present in this `devices`
+# filter. An exact-name list (`eno1 enp4s0 bond-storage`, briefly landed
+# 2026-09-03) silently excluded the `.30` sub-interfaces and broke both IOT
+# VIPs — confirmed via `cilium-dbg statedb` showing l2-announce entries for
+# 10.30.0.234/10.30.0.240 only on enp4s0/bond-storage, never enp4s0.30. Do NOT
+# broaden this to a bare `enp+`/`eno+`: that would also match bond-storage's
+# own slave NICs on some nodes (e.g. cp-01's enp5s0f0np0/enp5s0f1np1), which
+# must NOT be attached to directly — only the bond master. The scoped
+# `eno1+`/`enp4s0+` forms don't have that collision (bond-storage's slaves use
+# different prefixes on every node — enp5s0f*, enp2s0f*, enp1s0f* — confirmed
+# via `talosctl get links` across all 5 nodes) while still giving pods a
+# routed path to Ceph's public_network migration target (10.200.0.0/24) — see
+# docs/ROADMAP.md "Ceph public_network: Move to Storage Bond".
+devices: eno1+ enp4s0+ bond-storage
 #
 # MTU stays at 1500 even though bond-storage carries jumbo frames (9000) at
 # the host level: Cilium's MTU is a single cluster-wide scalar in this chart
