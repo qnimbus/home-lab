@@ -1,0 +1,53 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/cilium.io/ciliumnetworkpolicy_v2.json
+#
+# First CiliumNetworkPolicy in this repo (adopted from the deedee-ops/home-ops bifrost reference,
+# see docs/SESSIONS.md) - no other app restricts egress today. Scoped tighter than the reference:
+# DNS is limited to CoreDNS specifically (not "all in-cluster endpoints"), and bifrost has no
+# database/cache to reach in-cluster, so its only legitimate egress is DNS + LLM provider APIs.
+#
+# MAINTENANCE: this only allow-lists API hostnames with stable, predictable domains. Providers
+# with account/region-specific hostnames (Azure OpenAI: <resource>.openai.azure.com, AWS Bedrock:
+# bedrock-runtime.<region>.amazonaws.com, GCP Vertex AI: <region>-aiplatform.googleapis.com, or any
+# self-hosted/local Ollama endpoint) are NOT pre-populated - add a matching toFQDNs entry here
+# whenever a provider is added through Bifrost's web UI, or that provider's calls will silently
+# time out (egress default-denies once this policy selects the pod).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: bifrost
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: bifrost
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: api.openai.com
+        - matchName: api.anthropic.com
+        - matchName: generativelanguage.googleapis.com
+        - matchName: api.groq.com
+        - matchName: api.mistral.ai
+        - matchName: api.cohere.ai
+        - matchName: api.cohere.com
+        - matchName: api.deepseek.com
+        - matchName: openrouter.ai
+        - matchName: api.x.ai
+        - matchName: api.perplexity.ai
+        - matchName: api.together.xyz
+        - matchName: api.fireworks.ai
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP

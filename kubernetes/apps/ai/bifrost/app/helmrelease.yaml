@@ -1,0 +1,97 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: bifrost
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: app-template
+    namespace: flux-system
+  values:
+    controllers:
+      bifrost:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        strategy: Recreate
+        containers:
+          app:
+            image:
+              # renovate: datasource=docker depName=maximhq/bifrost
+              repository: maximhq/bifrost
+              tag: v1.6.11@sha256:ef8e686b3588884066ec3d0e57f3fc15136b11047ad94678adefe5a9573539af
+            env:
+              TZ: "${CLUSTER_TIMEZONE}"
+              BIFROST_ENCRYPTION_KEY:
+                valueFrom:
+                  secretKeyRef:
+                    name: bifrost-secret
+                    key: BIFROST_ENCRYPTION_KEY
+            probes:
+              liveness:
+                enabled: true
+                spec:
+                  periodSeconds: 30
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /health
+                    port: &port 8080
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 5
+              startup:
+                enabled: true
+                spec:
+                  failureThreshold: 30
+                  periodSeconds: 10
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
+            resources:
+              requests:
+                cpu: 10m
+                memory: 128Mi
+              limits:
+                memory: 512Mi
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+    service:
+      app:
+        ports:
+          http:
+            port: 80
+            targetPort: *port
+    persistence:
+      data:
+        existingClaim: "${VOLSYNC_CLAIM:=bifrost-data}"
+        globalMounts:
+          - path: /app/data
+      # Layers the 1Password-sourced config.json on top of the PVC mount above at a subPath -
+      # standard app-template composition, not a conflict (two independent volumeMounts).
+      configfile:
+        type: secret
+        name: bifrost-secret
+        globalMounts:
+          - subPath: config.json
+            path: /app/data/config.json
+      tmp:
+        type: emptyDir
+        globalMounts:
+          - path: /tmp

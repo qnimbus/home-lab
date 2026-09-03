@@ -4,6 +4,81 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-03 — `bifrost-deploy`
+
+### Goal
+Deploy Bifrost, a self-hosted LLM gateway, into the `ai` namespace, adapted from the
+deedee-ops/home-ops reference manifest, and wire it in as Open WebUI's OpenAI-compatible backend.
+
+### What we did
+- Explored the deedee-ops/home-ops reference (`helmrelease.yaml`, `externalsecret.yaml`,
+  `ocirepository.yaml`, `networkpolicy.yaml`) via raw-file fetches, and this repo's own
+  conventions (open-webui's pattern, app-template v5 rules, the `onepassword` ClusterSecretStore,
+  `${DOMAIN_CLUSTER}`, the `envoy-internal` Gateway) via two parallel Explore agents plus direct
+  repo greps, before drafting a plan.
+- Clarified three open design questions with the user via `AskUserQuestion`: start with an empty
+  Bifrost providers list (configured later through its own web UI, not hardcoded), back the
+  `/app/data` PVC with VolSync, and wire Open WebUI to Bifrost's Service now rather than leaving
+  it standalone.
+- Looked up Bifrost's actual `config.json` schema live (getbifrost.ai docs) rather than copying
+  the reference verbatim: its `source_of_truth: "config.json"` setting, combined with the
+  reference's populated `providers` block, would silently discard any provider added later
+  through Bifrost's UI on the next pod restart. Adapted the config to omit `providers`/
+  `source_of_truth` entirely and enable `config_store` (SQLite, on the persistent volume) so
+  UI-managed provider config actually survives restarts.
+- Wrote `kubernetes/apps/ai/bifrost/` (`ks.yaml`, `app/{kustomization,helmrelease,externalsecret,
+  httproute,networkpolicy}.yaml`): `deployment`/`Recreate` on a VolSync `existingClaim` PVC
+  (this repo's established Ceph/VolSync pattern) rather than the reference's raw StatefulSet
+  `volumeClaimTemplate`; explicit `env.valueFrom.secretKeyRef` instead of the reference's
+  `envFrom` (its secret also carries a `config.json` key, which isn't a valid env var name); a
+  standalone `httproute.yaml` matching the repo's dominant pattern rather than open-webui's
+  one-off inline `route:` block.
+- At the user's request, adopted a `CiliumNetworkPolicy` restricting Bifrost's egress — the first
+  one in this repo. Scoped tighter than the reference (DNS egress limited specifically to
+  CoreDNS, not "all in-cluster endpoints") and allow-lists only major LLM providers with stable,
+  predictable API hostnames (OpenAI, Anthropic, Gemini, Groq, Mistral, Cohere, DeepSeek,
+  OpenRouter, xAI, Perplexity, Together, Fireworks) on 443. Flagged in-file that account/region-
+  specific providers (Azure OpenAI, AWS Bedrock, GCP Vertex, self-hosted Ollama) aren't
+  pre-populated and need a manual `toFQDNs` addition once configured, or their calls will
+  silently time out.
+- Wired `kubernetes/apps/ai/open-webui/app/helmrelease.yaml`'s `OPENAI_API_BASE_URLS` at
+  Bifrost's in-cluster Service; `OPENAI_API_KEYS` left as an explicit placeholder pending a
+  Bifrost virtual key, since Bifrost starts with zero providers configured.
+- Updated `docs/EXTERNAL-SECRETS.yaml` with a new `bifrost` 1Password item entry (wildcard
+  import, `ENCRYPTION_KEY` field) per the doc's own maintenance convention.
+- Validated the whole tree with `kubectl kustomize` on the `ai` namespace and the bifrost `app/`
+  directory, and parsed the rendered `ExternalSecret`'s templated `config.json` with Python to
+  confirm it's valid JSON.
+- Gave bifrost a deterministic VolSync backup schedule (`29 * * * *`), chosen to not collide with
+  Plex's already-committed slot, and confirmed via `task volsync:check-schedules`.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/ai/bifrost/ks.yaml` | New — Flux Kustomization, VolSync-backed, `targetNamespace: ai` |
+| `kubernetes/apps/ai/bifrost/app/kustomization.yaml` | New — lists the app's manifests |
+| `kubernetes/apps/ai/bifrost/app/helmrelease.yaml` | New — app-template `deployment`, VolSync PVC + secret-mounted `config.json`, non-root hardened |
+| `kubernetes/apps/ai/bifrost/app/externalsecret.yaml` | New — pulls `ENCRYPTION_KEY` from 1Password, templates the minimal `config.json` |
+| `kubernetes/apps/ai/bifrost/app/httproute.yaml` | New — `bifrost.${DOMAIN_CLUSTER}` via `envoy-internal` |
+| `kubernetes/apps/ai/bifrost/app/networkpolicy.yaml` | New — first `CiliumNetworkPolicy` in this repo; egress scoped to CoreDNS + LLM provider APIs |
+| `kubernetes/apps/ai/kustomization.yaml` | Registered `./bifrost/ks.yaml` |
+| `kubernetes/apps/ai/open-webui/app/helmrelease.yaml` | Added `OPENAI_API_BASE_URLS`/`OPENAI_API_KEYS` pointing at Bifrost |
+| `docs/EXTERNAL-SECRETS.yaml` | Added the `bifrost` 1Password item inventory entry |
+
+### Key decisions
+- Deviated from the reference's `config.json` (`source_of_truth: "config.json"` + populated
+  `providers`) after checking Bifrost's own docs — that combination would wipe UI-added providers
+  on every restart, defeating the user's "manage providers via the UI" choice.
+- Added the `CiliumNetworkPolicy` only after the user explicitly asked for it upon seeing it in
+  the reference; initially left it out of the plan since no other app in this repo uses one.
+- Deliberately left Azure OpenAI/Bedrock/Vertex AI/local-Ollama hostnames out of the egress
+  allow-list rather than guess account-specific domains — safer to fail closed (timeout) than
+  silently widen the policy with an unverified hostname.
+- Deferred actual LLM provider/virtual-key configuration inside Bifrost to a manual post-deploy
+  step, consistent with how Open WebUI's own backend was originally left unwired at its deploy.
+
+---
+
 ## 2026-09-03 — `ceph-packetdrops-prometheus-correlation`
 
 ### Goal

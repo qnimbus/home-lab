@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-09-03 | `bifrost-deploy` | Deployed Bifrost LLM gateway to `ai` ns; wired Open WebUI backend; added repo's first CiliumNetworkPolicy for egress |
 > | 2026-09-03 | `ceph-packetdrops-prometheus-correlation` | Traced Ceph packet-drops/PrometheusMissingRuleEvaluations to mon/osd write burst; prioritized VLAN migration |
 > | 2026-09-02 | `prometheus-alerts-triage-pvc-grow` | Triaged 6 Prometheus alerts; grew Prometheus PVC 20Gi→60Gi + retention 30d; found StatefulSet PVCs need manual expand |
 > | 2026-09-01 | `ceph-packetdrops-ring-headroom-baseline` | Ruled out EEE/Ceph-role causes for packet drops; confirmed 16x ring headroom; captured pre-fix baseline |
@@ -11,7 +12,6 @@
 > | 2026-08-27 | `plex-keda-nfs-scaler` | Added KEDA ScaledObject scaling Plex to 0 on NAS NFS-port unreachability; reused nas-nfs Probe, added driftDetection.ignore for replicas |
 > | 2026-08-24 | `configarr-deploy` | Drafted Configarr TRaSH-Guide sync into `downloads` ns; reused sonarr/radarr items, verified TRaSH IDs and image digest |
 > | 2026-08-23 | `arr-stack-deploy` | Drafted Flux *arr stack (Prowlarr/Sonarr/Radarr/Sabnzbd) into `downloads` ns; reused Plex's NFS mount for hardlinks |
-> | 2026-08-24 | `plex-deploy` | Deployed Plex (GPU transcode, NFS media); fixed crash loop, secureConnections block, mobile Remote label; added LB IP |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

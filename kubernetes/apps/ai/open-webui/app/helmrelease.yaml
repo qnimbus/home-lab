@@ -49,6 +49,13 @@ spec:
               # warnings every cycle. Set longer than 120s so a renewal always lands
               # inside the lock's TTL.
               WEBSOCKET_REDIS_LOCK_TIMEOUT: "150"
+              # Points at bifrost (kubernetes/apps/ai/bifrost), the in-cluster OpenAI-compatible
+              # LLM gateway - fills the "no LLM backend wired" gap from this app's original
+              # deploy. Bifrost starts with zero providers configured (added later via its own
+              # web UI), so OPENAI_API_KEYS is a placeholder until a virtual key exists there -
+              # chats will error until both sides are set up.
+              OPENAI_API_BASE_URLS: "http://bifrost.ai.svc.cluster.local/v1"
+              OPENAI_API_KEYS: ""
             envFrom:
               - secretRef:
                   name: open-webui-secret
