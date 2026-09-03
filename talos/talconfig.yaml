@@ -70,6 +70,16 @@ nodes:
     nodeLabels:
       topology.kubernetes.io/region: &region homelab
       topology.kubernetes.io/zone: homelab-worker-01
+    # Tells Rook which IP to bind a mon to on this node, independent of the
+    # kubelet-registered node IP (pinned to 10.60.0.0/24 above — see
+    # patches/global/machine-kubelet.yaml). Rook's addressRanges CIDR
+    # filtering only sees the Kubernetes Node object's address, not the
+    # storage bond, so without this a failed-over mon here silently binds to
+    # the mgmt IP instead of the storage bond. Known Rook limitation, not a
+    # bug in our config — see github.com/rook/rook/issues/14829 (closed
+    # wontfix) and docs/ROADMAP.md (Ceph public_network migration).
+    nodeAnnotations:
+      network.rook.io/mon-ip: "10.200.0.204"
     networkInterfaces:
       # Management — single Intel I219-LM RJ45 (driver: e1000e)
       # VLAN 60 (management) is native/untagged on the switch port; address configured
@@ -153,6 +163,10 @@ nodes:
     nodeLabels:
       topology.kubernetes.io/region: *region
       topology.kubernetes.io/zone: homelab-worker-02
+    # See talos-worker-01's nodeAnnotations comment above — same Rook mon-ip
+    # workaround, this node's storage-bond address.
+    nodeAnnotations:
+      network.rook.io/mon-ip: "10.200.0.205"
     networkInterfaces:
       # Management — single Intel I219-LM RJ45 (driver: e1000e)
       # VLAN 60 (management) is native/untagged on the switch port; address configured
@@ -202,6 +216,10 @@ nodes:
     nodeLabels:
       topology.kubernetes.io/region: *region
       topology.kubernetes.io/zone: homelab-cp-01
+    # See talos-worker-01's nodeAnnotations comment (above in this file) —
+    # same Rook mon-ip workaround, this node's storage-bond address.
+    nodeAnnotations:
+      network.rook.io/mon-ip: "10.200.0.201"
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
       # IOT VLAN 30 — tagged sub-interface on the mgmt trunk NIC. See talos-worker-01's
@@ -283,6 +301,10 @@ nodes:
     nodeLabels:
       topology.kubernetes.io/region: *region
       topology.kubernetes.io/zone: homelab-cp-02
+    # See talos-worker-01's nodeAnnotations comment (above in this file) —
+    # same Rook mon-ip workaround, this node's storage-bond address.
+    nodeAnnotations:
+      network.rook.io/mon-ip: "10.200.0.202"
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
       - "@./patches/node/machine-sysctl-netdev-budget.yaml"
@@ -370,6 +392,10 @@ nodes:
     nodeLabels:
       topology.kubernetes.io/region: *region
       topology.kubernetes.io/zone: homelab-cp-03
+    # See talos-worker-01's nodeAnnotations comment (above in this file) —
+    # same Rook mon-ip workaround, this node's storage-bond address.
+    nodeAnnotations:
+      network.rook.io/mon-ip: "10.200.0.203"
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
       - "@./patches/node/machine-sysctl-netdev-budget.yaml"
