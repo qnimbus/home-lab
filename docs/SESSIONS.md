@@ -4,6 +4,77 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-03 — `ceph-storage-bond-migration-plan`
+
+### Goal
+Draft a reviewable migration plan for moving Ceph's `public_network` from the management subnet
+to the storage bond (`10.200.0.0/24`), resolving the two research prerequisites ROADMAP.md had
+flagged as blocking a start.
+
+### What we did
+- Ran two parallel research agents to gather full context: one extracted the complete
+  `CephNodeNetworkPacketDrops` QA.md entry and the prior `ceph-packetdrops-*` session history
+  (root cause, ring-headroom findings, prioritization decision); the other read the live Talos/
+  Cilium/CephCluster network config (talconfig.yaml interfaces/bonds, CephCluster `network:`
+  stanza, Cilium values.yaml).
+- Corrected a terminology mismatch: the user referred to "VLAN 200 (storage VLAN)," but there is
+  no currently-active 802.1Q VLAN 200 — `10.200.0.0/24` is a dedicated, untagged `bond-storage`
+  LACP bond on discrete SFP+ NICs; VLAN 200 only existed as a commented-out 2026-06-25→07-07
+  emergency fallback.
+- Resolved prerequisite 1 (Rook mon-network migration mechanics) via web research against
+  official Rook docs and GitHub issues: confirmed `addressRanges.public` changes don't
+  auto-migrate existing mons — requires one-at-a-time mon failover (scale to 0 → operator
+  creates/validates a canary → promotes into quorum) to preserve 2-of-3 quorum throughout; OSD
+  pods separately need a rolling restart to pick up the new network.
+- Resolved prerequisite 2 (pod-to-storage-bond reachability) via a targeted Explore agent:
+  confirmed pods cannot reach `10.200.0.0/24` today — Cilium's `devices:` only attaches to the
+  management interface, and `bond-storage` is documented as an isolated L2 segment by design.
+  Confirmed via web research this gap is **not avoidable**: Rook v1.19.6 defaults
+  `CSI_ENABLE_HOST_NETWORK` to `false` for greenfield clusters (this one, no override in-repo),
+  so `csi-rbdplugin`/`csi-cephfsplugin` run on the pod network, not hostNetwork — every workload's
+  RBD/CephFS mount genuinely talks to mons/OSDs from a pod IP, so opening pod→storage-bond
+  reachability is mandatory, not optional.
+- Verified the plan's load-bearing claims directly against the live repo rather than trusting
+  agent summaries: the CephCluster `network:` block, Cilium `values.yaml`'s `devices`/`MTU`
+  comment, `ops/ceph/mod.just`'s actual recipe names, and CNPG's storage class (confirmed
+  `openebs-hostpath`, not `ceph-block` — corrects a bad verification-sample suggestion the Plan
+  agent had flagged).
+- Designed and got the user's explicit approval (via plan mode / `ExitPlanMode`) for a 5-phase
+  migration: (1) add `bond-storage` as a Cilium routed device and prove pod reachability before
+  touching Ceph, keeping MTU at 1500 cluster-wide since Cilium's MTU is a single scalar in this
+  chart version, not per-device; (2) `CephCluster.addressRanges.public` → `10.200.0.0/24` +
+  rolling mon failover, one mon at a time; (3) rolling OSD pod restart, `noout`/`ok-to-stop`
+  scoped per node; (4) verification — health checks, a real `ceph-block` consumer smoke test, a
+  minimum 2-week alert-quiet observation window; (5) optional/deferred firewall hardening on the
+  newly-opened storage-bond pod reachability. Every phase has an explicit rollback and "safe to
+  stop here" boundary.
+- Folded the resolved prerequisites, terminology correction, and phase summary into
+  `docs/ROADMAP.md`'s existing "Ceph `public_network`: Move to Storage VLAN" section (in place of
+  the old "not yet started; two blockers" framing) so a future session can pick up execution
+  without re-deriving the research. No Ceph/Cilium manifests were touched — this session was
+  planning-only, per explicit scope; no migration steps were executed against the live cluster.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `docs/ROADMAP.md` | Updated "Ceph `public_network`: Move to Storage VLAN" section: terminology correction, both research prerequisites marked resolved with findings, added the approved 5-phase plan summary |
+
+### Key decisions
+- Sequenced the Cilium pod-reachability change (Phase 1) strictly before any Ceph-side change,
+  since it's the harder, load-bearing risk (confirmed pods can't reach the storage bond at all
+  today) and Phases 2-3 depend on it working.
+- Chose to keep Cilium's MTU at 1500 cluster-wide rather than attempt per-device jumbo frames —
+  Cilium's `MTU:` key is a single scalar in the chart version in use (1.20.1), and reopening a
+  PMTUD mismatch risk (this cluster already had one real incident, CNPG's streaming-replica
+  black-hole) for a speculative throughput benefit on CSI traffic wasn't worth it.
+- Treated mon failover as an imperative, live operational sequence rather than something to
+  express declaratively via Flux — it's an operator-driven, one-mon-at-a-time state transition,
+  analogous to how OSD replacement is already handled imperatively via `ops/ceph/mod.just`.
+- Left the storage-bond firewall hardening (Phase 5) optional/deferred rather than blocking,
+  given the confirmed single-tenant home-lab risk profile — real but modest exposure.
+
+---
+
 ## 2026-09-03 — `bifrost-deploy`
 
 ### Goal

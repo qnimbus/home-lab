@@ -910,16 +910,25 @@ contended for I/O during the same window. Full writeup:
 project now**, rather than continue treating it as an indefinitely deferrable someday-item — see
 "Next steps to unblock a start," below, for what that means concretely.
 
-**Status: prioritized by the user (2026-09-03) — not yet started; two research prerequisites
-currently block scheduling a start.** This cluster deliberately split Ceph traffic across
-two fabrics at greenfield (`docs/SESSIONS-ARCHIVE.md:435`): `cluster_network` (OSD↔OSD
-replication/heartbeat/backfill) on the storage VLAN (`10.200.0.0/24`, 2x10G LACP bond), but
-`public_network` (client I/O — every CSI/RBD read and write, plus mon traffic and heartbeat-front)
-on the **management VLAN** (`10.60.0.0/24`) instead — the same fabric as `etcd`/`kube-apiserver`/
-`kubelet`/DNS/Cilium control-plane traffic. That choice is what made the `CephNodeNetworkPacketDrops`
-investigation above possible in the first place: Ceph client I/O from `sabnzbd`'s `/config` PVC was
-landing on a 1GbE, single-queue, small-ring-buffer NIC shared with cluster-critical traffic, not on
-the well-provisioned storage bond most people would assume "Ceph traffic" means.
+**Status: migration plan drafted and approved by the user (2026-09-03) — ready to execute,
+not yet started.** This cluster deliberately split Ceph traffic across two fabrics at
+greenfield (`docs/SESSIONS-ARCHIVE.md:435`): `cluster_network` (OSD↔OSD
+replication/heartbeat/backfill) on the storage bond (`10.200.0.0/24`, 2x10G LACP bond, `bond-storage`
+— see terminology note below), but `public_network` (client I/O — every CSI/RBD read and write, plus
+mon traffic and heartbeat-front) on the **management network** (`10.60.0.0/24`) instead — the same
+fabric as `etcd`/`kube-apiserver`/`kubelet`/DNS/Cilium control-plane traffic. That choice is what made
+the `CephNodeNetworkPacketDrops` investigation above possible in the first place: Ceph client I/O from
+`sabnzbd`'s `/config` PVC was landing on a 1GbE, single-queue, small-ring-buffer NIC shared with
+cluster-critical traffic, not on the well-provisioned storage bond most people would assume "Ceph
+traffic" means.
+
+**Terminology correction (2026-09-03):** this section previously said "storage VLAN." There is no
+currently-active 802.1Q VLAN carrying storage traffic — `10.200.0.0/24` is a dedicated, untagged,
+physically-separate LACP 802.3ad bond (`bond-storage`) on discrete SFP+ NICs, not a tagged VLAN over
+shared cabling. A tagged VLAN 200 sub-interface only ever existed as a temporary emergency fallback
+(2026-06-25→07-07, X520 hardware failure) and is commented out today in `talos/talconfig.yaml`,
+unrelated to this migration. Below and in future updates, this project is described as moving
+`public_network` onto the storage bond / `10.200.0.0/24`, not "the storage VLAN."
 
 The user has confirmed (2026-09-03: now as an active priority, not just an eventual one) they want
 to move `public_network` onto `10.200.0.0/24` too, so **all** Ceph traffic — client and replication
@@ -941,31 +950,61 @@ willingness, is the constraint:**
   exactly the mon-failover dance the original greenfield choice was designed to avoid entirely by
   getting the network right before the cluster ever had data.
 
-**Next steps to unblock a start (2026-09-03 — these are the two things standing between
-"prioritized" and an actual implementation plan):**
-1. **Research how Rook automates (or doesn't) a live mon network migration.** Not yet
-   investigated at all. Needs answers to: does Rook support adding mons on a new
-   `public_network` CIDR and draining the old ones without a full cluster rebuild? What does the
-   `CephCluster.spec.network` change trigger operationally — a rolling mon replacement Rook
-   manages, or something requiring manual `ceph mon` commands via the toolbox? Is there a
-   documented/tested upstream procedure for this specific network-only migration (vs. a
-   host-address change), and does our Rook/Ceph version (v1.19.6) support it cleanly? This is the
-   higher-risk unknown of the two and should be researched first — it may reveal the migration
-   needs to wait for a specific Rook feature or a maintenance-window full redeploy instead of an
-   in-place change.
-2. **Verify pod-to-mon reachability on the storage VLAN before relying on it.** The current
-   `helmrelease.yaml` comment notes CSI pods on the Cilium pod network reach mon host IPs on
-   `10.60.0.0/24` "via routing" — the mechanism isn't spelled out further. Whether equivalent
-   reachability already exists to `10.200.0.0/24`, or would need new routing/Cilium configuration
-   (e.g. a route or BGP/L2 advertisement for the storage VLAN into the pod network), is
-   unconfirmed. This is checkable live and cheaply (e.g. a debug pod pinging/curling a mon's
-   `10.200.0.0/24` address, if mons even have one yet) — worth doing before or alongside #1 since
-   a "no" here changes the shape of the whole plan (may need a Cilium-level networking change
-   first, independent of anything Ceph-side).
+**Both research prerequisites resolved (2026-09-03, session `ceph-storage-bond-migration-plan`):**
+1. **Rook mon-network migration mechanics.** Confirmed via official Rook docs: changing
+   `addressRanges.public` does **not** automatically move existing mons — "the existing mons will
+   remain running with the same network settings with which they were created... you will need to
+   failover the mons." No fully-documented CIDR-only-change procedure exists upstream, but the
+   general Rook mon-failover mechanism is well documented: scaling a mon Deployment to 0 causes the
+   operator to detect the failure, create and validate a canary mon, then promote it into quorum.
+   Since `addressRanges.public` is updated before triggering failover, the replacement mon should be
+   scheduled on the new network. Must be done one mon at a time to preserve 2-of-3 quorum throughout.
+   OSD/MDS pods separately need a rolling restart afterward — Rook does not apply network changes to
+   daemon pods until they restart.
+2. **Pod-to-storage-bond reachability — the harder blocker, confirmed NOT to exist today.** Two
+   independent gaps: Cilium's BPF datapath (`kubernetes/apps/kube-system/cilium/app/helm/values.yaml`)
+   only attaches to the management interface (`devices:` is commented out, auto-detected via the
+   default route, which `bond-storage` doesn't have); and `bond-storage` is documented in
+   `kubernetes/apps/kube-system/cilium/config/networks.yaml` as an isolated L2 segment with no route
+   back to the management subnet — an intentional design choice. Crucially, this is **not avoidable**:
+   confirmed Rook v1.19.6 defaults `CSI_ENABLE_HOST_NETWORK` to `false` for greenfield clusters (this
+   one, with no override anywhere in this repo), so the `csi-rbdplugin`/`csi-cephfsplugin` node
+   plugins run on the **pod network**, not hostNetwork — every workload's RBD/CephFS mount genuinely
+   talks to mons/OSDs from a pod IP today. Opening pod→storage-bond reachability via a Cilium
+   `devices:` change is therefore mandatory, not optional, and comes with its own MTU question
+   (resolved: keep `MTU: 1500` cluster-wide — Cilium's MTU is a single scalar in this chart version,
+   not per-device, so jumbo frames on the new path aren't available without risking the proven-safe
+   management path too).
 
-Neither of these has been started — this section records the plan and why it's not a quick fix,
-not evidence that work is underway. The next session on this topic should pick one of the two
-above and report back before any `CephCluster` change is drafted.
+**Approved 5-phase migration plan (full detail in session `ceph-storage-bond-migration-plan`,
+2026-09-03):**
+1. **Cilium: add `bond-storage` as a routed device, prove pod reachability** — before touching any
+   Ceph config. Files: `kubernetes/apps/kube-system/cilium/app/helm/values.yaml`,
+   `kubernetes/apps/kube-system/cilium/config/networks.yaml`. Validate with a pod-network debug pod
+   reaching a live mon IP on `10.200.0.0/24` before proceeding.
+2. **`CephCluster.addressRanges.public` → `10.200.0.0/24`, then rolling mon failover** — one mon at a
+   time via `kubectl scale deploy/rook-ceph-mon-<x> --replicas=0`, confirming quorum and the new bound
+   address after each before touching the next. Imperative/live, not GitOps-declarative — analogous to
+   existing OSD-replacement operations in `ops/ceph/mod.just`.
+3. **Rolling OSD pod restart** — one node at a time, `noout` + `ok-to-stop` scoped per node, so every
+   OSD picks up the new network binding.
+4. **Verification** — `ceph -s`/quorum/OSD health, a real `ceph-block` consumer smoke test (not CNPG —
+   confirmed it's on `openebs-hostpath`), a minimum 2-week observation window before declaring
+   `CephNodeNetworkPacketDrops` fixed (the alert's own history shows episodes days-to-weeks apart), and
+   an etcd/kube-apiserver/CoreDNS regression check.
+5. **(Optional, deferred) Harden the newly-opened pod→storage-bond reachability** — nothing today
+   restricts which pods can reach Ceph's mon/OSD ports on `10.200.0.0/24` once Phase 1 lands (confirmed
+   via `talos/patches/global/network-firewall.yaml` — no existing rule covers Ceph's ports). A Talos
+   `NetworkRuleConfig` or `CiliumNetworkPolicy` scoped to CSI plugin pods would close this; not required
+   for the fix itself, worth doing eventually given single-tenant home-lab risk is modest but nonzero.
+
+Every phase has an explicit rollback and a "safe to stop here" boundary. Known unknowns carried into
+execution: the exact Cilium `devices:` glob needs live per-node interface-name verification (heterogeneous
+NIC naming across nodes); whether a stuck/failed mon canary stalls further Rook mon operations
+cluster-wide or fails cleanly is unconfirmed by documentation (treat the first mon's migration as the
+highest-attention step); exact Rook v1.19.6 pod labels used in kubectl commands should be verified live
+with `--show-labels` rather than assumed. Nothing has been implemented against the live cluster yet —
+the next session on this topic should execute Phase 1 and report back before touching any Ceph config.
 
 **Pre-work done (2026-09-01) — mixed result, doesn't fully resolve the urgency question.**
 CNPG Postgres was the originally suggested candidate but is **not applicable**: its actual storage
