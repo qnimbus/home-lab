@@ -4,6 +4,81 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-03 — `ceph-public-network-migration-execute`
+
+### Goal
+Execute the previously-approved 5-phase plan (session `ceph-storage-bond-migration-plan`) to
+migrate Ceph's `public_network` from the management subnet to the storage bond (`10.200.0.0/24`),
+and verify the fix.
+
+### What we did
+- **Phase 1 (Cilium):** verified live interface names via `talosctl get links` rather than trusting
+  the repo's own (stale) comments — management is `enp4s0` on cp-01, `eno1` elsewhere; no node
+  actually uses `bond0` for management despite a prior comment's claim. Added an explicit
+  `devices: eno1 enp4s0 bond-storage` to Cilium (not a wildcard — see Key decisions) and validated
+  pod-to-storage-bond reachability with a live probe pod: 0% loss, ~0.08ms RTT, no regression on the
+  management path.
+- **Phase 2 (mon failover) — found and resolved a blocker the original plan's research hadn't
+  covered.** Changed `CephCluster.addressRanges.public` to `10.200.0.0/24` and failed over all 3
+  mons one at a time (`mon.a`→`mon.f`→`mon.g` after a required second failover, `mon.d`→`mon.h`,
+  `mon.e`→`mon.i`; Rook always assigns a fresh identity, never reuses the old letter). The first
+  failover silently bound the new mon to the old `10.60.0.201` address with `ceph -s` staying
+  `HEALTH_OK` throughout — no error surfaced. Root-caused via a research fork: Rook's
+  `addressRanges` mon selection reads the Kubernetes Node object's registered address, not the
+  node's actual interfaces, and this cluster's kubelet is deliberately pinned to `10.60.0.0/24`-only
+  (a real, unrelated, pre-existing constraint protecting kube-apiserver↔kubelet traffic). Confirmed
+  via [rook/rook#14829](https://github.com/rook/rook/issues/14829) (closed `wontfix`) this is a
+  known Rook limitation. Fixed with the documented `network.rook.io/mon-ip` node annotation, applied
+  declaratively to all 5 nodes (not just the 3 with mons at migration time — confirmed necessary
+  live, since `mon.e`'s replacement landed on `cp-02`, not its original node `worker-01`) via
+  `talconfig.yaml`'s `nodeAnnotations`. Also confirmed empirically the annotation is only read on a
+  genuine Rook-driven mon recreation, not a plain `kubectl delete pod`.
+- **Phase 3 (OSD restarts):** rolling-restarted all 10 OSDs, one node at a time (`noout` +
+  `ok-to-stop` scoped per node). No annotation workaround needed — OSD address discovery already
+  found the storage bond correctly on its own. Every OSD now shows one unified `10.200.0.0/24`
+  address for both public and cluster roles (previously two distinct addresses).
+- **Phase 4 (verification):** `ceph -s` stayed `HEALTH_OK`/33 pgs `active+clean`/10-10 OSDs up+in
+  throughout the entire migration — zero data unavailability. Sampled 4 real `ceph-block` consumers
+  (Grafana, Prometheus, Waha, victoria-logs) with live write/read tests or API checks; `pgAdmin`
+  (scaled to 0) confirmed indirectly via a successful volsync backup job. etcd/apiserver/CoreDNS: no
+  regression. Confirmed `CephNodeNetworkPacketDrops` (Rook's own shipped `PrometheusRule`) needs no
+  changes — its expression is already interface-agnostic, so it already covers `bond-storage`.
+  Established a 2-week observation-window baseline (drop counters: 0 on 4 nodes, cumulative 36 on
+  cp-01, not actively growing) before declaring the alert fixed.
+- Updated `docs/ROADMAP.md` with full per-phase execution results, superseding the prior "ready to
+  execute, not yet started" status.
+- Hit a devcontainer SSH-agent signing failure (`ssh-keygen -Y sign` failed despite `ssh-add -l`
+  listing the key) partway through — rather than bypass commit signing, handed the user the
+  finished commit message to run manually.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/kube-system/cilium/app/helm/values.yaml` | Added `devices: eno1 enp4s0 bond-storage`; corrected stale interface/MTU comments (commit `8d1ff81`) |
+| `kubernetes/apps/kube-system/cilium/config/networks.yaml` | Corrected stale L2-announcement comment about `bond-storage` isolation (commit `8d1ff81`) |
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` | Unified `addressRanges.public`/`cluster` to `10.200.0.0/24` (commit `e96dcdf`) |
+| `talos/talconfig.yaml` | Added `network.rook.io/mon-ip` `nodeAnnotations` to all 5 nodes (commit `de1a7f9`) |
+| `docs/ROADMAP.md` | Documented full execution results and the 2-week observation-window baseline |
+
+### Key decisions
+- Used an explicit Cilium `devices:` list rather than a wildcard (`enp+`) — a glob would also match
+  `bond-storage`'s own slave NICs on some nodes (e.g. cp-01's `enp5s0f0np0`/`enp5s0f1np1`), wrongly
+  attaching Cilium's datapath to bond members instead of just the bond master.
+- Kept Cilium `MTU: 1500` unchanged rather than enabling jumbo frames on the new pod→storage-bond
+  path — it's a single cluster-wide scalar in this chart version, so raising it would also affect
+  the proven-safe management path.
+- Annotated all 5 nodes with `network.rook.io/mon-ip` proactively, not just the 3 that had mons at
+  migration start, after confirming live that a replacement mon isn't guaranteed to land back on
+  its original node.
+- Left `docs/ROADMAP.md`'s "Storage VLAN" section heading and anchor unchanged despite the
+  terminology correction already documented inline — renaming it would silently break other
+  in-document links pointing at that anchor, for no functional benefit.
+- Did not bypass commit signing (`--no-gpg-sign`/`commit.gpgsign=false`) when the devcontainer's SSH
+  agent failed mid-session — per the repo's explicit rule, handed the commit message to the user to
+  run manually instead of working around the failure.
+
+---
+
 ## 2026-09-03 — `ceph-storage-bond-migration-plan`
 
 ### Goal

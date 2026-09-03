@@ -910,8 +910,9 @@ contended for I/O during the same window. Full writeup:
 project now**, rather than continue treating it as an indefinitely deferrable someday-item — see
 "Next steps to unblock a start," below, for what that means concretely.
 
-**Status: migration plan drafted and approved by the user (2026-09-03) — ready to execute,
-not yet started.** This cluster deliberately split Ceph traffic across two fabrics at
+**Status: executed and verified (2026-09-03, session `ceph-storage-bond-migration-plan`) —
+all 5 phases complete except the optional Phase 5 hardening and the 2-week observation window
+below.** This cluster deliberately split Ceph traffic across two fabrics at
 greenfield (`docs/SESSIONS-ARCHIVE.md:435`): `cluster_network` (OSD↔OSD
 replication/heartbeat/backfill) on the storage bond (`10.200.0.0/24`, 2x10G LACP bond, `bond-storage`
 — see terminology note below), but `public_network` (client I/O — every CSI/RBD read and write, plus
@@ -998,13 +999,60 @@ willingness, is the constraint:**
    `NetworkRuleConfig` or `CiliumNetworkPolicy` scoped to CSI plugin pods would close this; not required
    for the fix itself, worth doing eventually given single-tenant home-lab risk is modest but nonzero.
 
-Every phase has an explicit rollback and a "safe to stop here" boundary. Known unknowns carried into
-execution: the exact Cilium `devices:` glob needs live per-node interface-name verification (heterogeneous
-NIC naming across nodes); whether a stuck/failed mon canary stalls further Rook mon operations
-cluster-wide or fails cleanly is unconfirmed by documentation (treat the first mon's migration as the
-highest-attention step); exact Rook v1.19.6 pod labels used in kubectl commands should be verified live
-with `--show-labels` rather than assumed. Nothing has been implemented against the live cluster yet —
-the next session on this topic should execute Phase 1 and report back before touching any Ceph config.
+Every phase has an explicit rollback and a "safe to stop here" boundary.
+
+**Execution results (2026-09-03, same session):**
+- **Phase 1.** Live interface names verified via `talosctl get links` (not guessed): management is
+  `enp4s0` on cp-01, `eno1` on cp-02/cp-03/worker-01/worker-02 — the prior comment's claim that cp-03
+  used `bond0` was stale/wrong. Used an explicit `devices: eno1 enp4s0 bond-storage` list rather than
+  a wildcard, since a glob like `enp+` would also match `bond-storage`'s own slave NICs on some nodes
+  (e.g. cp-01's `enp5s0f0np0`/`enp5s0f1np1`) — attaching Cilium directly to bond members, not just the
+  master, would have been wrong. Pod-to-storage-bond reachability validated cleanly (0% loss, ~0.08ms
+  RTT — same-L2, no routing hop) with zero regression on the management path.
+- **Phase 2 — new blocker found and resolved, not anticipated by the two prerequisites above.**
+  Changing `addressRanges.public` and failing over `mon.a` (→ `mon.f`, Rook always assigns a fresh
+  identity, never reuses the old letter) produced a mon that silently bound to `10.60.0.201`, not
+  `10.200.0.201` — `ceph -s` stayed `HEALTH_OK` throughout, no error surfaced. Root cause: Rook's
+  `addressRanges` mon address selection reads the **Kubernetes Node object's** registered address, not
+  the node's actual interfaces, and this cluster's kubelet is deliberately pinned to
+  `10.60.0.0/24`-only (`talos/patches/global/machine-kubelet.yaml`, a real, unrelated, pre-existing
+  constraint protecting kube-apiserver↔kubelet control traffic from routing over the storage bond) —
+  so the Node object never exposes a `10.200.0.0/24` address for Rook to select. Confirmed via
+  [rook/rook#14829](https://github.com/rook/rook/issues/14829) (closed `wontfix`) this is a known Rook
+  limitation, not a bug in our config. Fix: the documented `network.rook.io/mon-ip` node annotation,
+  applied declaratively to all 5 nodes (not just the 3 with mons at migration time — confirmed
+  necessary live, since `mon.e`'s replacement landed on `cp-02` rather than its original node
+  `worker-01`) via `talconfig.yaml`'s `nodeAnnotations` (talhelper field, same shape as the existing
+  `nodeLabels`). Also confirmed empirically: the annotation is only read when Rook creates/recreates a
+  mon's Deployment (a genuine failover), not on a plain pod restart — a simple `kubectl delete pod`
+  reuses the stale `--public-addr` baked into the existing pod template. All 3 mons (`mon.g`/`.h`/`.i`)
+  ended up correctly bound to their node's `10.200.0.0/24` address.
+- **Phase 3.** All 10 OSDs restarted one node at a time (`noout` + `ok-to-stop` scoped per node); no
+  annotation workaround needed here — OSD address discovery was already correctly finding the storage
+  bond independently of the Node object (their `cluster_network` binding proved this pre-migration).
+  Every OSD now shows a single unified `10.200.0.0/24` address for both public and cluster roles.
+- **Phase 4.** `ceph -s`: `HEALTH_OK`, 33 pgs `active+clean`, 10/10 OSDs up/in throughout, zero data
+  unavailability across the whole migration. Sampled 4 real `ceph-block` consumers (Grafana, Prometheus,
+  Waha, victoria-logs) with live write/read tests or API checks — all confirmed healthy on their
+  migrated mounts. `pgAdmin` (scaled to 0) confirmed indirectly via a successful volsync backup job.
+  etcd/apiserver/CoreDNS: no regression. `CephNodeNetworkPacketDrops`
+  (`rook-ceph`'s own shipped `PrometheusRule`, not authored in this repo) needed no changes — its
+  expression is already interface-agnostic (`device!="lo"`), so it already covers `bond-storage`
+  automatically; it only ever fired on the management NICs because that's where the ring-exhaustion
+  problem actually was. **2-week observation window starts 2026-09-03** — watch
+  `rate(node_network_receive_drop_total{device="bond-storage"}[5m])` /
+  `rate(node_network_transmit_drop_total{device="bond-storage"}[5m])` (baseline at cutover: 0 on 4
+  nodes, cumulative counter of 36 on cp-01 likely from bond/LACP negotiation at some point in its
+  uptime, not actively growing) and the `CephNodeNetworkPacketDrops` alert itself before declaring this
+  fixed.
+- **Phase 5** remains optional/deferred, not done.
+
+Known unknowns from planning that got resolved empirically during execution: the Cilium `devices:` glob
+(resolved — explicit list, not a wildcard, see Phase 1 above); whether a stuck/failed mon canary stalls
+Rook cluster-wide (didn't hit this — every failover completed cleanly, just slower than expected: Rook's
+mon health-check waits a full ~10-minute timeout before creating a canary, confirmed via operator logs,
+not a stall); exact pod labels (`app=rook-ceph-mon,mon=<id>` / `app=rook-ceph-osd,ceph-osd-id=<id>`
+confirmed live via `--show-labels`, matched the plan's assumption).
 
 **Pre-work done (2026-09-01) — mixed result, doesn't fully resolve the urgency question.**
 CNPG Postgres was the originally suggested candidate but is **not applicable**: its actual storage
