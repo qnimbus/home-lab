@@ -126,18 +126,30 @@ spec:
           # "how many PGs?" guesswork. Strongly recommended for new clusters.
           - name: pg_autoscaler
             enabled: true
-      # --- The Phase-4 design goal -------------------------------------------
-      # Host networking splits Ceph traffic across our two fabrics:
-      #   public_network  (clients/CSI <-> mons,OSDs) on the 1G mgmt subnet,
-      #   cluster_network (OSD<->OSD replication, heartbeat, backfill) on the
-      #   2x10G LACP storage bond (bond-storage, 9000 MTU).
-      # Configured at greenfield so no mon failover is needed. CSI pods on the
-      # Cilium pod network reach the mon host IPs (10.60.0.0/24) via routing.
+      # --- public_network migrated onto the storage bond (2026-09-03) --------
+      # Both public_network (clients/CSI <-> mons,OSDs) and cluster_network
+      # (OSD<->OSD replication, heartbeat, backfill) now ride the same 2x10G
+      # LACP storage bond (bond-storage, 9000 MTU, 10.200.0.0/24), unifying
+      # all Ceph traffic off the management subnet. Was split (public on
+      # 10.60.0.0/24, cluster on 10.200.0.0/24) at greenfield; moved after
+      # CephNodeNetworkPacketDrops was root-caused to mgmt-NIC RX-ring
+      # exhaustion — see docs/QA.md and docs/ROADMAP.md.
+      #
+      # This value alone does not move already-running mons/OSDs — Rook only
+      # applies a network change to a daemon on that daemon's next restart.
+      # Existing mons are failed over one at a time (imperative, not GitOps —
+      # see the session that landed this), and OSD pods are restarted per
+      # node, both tracked outside this file.
+      #
+      # CSI plugin pods reach mons/OSDs here via the Cilium pod network:
+      # bond-storage is an explicit device in kube-system/cilium's
+      # `devices:` config (added as the prerequisite for this change), since
+      # CSI_ENABLE_HOST_NETWORK defaults to false on this cluster.
       network:
         provider: host
         addressRanges:
           public:
-            - 10.60.0.0/24
+            - 10.200.0.0/24
           cluster:
             - 10.200.0.0/24
       resources:
