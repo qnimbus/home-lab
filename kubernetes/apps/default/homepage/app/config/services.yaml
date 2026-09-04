@@ -9,26 +9,27 @@
             icon: "mdi-nas"
             href: "https://truenas.${DOMAIN_CLUSTER}"
             description: "NAS storage & NFS/iSCSI targets"
-            # Plain HTTP, straight to the in-cluster Service, not the https:// href above: Envoy
-            # terminates TLS and forwards plain HTTP to TrueNAS's backend (see
-            # network/external-services/truenas/httproute.yaml), and TrueNAS's UI replies to that
-            # plain-HTTP leg with an absolute http:// redirect. Homepage's server-side fetch (undici)
-            # refuses to follow a https->http downgrade redirect and errors — browsers tolerate it
-            # fine on the href above, so only siteMonitor needs to route around it.
-            siteMonitor: "http://truenas.network.svc.cluster.local:8080"
+            # Plain HTTP straight to the NAS, not the https:// href above: TrueNAS's UI answers a
+            # plain-HTTP request with an absolute http:// redirect, and homepage's server-side fetch
+            # (undici) refuses to follow a https->http downgrade — browsers tolerate it fine on the
+            # href, so only siteMonitor needs routing around it. Direct to the host rather than an
+            # in-cluster Service because there no longer is one: the route now uses an Envoy Gateway
+            # Backend (network/external-services/truenas/backend.yaml), which has no ClusterIP.
+            siteMonitor: "http://${NAS_LAN_HOST}:8080"
 - Home Automation:
     - ColA:
         - Home Assistant:
             icon: home-assistant.png
             href: "https://ha.${DOMAIN_CLUSTER}"
             description: Home automation & smart home control
-            # url points at the in-cluster Service (network/external-services/home-assistant), not
-            # HOME_ASSISTANT_LAN_HOST directly or the https:// href above — same reasoning as
-            # TrueNAS's siteMonitor: a direct hop to the already-proxied Service avoids routing the
-            # widget's polling traffic through Envoy for no benefit.
+            # url points straight at the device, not the https:// href above — same reasoning as
+            # TrueNAS's siteMonitor: a direct hop avoids routing the widget's polling traffic
+            # through Envoy for no benefit. No in-cluster Service to target either way — the route
+            # uses an Envoy Gateway Backend (network/external-services/home-assistant/backend.yaml),
+            # which has no ClusterIP.
             # widget:
             #   type: homeassistant
-            #   url: "http://home-assistant.network.svc.cluster.local:8123"
+            #   url: "http://${HOME_ASSISTANT_LAN_HOST}:8123"
             #   key: {{HOMEPAGE_VAR_HOMEASSISTANT_TOKEN}}
     - ColB:
         - Gateway:

@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-09-04 | `truenas-envoy-backend-https` | Moved TrueNAS/home-assistant to Envoy `Backend`; pinned TrueNAS ALPN to http/1.1, fixing WebSocket UI over HTTPS backend |
 > | 2026-09-03 | `ceph-public-network-migration-execute` | Executed 5-phase Ceph public_network migration to storage bond; found & fixed Rook mon-ip Node-object limitation |
 > | 2026-09-03 | `ceph-storage-bond-migration-plan` | Resolved both mon-migration/pod-reachability blockers; drafted & approved 5-phase Ceph public_network migration plan |
 > | 2026-09-03 | `bifrost-deploy` | Deployed Bifrost LLM gateway to `ai` ns; wired Open WebUI backend; added repo's first CiliumNetworkPolicy for egress |
@@ -11,7 +12,6 @@
 > | 2026-09-02 | `prometheus-alerts-triage-pvc-grow` | Triaged 6 Prometheus alerts; grew Prometheus PVC 20Gi→60Gi + retention 30d; found StatefulSet PVCs need manual expand |
 > | 2026-09-01 | `ceph-packetdrops-ring-headroom-baseline` | Ruled out EEE/Ceph-role causes for packet drops; confirmed 16x ring headroom; captured pre-fix baseline |
 > | 2026-09-01 | `ceph-packetdrops-checkpoint-4wk` | Ran netdev_budget checkpoint; root cause is NIC ring exhaustion; migrated *arr /config to NFS; fixed volsync sync storm |
-> | 2026-08-27 | `plex-keda-nfs-scaler` | Added KEDA ScaledObject scaling Plex to 0 on NAS NFS-port unreachability; reused nas-nfs Probe, added driftDetection.ignore for replicas |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

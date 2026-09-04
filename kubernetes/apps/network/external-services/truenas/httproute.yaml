@@ -23,5 +23,7 @@ spec:
             type: PathPrefix
             value: /
       backendRefs:
-        - name: *app
-          port: 8080
+        # Envoy Gateway Backend, not a Service — the port lives in the Backend resource.
+        - group: gateway.envoyproxy.io
+          kind: Backend
+          name: *app

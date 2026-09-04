@@ -4,6 +4,109 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-04 — `truenas-envoy-backend-https`
+
+### Goal
+Fix TrueNAS's `/_download` failures under newer TrueNAS versions by proxying it over HTTPS
+end-to-end via an Envoy Gateway `Backend`, and apply the same collapse to `home-assistant`.
+
+### What we did
+- Diagnosed the root cause: Envoy terminated TLS and forwarded plain HTTP to TrueNAS's backend
+  on :8080, but newer TrueNAS versions validate the scheme of the request they actually receive
+  (notably `/_download`), so the plain-HTTP leg gets rejected.
+- Inspected the live cluster's `Backend` CRD (`kubectl explain backends.spec.tls`) and confirmed
+  Envoy Gateway 1.9.0 (already pinned) supports `spec.tls.insecureSkipVerify` and
+  `spec.endpoints.ip.{address,port}` — no chart upgrade needed.
+- Replaced TrueNAS's `Service` + hand-managed `EndpointSlice` with a `gateway.envoyproxy.io/v1alpha1
+  Backend` pointing at `${NAS_LAN_HOST}:8443` with `tls.insecureSkipVerify: true`, and repointed the
+  `HTTPRoute`'s `backendRefs` at it (`group: gateway.envoyproxy.io`, `kind: Backend`, no `port` —
+  the port lives on the Backend).
+- Discovered the Backend extension API was disabled cluster-wide (`extensionApis: {}` in the live
+  `envoy-gateway-config` ConfigMap) and enabled it via
+  `config.envoyGateway.extensionApis.enableBackend: true` on the envoy-gateway HelmRelease — found by
+  rendering the 1.9.0 chart locally (`helm pull` + `helm template`) to confirm the correct values
+  nesting and that the control-plane Deployment reads its config once at startup (no checksum
+  annotation), meaning a manual `rollout restart` is required after Flux reconciles.
+- Found and fixed a dangling reference: homepage's TrueNAS `siteMonitor` pointed at the
+  now-deleted in-cluster Service (`truenas.network.svc.cluster.local:8080`); repointed it directly
+  at `${NAS_LAN_HOST}:8080`.
+- On follow-up request, collapsed `home-assistant` (the only other `external-services` app on the
+  same Service+EndpointSlice+HTTPRoute shape) to a `Backend` the same way — plain HTTP on :8123, no
+  TLS block needed since Home Assistant doesn't have TrueNAS's origin-validation issue. Fixed the
+  same class of stale reference in homepage's commented-out Home Assistant widget URL.
+- Confirmed `adam`, `anna`, `canon`, `wan-failover` are a different pattern (`ExternalName` Services
+  with no `HTTPRoute`, used only for `external-dns` LAN-IP publishing) and left them unchanged —
+  a `Backend` has nothing to attach to without a route.
+- Validated with `task validate` (kubeconform; passed, though it silently skips `Backend` — no local
+  schema) and `kubectl apply --dry-run=server` against the live cluster's CRDs for both apps
+  (accepted, no mutation). Grepped for stale Service/EndpointSlice references across the repo.
+- Committed and pushed (`826a8aa`) — commit signing needs the host shell's `ssh-agent`, unreachable
+  from this sandboxed session, so the user ran `/git-commit`'s prepared command themselves.
+- Post-deploy, the user ran the required `kubectl -n network rollout restart deployment
+  envoy-gateway` manually; confirmed via the live `envoy-gateway-config` ConfigMap and both
+  `HTTPRoute`s' `Accepted=True`/`ResolvedRefs=True` status that `enableBackend` was actually live,
+  not just written.
+- User reported `ha.cluster.vwn.io` working but `truenas.cluster.vwn.io` still not, even after hard
+  refresh/incognito — found and fixed a **second bug** surfaced only by the HTTPS-backend switch:
+  TrueNAS's UI is a SPA whose post-login functionality runs entirely over a WebSocket to
+  `/websocket`; that handshake got a `400 Bad Request` from TrueNAS's nginx frontend when proxied
+  through Envoy, but succeeded when curled directly to the backend IP. Root cause:
+  `Backend.spec.tls.alpnProtocols` defaults to `[h2, http/1.1]`, TrueNAS's nginx offers `h2`, so
+  enabling backend TLS made Envoy negotiate HTTP/2 to TrueNAS — and HTTP/2 has no `Upgrade:`
+  mechanism (RFC 9113 §8.2.2 forbids the `Connection`/`Upgrade` headers; WebSocket-over-h2 needs
+  RFC 8441 extended CONNECT instead), so nginx rejected the h1-style upgrade forwarded over h2.
+  Plain HTTP never hit this — no ALPN, so it was always HTTP/1.1.
+- With explicit one-time user authorization, verified the fix by `kubectl patch`-ing the live
+  `Backend` (`alpnProtocols: [http/1.1]`) before committing — a deliberate, narrow exception to the
+  repo's GitOps-only rule, done to avoid a blind commit→reconcile→retest cycle on a hypothesis. A
+  synthetic `curl` WebSocket-handshake retest immediately after the patch still got `400` (most
+  likely stale xDS on the replica it happened to hit — Envoy Gateway's 3 replicas absorb config
+  updates asynchronously — or a raw handshake missing something nginx wanted that a real browser
+  sends), but the user's actual browser confirmed working shortly after; confirmed the live
+  `Backend`'s `spec.tls` matches the already-edited `backend.yaml` exactly, so nothing further to
+  change.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/network/external-services/truenas/backend.yaml` | Added — Envoy Gateway `Backend`, `${NAS_LAN_HOST}:8443`, `insecureSkipVerify: true`, `alpnProtocols: [http/1.1]` (added after the WebSocket fix, see below) |
+| `kubernetes/apps/network/external-services/truenas/httproute.yaml` | `backendRefs` retargeted to the `Backend` (was the `Service`, port 8080) |
+| `kubernetes/apps/network/external-services/truenas/kustomization.yaml` | Now lists `backend.yaml` + `httproute.yaml` |
+| `kubernetes/apps/network/external-services/truenas/service.yaml` | Deleted |
+| `kubernetes/apps/network/external-services/truenas/endpoint.yaml` | Deleted |
+| `kubernetes/apps/network/external-services/home-assistant/backend.yaml` | Added — Envoy Gateway `Backend`, `${HOME_ASSISTANT_LAN_HOST}:8123`, plain HTTP |
+| `kubernetes/apps/network/external-services/home-assistant/httproute.yaml` | `backendRefs` retargeted to the `Backend` (was the `Service`, port 8123) |
+| `kubernetes/apps/network/external-services/home-assistant/kustomization.yaml` | Now lists `backend.yaml` + `httproute.yaml` |
+| `kubernetes/apps/network/external-services/home-assistant/service.yaml` | Deleted |
+| `kubernetes/apps/network/external-services/home-assistant/endpoint.yaml` | Deleted |
+| `kubernetes/apps/network/envoy-gateway/app/helmrelease.yaml` | Added `config.envoyGateway.extensionApis.enableBackend: true` |
+| `kubernetes/apps/default/homepage/app/config/services.yaml` | Repointed TrueNAS `siteMonitor` and the commented-out Home Assistant widget URL off the deleted in-cluster Services, straight to the LAN hosts |
+
+### Key decisions
+- Used `Backend` + `insecureSkipVerify: true` rather than any certificate-validation mechanism
+  (`BackendTLSPolicy`, a CA ConfigMap, cert-manager) — intentional and explicitly scoped: TrueNAS
+  serves a self-signed cert on 8443 with no realistic path to enroll it in the cluster's PKI, and
+  the hop is a single trusted LAN link.
+- Left `enableBackend` un-applied until the next manual `rollout restart` of the envoy-gateway
+  Deployment — the 1.9.0 chart has no ConfigMap-checksum annotation to trigger an automatic
+  rollout, so this is a required manual step post-reconcile, not an oversight.
+- Scoped the "collapse to Backend" follow-up to `home-assistant` only, after confirming
+  `adam`/`anna`/`canon`/`wan-failover` are `ExternalName`-only DNS-publishing Services with no
+  `HTTPRoute` — converting those would silently break `external-dns` hostname publishing since
+  `Backend` isn't a DNS-source, not what "collapse" would have meant there.
+- Pinned `truenas`'s `Backend` to `alpnProtocols: [http/1.1]` rather than leaving the CRD default
+  (`[h2, http/1.1]`) — TrueNAS's UI is unusable without its WebSocket connection, so HTTP/1.1-only
+  is required, not optional, for any TLS backend fronting a service with WebSocket-dependent
+  functionality. `home-assistant`'s `Backend` is unaffected (no `tls` block — plain HTTP has no
+  ALPN to negotiate).
+- Authorized (once, explicitly) a live `kubectl patch` on the `truenas` `Backend` to verify the
+  ALPN fix before committing, rather than committing a hypothesis and discovering it was wrong only
+  after a full Flux reconcile + manual retest round-trip — a deliberate, narrow exception to this
+  repo's "no manual kubectl apply" rule, justified by the cost asymmetry of an unverified GitOps
+  round-trip vs. a five-minute live check.
+
+---
+
 ## 2026-09-03 — `ceph-public-network-migration-execute`
 
 ### Goal

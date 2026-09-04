@@ -13,6 +13,11 @@ spec:
   values:
     config:
       envoyGateway:
+        extensionApis:
+          # Off-chart default ({}). Enables the gateway.envoyproxy.io Backend CRD, which lets an
+          # HTTPRoute target an off-cluster host directly (with its own TLS settings) instead of
+          # a Service fronting a hand-managed EndpointSlice — see external-services/truenas.
+          enableBackend: true
         provider:
           type: Kubernetes
           kubernetes:
