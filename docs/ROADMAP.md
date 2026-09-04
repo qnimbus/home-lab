@@ -39,12 +39,15 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 
 ### Rook v1.19 → v1.20 Upgrade (ceph-csi-drivers migration, PRs #96/#97)
 
-**Status: step 1 landed 2026-09-04 (commit `4d1a6c5`), step 3 pending.** The operator upgrade,
+**✅ COMPLETE (2026-09-04).** Step 1 landed as commit `4d1a6c5` (17:00): the operator upgrade,
 `ceph-csi-drivers` install and CSI pod roll went exactly as sequenced (~6 min end to end,
 provision/attach paused for ~1 min, no mount impact): all 25 Rook deployments at `v1.20.7`,
 Ceph `HEALTH_OK` on `19.2.3`, Driver adopted with `keep`, cephcsi 3.17.1 on all nodes, and a
-throwaway PVC + VolumeSnapshot probe passed. Renovate auto-closed #96/#97 and will re-open the
-cluster-chart bump under the "Rook-Ceph chart" group — **merge that to finish (step 3 below)**.
+throwaway PVC + VolumeSnapshot probe passed. Renovate auto-closed #96/#97 and re-opened the
+cluster-chart bump as #103 under the "Rook-Ceph chart" group; merged 19:39 — the cluster HR
+upgraded to chart `v1.20.7` with no daemon restarts (only the toolbox recycled), Ceph unchanged
+at `19.2.3`, `security.cephx.csi.keyType: aes` now rendered. All three HRs Ready; the lockstep
+gates are in steady state (operator chart == both `rook.io/chart-version` annotations).
 One artifact needed cleanup: the outgoing v1.19.6 operator created a stray CephFS `Driver` CR
 when the chart upgrade stripped its ConfigMap (see [QA.md](QA.md)); delete it imperatively
 (`kubectl -n rook-ceph delete driver.csi.ceph.io rook-ceph.cephfs.csi.ceph.com`) — Rook v1.20
@@ -102,9 +105,9 @@ its SAs or its RBAC.
    Renovate closes #96 as superseded and re-opens the cluster bump under the "Rook-Ceph chart" group.
 2. Verify: `kubectl -n rook-ceph get operatorconfig,driver`, all `rook-version` labels at
    `v1.20.7`, node-plugin DaemonSet 5/5 on the new SA, `ceph -s`, a throwaway PVC, a VolSync sync.
-3. Merge the cluster-chart bump (regrouped #97). The cluster HR's gate is already satisfied, the
-   chart upgrades with `cephImage` pinned — Ceph stays `19.2.3`. Re-verify `ceph -s` and the
-   CephCluster image.
+3. Merge the cluster-chart bump (regrouped #97 → #103). The cluster HR's gate is already
+   satisfied, the chart upgrades with `cephImage` pinned — Ceph stays `19.2.3`. Re-verify
+   `ceph -s` and the CephCluster image. *(Done 19:39, verified.)*
 
 If the operator upgrade fails and rolls back to `v1.19.6`, the gates stay closed (annotation says
 `v1.20.7`): recovery is reverting the commit (tags + annotations together), which reopens them.
@@ -116,13 +119,15 @@ Tentacle only). The `dependencyDashboardApproval` rule meant to hold Ceph majors
 (no "Pending Approval" section ever appeared on the dashboard), so both Ceph rules now use hard
 `allowedVersions` pins instead (`/^v19\.2\.\d+$/`; `ceph-csi-drivers <=1.0.4`) — raise them
 deliberately when the corresponding upgrade is planned. #101 must not be merged; Renovate closes
-it itself once the rule is on `main`. The real step-3 PR (`renovate/rook-ceph-chart`, cluster
-chart `v1.19.6 → v1.20.7`) sits in the dashboard's *Pending Status Checks* (3-day soak); tick its
-checkbox to open it early.
+it itself once the rule is on `main` (it did, within minutes). The same run opened the real
+step-3 PR (#103, merged — see status above) and #102 (`quay.io/ceph/ceph v19.2.3 → v19.2.6`),
+which stays parked: see the CVE follow-up below.
 
-**Follow-ups after it lands:**
-- **CVE-2025-30156:** upgrade Ceph to `v19.2.6` (Renovate will offer it once pinned) and rotate
-  daemon CephX keys (`spec.security.cephx.daemon: {keyRotationPolicy: KeyGeneration, keyGeneration: 2}`).
+**Follow-ups:**
+- **CVE-2025-30156:** upgrade Ceph to `v19.2.6` (Renovate PR #102 — do **not** merge it alone)
+  together with daemon CephX key rotation in one change
+  (`spec.security.cephx.daemon: {keyRotationPolicy: KeyGeneration, keyGeneration: 2}`), then
+  restart the toolbox.
   Expect `AUTH_INSECURE_*` health **errors** during rotation — the cluster Kustomization's
   `healthCheckExprs` treats `HEALTH_ERR` as failed, so plan for it. Warnings persist while CSI keys
   stay AES (Talos kernel 6.18 < 7.0 required for AES256K); mute them per Rook's key-rotation doc.

@@ -4,7 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
-> | 2026-09-04 | `rook-v120-upgrade-csi-drivers-draft` | Reviewed Rook v1.20 PRs #96/#97; found hidden Ceph 19→20 bump; drafted mandatory ceph-csi-drivers chart migration |
+> | 2026-09-04 | `rook-v120-upgrade-csi-drivers-draft` | Upgraded Rook to v1.20.7 with new ceph-csi-drivers chart + lockstep HR gates; caught hidden Ceph 19→20 bump, pinned 19.2.3 |
 > | 2026-09-04 | `bifrost-image-tag-misfire` | Traced bifrost UpgradeFailed to Renovate mistaking a Helm chart artifact for an image; pinned v2.0.0, added guard rule |
 > | 2026-09-04 | `truenas-envoy-backend-https` | Moved TrueNAS/home-assistant to Envoy `Backend`; pinned TrueNAS ALPN to http/1.1, fixing WebSocket UI over HTTPS backend |
 > | 2026-09-03 | `ceph-public-network-migration-execute` | Executed 5-phase Ceph public_network migration to storage bond; found & fixed Rook mon-ip Node-object limitation |

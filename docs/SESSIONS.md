@@ -75,6 +75,10 @@ draft the GitOps changes needed to make the upgrade safe.
   `dependencyDashboardApproval` hold was never honoured (no approval section on the dashboard);
   replaced both Ceph-related rules with hard `allowedVersions` pins. The real step-3 PR is
   pending its 3-day soak under `renovate/rook-ceph-chart`.
+- Confirmed #103 (cluster chart `v1.19.6 → v1.20.7`) was safe as the final step and watched it
+  land at 19:39: Helm upgrade succeeded, no daemon restarts (toolbox recycled only), Ceph unchanged
+  at `19.2.3` `HEALTH_OK`, `cephx.csi.keyType: aes` rendered. Migration complete; ROADMAP entry
+  marked ✅, #102 (Ceph `19.2.6`) parked pending the CephX key-rotation change.
 - Redesigned ordering to Flux's lockstep pattern: `rook.io/chart-version` annotations
   (Renovate-tracked with the operator's `depName`, so grouped) on the csi-drivers and cluster HRs,
   and a permanent `readyExpr` that waits until the operator release's applied `chartVersion`
