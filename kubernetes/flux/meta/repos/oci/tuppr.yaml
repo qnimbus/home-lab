@@ -12,5 +12,5 @@ spec:
     operation: copy
   ref:
     # renovate: datasource=docker depName=ghcr.io/home-operations/charts/tuppr
-    tag: "0.1.36"
+    tag: "0.5.3"
   url: oci://ghcr.io/home-operations/charts/tuppr
