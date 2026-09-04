@@ -21,7 +21,7 @@ spec:
             image:
               # renovate: datasource=docker depName=maximhq/bifrost
               repository: maximhq/bifrost
-              tag: 2.1.29@sha256:e16df9d1f62b1e76c769eb62709ab6ff35139496400a81090c800c3d109ccc3c
+              tag: v2.0.0@sha256:cf71be9fad4e0749b6e26cbb774c687413dad9a0970b83f4e1dadb6f503ea208
             env:
               TZ: "${CLUSTER_TIMEZONE}"
               BIFROST_ENCRYPTION_KEY:

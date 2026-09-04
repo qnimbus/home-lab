@@ -357,6 +357,18 @@
       matchPackageNames: ["docker.io/prodrigestivill/postgres-backup-local"],
       allowedVersions: "/^17/",
     },
+    {
+      // maximhq/bifrost's Docker Hub repo mixes real container images (tagged vX.Y.Z) with
+      // Helm chart OCI artifacts pushed under bare semver tags (e.g. 2.1.29, no 'v' prefix).
+      // Renovate's docker datasource can't distinguish artifact types by tag string alone, so
+      // without this it will propose the chart artifact as an "image update" — the resulting
+      // tag has no OCI Entrypoint/Cmd at all, and the pod fails with CreateContainerError:
+      // "no command specified".
+      description: "maximhq/bifrost — restrict to v-prefixed container image tags (bare-semver tags are Helm chart OCI artifacts, not images)",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["maximhq/bifrost"],
+      allowedVersions: "/^v/",
+    },
 
     // ── Ignoring specific packages (examples — uncomment to use) ────────────────
     //

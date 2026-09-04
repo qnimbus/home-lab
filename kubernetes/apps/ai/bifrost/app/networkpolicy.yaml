@@ -34,6 +34,10 @@ spec:
             dns:
               - matchPattern: "*"
     - toFQDNs:
+        # bifrost's own pricing manager fetches model pricing data from getbifrost.ai on startup
+        # (v2.0.0+) and fatals if unreachable with no cached data yet - not an LLM provider API,
+        # but required for the app to boot at all.
+        - matchName: getbifrost.ai
         - matchName: api.openai.com
         - matchName: api.anthropic.com
         - matchName: generativelanguage.googleapis.com

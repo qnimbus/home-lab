@@ -4,6 +4,55 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-04 — `bifrost-image-tag-misfire`
+
+### Goal
+Diagnose why the `bifrost` HelmRelease was stuck in repeated `UpgradeFailed` cycles and fix the
+root cause.
+
+### What we did
+- Diagnosed via `gitops-cluster-debug` skill; no `flux-operator-mcp` server was configured, so
+  fell back to direct `kubectl` (read-only) against the live cluster.
+- Inspected `HelmRelease/bifrost` status/conditions, events, helm-controller logs, and the
+  `bifrost` Kustomization's reconciliation history — found 5+ Helm revisions (v96–v100) failing
+  over the preceding ~2 hours, each ending in `UpgradeFailed` → `cleanupOnFail` deleting the
+  Deployment → retry.
+- Found two layered issues: (1) a pre-existing crash loop on image `v1.6.11` — the app started but
+  never bound port 8080 (`Startup probe failed: connection refused`); (2) a new failure after the
+  `2.1.29` tag bump — `CreateContainerError: no command specified`.
+- Polled across a live helm-controller retry cycle to catch a pod before `cleanupOnFail` deleted
+  it again, confirming `CreateContainerError` with 0 container restarts (fails at
+  container-creation time, before the app runs — distinct from the v1.6.11 crash loop).
+- Used `crane` (`config`/`manifest`/`ls`) to inspect `maximhq/bifrost` on Docker Hub directly:
+  `2.1.29`/`2.1.27` are Helm chart OCI artifacts (`mediaType:
+  application/vnd.cncf.helm.chart.content.v1+json`), not container images — pushed into the same
+  tag namespace as the real `vX.Y.Z`-prefixed images. Renovate's `docker` datasource can't
+  distinguish artifact types by tag string and proposed the chart artifact as an image bump.
+- Confirmed `v2.0.0` (latest real image) carries the same entrypoint/user/port layout as the
+  previously-running `v1.6.11` (`/app/docker-entrypoint.sh` → `/app/main`, user `1000:0`, port
+  8080) — no chart-side command/args override needed.
+- Checked upstream GitHub release notes between v1.6.11 and v2.0.0 for anything explaining the
+  original connection-refused probe failure — found no documented startup/health/port-binding
+  changes, so that issue's root cause remains open and unverified after this fix.
+- Pinned the HelmRelease to `v2.0.0` and added a Renovate `packageRule` restricting
+  `maximhq/bifrost` to `v`-prefixed tags to prevent the same misfire recurring.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/ai/bifrost/app/helmrelease.yaml` | Pinned image tag from the Helm-chart-artifact tag `2.1.29` to the real container image `v2.0.0` |
+| `renovate.json5` | Added a packageRule restricting `maximhq/bifrost` to `v`-prefixed tags (bare-semver tags are Helm chart OCI artifacts, not images) |
+
+### Key decisions
+- Chose `v2.0.0` over reverting to `v1.6.11`: v1.6.11 was already crash-looping (separate
+  connection-refused issue) before the tag mixup, so it isn't a known-good fallback either;
+  v2.0.0 is the newest actual image, but whether it resolves the original probe failure is
+  unverified and needs to be watched after deploy.
+- Did not add a `command:`/`args:` override to the Helm values — the `CreateContainerError` was
+  purely a wrong-artifact problem; the real image already ships a correct `ENTRYPOINT`/`CMD`.
+
+---
+
 ## 2026-09-04 — `truenas-envoy-backend-https`
 
 ### Goal
