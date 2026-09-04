@@ -18,19 +18,23 @@ spec:
     image:
       repository: ghcr.io/rook/ceph
     # Since v1.20 this chart only carries the ceph-csi-operator subchart, the
-    # CSI image set and the ServiceMonitor below. Which drivers run and how
+    # CSI image set and an optional CSI ServiceMonitor (off, see below). Which
+    # drivers run and how
     # (RBD only, snapshotter, resources, …) is configured in the ceph-csi-drivers
     # HelmRelease (../../csi-drivers/app) — the old csi.enable*/csi.* switches
     # are gone from the chart and silently ignored if set.
     csi:
-      # kube-prometheus-stack installs before rook-ceph-operator (see dependsOn
-      # chain), so the ServiceMonitor CRD is guaranteed present at install time.
-      # Currently scrapes nothing: it selects `app: csi-metrics` Services that
-      # the ceph-csi-operator never creates (no liveness sidecar since the CSI
-      # operator switch in v1.19). Kept until CSI metrics are wired via the
-      # drivers chart or dropped — see docs/ROADMAP.md.
+      # Disabled 2026-09-04 — dead by construction with the ceph-csi-operator
+      # (Rook ≥ v1.19). The chart's ServiceMonitor selects `app: csi-metrics`
+      # Services on port `csi-http-metrics`; the only thing that could provide
+      # one is the CSI liveness sidecar, which needs Driver.spec.liveness.
+      # metricsPort — not exposed by the ceph-csi-drivers chart (1.0.4 nor
+      # upstream main) — and even then the operator's liveness Service is
+      # created with ports only, no labels and no selector, so nothing could
+      # ever match. Revisit if ceph-csi-operator adds labels/selector to
+      # reconcileLivenessService and the drivers chart grows a liveness value.
       serviceMonitor:
-        enabled: true
+        enabled: false
     # Fail Ceph CLI calls fast rather than hanging the operator reconcile.
     cephCommandsTimeoutSeconds: "20"
     monitoring:

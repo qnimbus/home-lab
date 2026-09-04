@@ -4,6 +4,60 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-04 — `rook-post-upgrade-hygiene-configkey-audit`
+
+### Goal
+Post-upgrade hygiene after Rook v1.20.7 / Ceph 19.2.6: refresh the stale Rook version in the
+cluster-doctor agent's state block, decide on the dead `csi-metrics` ServiceMonitor, and audit the
+mon config-key store for CVE-2026-50152 exposure.
+
+### What we did
+- Refreshed the `rook-ceph` entry in cluster-doctor's `CLUSTER-STATE-AUTO` block (was v1.19.6):
+  Rook v1.20.7 + ceph-csi-drivers 1.0.4, RBD-only driver, Ceph 19.2.6 pinned via `cephImage`,
+  AES256K daemon keys, and a note that the four muted `AUTH_INSECURE_*` warnings are expected so the
+  agent never reports them as a fault. talos-node-manager's block has no Rook references.
+- `csi-metrics` ServiceMonitor: confirmed live it selects `app: csi-metrics` Services that don't
+  exist. Traced *why* it can never work with the ceph-csi-operator: the Driver CRD does support
+  `spec.liveness.metricsPort` (adds a `liveness-prometheus` sidecar) and `reconcileLivenessService`
+  creates a Service with the matching `csi-http-metrics` port — but (a) the ceph-csi-drivers chart
+  (1.0.4 and upstream main) only exposes the sidecar's *resources*, never `metricsPort`, and (b) the
+  operator builds that Service with ports only, no labels and no selector, so the ServiceMonitor's
+  selector could never match. Set `csi.serviceMonitor.enabled: false` in the operator HR with the
+  reasoning in a comment; `helm template` confirms no ServiceMonitor renders; Flux removes the live
+  one on the next upgrade.
+- CVE-2026-50152 audit: `ceph config-key ls` → 113 keys (config + history, `device/*` health
+  metrics, `rook/*` telemetry counters, mgr module state). Only two secrets:
+  `mgr/dashboard/jwt_secret` (24 B session-signing key) and `mgr/dashboard/accessdb_v2` (dashboard
+  users, bcrypt hashes; admin password is Rook-managed from the 1Password-backed Secret). No OSD
+  LUKS keys, no cephadm SSH key. Pre-patch `mon allow r` holders were only the four CSI keys, which
+  live in K8s Secrets in `rook-ceph` — reading them already means namespace compromise. Risk: low.
+- User rotated the JWT secret imperatively (`ceph config-key rm mgr/dashboard/jwt_secret && ceph mgr
+  fail`, 23:25 UTC). The key did not reappear after the failover: the dashboard's `JwtManager`
+  initialises lazily on the first `gen_token`/`decode_token`, not at engine start (verified in
+  squid `services/auth.py`). Triggered it with a bogus-bearer request from the toolbox; new 24 B key
+  present, mons re-elected `a`, HEALTH_OK. Recorded the gotcha in ROADMAP.
+- `task validate` green.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/rook-ceph/rook-ceph/operator/app/helmrelease.yaml` | `csi.serviceMonitor.enabled: false` with root-cause comment; intro comment updated |
+| `.claude/agents/cluster-doctor.md` | `rook-ceph` state-block entry refreshed to v1.20.7 / Ceph 19.2.6 / muted-warnings note |
+| `docs/ROADMAP.md` | csi-metrics item ✅ with root cause; CVE-2026-50152 exposure audit + jwt rotation outcome and lazy-init gotcha |
+| `docs/SESSIONS.md` | This record |
+| `CLAUDE.md` | Session table row |
+
+### Key decisions
+- Dropped the CSI ServiceMonitor rather than trying to wire liveness metrics: two independent
+  upstream gaps (chart has no `metricsPort` value; operator's liveness Service has no
+  labels/selector) mean a postRenderer hack would still scrape nothing. Kept `enabled: false`
+  explicit with the reasoning so nobody re-enables it on the assumption it "just needs a Service".
+- Did not rotate the dashboard password: it is a bcrypt hash at rest and Rook re-applies it from
+  1Password, so the exposure is the hash only; the JWT secret was the one plaintext-equivalent item
+  and rotating it costs nothing but open dashboard sessions.
+
+---
+
 ## 2026-09-04 — `ceph-cve-2025-30156-key-rotation`
 
 ### Goal

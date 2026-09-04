@@ -46,7 +46,7 @@ cluster_state:
     "flux-system": "flux-operator, Flux v2.x (source/kustomize/helm/notification controllers), webhook receiver"
     "cert-manager": "cert-manager, cainjector, webhook"
     "external-secrets": "external-secrets (ESO), webhook, cert-controller, onepassword-connect (1Password Connect)"
-    "rook-ceph": "Rook-Ceph v1.19.6 — replicated block storage (ceph-block, size=3/min_size=2), host-network cluster_network on the 10.200.0.0/24 storage bond. Replaced Longhorn entirely (removed, commit 8b27593). Default StorageClass."
+    "rook-ceph": "Rook v1.20.7 (operator + cluster charts) + ceph-csi-drivers 1.0.4 (owns the CSI Driver/OperatorConfig CRs since v1.20 — only the RBD driver is enabled; no CephFS/NFS). Ceph 19.2.6 Squid, image pinned in the cluster HR (cephImage.tag). Replicated block storage (ceph-block, size=3/min_size=2), host-network public+cluster networks on the 10.200.0.0/24 storage bond. Daemon CephX keys are AES256K (CVE-2025-30156 fixed 2026-09-04); CSI keys stay AES until the node kernel is ≥ 7.0, so four AUTH_INSECURE_* warnings are muted (sticky) — expected, not a fault. Replaced Longhorn entirely (removed, commit 8b27593). Default StorageClass."
     "openebs": "OpenEBS LocalPV (openebs-hostpath StorageClass, non-default)"
     "network": "envoy-gateway, envoy-external/envoy-internal, cloudflared, external-dns-cloudflare, external-dns-unifi"
     "observability": "kube-prometheus-stack (Prometheus + Alertmanager + node-exporter + kube-state-metrics + operator)"

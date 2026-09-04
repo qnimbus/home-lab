@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-09-04 | `rook-post-upgrade-hygiene-configkey-audit` | Dropped dead csi-metrics ServiceMonitor (root-caused upstream), audited config-key store for CVE-2026-50152, rotated jwt |
 > | 2026-09-04 | `ceph-cve-2025-30156-key-rotation` | Landed Ceph 19.2.6 + AES256K daemon key rotation (CVE-2025-30156) in one change; 10-min HEALTH_ERR window as designed |
 > | 2026-09-04 | `rook-v120-upgrade-csi-drivers-draft` | Upgraded Rook to v1.20.7 with new ceph-csi-drivers chart + lockstep HR gates; caught hidden Ceph 19→20 bump, pinned 19.2.3 |
 > | 2026-09-04 | `bifrost-image-tag-misfire` | Traced bifrost UpgradeFailed to Renovate mistaking a Helm chart artifact for an image; pinned v2.0.0, added guard rule |
@@ -11,7 +12,6 @@
 > | 2026-09-03 | `ceph-public-network-migration-execute` | Executed 5-phase Ceph public_network migration to storage bond; found & fixed Rook mon-ip Node-object limitation |
 > | 2026-09-03 | `ceph-storage-bond-migration-plan` | Resolved both mon-migration/pod-reachability blockers; drafted & approved 5-phase Ceph public_network migration plan |
 > | 2026-09-03 | `bifrost-deploy` | Deployed Bifrost LLM gateway to `ai` ns; wired Open WebUI backend; added repo's first CiliumNetworkPolicy for egress |
-> | 2026-09-03 | `ceph-packetdrops-prometheus-correlation` | Traced Ceph packet-drops/PrometheusMissingRuleEvaluations to mon/osd write burst; prioritized VLAN migration |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 

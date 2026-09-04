@@ -130,7 +130,20 @@ which stays parked: see the CVE follow-up below.
   `healthCheck.muteHealthWarning` for the four residual `AUTH_INSECURE_*` warnings (CSI keys stay
   AES: Talos kernel 6.18 < 7.0). Renovate PR #102 (tag-only) becomes redundant once this lands and
   should auto-close. v19.2.6 also fixes CVE-2026-50152 (mon config-key store readable with
-  `mon allow r`); Ceph has no rotation procedure for that yet — revisit when they publish one.
+  `mon allow r`). **Exposure audited 2026-09-04:** `ceph config-key ls` holds 113 keys — Ceph
+  config + history, device-health metrics, Rook telemetry counters, mgr module state. The only
+  secrets are `mgr/dashboard/jwt_secret` (dashboard session-token signing key) and
+  `mgr/dashboard/accessdb_v2` (dashboard users; passwords stored as bcrypt hashes, and the admin
+  password itself is Rook-managed from the 1Password-backed `rook-ceph-dashboard-password`
+  Secret). No OSD LUKS keys (OSDs unencrypted), no cephadm SSH key (not cephadm). Pre-patch, the
+  only non-daemon entities with `mon allow r` were the four CSI keys, which live in Kubernetes
+  Secrets in `rook-ceph` — reading them already implies namespace-level compromise. Risk: low.
+  ✅ `jwt_secret` rotated 2026-09-04 23:25 UTC: `ceph config-key rm mgr/dashboard/jwt_secret &&
+  ceph mgr fail`. Gotcha: `mgr fail` respawns the mgr process but the dashboard's `JwtManager`
+  initialises **lazily** (on the first `gen_token`/`decode_token`), so the key only reappears on the
+  first dashboard request carrying a token — any old session token triggers it and is rejected.
+  The mons re-elected `a` as active, which is fine. Dashboard password left as is (bcrypt hash,
+  1Password-managed); rotate it there if ever wanted. Ceph's general rotation guidance still pending.
   **Observed rollout (2026-09-04, matches Rook release-1.20 `setIsSafeToRotateCephxKeys`):**
   two passes, 12 minutes total. Pass 1 (20:25–20:29 UTC) rolled 3 mons, 2 mgrs, 10 OSDs to 19.2.6
   with rotation gated off; `HEALTH_ERR` opened at 20:26 with the first 19.2.6 mon. At 20:29:49 the
@@ -148,9 +161,11 @@ which stays parked: see the CVE follow-up below.
 - Tentacle (v20.2.x) later, as a deliberate PR: disable the `rook` mgr module first (Rook's
   recommendation; the chart default flipped to disabled in v1.20, our explicit list keeps it on),
   never v20.2.0 (data-corruption bug with `readAffinity`, which we enable).
-- `csi-metrics` ServiceMonitor currently selects `app: csi-metrics` Services that the
-  ceph-csi-operator does not create — it has scraped nothing since the v1.19 CSI-operator switch.
-  Decide whether to drop `csi.serviceMonitor` or wire liveness/metrics via the drivers chart.
+- ✅ `csi-metrics` ServiceMonitor dropped (2026-09-04, `csi.serviceMonitor.enabled: false`). It was
+  dead by construction: the ceph-csi-drivers chart (1.0.4 and upstream main) cannot set
+  `Driver.spec.liveness.metricsPort`, and ceph-csi-operator's `reconcileLivenessService` creates the
+  Service with ports only — no labels, no selector — so the `app: csi-metrics` selector could never
+  match. Revisit only if both upstream gaps close.
 
 ### Forgejo: Deferred Follow-ups (Actions Runner, WAN Exposure)
 
