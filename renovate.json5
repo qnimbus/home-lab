@@ -18,7 +18,7 @@
   prConcurrentLimit: 10,
 
   // Only scan on weekends — avoids noise during the week; change to "at any time" to run continuously
-  schedule: ["every weekend"],
+  schedule: ["at any time"],
 
   // Never touch SOPS-encrypted files — contents are ciphertext, not real versions
   // Devcontainer features use OCI artifact format; Renovate's docker datasource can't query them
