@@ -441,7 +441,9 @@ tasks:
     cmds:
       - |
         NODE_COUNT=$(yq '.spec.values.cephClusterSpec.storage.nodes | length' "{{.ROOK_HELMRELEASE}}")
-        echo "Applying LVM wipe pods to ${NODE_COUNT} OSD node(s)..."
+        # Same Ceph image the cluster is pinned to, so the wipe pod never pulls a retired tag.
+        CEPH_IMAGE=$(yq '.spec.values.cephImage.repository + ":" + .spec.values.cephImage.tag' "{{.ROOK_HELMRELEASE}}")
+        echo "Applying LVM wipe pods to ${NODE_COUNT} OSD node(s) using ${CEPH_IMAGE}..."
 
         # Read the wipe script once; jq --arg handles all newline/quote escaping when
         # embedding it into the JSON pod manifest, so no heredoc or inline quoting needed.
@@ -460,7 +462,7 @@ tasks:
           jq -n \
             --arg name      "wipe-osd-lvm-${SHORT}" \
             --arg node      "${NODE}" \
-            --arg image     "quay.io/ceph/ceph:v19.2.3" \
+            --arg image     "${CEPH_IMAGE}" \
             --arg script    "${SCRIPT}" \
             --arg disk_byid "${DISK_BYID}" \
             '{

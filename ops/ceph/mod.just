@@ -141,6 +141,8 @@ osd-lvm-wipe node:
     WIPE_SCRIPT="{{ justfile_dir() }}/scripts/wipe-osd-lvm.sh"
 
     DISK_BYID=$(yq ".spec.values.cephClusterSpec.storage.nodes[] | select(.name == \"{{ node }}\") | .devices[0].name" "${ROOK_HR}")
+    # Same Ceph image the cluster is pinned to, so the wipe pod never pulls a retired tag.
+    CEPH_IMAGE=$(yq '.spec.values.cephImage.repository + ":" + .spec.values.cephImage.tag' "${ROOK_HR}")
     if [ -z "${DISK_BYID}" ] || [ "${DISK_BYID}" = "null" ]; then
         gum log -t rfc3339 -s -l error "Node '{{ node }}' not found in Rook-Ceph HelmRelease storage.nodes" stage abort
         exit 1
@@ -159,7 +161,7 @@ osd-lvm-wipe node:
     jq -n \
       --arg name      "${POD_NAME}" \
       --arg node      "{{ node }}" \
-      --arg image     "quay.io/ceph/ceph:v19.2.3" \
+      --arg image     "${CEPH_IMAGE}" \
       --arg script    "${SCRIPT}" \
       --arg disk_byid "${DISK_BYID}" \
       '{

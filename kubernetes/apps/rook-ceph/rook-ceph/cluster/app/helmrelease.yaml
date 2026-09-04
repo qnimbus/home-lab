@@ -46,10 +46,16 @@ spec:
     # mgr module disabled first, and v20.2.0 is off-limits with readAffinity).
     # The chart renders this into cephClusterSpec.cephVersion.image (and the
     # toolbox image) — do not also set cephVersion inside cephClusterSpec.
+    #
+    # v19.2.6 (2026-09-04) is the CVE-2025-30156 fix (CephX AES-CBC ticket
+    # tampering). The fix is only complete once the daemon keys are rotated to
+    # AES256K, so this bump landed together with the keyGeneration bump under
+    # cephClusterSpec.security.cephx below — keep the two paired on any future
+    # Ceph bump that Rook's cephx guide says needs a rotation.
     cephImage:
       repository: quay.io/ceph/ceph
       # renovate: datasource=docker depName=quay.io/ceph/ceph
-      tag: v19.2.3
+      tag: v19.2.6
     monitoring:
       enabled: true
       createPrometheusRules: true
@@ -153,6 +159,28 @@ spec:
       dashboard:
         enabled: true
         ssl: false
+      healthCheck:
+        # Ceph ≥ 19.2.6 raises these four as HEALTH_WARN for as long as any
+        # CephX key is still AES. Here that is by design: the CSI key must stay
+        # AES until the node kernel reaches 7.0 (see security.cephx.csi below),
+        # and KEYS_ALLOWED/KEYS_CREATABLE only clear once allowedCiphers is
+        # restricted to aes256k, which is impossible while any AES key exists.
+        # Rook's CVE-2025-30156 guide says to mute exactly these in that case.
+        # The mute lives in Ceph and is sticky: removing an entry here does NOT
+        # unmute it — flip the entry to `policy: unmute` (and keep it) once the
+        # CSI keys have moved to aes256k, so any stray AES key becomes visible
+        # again. The two HEALTH_ERR codes (AUTH_INSECURE_SERVICE_KEY_TYPE,
+        # AUTH_INSECURE_SERVICE_TICKETS) are deliberately not listed: they mean
+        # a core daemon key is still AES and must never be hidden.
+        muteHealthWarning:
+          AUTH_INSECURE_ROTATING_SERVICE_KEY_TYPE:
+            policy: mute
+          AUTH_INSECURE_CLIENT_KEY_TYPE:
+            policy: mute
+          AUTH_INSECURE_KEYS_ALLOWED:
+            policy: mute
+          AUTH_INSECURE_KEYS_CREATABLE:
+            policy: mute
       mgr:
         modules:
           # Required for Rook to drive the mgr.
@@ -192,6 +220,37 @@ spec:
             - 10.200.0.0/24
       security:
         cephx:
+          # --- CVE-2025-30156 daemon key rotation (2026-09-04) ----------------
+          # Ceph ≥ 19.2.6 can issue AES256K service tickets, but the CVE is only
+          # closed once the core daemon keys (mon/mgr/osd, plus admin, crash
+          # collector and exporter) are themselves AES256K. Rook rotates them
+          # when keyGeneration is higher than status.cephx.<key>.keyGeneration
+          # (on 19.2.3: mon/mgr/osd/crash/exporter were 1, admin unset) and
+          # picks aes256k automatically on a capable Ceph — don't set
+          # daemon.keyType. Paired with the cephImage bump per Rook's CVE guide.
+          #
+          # What Rook actually does with both in one change (release-1.20
+          # cluster.go, setIsSafeToRotateCephxKeys — a Ceph-bug workaround):
+          #   1. rotation is disabled while any OSD still runs pre-AES256K Ceph;
+          #      mons, mgr and OSDs are rolled to 19.2.6 one at a time;
+          #   2. once the last OSD is on 19.2.6 the operator RESTARTS ITSELF
+          #      (looks like a crash in `kubectl get pods`, it isn't);
+          #   3. the next reconcile rotates admin → mon → mgr → osd → crash/
+          #      exporter keys, restarting each daemon set a second time.
+          # From the first 19.2.6 daemon until step 3 finishes Ceph reports
+          # AUTH_INSECURE_SERVICE_KEY_TYPE / AUTH_INSECURE_SERVICE_TICKETS as
+          # HEALTH_ERR. Expected fallout for that window (tens of minutes):
+          #   - the cluster Kustomization's healthCheckExprs (ks.yaml) mark it
+          #     failed, so every Kustomization that dependsOn rook-ceph-cluster
+          #     stops taking new Git changes (running workloads are untouched);
+          #   - Flux's error Alert and Rook's CephHealthError rule both page.
+          # It clears on its own once status.cephx.*.keyGeneration reads 2 —
+          # don't loosen the expression or roll back for it. Rotating service
+          # tokens keep the old type ~2-3h longer (a muted warning, see
+          # healthCheck). Future rotations: bump keyGeneration, keep the policy.
+          daemon:
+            keyRotationPolicy: KeyGeneration
+            keyGeneration: 2
           csi:
             # AES256K CSI keys (the CVE-2025-30156 fix, Ceph ≥ 19.2.6/20.2.4)
             # need Linux ≥ 7.0 on the nodes; Talos v1.13 ships 6.18, so CSI keys

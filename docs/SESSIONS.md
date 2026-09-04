@@ -4,6 +4,15 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-04 — `ceph-cve-2025-30156-key-rotation`
+
+### Goal
+Draft the CVE-2025-30156 fix as one change: Ceph `v19.2.3` → `v19.2.6` (superseding Renovate PR #102)
+plus daemon CephX key rotation to AES256K and mutes for the residual `AUTH_INSECURE_*` warnings, with
+the expected transient `HEALTH_ERR` window documented rather than hidden.
+
+---
+
 ## 2026-09-04 — `rook-v120-upgrade-csi-drivers-draft`
 
 ### Goal

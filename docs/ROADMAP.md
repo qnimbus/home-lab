@@ -124,13 +124,30 @@ step-3 PR (#103, merged — see status above) and #102 (`quay.io/ceph/ceph v19.2
 which stays parked: see the CVE follow-up below.
 
 **Follow-ups:**
-- **CVE-2025-30156:** upgrade Ceph to `v19.2.6` (Renovate PR #102 — do **not** merge it alone)
-  together with daemon CephX key rotation in one change
-  (`spec.security.cephx.daemon: {keyRotationPolicy: KeyGeneration, keyGeneration: 2}`), then
-  restart the toolbox.
-  Expect `AUTH_INSECURE_*` health **errors** during rotation — the cluster Kustomization's
-  `healthCheckExprs` treats `HEALTH_ERR` as failed, so plan for it. Warnings persist while CSI keys
-  stay AES (Talos kernel 6.18 < 7.0 required for AES256K); mute them per Rook's key-rotation doc.
+- **CVE-2025-30156 — drafted 2026-09-04, session `ceph-cve-2025-30156-key-rotation`:** the
+  cluster HR now carries `cephImage.tag: v19.2.6` *and* `security.cephx.daemon`
+  `{keyRotationPolicy: KeyGeneration, keyGeneration: 2}` in one change, plus
+  `healthCheck.muteHealthWarning` for the four residual `AUTH_INSECURE_*` warnings (CSI keys stay
+  AES: Talos kernel 6.18 < 7.0). Renovate PR #102 (tag-only) becomes redundant once this lands and
+  should auto-close. v19.2.6 also fixes CVE-2026-50152 (mon config-key store readable with
+  `mon allow r`); Ceph has no rotation procedure for that yet — revisit when they publish one.
+  Rollout expectations (verified against Rook release-1.20 `cluster.go`,
+  `setIsSafeToRotateCephxKeys`): Rook does this in **two passes**, not one. Pass 1 rolls mons, mgr
+  and OSDs to 19.2.6 with key rotation deliberately disabled (Ceph-bug workaround while any OSD is
+  still pre-AES256K). When the last OSD is upgraded the **operator restarts itself** — looks like a
+  crash, it isn't. Pass 2 rotates admin → mon → mgr → osd → crash/exporter keys and restarts each
+  daemon set again. `HEALTH_ERR` (`AUTH_INSECURE_SERVICE_*`) lasts from the first 19.2.6 daemon to
+  the end of pass 2, likely tens of minutes. During that window (a) the `rook-ceph-cluster`
+  Kustomization is marked failed by its `healthCheckExprs`, so the 12 Kustomizations that depend on
+  it hold any new Git changes (running workloads are unaffected), and (b) Flux's error Alert and
+  Rook's `CephHealthError` rule both page Pushover. Expected: don't roll back, don't loosen the
+  health expression. Done when `status.cephx.*.keyGeneration` reads 2 for every key and
+  `ceph health detail` is `HEALTH_OK` with the four warnings listed as `(MUTED)`.
+  Toolbox: no restart needed — the v1.20.7 chart toolbox watches the mounted mon keyring and
+  rewrites `/etc/ceph/keyring` itself (and the image bump recreates the pod anyway); a manual
+  `rollout restart` only adds a pod-template annotation that drift detection reverts, rolling it
+  twice. Restart only if `ceph status` still fails auth after a few minutes.
+  Later: flip the mutes to `unmute` and rotate CSI keys to `aes256k` once Talos ships kernel ≥ 7.0.
 - Tentacle (v20.2.x) later, as a deliberate PR: disable the `rook` mgr module first (Rook's
   recommendation; the chart default flipped to disabled in v1.20, our explicit list keeps it on),
   never v20.2.0 (data-corruption bug with `readAffinity`, which we enable).
