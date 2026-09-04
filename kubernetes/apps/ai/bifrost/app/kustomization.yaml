@@ -6,4 +6,11 @@ resources:
   - ./externalsecret.yaml
   - ./helmrelease.yaml
   - ./httproute.yaml
-  - ./networkpolicy.yaml
+  # Temporarily disabled: bifrost v2.0.0's startup pricing-manager fetch to getbifrost.ai
+  # times out at the DNS-resolution step ("lookup getbifrost.ai: i/o timeout") with this
+  # policy applied, even after adding getbifrost.ai to the toFQDNs allow-list and confirming
+  # cilium-envoy is healthy on every node. Root cause undiagnosed - this is the first toFQDNs
+  # CiliumNetworkPolicy in the repo, so there's no known-good baseline to compare against.
+  # Re-enable once bifrost is confirmed healthy without it, then re-add this policy and test
+  # against a working pod instead of a pod that's never come up cleanly.
+  # - ./networkpolicy.yaml
