@@ -56,6 +56,20 @@ draft the GitOps changes needed to make the upgrade safe.
   version coupling; the new OCIRepository lacked the cosign `verify` block; a
   `driverSpecDefaults.log` switch was dead config; stale `CSI_ENABLE_HOST_NETWORK` prose in the
   cilium values and CLAUDE.md.
+- Committed (`4d1a6c5`, user-signed via 1Password prompt — the agent forwarded to the devcontainer
+  answers `ssh-add -l` but never completes a sign request from a non-interactive shell) and pushed;
+  monitored the rollout live: operator HR → `v1.20.7` at 17:01, lockstep gate opened and
+  `ceph-csi-drivers` installed at 17:02 (adoption worked, CSI pods rolled to the new SAs / cephcsi
+  3.17.1; controller 0/2 for ~1 min as predicted), Ceph daemons rolled 17:01–17:07, cluster HR
+  reconciled on the unchanged `v1.19.6` chart, everything Ready at 17:07. Verified Ceph
+  `HEALTH_OK` on `19.2.3`, Driver effective settings, all 12 dependent Kustomizations Ready, and an
+  end-to-end PVC + VolumeSnapshot probe; Renovate auto-closed #96/#97.
+- Found and removed one artifact: a stray `rook-ceph.cephfs.csi.ceph.com` `Driver` created at
+  17:00:56 by the *outgoing* v1.19.6 operator when the chart upgrade stripped its ConfigMap's
+  `ROOK_CSI_*` keys (1.19 defaults `ROOK_CSI_ENABLE_CEPHFS=true`); its controller was 0/2 on a
+  non-existent SA. Confirmed from source that release-1.20 has no Driver-creation code; the
+  one-line `kubectl delete driver` cleanup is user-run (live-cluster deletions stay with the
+  operator), documented in `docs/QA.md`.
 - Redesigned ordering to Flux's lockstep pattern: `rook.io/chart-version` annotations
   (Renovate-tracked with the operator's `depName`, so grouped) on the csi-drivers and cluster HRs,
   and a permanent `readyExpr` that waits until the operator release's applied `chartVersion`

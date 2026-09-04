@@ -39,7 +39,18 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 
 ### Rook v1.19 → v1.20 Upgrade (ceph-csi-drivers migration, PRs #96/#97)
 
-**Status: drafted 2026-09-04, not merged.** Renovate opened two independent PRs bumping
+**Status: step 1 landed 2026-09-04 (commit `4d1a6c5`), step 3 pending.** The operator upgrade,
+`ceph-csi-drivers` install and CSI pod roll went exactly as sequenced (~6 min end to end,
+provision/attach paused for ~1 min, no mount impact): all 25 Rook deployments at `v1.20.7`,
+Ceph `HEALTH_OK` on `19.2.3`, Driver adopted with `keep`, cephcsi 3.17.1 on all nodes, and a
+throwaway PVC + VolumeSnapshot probe passed. Renovate auto-closed #96/#97 and will re-open the
+cluster-chart bump under the "Rook-Ceph chart" group — **merge that to finish (step 3 below)**.
+One artifact needed cleanup: the outgoing v1.19.6 operator created a stray CephFS `Driver` CR
+when the chart upgrade stripped its ConfigMap (see [QA.md](QA.md)); delete it imperatively
+(`kubectl -n rook-ceph delete driver.csi.ceph.io rook-ceph.cephfs.csi.ceph.com`) — Rook v1.20
+cannot recreate it, and its 0/2 controller otherwise fires replica-mismatch alerts.
+
+Renovate opened two independent PRs bumping
 `ghcr.io/rook/rook-ceph` (#96) and `ghcr.io/rook/rook-ceph-cluster` (#97) from `v1.19.6` to
 `v1.20.7`. Both are held by `renovate/stability-days` and **must not be merged as-is** — see the
 [Rook v1.20 upgrade guide](https://rook.github.io/docs/rook/v1.20/Upgrade/rook-upgrade/):

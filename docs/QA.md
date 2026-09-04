@@ -10,6 +10,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 - [I increased a PVC's size in Git, Flux reconciled — but the volume didn't grow](#i-increased-a-statefulset-backed-pvcs-size-in-git-flux-reconciled--but-the-volume-didnt-grow)
 - [Longhorn CSI components are in CrashLoopBackOff / no pods created for `longhorn-csi-plugin`](#longhorn-csi-components-are-in-crashloopbackoff--longhorn-csi-plugin-daemonset-has-0-pods)
 - [Why was routing Longhorn replica traffic onto the storage VLAN abandoned?](#why-was-routing-longhorn-replica-traffic-onto-the-storage-vlan-abandoned)
+- [A CephFS CSI driver appeared after the Rook v1.20 upgrade, controller stuck at 0/2 — we don't use CephFS](#a-cephfs-csi-driver-rook-cephcephfscsicephcom-appeared-after-the-rook-v120-upgrade-with-its-controller-stuck-at-02--we-dont-use-cephfs)
 
 **Networking**
 - [Why does cp-03 show many `eth0: renamed from tmp<random>` messages?](#why-does-the-talos-console-for-cp-03-show-many-eth0-renamed-from-tmprandom-kernel-messages)
@@ -204,6 +205,18 @@ value must live in the **flatfile, not the NAD**, because `getNodeName` treats a
 while `GetFlatIPAM` treats it as a file. (Solved, but moot now that the whole approach is dropped.)
 
 ---
+
+### A CephFS CSI driver (`rook-ceph.cephfs.csi.ceph.com`) appeared after the Rook v1.20 upgrade, with its controller stuck at 0/2 — we don't use CephFS
+
+**Short answer:** a one-shot artifact of the *old* v1.19.6 operator, created in the seconds between the Helm chart upgrade and the operator pod being replaced. Rook v1.20 cannot recreate it — `kubectl -n rook-ceph delete driver.csi.ceph.io rook-ceph.cephfs.csi.ceph.com` is a durable fix and the ceph-csi-operator removes the CephFS workloads within seconds. Seen live on 2026-09-04.
+
+**Why it happened:** the v1.20 `rook-ceph` chart drops every `ROOK_CSI_*`/`CSI_*` key from the `rook-ceph-operator-config` ConfigMap (CSI is now configured through the `ceph-csi-drivers` chart's `Driver`/`OperatorConfig` CRs). Helm applies that ConfigMap before the operator Deployment rolls, and the v1.19.6 operator *watches* the ConfigMap: it re-ran its CSI reconcile with defaults — `ROOK_CSI_ENABLE_CEPHFS` defaults to `"true"` in 1.19's `csi.go` — and its `operator_driver.go` created a CephFS `Driver` CR (pre-annotated for Helm adoption, like the RBD one). The `Driver`'s `creationTimestamp` sits between the HelmRelease `upgrade` start and the new operator pod's start. The ceph-csi-operator then dutifully deployed a CephFS node DaemonSet and controller; the controller stayed at 0/2 with `FailedCreate … serviceaccount "cephfs-ctrlplugin-sa" not found`, because the `ceph-csi-drivers` chart only renders ServiceAccounts/RBAC for *enabled* drivers (`drivers.cephfs.enabled: false` here) and the operator fell back to its default SA name.
+
+**Why deleting is safe and sticks:** no CephFilesystem, StorageClass or PV references the CephFS driver, and the release-1.20 `pkg/operator/ceph/csi/` package no longer contains any Driver-creation code (`operator_driver.go`, `csi.go`, `spec.go` are gone). The `ceph-csi-drivers` HelmRelease is the only thing that declares `Driver` CRs now, and it declares RBD only. Rook does still create CephFS CSI *keys* (`rook-csi-cephfs-*` secrets) unconditionally — harmless, leave them.
+
+**How to spot it:** `kubectl -n rook-ceph get drivers.csi.ceph.io` lists more than the drivers enabled in `csi-drivers/app/helmrelease.yaml`, and `kubectl -n rook-ceph get events --field-selector reason=FailedCreate` names `cephfs-*-sa`.
+
+**Leftovers after the delete:** the ceph-csi-operator removes the DaemonSet/Deployment/Services, but not the *cluster-scoped* `CSIDriver` object it registered (a namespaced `Driver` cannot own it) — `kubectl delete csidriver rook-ceph.cephfs.csi.ceph.com` once `kubectl get pv -o jsonpath='{.items[*].spec.csi.driver}'` shows nothing using it. A `KubeDaemonSetNotScheduled` alert for the deleted DaemonSet lingers for one or two rule evaluations.
 
 ## Networking
 
