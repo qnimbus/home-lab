@@ -70,6 +70,11 @@ draft the GitOps changes needed to make the upgrade safe.
   non-existent SA. Confirmed from source that release-1.20 has no Driver-creation code; the
   one-line `kubectl delete driver` cleanup is user-run (live-cluster deletions stay with the
   operator), documented in `docs/QA.md`.
+- Reviewed PR #101 on request: not the cluster-chart step but Renovate proposing the new Ceph
+  pin `v19.2.3 → v21.1.0` (a two-major jump to an RC, unsupported by Rook 1.20). Found the
+  `dependencyDashboardApproval` hold was never honoured (no approval section on the dashboard);
+  replaced both Ceph-related rules with hard `allowedVersions` pins. The real step-3 PR is
+  pending its 3-day soak under `renovate/rook-ceph-chart`.
 - Redesigned ordering to Flux's lockstep pattern: `rook.io/chart-version` annotations
   (Renovate-tracked with the operator's `depName`, so grouped) on the csi-drivers and cluster HRs,
   and a permanent `readyExpr` that waits until the operator release's applied `chartVersion`

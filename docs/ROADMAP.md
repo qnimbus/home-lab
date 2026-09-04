@@ -109,6 +109,17 @@ its SAs or its RBAC.
 If the operator upgrade fails and rolls back to `v1.19.6`, the gates stay closed (annotation says
 `v1.20.7`): recovery is reverting the commit (tags + annotations together), which reopens them.
 
+**Renovate fallout (2026-09-04 evening):** within two hours of the Ceph pin landing, Renovate
+opened PR #101 proposing `quay.io/ceph/ceph v19.2.3 → v21.1.0` — a two-major jump to a release
+candidate (Ceph `x.1.z` = RC, `x.2.z` = stable) that Rook 1.20 does not support at all (Squid +
+Tentacle only). The `dependencyDashboardApproval` rule meant to hold Ceph majors was not honoured
+(no "Pending Approval" section ever appeared on the dashboard), so both Ceph rules now use hard
+`allowedVersions` pins instead (`/^v19\.2\.\d+$/`; `ceph-csi-drivers <=1.0.4`) — raise them
+deliberately when the corresponding upgrade is planned. #101 must not be merged; Renovate closes
+it itself once the rule is on `main`. The real step-3 PR (`renovate/rook-ceph-chart`, cluster
+chart `v1.19.6 → v1.20.7`) sits in the dashboard's *Pending Status Checks* (3-day soak); tick its
+checkbox to open it early.
+
 **Follow-ups after it lands:**
 - **CVE-2025-30156:** upgrade Ceph to `v19.2.6` (Renovate will offer it once pinned) and rotate
   daemon CephX keys (`spec.security.cephx.daemon: {keyRotationPolicy: KeyGeneration, keyGeneration: 2}`).

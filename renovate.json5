@@ -144,23 +144,28 @@
       matchPackageNames: ["ghcr.io/rook/rook-ceph", "ghcr.io/rook/rook-ceph-cluster"],
     },
     {
-      // Ceph itself is pinned in the rook-ceph-cluster HelmRelease (cephImage.tag). A Ceph major
-      // (e.g. Squid 19 → Tentacle 20) needs prep per Rook's ceph-upgrade guide (disable the
-      // `rook` mgr module first; never v20.2.0 with readAffinity) — hold it on the dashboard.
-      description: "Ceph image majors need manual approval",
+      // Ceph itself is pinned in the rook-ceph-cluster HelmRelease (cephImage.tag). Hold it on the
+      // Squid (v19) line: a Ceph major (Squid 19 → Tentacle 20) needs prep per Rook's ceph-upgrade
+      // guide (disable the `rook` mgr module first; never v20.2.0 with readAffinity) and Rook only
+      // supports Squid/Tentacle — Renovate offered v21.1.0 (PR #101) within hours of the pin
+      // landing. Ceph's x.1.z tags are release candidates and x.2.z stable, so only v19.2.z
+      // is allowed here. Bump the regex to the next line when that upgrade is actually planned.
+      description: "Ceph image — stay on Squid v19.2.z stable until a major upgrade is planned",
       matchDatasources: ["docker"],
       matchPackageNames: ["quay.io/ceph/ceph"],
-      matchUpdateTypes: ["major"],
-      dependencyDashboardApproval: true,
+      allowedVersions: "/^v19\\.2\\.\\d+$/",
     },
     {
       // ceph-csi-drivers must stay at (or below) the ceph-csi-operator subchart version bundled in
       // the rook-ceph chart in use — the operator owns the CRDs. Upstream cuts both in lockstep,
-      // usually ahead of Rook's rebase, so every bump needs a check against the Rook release.
-      description: "ceph-csi-drivers chart bumps need manual approval (tracks Rook's subchart)",
+      // usually ahead of Rook's rebase. Pinned to the subchart version of the current Rook line
+      // (v1.20.x → 1.0.4); raise it together with the next Rook chart bump after checking
+      // deploy/charts/rook-ceph/Chart.yaml in that release. dependencyDashboardApproval was tried
+      // first and silently not honoured (see the quay.io/ceph/ceph rule above), hence the hard pin.
+      description: "ceph-csi-drivers chart — pin to the subchart version bundled in the Rook line in use",
       matchDatasources: ["docker"],
       matchPackageNames: ["ghcr.io/home-operations/charts-mirror/ceph-csi-drivers"],
-      dependencyDashboardApproval: true,
+      allowedVersions: "<=1.0.4",
     },
     {
       description: "Group cert-manager chart + image bumps",
