@@ -11,6 +11,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 - [Longhorn CSI components are in CrashLoopBackOff / no pods created for `longhorn-csi-plugin`](#longhorn-csi-components-are-in-crashloopbackoff--longhorn-csi-plugin-daemonset-has-0-pods)
 - [Why was routing Longhorn replica traffic onto the storage VLAN abandoned?](#why-was-routing-longhorn-replica-traffic-onto-the-storage-vlan-abandoned)
 - [A CephFS CSI driver appeared after the Rook v1.20 upgrade, controller stuck at 0/2 — we don't use CephFS](#a-cephfs-csi-driver-rook-cephcephfscsicephcom-appeared-after-the-rook-v120-upgrade-with-its-controller-stuck-at-02--we-dont-use-cephfs)
+- [During a Ceph upgrade the operator logs `failed to reconcile CephCluster` / "restarting rook operator" and Ceph goes `HEALTH_ERR` — is it broken?](#during-a-ceph-upgrade-the-rook-operator-logs-failed-to-reconcile-cephcluster-and-restarting-rook-operator-and-ceph-goes-health_err--is-the-upgrade-broken)
 
 **Networking**
 - [Why does cp-03 show many `eth0: renamed from tmp<random>` messages?](#why-does-the-talos-console-for-cp-03-show-many-eth0-renamed-from-tmprandom-kernel-messages)
@@ -217,6 +218,46 @@ while `GetFlatIPAM` treats it as a file. (Solved, but moot now that the whole ap
 **How to spot it:** `kubectl -n rook-ceph get drivers.csi.ceph.io` lists more than the drivers enabled in `csi-drivers/app/helmrelease.yaml`, and `kubectl -n rook-ceph get events --field-selector reason=FailedCreate` names `cephfs-*-sa`.
 
 **Leftovers after the delete:** the ceph-csi-operator removes the DaemonSet/Deployment/Services, but not the *cluster-scoped* `CSIDriver` object it registered (a namespaced `Driver` cannot own it) — `kubectl delete csidriver rook-ceph.cephfs.csi.ceph.com` once `kubectl get pv -o jsonpath='{.items[*].spec.csi.driver}'` shows nothing using it. A `KubeDaemonSetNotScheduled` alert for the deleted DaemonSet lingers for one or two rule evaluations.
+
+### During a Ceph upgrade the Rook operator logs `failed to reconcile CephCluster` and "restarting rook operator", and Ceph goes `HEALTH_ERR` — is the upgrade broken?
+
+**Short answer:** no — when the upgrade crosses into an AES256K-capable Ceph (≥ 19.2.6 / 20.2.4)
+with `security.cephx.daemon.keyRotationPolicy: KeyGeneration` set, all three are Rook's designed
+control flow, and the whole thing took 12 minutes here (2026-09-04, Ceph 19.2.3 → 19.2.6,
+5 nodes / 10 OSDs). Don't roll back and don't loosen the cluster Kustomization's
+`healthCheckExprs`.
+
+**What you will see, in order** (verified against Rook release-1.20 `pkg/operator/ceph/cluster/cluster.go`,
+`setIsSafeToRotateCephxKeys`):
+
+1. `disabling cephx key rotation because desired ceph image version ... supports AES256K keys, but at
+   least one OSD ... does not` — Rook works around a Ceph bug by refusing to rotate while any OSD
+   still runs the old version. Mons, mgrs and OSDs roll to the new image with keys untouched.
+2. `HEALTH_ERR` with `AUTH_INSECURE_SERVICE_KEY_TYPE` / `AUTH_INSECURE_SERVICE_TICKETS` from the
+   first upgraded mon onward. The cluster Kustomization goes `Ready=False`, its dependents hold new
+   Git changes (running workloads are untouched), and Flux + `CephHealthError` page Pushover.
+3. `upgrade: restarting rook operator after cephx key rotation is re-enabled` — an **in-process
+   controller-manager reload**, not a pod restart: `kubectl get pods` shows restart count 0.
+4. `admin cephx key will be rotated. rook will restart afterwards. some reconciles and health checks
+   may fail in between - this is normal` — second in-process reload.
+5. `E | cluster-controller: failed to reconcile CephCluster ... triggering a new reconcile to restart
+   the mon daemons after mon cephx key rotation` — Rook deliberately *fails* the reconcile to force a
+   fresh pass that rolls the mons onto their new keys. An error-level line used as control flow.
+6. Rotation of crash-collector, exporter, mgr, then OSD keys (two OSDs per node per pass), each
+   daemon set restarted once more. `HEALTH_OK` returns within a minute of the last OSD.
+
+**How to tell it is actually stuck:** `status.cephx.<key>.keyGeneration` on the CephCluster stops
+advancing for > 10 minutes, or the operator log shows `failed to rotate` rather than "triggering a new
+reconcile". Rook's guide says persisting `AUTH_INSECURE_SERVICE_*` *after* every key reads the new
+generation is a bug to report upstream.
+
+**What stays behind on purpose:** the four `AUTH_INSECURE_*` *warnings* (client key type, keys
+allowed/creatable, rotating service key type) persist while any key is still AES — here the four CSI
+keys (Talos kernel 6.18 < 7.0) and the unused rbd-mirror peer. They are muted via
+`healthCheck.muteHealthWarning` and show as `(MUTED, STICKY)` in `ceph health detail`. Sticky means
+deleting the entry from the HelmRelease does **not** unmute; set `policy: unmute` instead. The
+toolbox needs no restart: the v1.20 chart's toolbox watches the mounted mon keyring and rewrites
+`/etc/ceph/keyring` itself.
 
 ## Networking
 

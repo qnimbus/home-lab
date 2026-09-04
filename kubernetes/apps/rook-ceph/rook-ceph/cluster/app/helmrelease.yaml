@@ -233,13 +233,19 @@ spec:
           # cluster.go, setIsSafeToRotateCephxKeys — a Ceph-bug workaround):
           #   1. rotation is disabled while any OSD still runs pre-AES256K Ceph;
           #      mons, mgr and OSDs are rolled to 19.2.6 one at a time;
-          #   2. once the last OSD is on 19.2.6 the operator RESTARTS ITSELF
-          #      (looks like a crash in `kubectl get pods`, it isn't);
-          #   3. the next reconcile rotates admin → mon → mgr → osd → crash/
-          #      exporter keys, restarting each daemon set a second time.
+          #   2. once the last OSD is on 19.2.6 the operator reloads its own
+          #      controller-manager in-process (log: "restarting rook operator";
+          #      the pod's restart count does NOT change);
+          #   3. the next reconcile rotates admin (another in-process reload)
+          #      → mon → crash/exporter → mgr → osd keys, restarting each daemon
+          #      set a second time. Rook drives the mon restart by *failing*
+          #      the reconcile on purpose ("triggering a new reconcile to
+          #      restart the mon daemons after mon cephx key rotation") — that
+          #      E-level log line is control flow, not a fault.
           # From the first 19.2.6 daemon until step 3 finishes Ceph reports
           # AUTH_INSECURE_SERVICE_KEY_TYPE / AUTH_INSECURE_SERVICE_TICKETS as
-          # HEALTH_ERR. Expected fallout for that window (tens of minutes):
+          # HEALTH_ERR. Observed 2026-09-04: 10 minutes end to end (20:26 →
+          # 20:36 UTC) on this 5-node/10-OSD cluster. Fallout for that window:
           #   - the cluster Kustomization's healthCheckExprs (ks.yaml) mark it
           #     failed, so every Kustomization that dependsOn rook-ceph-cluster
           #     stops taking new Git changes (running workloads are untouched);

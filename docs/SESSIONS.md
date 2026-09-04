@@ -11,6 +11,71 @@ Draft the CVE-2025-30156 fix as one change: Ceph `v19.2.3` → `v19.2.6` (supers
 plus daemon CephX key rotation to AES256K and mutes for the residual `AUTH_INSECURE_*` warnings, with
 the expected transient `HEALTH_ERR` window documented rather than hidden.
 
+### What we did
+- Verified the premise before editing: live `status.cephx` had every daemon key at generation 1
+  (admin unset) on 19.2.3 `HEALTH_OK`; `kubectl explain` on the installed v1.20.7 CRD confirmed
+  `security.cephx.daemon.{keyRotationPolicy,keyGeneration}` and `healthCheck.muteHealthWarning`
+  (map of code → `{policy: mute|unmute}`); quay.io has `v19.2.6` (built 2026-08-19); Rook's
+  CVE-2025-30156 guide (saved last session) prescribes image bump + `keyGeneration: 2` in one patch.
+- Read the Squid 19.2.6 notes: four CVEs, two RGW-only (no object store here), plus
+  CVE-2026-50152 (mon config-key store readable with `mon allow r`) — patched by the upgrade but Ceph
+  has no secret-rotation procedure for it yet; parked in ROADMAP.
+- Edited the cluster HR: `cephImage.tag: v19.2.6`, `security.cephx.daemon: {KeyGeneration, 2}`,
+  CSI `keyType: aes` kept, mutes for the four `AUTH_INSECURE_*` warnings (the two `HEALTH_ERR`
+  codes deliberately unmuted). Rendered the v1.20.7 chart with the values: CephCluster gets the
+  image, rotation block and mutes deep-merged with the chart's default `daemonHealth`/`livenessProbe`;
+  toolbox image follows. `task validate` green.
+- `/code-review` round (6 findings, none refuted). Verified the big one against Rook release-1.20
+  `cluster.go`: `setIsSafeToRotateCephxKeys` disables rotation while any OSD is pre-AES256K, so Rook
+  upgrades first, reloads its controller-manager, then rotates in a second pass with another round of
+  daemon restarts. Rewrote the HR comment and ROADMAP accordingly; documented the blast radius (12
+  dependent Kustomizations held, Flux + `CephHealthError` page Pushover); reworded the session goal;
+  derived the OSD-LVM-wipe pod image from the HR via `yq` in `.taskfiles/talos/Taskfile.yaml` and
+  `ops/ceph/mod.just` (both hardcoded `v19.2.3`); dropped the manual toolbox restart after confirming
+  the v1.20.7 chart's toolbox watches the mounted mon keyring and rewrites `/etc/ceph/keyring` itself.
+- Committed `f9c47d5`; user pushed. Watched the rollout with a 30s Monitor on daemon `ceph-version`
+  labels, health/phase, `status.cephx` generations, operator restart count and the rotation log lines.
+  Pass 1 20:25–20:29 UTC (25 deployments to 19.2.6, rotation gated off — the predicted "disabling
+  cephx key rotation because ... at least one OSD does not" line appeared at 20:26:37); `HEALTH_ERR`
+  opened 20:26 with exactly the predicted codes. 20:29:49 "restarting rook operator" (in-process
+  reload, pod restart count stayed 0). Pass 2 20:30–20:36: admin (second reload) → mon (Rook fails the
+  reconcile on purpose to force the mon restart) → crash/exporter → mgr → osd (two per node per pass).
+  `HEALTH_OK` 20:36:42, cluster Kustomization Ready same tick, phase Ready 20:37. Total 12 min,
+  `HEALTH_ERR` window 10 min.
+- Final verification via `ceph auth dump-keys`: 16 keys `aes256k`, 5 `aes` (4 CSI + rbd-mirror-peer,
+  by design); four warnings `(MUTED, STICKY)`; 15/15 daemons 19.2.6; all Flux Kustomizations Ready;
+  toolbox picked up the rotated admin key unaided; Renovate PR #102 auto-closed.
+- Corrected the one wrong prediction ("looks like a crash in `kubectl get pods`" — it doesn't, the
+  operator reloads in-process) in the HR comment and ROADMAP, marked the ROADMAP item ✅ with the
+  observed timeline, and added a QA.md entry explaining why the error-level reconcile lines, the
+  operator "restart" and the `HEALTH_ERR` window are Rook's designed control flow, plus how to tell a
+  real stall.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` | Ceph `v19.2.6`, daemon key rotation gen 2, four `AUTH_INSECURE_*` mutes, two-pass rollout comment |
+| `.taskfiles/talos/Taskfile.yaml` | `wipe-ceph-osds-live` derives the pod image from the HR's `cephImage` via `yq` |
+| `ops/ceph/mod.just` | `osd-lvm-wipe` derives the pod image from the HR the same way |
+| `docs/ROADMAP.md` | CVE-2025-30156 item ✅ with observed rollout timeline/end state; CVE-2026-50152 note |
+| `docs/QA.md` | New Storage entry: Rook reconcile errors / operator reload / `HEALTH_ERR` during AES256K rotation are benign |
+| `docs/SESSIONS.md` | This record |
+| `CLAUDE.md` | Session table row |
+
+### Key decisions
+- Superseded Renovate PR #102 by committing the same tag bump alongside the rotation instead of
+  merging it: the bump alone leaves the CVE open and parks Ceph in `HEALTH_ERR` (which the cluster
+  Kustomization treats as failed) until someone rotates keys by hand.
+- Left `AUTH_INSECURE_SERVICE_KEY_TYPE` / `AUTH_INSECURE_SERVICE_TICKETS` unmuted on purpose: they
+  mean a core daemon key is still AES, i.e. the CVE itself, and must stay visible; only the four
+  warnings that persist by design (CSI keys on kernel 6.18) are muted. Rook's mute is sticky —
+  removing the entry later does nothing, `policy: unmute` is required.
+- Kept the cluster Kustomization's `failed: HEALTH_ERR` expression and accepted a ~10-minute window
+  where 12 dependents hold Git changes and Pushover pages, rather than loosening the check for a
+  one-off event; documented it as expected so nobody rolls back mid-rotation.
+- Did not set `daemon.keyType` — Rook auto-selects `aes256k` on a capable Ceph and its guide says
+  to leave it unset unless working around a bug.
+
 ---
 
 ## 2026-09-04 — `rook-v120-upgrade-csi-drivers-draft`
