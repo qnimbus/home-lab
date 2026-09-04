@@ -24,6 +24,7 @@ resources:
   - ./plugin-barman-cloud.yaml
   - ./rook-ceph.yaml
   - ./rook-ceph-cluster.yaml
+  - ./ceph-csi-drivers.yaml
   - ./snapshot-controller.yaml
   - ./volsync.yaml
   - ./csi-driver-nfs.yaml

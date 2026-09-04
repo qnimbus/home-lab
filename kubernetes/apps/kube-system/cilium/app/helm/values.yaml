@@ -41,8 +41,10 @@ devices: eno1+ enp4s0+ bond-storage
 # time before self-clearing) while small packets kept working, which made it
 # hard to diagnose. Ceph's own host-networked mon/OSD/replication traffic on
 # bond-storage is unaffected — it never goes through Cilium's pod-network MTU.
-# Only pod-originated traffic to 10.200.0.0/24 (e.g. CSI plugin pods, since
-# CSI_ENABLE_HOST_NETWORK defaults to false here) is capped at 1500 by this.
+# Only pod-originated traffic to 10.200.0.0/24 is capped at 1500 by this — e.g.
+# the RBD CSI controller plugin, which runs on the pod network
+# (`drivers.rbd.controllerPlugin.hostNetwork: false` in the ceph-csi-drivers
+# HelmRelease); the CSI node plugins are host-networked and unaffected.
 MTU: 1500
 endpointRoutes:
   enabled: true

@@ -130,6 +130,39 @@
       matchPackageNames: ["/flux-operator/", "/flux-instance/"],
     },
     {
+      // The operator and cluster charts are cut from the same Rook release and must move in
+      // lockstep (the cluster chart's CRs target the operator's CRD schema). Renovate opened them
+      // as two independent PRs (#96/#97) for v1.20, which is exactly the split to avoid. The
+      // ceph-csi-drivers chart is deliberately not in this group — it follows the
+      // ceph-csi-operator release line, see kubernetes/flux/meta/repos/oci/ceph-csi-drivers.yaml.
+      // The same depName also tags the `rook.io/chart-version` annotations on the ceph-csi-drivers
+      // and rook-ceph-cluster HelmReleases (their dependsOn readyExpr lockstep gate), so those
+      // move in this PR too.
+      description: "Group rook-ceph operator + cluster chart bumps into one PR",
+      groupName: "Rook-Ceph chart",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["ghcr.io/rook/rook-ceph", "ghcr.io/rook/rook-ceph-cluster"],
+    },
+    {
+      // Ceph itself is pinned in the rook-ceph-cluster HelmRelease (cephImage.tag). A Ceph major
+      // (e.g. Squid 19 → Tentacle 20) needs prep per Rook's ceph-upgrade guide (disable the
+      // `rook` mgr module first; never v20.2.0 with readAffinity) — hold it on the dashboard.
+      description: "Ceph image majors need manual approval",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["quay.io/ceph/ceph"],
+      matchUpdateTypes: ["major"],
+      dependencyDashboardApproval: true,
+    },
+    {
+      // ceph-csi-drivers must stay at (or below) the ceph-csi-operator subchart version bundled in
+      // the rook-ceph chart in use — the operator owns the CRDs. Upstream cuts both in lockstep,
+      // usually ahead of Rook's rebase, so every bump needs a check against the Rook release.
+      description: "ceph-csi-drivers chart bumps need manual approval (tracks Rook's subchart)",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["ghcr.io/home-operations/charts-mirror/ceph-csi-drivers"],
+      dependencyDashboardApproval: true,
+    },
+    {
       description: "Group cert-manager chart + image bumps",
       groupName: "cert-manager",
       matchPackageNames: ["/cert-manager/"],

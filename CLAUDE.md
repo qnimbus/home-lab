@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-09-04 | `rook-v120-upgrade-csi-drivers-draft` | Reviewed Rook v1.20 PRs #96/#97; found hidden Ceph 19→20 bump; drafted mandatory ceph-csi-drivers chart migration |
 > | 2026-09-04 | `bifrost-image-tag-misfire` | Traced bifrost UpgradeFailed to Renovate mistaking a Helm chart artifact for an image; pinned v2.0.0, added guard rule |
 > | 2026-09-04 | `truenas-envoy-backend-https` | Moved TrueNAS/home-assistant to Envoy `Backend`; pinned TrueNAS ALPN to http/1.1, fixing WebSocket UI over HTTPS backend |
 > | 2026-09-03 | `ceph-public-network-migration-execute` | Executed 5-phase Ceph public_network migration to storage bond; found & fixed Rook mon-ip Node-object limitation |
@@ -11,7 +12,7 @@
 > | 2026-09-03 | `bifrost-deploy` | Deployed Bifrost LLM gateway to `ai` ns; wired Open WebUI backend; added repo's first CiliumNetworkPolicy for egress |
 > | 2026-09-03 | `ceph-packetdrops-prometheus-correlation` | Traced Ceph packet-drops/PrometheusMissingRuleEvaluations to mon/osd write burst; prioritized VLAN migration |
 > | 2026-09-02 | `prometheus-alerts-triage-pvc-grow` | Triaged 6 Prometheus alerts; grew Prometheus PVC 20Gi→60Gi + retention 30d; found StatefulSet PVCs need manual expand |
-> | 2026-09-01 | `ceph-packetdrops-ring-headroom-baseline` | Ruled out EEE/Ceph-role causes for packet drops; confirmed 16x ring headroom; captured pre-fix baseline |
+
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
@@ -325,7 +326,7 @@ See **[CLUSTER.md → Key Architectural Decisions](docs/CLUSTER.md#key-architect
 | Core infrastructure           | ✅ Done    | Talos configs, bootstrap, SOPS, Cilium, CoreDNS, cert-manager, Flux — all operational |
 | OpenEBS LocalPV               | ✅ Done    | `openebs-hostpath` StorageClass live (non-default)           |
 | Longhorn (3-replica)          | ❌ Removed | Fully removed during the Rook-Ceph migration (big-bang, commit `8b27593`); all longhorn PVCs/PVs cleared. Superseded by Rook-Ceph |
-| Rook-Ceph (`ceph-block`)      | ✅ Done    | Replicated-storage target; v1.19.6, `size=3`/`min_size=2`, host-net `cluster_network` on the `10.200.0.0/24` bond, `HEALTH_OK` with 3 host-spread OSDs. **`ceph-block` is the default StorageClass.** All consumers migrated (Phase 5: pgadmin, waha, kube-prometheus-stack — grafana+waha data restored from NFS). See [HARDWARE-ARCHITECTURE.md](docs/HARDWARE-ARCHITECTURE.md) |
+| Rook-Ceph (`ceph-block`)      | ✅ Done    | Replicated-storage target; Rook v1.20.x (operator + cluster charts) + `ceph-csi-drivers` chart (owns the CSI driver since v1.20), Ceph image pinned in the cluster HR; `size=3`/`min_size=2`, host-net `cluster_network` on the `10.200.0.0/24` bond, `HEALTH_OK` with 3 host-spread OSDs. **`ceph-block` is the default StorageClass.** All consumers migrated (Phase 5: pgadmin, waha, kube-prometheus-stack — grafana+waha data restored from NFS). See [HARDWARE-ARCHITECTURE.md](docs/HARDWARE-ARCHITECTURE.md) |
 | External Secrets + 1Password  | ✅ Done    | ESO + 1Password Connect deployed; `ClusterSecretStore` live |
 | Split DNS (ExternalDNS)       | ✅ Done    | `external-dns-cloudflare` (envoy-external, proxied) + `external-dns-unifi` (all gateways + services, webhook sidecar); chart v1.21.1 |
 | Renovate                      | ✅ Done    | `renovate.json5` + GitHub App; tracks Talos + K8s via `separateMinorPatch`; `talosctl` + `etcd` excluded (must match server version) |

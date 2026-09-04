@@ -17,15 +17,18 @@ spec:
     # Pull the Ceph/Rook image from GHCR to avoid Docker Hub rate limits.
     image:
       repository: ghcr.io/rook/ceph
+    # Since v1.20 this chart only carries the ceph-csi-operator subchart, the
+    # CSI image set and the ServiceMonitor below. Which drivers run and how
+    # (RBD only, snapshotter, resources, …) is configured in the ceph-csi-drivers
+    # HelmRelease (../../csi-drivers/app) — the old csi.enable*/csi.* switches
+    # are gone from the chart and silently ignored if set.
     csi:
-      # We only need the RBD (block) CSI driver for the ceph-block StorageClass.
-      # CephFS (shared filesystem) is not used yet — leave its driver off to cut
-      # the CSI pod footprint. Flip these on when a CephFS is introduced.
-      enableCephfsDriver: false
-      enableCephfsSnapshotter: false
-      enableLiveness: true
       # kube-prometheus-stack installs before rook-ceph-operator (see dependsOn
       # chain), so the ServiceMonitor CRD is guaranteed present at install time.
+      # Currently scrapes nothing: it selects `app: csi-metrics` Services that
+      # the ceph-csi-operator never creates (no liveness sidecar since the CSI
+      # operator switch in v1.19). Kept until CSI metrics are wired via the
+      # drivers chart or dropped — see docs/ROADMAP.md.
       serviceMonitor:
         enabled: true
     # Fail Ceph CLI calls fast rather than hanging the operator reconcile.

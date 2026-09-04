@@ -4,6 +4,107 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-04 — `rook-v120-upgrade-csi-drivers-draft`
+
+### Goal
+Review Renovate PRs #96/#97 (Rook `v1.19.6` → `v1.20.7`) against the Rook v1.20 upgrade guide and
+draft the GitOps changes needed to make the upgrade safe.
+
+### What we did
+- Reviewed PRs #96 (`ghcr.io/rook/rook-ceph`) and #97 (`ghcr.io/rook/rook-ceph-cluster`) via `gh`:
+  1-line tag bumps, CI green, both held by `renovate/stability-days`.
+- Read the v1.20 upgrade guide from the raw `release-1.20` source (not a summarised fetch): v1.19→v1.20
+  is a minor upgrade with a breaking change — Rook no longer deploys CSI drivers; a new, mandatory
+  `ceph-csi-drivers` chart owns the `Driver`/`OperatorConfig` CRs, CSI ServiceAccounts and RBAC.
+  Required Helm order: `rook-ceph` → `ceph-csi-drivers` → `rook-ceph-cluster`. Min K8s v1.31 (we run
+  v1.36.1). CVE-2025-30156 needs Rook ≥ 1.20.6 + Ceph ≥ 19.2.6/20.2.4 + daemon CephX key rotation.
+- Captured live state (guide step 1): operator `v1.19.6`, Ceph `19.2.3` `HEALTH_OK`, all 25
+  deployments at `rook-version=v1.19.6`; saved `Driver`/`OperatorConfig` CRs. Found the cluster
+  already runs the `ceph-csi-operator` (v1.19 subchart 0.6.0) and that Rook v1.19.5 (#17289)
+  pre-annotated the CRs with `meta.helm.sh/release-name: ceph-csi-drivers` for adoption.
+- Pulled and diffed charts (`rook-ceph` 1.19.6 vs 1.20.7, `rook-ceph-cluster` 1.19.6 vs 1.20.7,
+  `ceph-csi-drivers`/`ceph-csi-operator` 1.0.4): v1.20 operator chart drops every `csi.enable*`
+  value and all CSI SAs/RBAC; the drivers chart recreates them under new names
+  (`rook-ceph-rbd-csi-ceph-com-*`), so no Helm ownership collisions.
+- Found PR #97 is a **hidden Ceph major upgrade**: the v1.20 cluster chart defaults `cephImage.tag`
+  to Tentacle `v20.2.4` (v1.19: Squid `v19.2.3`) and our HR left the image unset.
+- Found Rook's recommended `ceph-csi-drivers` values would break VolSync: chart RBD default
+  `snapshotPolicy: none` drops the `csi-snapshotter` sidecar (4 live `ReplicationSources` use
+  `ceph-block-snapshot`); `grpcTimeout` default 30s vs live 150s; log rotation on by default.
+- Read `ceph-csi-operator` v1.0.4 merge code: `Driver` fields win over `OperatorConfig`
+  `driverSpecDefaults` field-by-field, and the chart always renders `replicas`/`hostNetwork`/
+  `grpcTimeout`/`snapshotPolicy` on the `Driver` — so those only take effect at `drivers.rbd.*`.
+- Compared with billimek/k8s-gitops's deployment (same settings, chart from
+  `ghcr.io/home-operations/charts-mirror`, which this repo already uses for other charts).
+- Drafted the migration (uncommitted): `ceph-csi-drivers` OCIRepository + HelmRelease + a third
+  Flux Kustomization between operator and cluster, operator HR cleanup, explicit Ceph image pin,
+  `cephx.csi.keyType: aes` (Talos kernel 6.18 < 7.0), Renovate grouping rule, ROADMAP entry.
+- Verified with `helm template` diffs against the saved live CRs (caught `replicas: 1` and a
+  mis-keyed Ceph pin), rendered the cluster chart on both versions (pin is a no-op today),
+  `kubectl kustomize` of all touched trees, and `scripts/validate.sh -d kubernetes` (passes).
+- Ran `/code-review` twice and acted on both rounds. Round 1: the cluster HR had no
+  HelmRelease-level ordering (a `chartRef` release upgrades as soon as its OCI tag changes,
+  bypassing Kustomization `dependsOn`); the cluster-wide install remediation would `helm uninstall`
+  on a failed first install and delete the adopted `Driver`; a `CLAUDE.md` table newline was lost in
+  the 8-row trim; `docs/CLUSTER.md` was not updated. Round 2 found the critical flaw in the
+  "one commit" plan: a Kustomization-level `dependsOn` on the new csi-drivers Kustomization would
+  hold back the cluster HR's *spec* (with the Ceph pin) while helm-controller upgraded the live,
+  unpinned spec to the v1.20 chart → Tentacle anyway. Also: the `keep` policy missed the CSI RBAC;
+  a plain `dependsOn` cannot order simultaneous tag bumps once a one-shot gate is removed; the
+  `!startsWith('v1.19.')` gate had no recovery path after an operator rollback; the Ceph pin's
+  Renovate hint would open an unguarded Tentacle major PR; nothing flagged `ceph-csi-drivers`
+  version coupling; the new OCIRepository lacked the cosign `verify` block; a
+  `driverSpecDefaults.log` switch was dead config; stale `CSI_ENABLE_HOST_NETWORK` prose in the
+  cilium values and CLAUDE.md.
+- Redesigned ordering to Flux's lockstep pattern: `rook.io/chart-version` annotations
+  (Renovate-tracked with the operator's `depName`, so grouped) on the csi-drivers and cluster HRs,
+  and a permanent `readyExpr` that waits until the operator release's applied `chartVersion`
+  equals the annotation; dropped the cluster Kustomization's dependency on the csi-drivers
+  Kustomization; `keep` postRenderer now covers all rendered kinds (regex target, emulated with
+  `kubectl kustomize`); operator tag bumped to `v1.20.7`, cluster tag left at `v1.19.6` for a
+  follow-up Renovate merge; cosign `verify` added; Renovate rules for Ceph majors and
+  `ceph-csi-drivers` bumps (dashboard approval); docs/comments corrected.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/rook-ceph.yaml` | Bumped `v1.19.6` → `v1.20.7` (PR #96; cluster tag deliberately left for a follow-up merge of regrouped #97) |
+| `kubernetes/flux/meta/repos/oci/ceph-csi-drivers.yaml` | Created OCIRepository for `charts-mirror/ceph-csi-drivers:1.0.4` with cosign `verify` |
+| `kubernetes/apps/kube-system/cilium/app/helm/values.yaml` | MTU comment: replaced stale `CSI_ENABLE_HOST_NETWORK` reference with the drivers-HR setting |
+| `kubernetes/flux/meta/repos/oci/kustomization.yaml` | Registered the new OCIRepository |
+| `kubernetes/apps/rook-ceph/rook-ceph/csi-drivers/app/helmrelease.yaml` | Created `ceph-csi-drivers` HelmRelease (adoption `releaseName`, lockstep `readyExpr` gate via `rook.io/chart-version` annotation, `resource-policy: keep` postRenderer on all rendered kinds, live-parity values) |
+| `kubernetes/apps/rook-ceph/rook-ceph/csi-drivers/app/kustomization.yaml` | Created Kustomize entry-point |
+| `kubernetes/apps/rook-ceph/rook-ceph/ks.yaml` | Added `rook-ceph-csi-drivers` Kustomization (cluster deliberately does not depend on it — ordering is HR-level) |
+| `kubernetes/apps/rook-ceph/rook-ceph/operator/app/helmrelease.yaml` | Removed v1.20-deleted `csi.enable*` values, rewrote CSI comment, flagged the dead `csi-metrics` ServiceMonitor |
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` | Pinned `cephImage` to `v19.2.3` (Renovate-tracked), explicit `cephx.csi.keyType: aes`, `rook.io/chart-version` annotation + HR-level `dependsOn` with lockstep `readyExpr`, fixed CSI-networking comment |
+| `renovate.json5` | Grouped `rook-ceph` + `rook-ceph-cluster` chart bumps; dashboard approval for `quay.io/ceph/ceph` majors and `ceph-csi-drivers` bumps |
+| `docs/ROADMAP.md` | Added "Rook v1.19 → v1.20 Upgrade" in-progress entry with rollout sequence and follow-ups |
+| `docs/CLUSTER.md` | Rook-Ceph section: three-Kustomization structure, `ceph-csi-drivers` chart, CSI workload rows |
+| `CLAUDE.md` | Session table row; repaired the table/paragraph newline lost in the 8-row trim |
+
+### Key decisions
+- PRs #96/#97 must not merge as-is. Land the draft with only the operator tag bumped, then merge
+  the regrouped cluster bump afterwards — a same-commit cluster bump could race the cluster HR's
+  spec update and upgrade Ceph to Tentacle from the chart default before the pin was live.
+- HelmRelease named `ceph-csi-drivers` with explicit `releaseName` — the only name Helm will adopt
+  the pre-annotated CRs under.
+- Chart-upgrade ordering lives in HelmRelease `dependsOn` + a permanent lockstep `readyExpr`
+  (operator's applied `chartVersion` == the HR's Renovate-tracked `rook.io/chart-version`
+  annotation), not in Kustomization `dependsOn`: a `chartRef` HR upgrades on its own when its OCI
+  tag changes, and a plain HR `dependsOn` sees the operator `Ready` on the old chart at that
+  moment. Recovery after an operator rollback = revert the commit (tags + annotations).
+- `helm.sh/resource-policy: keep` on everything the drivers chart renders: the global install
+  remediation uninstalls on failure, which would otherwise delete the adopted `Driver` (RBD driver
+  torn down) or the CSI RBAC (all provision/attach/resize/snapshot 403).
+- Pinned the Ceph image explicitly instead of trusting the chart default, turning Ceph upgrades
+  into their own Renovate PRs; CVE fix (`v19.2.6` + key rotation) and Tentacle deferred to
+  deliberate follow-ups.
+- Chart source: `home-operations/charts-mirror` OCI rather than a new `HelmRepository` —
+  upstream only publishes a classic Helm repo, and the mirror keeps the repo's OCIRepository
+  convention.
+
+---
+
 ## 2026-09-04 — `bifrost-image-tag-misfire`
 
 ### Goal

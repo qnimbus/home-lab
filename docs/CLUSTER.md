@@ -433,9 +433,17 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 
 ---
 
-### Rook-Ceph · `v1.19.6` (operator chart) · `rook-ceph`
+### Rook-Ceph · `v1.20.7` (operator + cluster charts) · `ceph-csi-drivers` `1.0.4` · `rook-ceph`
 
-**Distributed block storage.** Provides the `ceph-block` StorageClass (default cluster StorageClass) for replicated `ReadWriteOnce` PVCs across nodes using dedicated NVMe drives. Managed by Flux HelmRelease; values in `kubernetes/apps/rook-ceph/`. Longhorn was removed during the Rook-Ceph migration (commit `8b27593`).
+**Distributed block storage.** Provides the `ceph-block` StorageClass (default cluster StorageClass) for replicated `ReadWriteOnce` PVCs across nodes using dedicated NVMe drives. Longhorn was removed during the Rook-Ceph migration (commit `8b27593`).
+
+Three Flux Kustomizations in `kubernetes/apps/rook-ceph/rook-ceph/ks.yaml`. The order Rook requires for every upgrade (`rook-ceph` → `ceph-csi-drivers` → `rook-ceph-cluster`) is enforced at the **HelmRelease** level: the csi-drivers and cluster HRs carry `dependsOn` with a lockstep `readyExpr` that waits until the operator release's applied chart version equals the `rook.io/chart-version` annotation on the HR itself (Renovate bumps the annotations together with the OCI tags in one grouped PR). A `chartRef` release upgrades on its own when its OCIRepository tag changes, so Kustomization ordering alone would not sequence upgrades. The drivers HR also marks everything it renders `helm.sh/resource-policy: keep`, so a failed install can never uninstall the live CSI driver.
+
+| Kustomization | Chart | Owns |
+|---|---|---|
+| `rook-ceph-operator` | `rook-ceph` (`operator/app/`) | Rook operator, Rook CRDs, the `ceph-csi-operator` subchart + its CRDs, the CSI image-set ConfigMap |
+| `rook-ceph-csi-drivers` | `ceph-csi-drivers` (`csi-drivers/app/`, from `home-operations/charts-mirror`) | `Driver` / `OperatorConfig` CRs, CSI ServiceAccounts and RBAC — since Rook v1.20 the operator no longer deploys CSI drivers. RBD only; `snapshotPolicy: volumeSnapshot` (VolSync), `grpcTimeout: 150` |
+| `rook-ceph-cluster` | `rook-ceph-cluster` (`cluster/app/`) | `CephCluster`, `CephBlockPool` + StorageClass, `VolumeSnapshotClass`, toolbox, Prometheus rules. Ceph image pinned explicitly (`cephImage.tag`) so chart bumps never change the Ceph version |
 
 | Pod | Type | Role |
 |-----|------|------|
@@ -444,7 +452,9 @@ Apps define an `ExternalSecret` object pointing at the `onepassword` store and a
 | `rook-ceph-osd-{0..9}` | Deployment (10) | 2 logical OSDs per NVMe on all 5 nodes (`osdsPerDevice: 2`); `hostNetwork` with `cluster_network: 10.200.0.0/24` for replication traffic |
 | `rook-ceph-mgr-{a,b}` | Deployment (2) | Ceph manager — Prometheus metrics, dashboard, orchestration modules |
 | `rook-ceph-dashboard` | Service | Ceph dashboard UI (admin password from 1Password via ExternalSecret) |
-| CSI components | DaemonSets/Deployments | RBD CSI driver (`csi-rbdplugin`) + provisioner sidecars |
+| `ceph-csi-controller-manager` | Deployment | The `ceph-csi-operator`: reconciles `Driver`/`OperatorConfig` CRs into the CSI workloads below |
+| `rook-ceph.rbd.csi.ceph.com-nodeplugin` | DaemonSet (5) | RBD CSI node plugin (`csi-rbdplugin` + registrar), host-networked |
+| `rook-ceph.rbd.csi.ceph.com-ctrlplugin` | Deployment (2) | RBD CSI controller: provisioner, attacher, resizer, snapshotter sidecars; pod network |
 
 > **Pool settings**: `size=3`, `min_size=2`, `deviceClass: nvme`. 10 OSDs across all 5 nodes (~9.1 TiB raw) — every node now runs 2 logical OSDs from a 2TB NVMe (`osdsPerDevice: 2`). The `ceph-block` StorageClass is the cluster default — all new PVCs use it unless otherwise specified.
 >

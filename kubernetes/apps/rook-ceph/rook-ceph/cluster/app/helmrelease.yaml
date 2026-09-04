@@ -4,16 +4,52 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: rook-ceph-cluster
+  annotations:
+    # The Rook chart line this release is meant to run against — see the
+    # dependsOn readyExpr below. Renovate bumps it in the same grouped PR as
+    # the rook-ceph/rook-ceph-cluster OCIRepository tags (same depName).
+    # renovate: datasource=docker depName=ghcr.io/rook/rook-ceph
+    rook.io/chart-version: v1.20.7
 spec:
   chartRef:
     kind: OCIRepository
     name: rook-ceph-cluster
     namespace: flux-system
   interval: 1h
-  # The chart's CephCluster name + the operator namespace. Leaving cephVersion
-  # unset lets the chart pick the Ceph image it was tested against.
+  # HelmRelease-level ordering. This HR uses chartRef, so a rook-ceph-cluster
+  # OCI tag bump upgrades the release as soon as source-controller sees it —
+  # the Kustomization ordering in ks.yaml only sequences the HR *object*, which
+  # does not change on a tag bump. Rook requires rook-ceph → ceph-csi-drivers →
+  # rook-ceph-cluster on every upgrade.
+  dependsOn:
+    - name: rook-ceph-operator
+      # Lockstep gate, identical to the one in the ceph-csi-drivers HR (keep
+      # them in sync): wait until the operator release is on the chart line in
+      # the annotation above. readyExpr replaces the default Ready check, so
+      # Ready/generation are restated. Recovery after a rolled-back operator
+      # upgrade: revert the commit (tags + annotations) and the gate reopens.
+      readyExpr: >-
+        has(dep.status.history) && dep.status.history.size() > 0 &&
+        dep.status.history[0].chartVersion == self.metadata.annotations['rook.io/chart-version'] &&
+        dep.status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True') &&
+        dep.metadata.generation == dep.status.observedGeneration
+    - name: ceph-csi-drivers
+  # The chart's CephCluster name + the operator namespace.
   values:
     operatorNamespace: rook-ceph
+    # Pinned on purpose. The chart's default Ceph image follows the Rook release
+    # line (v1.19.x → Squid 19.2.3, v1.20.x → Tentacle 20.2.4), so leaving this
+    # unset turns a Rook chart bump into an unreviewed Ceph *major* upgrade —
+    # which is exactly what Renovate's rook-ceph-cluster v1.20 PR would have
+    # done. Ceph upgrades are their own Renovate PRs now; before merging one,
+    # read Rook's ceph-upgrade guide for that release (Tentacle wants the `rook`
+    # mgr module disabled first, and v20.2.0 is off-limits with readAffinity).
+    # The chart renders this into cephClusterSpec.cephVersion.image (and the
+    # toolbox image) — do not also set cephVersion inside cephClusterSpec.
+    cephImage:
+      repository: quay.io/ceph/ceph
+      # renovate: datasource=docker depName=quay.io/ceph/ceph
+      tag: v19.2.3
     monitoring:
       enabled: true
       createPrometheusRules: true
@@ -141,10 +177,12 @@ spec:
       # see the session that landed this), and OSD pods are restarted per
       # node, both tracked outside this file.
       #
-      # CSI plugin pods reach mons/OSDs here via the Cilium pod network:
-      # bond-storage is an explicit device in kube-system/cilium's
-      # `devices:` config (added as the prerequisite for this change), since
-      # CSI_ENABLE_HOST_NETWORK defaults to false on this cluster.
+      # The CSI controller plugin reaches the mons here via the Cilium pod
+      # network — bond-storage is an explicit device in kube-system/cilium's
+      # `devices:` config (added as the prerequisite for this change). The CSI
+      # node plugins are host-networked (always, under the ceph-csi-operator)
+      # and reach 10.200.0.0/24 straight from the host. Both are configured in
+      # the ceph-csi-drivers HelmRelease since Rook v1.20.
       network:
         provider: host
         addressRanges:
@@ -152,6 +190,14 @@ spec:
             - 10.200.0.0/24
           cluster:
             - 10.200.0.0/24
+      security:
+        cephx:
+          csi:
+            # AES256K CSI keys (the CVE-2025-30156 fix, Ceph ≥ 19.2.6/20.2.4)
+            # need Linux ≥ 7.0 on the nodes; Talos v1.13 ships 6.18, so CSI keys
+            # must stay AES. Chart default since v1.20, made explicit so a later
+            # key rotation cannot silently pick AES256K and break PVC mounts.
+            keyType: aes
       resources:
         mgr:
           requests:

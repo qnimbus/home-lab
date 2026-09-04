@@ -5,6 +5,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 ## Contents  <!-- omit from toc -->
 
 - [In Progress](#in-progress)
+  - [Rook v1.19 → v1.20 Upgrade (ceph-csi-drivers migration, PRs #96/#97)](#rook-v119--v120-upgrade-ceph-csi-drivers-migration-prs-9697)
   - [Forgejo: Deferred Follow-ups (Actions Runner, WAN Exposure)](#forgejo-deferred-follow-ups-actions-runner-wan-exposure)
   - [WAN Failover Router: Host Header Rewrite](#wan-failover-router-host-header-rewrite)
   - [Renovate PR-Review Workflow: Cost/Bug Investigation, Re-enable](#renovate-pr-review-workflow-costbug-investigation-re-enable)
@@ -35,6 +36,80 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
 ---
 
 ## In Progress
+
+### Rook v1.19 → v1.20 Upgrade (ceph-csi-drivers migration, PRs #96/#97)
+
+**Status: drafted 2026-09-04, not merged.** Renovate opened two independent PRs bumping
+`ghcr.io/rook/rook-ceph` (#96) and `ghcr.io/rook/rook-ceph-cluster` (#97) from `v1.19.6` to
+`v1.20.7`. Both are held by `renovate/stability-days` and **must not be merged as-is** — see the
+[Rook v1.20 upgrade guide](https://rook.github.io/docs/rook/v1.20/Upgrade/rook-upgrade/):
+
+- **v1.20 breaking change:** Rook no longer deploys the CSI drivers. The `rook-ceph` chart keeps only
+  the `ceph-csi-operator` subchart (0.6.0 → 1.0.4) and the CSI image-set ConfigMap; the `Driver` /
+  `OperatorConfig` CRs, CSI ServiceAccounts and RBAC move to a new, mandatory `ceph-csi-drivers`
+  chart. Required Helm order: `rook-ceph` → `ceph-csi-drivers` → `rook-ceph-cluster`.
+- **Hidden Ceph major bump:** the v1.20 cluster chart defaults `cephVersion` to Tentacle `v20.2.4`
+  (v1.19: Squid `v19.2.3`); our cluster HR left it unset. Now pinned to `v19.2.3` so Ceph upgrades
+  become their own Renovate PRs.
+- Rook v1.19.5+ already pre-annotated the live CRs with `meta.helm.sh/release-name: ceph-csi-drivers`,
+  so the new release adopts them; live CSI settings were saved per the guide's step 1 and reproduced
+  in the HelmRelease values where chart defaults would otherwise change behaviour (`snapshotPolicy`
+  — VolSync depends on the snapshotter sidecar; `grpcTimeout` 150 s; no log-rotation sidecar;
+  Rook's resource defaults).
+
+**Drafted (uncommitted) in this repo:** `kubernetes/flux/meta/repos/oci/ceph-csi-drivers.yaml`
+(home-operations charts-mirror 1.0.4, cosign-verified), `kubernetes/apps/rook-ceph/rook-ceph/csi-drivers/app/`,
+a third `rook-ceph-csi-drivers` Kustomization in `rook-ceph/ks.yaml`, the operator HR stripped of
+the removed `csi.enable*` values, the cluster HR pinned to `quay.io/ceph/ceph:v19.2.3` + explicit
+`security.cephx.csi.keyType: aes`, the **operator** OCI tag bumped to `v1.20.7` (= PR #96), and
+Renovate rules (group the two Rook charts; dashboard approval for Ceph majors and for
+`ceph-csi-drivers` bumps). The **cluster** OCI tag is deliberately left at `v1.19.6` — see the
+sequence below.
+
+**Ordering design.** A `chartRef` HelmRelease upgrades on its own the moment its OCIRepository tag
+changes, so Kustomization `dependsOn` cannot sequence chart upgrades — worse, a Kustomization-level
+dependency on the new csi-drivers Kustomization would hold back the cluster HR's *spec* (the Ceph
+pin!) while helm-controller upgraded the live, unpinned spec to the v1.20 chart and its Tentacle
+default. Ordering therefore lives in the HRs: `ceph-csi-drivers` and `rook-ceph-cluster` each carry
+a `rook.io/chart-version` annotation (Renovate-tracked with the same `depName` as the operator tag,
+so it moves in the same grouped PR) and a `dependsOn` `readyExpr` that waits until the operator
+release's applied `chartVersion` equals that annotation (Flux's lockstep pattern; the cluster HR
+also waits for `ceph-csi-drivers` Ready). This is permanent, not a migration-only gate. The drivers
+HR marks everything it renders `helm.sh/resource-policy: keep` via a postRenderer, so the
+cluster-wide install remediation (`helm uninstall` on failure) can never remove the live RBD driver,
+its SAs or its RBAC.
+
+**Rollout sequence:**
+1. Commit + push the draft. Flux: operator upgrades to `v1.20.7` (deletes the old
+   `ceph-csi-rbd-*`/`rook-csi-*` SAs + RBAC, bumps the CSI image set) → gate opens →
+   `ceph-csi-drivers` installs (adopts the CRs, creates `rook-ceph-rbd-csi-ceph-com-*` SAs/RBAC,
+   rolls CSI pods to cephcsi v3.17.1) → cluster HR reconciles its new spec on the unchanged
+   `v1.19.6` chart (pin = chart default, no Ceph change). Expected ~1–2 min window between the first
+   two steps: new PVC provision/attach pauses, and the node-plugin DaemonSet may start rolling
+   against the deleted old SA on one node and stall there until the drivers chart lands — a pod
+   restart needing an RBD mount on that node can fail briefly. Existing mounts are unaffected.
+   Renovate closes #96 as superseded and re-opens the cluster bump under the "Rook-Ceph chart" group.
+2. Verify: `kubectl -n rook-ceph get operatorconfig,driver`, all `rook-version` labels at
+   `v1.20.7`, node-plugin DaemonSet 5/5 on the new SA, `ceph -s`, a throwaway PVC, a VolSync sync.
+3. Merge the cluster-chart bump (regrouped #97). The cluster HR's gate is already satisfied, the
+   chart upgrades with `cephImage` pinned — Ceph stays `19.2.3`. Re-verify `ceph -s` and the
+   CephCluster image.
+
+If the operator upgrade fails and rolls back to `v1.19.6`, the gates stay closed (annotation says
+`v1.20.7`): recovery is reverting the commit (tags + annotations together), which reopens them.
+
+**Follow-ups after it lands:**
+- **CVE-2025-30156:** upgrade Ceph to `v19.2.6` (Renovate will offer it once pinned) and rotate
+  daemon CephX keys (`spec.security.cephx.daemon: {keyRotationPolicy: KeyGeneration, keyGeneration: 2}`).
+  Expect `AUTH_INSECURE_*` health **errors** during rotation — the cluster Kustomization's
+  `healthCheckExprs` treats `HEALTH_ERR` as failed, so plan for it. Warnings persist while CSI keys
+  stay AES (Talos kernel 6.18 < 7.0 required for AES256K); mute them per Rook's key-rotation doc.
+- Tentacle (v20.2.x) later, as a deliberate PR: disable the `rook` mgr module first (Rook's
+  recommendation; the chart default flipped to disabled in v1.20, our explicit list keeps it on),
+  never v20.2.0 (data-corruption bug with `readAffinity`, which we enable).
+- `csi-metrics` ServiceMonitor currently selects `app: csi-metrics` Services that the
+  ceph-csi-operator does not create — it has scraped nothing since the v1.19 CSI-operator switch.
+  Decide whether to drop `csi.serviceMonitor` or wire liveness/metrics via the drivers chart.
 
 ### Forgejo: Deferred Follow-ups (Actions Runner, WAN Exposure)
 

@@ -31,6 +31,42 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: &app rook-ceph-csi-drivers
+  namespace: flux-system
+spec:
+  targetNamespace: rook-ceph
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  interval: 1h
+  path: ./kubernetes/apps/rook-ceph/rook-ceph/csi-drivers/app
+  prune: true
+  # Since Rook v1.20 the operator chart no longer deploys the CSI drivers; this
+  # chart owns the Driver/OperatorConfig CRs, CSI ServiceAccounts and RBAC.
+  # Upstream's required Helm order is rook-ceph → ceph-csi-drivers →
+  # rook-ceph-cluster. That order is enforced by the HelmRelease-level
+  # dependsOn (with a lockstep readyExpr) inside the csi-drivers and cluster
+  # HRs, not here: a chartRef HR upgrades on its own when its OCIRepository tag
+  # changes, and the cluster Kustomization deliberately does *not* depend on
+  # this one — doing so would hold back the cluster HR's own spec (dependsOn,
+  # Ceph image pin) exactly when a tag bump needs it applied.
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  dependsOn:
+    - name: rook-ceph-operator
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: ceph-csi-drivers
+      namespace: rook-ceph
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: &app rook-ceph-cluster
   namespace: flux-system
 spec:
