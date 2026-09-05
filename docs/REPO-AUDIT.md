@@ -63,6 +63,8 @@ With `-e talos -e assets -e .archive -e ops -e tmp -e .claude` applied, `flux-sc
 
 No new false-positive categories beyond the two above — the sixth/seventh-pass CEL `sectionName` quirk on the `envoy-external`/`envoy-internal` HTTP-redirect routes did not reappear (still resolved by I15's explicit `tls.mode`).
 
+The **rendered-output** pass (`scripts/validate-rendered.sh`, run by `.github/workflows/flux-render.yaml` and `task flux:validate`) has neither category: flux-local substitutes placeholder values for the SOPS-encrypted `cluster-secrets`, so the `${DOMAIN_*}` / `${APP}` placeholders are resolved before kubeconform sees them. Measured 2026-09-05 on 1164 rendered documents: 847 valid, 0 invalid after skipping `ConfigMapList` (the dragonfly-operator chart emits a List carrying `metadata.annotations`, which the strict ListMeta schema rejects; kustomize flattens Lists before Flux applies them).
+
 **Skipped (14)** — all expected, not failures:
 
 | Cause | Count | Detail |
@@ -234,6 +236,10 @@ bash .claude/skills/gitops-repo-audit/scripts/discover.sh -d . -e tmp -e .claude
 # 2. Manifest validation (with non-K8s exclusions)
 bash .claude/skills/gitops-repo-audit/scripts/validate.sh -d . \
   -e talos -e assets -e .archive -e ops -e tmp -e .claude
+
+# 2b. Post-render validation — what Flux would actually apply (catches broken Helm values,
+#     missing chart versions, bad Kustomization wiring; mirrors .github/workflows/flux-render.yaml)
+task flux:test && task flux:validate
 
 # 3. Deprecated API check
 bash .claude/skills/gitops-repo-audit/scripts/check-deprecated.sh -d .

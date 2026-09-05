@@ -1,0 +1,206 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Flux Render
+
+# Complements validate.yaml (kubeconform on the SOURCE manifests): flux-local renders the Flux
+# tree offline — kustomize builds, Helm templating with the in-tree values, postBuild
+# substitution — so it catches broken values, missing chart versions and bad Kustomization
+# wiring that source-level validation cannot see. Kept separate so validate.yaml stays a cheap
+# first line of defence.
+#
+# flux-local is sunsetted upstream; its successor `flate` hangs on this tree (flate#828/#937),
+# see the migration item in docs/ROADMAP.md. The container image is self-contained (helm 3 +
+# kustomize bundled), so the sunset only means no further fixes.
+#
+# No push trigger: validate.yaml already covers push-to-main and every job bills a whole minute
+# on a private repo. Path filter at trigger level (free) rather than a filter job (a billed
+# minute per run).
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - kubernetes/**
+      - .mise.toml
+      - scripts/validate-rendered.sh
+      - .github/workflows/flux-render.yaml
+
+# One run per PR; a new push supersedes the previous render.
+concurrency:
+  group: flux-render-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    name: Render
+    runs-on: ubuntu-latest
+    # 74 s measured locally on 16 cores; ubuntu-latest has 4 vCPU. Ceiling against a hung chart
+    # download, not a budget.
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # `uses: docker://` must be a literal, so the digest pin is repeated per step.
+      - name: flux-local test
+        uses: docker://ghcr.io/allenporter/flux-local:v8.4.0@sha256:c0be852e30f299ce6a220cc992b0c21a2a0b0684cc17713b9d718e18d9c8beff
+        with:
+          args: >-
+            test
+            --all-namespaces
+            --enable-helm
+            --path /github/workspace/kubernetes/flux/cluster
+            --verbose
+
+      # `build` takes the path positionally; only test/diff accept --path.
+      - name: flux-local build
+        uses: docker://ghcr.io/allenporter/flux-local:v8.4.0@sha256:c0be852e30f299ce6a220cc992b0c21a2a0b0684cc17713b9d718e18d9c8beff
+        with:
+          args: >-
+            build all
+            --enable-helm
+            --output-file /github/workspace/rendered.yaml
+            /github/workspace/kubernetes/flux/cluster
+
+      # Tool versions come from .mise.toml (validate.yaml still hardcodes its own — known drift);
+      # install_args limits the install to what the next step needs instead of the whole toolchain.
+      - name: Install kubeconform + yq
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: kubeconform yq
+
+      - name: kubeconform on rendered output
+        run: bash scripts/validate-rendered.sh rendered.yaml
+
+  diff:
+    name: Diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # 1Password secrets are in scope below: never run for a PR whose head lives in another repo.
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      contents: read
+      pull-requests: write # inert for the App token (scoped at mint time); documents intent
+    steps:
+      # The default ref of a pull_request checkout is refs/pull/N/merge (main + this PR), so the
+      # tip of main is the exact baseline: the diff is "what merging this PR changes".
+      - name: Checkout pull request
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: pull
+          persist-credentials: false
+
+      # flux-local resolves each Kustomization's spec.path from the git root, so the baseline
+      # must be a real checkout rather than an export.
+      - name: Checkout main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: default
+          ref: main
+          persist-credentials: false
+
+      # --strip-attrs drops the attributes every chart bump churns (chart label, version,
+      # checksum) so the diff shows only what actually changes in the cluster. --limit-bytes keeps
+      # each patch well under the 65 536-char PR comment cap.
+      - name: flux-local diff helmrelease
+        uses: docker://ghcr.io/allenporter/flux-local:v8.4.0@sha256:c0be852e30f299ce6a220cc992b0c21a2a0b0684cc17713b9d718e18d9c8beff
+        with:
+          args: >-
+            diff helmrelease
+            --unified 6
+            --path /github/workspace/pull/kubernetes/flux/cluster
+            --path-orig /github/workspace/default/kubernetes/flux/cluster
+            --strip-attrs "helm.sh/chart,checksum/config,app.kubernetes.io/version,chart"
+            --limit-bytes 10000
+            --all-namespaces
+            --sources "flux-system"
+            --output-file /github/workspace/diff-helmrelease.patch
+
+      # Both resource types in one job: a matrix would cost a second billed minute and a second
+      # comment.
+      - name: flux-local diff kustomization
+        uses: docker://ghcr.io/allenporter/flux-local:v8.4.0@sha256:c0be852e30f299ce6a220cc992b0c21a2a0b0684cc17713b9d718e18d9c8beff
+        with:
+          args: >-
+            diff kustomization
+            --unified 6
+            --path /github/workspace/pull/kubernetes/flux/cluster
+            --path-orig /github/workspace/default/kubernetes/flux/cluster
+            --strip-attrs "helm.sh/chart,checksum/config,app.kubernetes.io/version,chart"
+            --limit-bytes 10000
+            --all-namespaces
+            --sources "flux-system"
+            --output-file /github/workspace/diff-kustomization.patch
+
+      - name: Assemble comment
+        id: body
+        run: |
+          has_diff=false
+          {
+            echo '## Rendered diff vs `main` (flux-local)'
+            echo
+            for r in helmrelease kustomization; do
+              f="diff-$r.patch"
+              [ -s "$f" ] || continue
+              has_diff=true
+              case "$r" in
+                helmrelease) echo '### HelmReleases' ;;
+                *) echo '### Kustomizations' ;;
+              esac
+              echo '```diff'
+              cat "$f"
+              echo '```'
+              echo
+            done
+            echo "_Each patch is capped at 10 000 bytes (\`--limit-bytes\`); the full output is in the [job log](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})._"
+          } > comment.md
+          echo "has_diff=$has_diff" >> "$GITHUB_OUTPUT"
+          if [ "$has_diff" = true ]; then
+            cat diff-helmrelease.patch diff-kustomization.patch
+          else
+            echo "No rendered changes against main."
+          fi
+
+      # Same 1Password → GitHub App token pattern as labeler.yaml, so the comment is authored by
+      # the bot App. Minted only after the diff succeeded — no secrets in scope on a failed render.
+      - name: Load Secrets
+        id: load-secrets
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1 # zizmor: ignore[unpinned-tools]
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GITHUB_BOT_APP_CLIENT_ID: op://GitHub/github-bot/GITHUB_BOT_APP_CLIENT_ID
+          GITHUB_BOT_APP_PRIVATE_KEY: op://GitHub/github-bot/GITHUB_BOT_APP_PRIVATE_KEY
+
+      - name: Generate Token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ steps.load-secrets.outputs.GITHUB_BOT_APP_CLIENT_ID }}
+          private-key: ${{ steps.load-secrets.outputs.GITHUB_BOT_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: write
+
+      # Sticky (header-keyed): one comment per PR, rewritten on every push.
+      - name: Post diff comment
+        if: ${{ steps.body.outputs.has_diff == 'true' }}
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          header: flux-render-diff
+          path: comment.md
+
+      # Empty diff after an earlier non-empty one (change reverted): remove the stale comment
+      # rather than leave an outdated diff on the PR.
+      - name: Remove stale diff comment
+        if: ${{ steps.body.outputs.has_diff == 'false' }}
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          header: flux-render-diff
+          delete: true

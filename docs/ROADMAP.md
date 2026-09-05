@@ -9,6 +9,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
   - [Forgejo: Deferred Follow-ups (Actions Runner, WAN Exposure)](#forgejo-deferred-follow-ups-actions-runner-wan-exposure)
   - [WAN Failover Router: Host Header Rewrite](#wan-failover-router-host-header-rewrite)
   - [Renovate PR-Review Workflow: Cost/Bug Investigation, Re-enable](#renovate-pr-review-workflow-costbug-investigation-re-enable)
+  - [Flux Render CI: Migrate flux-local → flate](#flux-render-ci-migrate-flux-local--flate)
   - [CloudNativePG: Backup, PITR, and Per-App Provisioning](#cloudnativepg-backup-pitr-and-per-app-provisioning)
   - [Postgres NFS Backup: Restore Drill](#postgres-nfs-backup-restore-drill)
   - [~~Longhorn Storage Network (Multus + Storage VLAN)~~ — ABANDONED, superseded by Rook-Ceph](#longhorn-storage-network-multus--storage-vlan--abandoned-superseded-by-rook-ceph)
@@ -230,6 +231,21 @@ One contributing bug already found and fixed in the same session: on `workflow_d
 **Still to investigate before re-enabling:**
 - What is actually driving the cost overrun — re-runs triggered per PR update, large `WebFetch`/`WebSearch` volume (fetching full release notes/changelogs per run), an unbounded retry loop, or something else not yet identified.
 - Whether the `f522e97` grounding fix is sufficient on its own, or should be paired with tighter guardrails (e.g. narrower `--allowedTools`, capping WebFetch/WebSearch calls per run, gating manual `workflow_dispatch` runs the same way automatic runs are label-gated).
+
+### Flux Render CI: Migrate flux-local → flate
+
+**Status: shipped on flux-local (2026-09-05); flate blocked upstream.** `.github/workflows/flux-render.yaml` renders the whole Flux tree offline on every `kubernetes/**` PR — `flux-local test` as the merge gate, `flux-local build` → `scripts/validate-rendered.sh` (kubeconform on the *rendered* output), and a rendered-manifest diff vs `main` posted as one sticky PR comment by the bot App. Local equivalents: `task flux:test`, `task flux:validate`, `task flux:diff`; tool pinned as `pipx:flux-local` in `.mise.toml`. See [CLUSTER.md → CI checks](CLUSTER.md#ci-checks-github-actions).
+
+flux-local 8.4.0 is sunsetted upstream (prints a deprecation notice) in favour of [`home-operations/flate`](https://github.com/home-operations/flate). flate 0.6.5 was evaluated the same day and **never completes on this tree**: every `test`/`build` run stalls ~0.4 s in at 140-150 % CPU with the DAG dispatcher spawning millions of goroutines; even the documented `--concurrency 1` workaround timed out at 15 min. Our graph is clean (92 Kustomizations, 45 `dependsOn`, 0 dangling, 0 cycles) — the cause is upstream: [flate#828](https://github.com/home-operations/flate/issues/828) (non-deterministic scheduler hang under parallel reconcile) and [flate#937](https://github.com/home-operations/flate/issues/937) (`dependsOn` resolution defects, unreliable `diff` exit codes).
+
+**Migrate when:** `flate test all --path kubernetes/flux/cluster` completes on this tree in < 5 min locally (re-test after each flate minor; both issues closed is the signal). Then, same workflow shape:
+- replace the `docker://ghcr.io/allenporter/flux-local` steps with `jdx/mise-action` (`install_args: "ubi:home-operations/flate kubeconform yq"`) and `"ubi:home-operations/flate"` in `.mise.toml` (Renovate's mise manager supports the ubi backend)
+- `flate test all --path kubernetes/flux/cluster`; `flate build all … | scripts/validate-rendered.sh -` (flate wipes SOPS values to `..PLACEHOLDER_<key>..` rather than substituting — re-measure false positives before trusting the kubeconform pass)
+- `flate diff all --base origin/main -o github` — single checkout plus `git fetch --depth=1 origin main`; the `--strip-attr` defaults already match the flux-local list; `-o github` emits `@@ <path> @@` hunks for a ```diff fence, so the sticky-comment step is unchanged
+
+**Follow-ups (independent of the tool):**
+- Image pre-pull workflow (bykaj `image-pull.yaml`): diff `get images` between `main` and the PR, `talosctl image pull` on the self-hosted runner; Spegel then fans the layer out cluster-wide. Needs a talosconfig secret mounted into the `home-lab` runner scale set.
+- If branch protection is ever enabled (needs GitHub Pro or a public repo): replace the trigger-level `paths:` filter with a `filter` job + terminal `success` gate (bykaj `flux-local.yaml`), otherwise a required check that is skipped by the path filter blocks merges forever.
 
 ### CloudNativePG: Backup, PITR, and Per-App Provisioning
 
@@ -2273,5 +2289,6 @@ access turns out to be unavailable/undesirable at the time.
 | metrics-server                         | `kube-system`; HelmRelease `v3.13.0` (HelmRepository `https://kubernetes-sigs.github.io/metrics-server`); `kubectl top` and HPA resource metrics enabled; `--kubelet-insecure-tls` flag set; migration to `home-operations/charts-mirror` OCIRepository tracked in roadmap |
 | GitHub Actions Self-Hosted Runners (ARC + Claude PR Review) | ARC `gha-runner-scale-set-controller@0.14.1` + `home-lab` scale set deployed in `actions-runner-system`; Flux HelmReleases Ready; listener pod active; Renovate PR auto-review via `claude-code-action` wired |
 | ExternalSecrets `dataFrom` + `rewrite` migration | All 9 ExternalSecrets migrated to `dataFrom.extract` + `rewrite.regexp` pattern; 1Password field renames completed; all 12 cluster ExternalSecrets `SecretSynced: True` |
+| Flux Render CI (offline render on PRs) | `flux-render.yaml`: `flux-local test` gate + post-render kubeconform (`scripts/validate-rendered.sh`) + rendered-diff sticky PR comment; `pipx:flux-local` in `.mise.toml`, `task flux:*`. flate migration tracked above (blocked by flate#828/#937) |
 
 > **[Monitor — cp-03 storage disk]** At boot, `nvme1` (the Crucial CT2000P310SSD8, now a Ceph OSD disk) logs `nvme nvme1: using unchecked data buffer`. This is a one-time boot message — the Crucial P310 does not advertise the NVMe "metadata-in-data-buffer" feature; the driver falls back to a simpler DMA path silently. Confirmed count of 1, no I/O errors. Watch for additional occurrences or any `I/O error` / `nvme reset` lines: `talosctl dmesg --nodes 10.60.0.201 | grep -i nvme`. Also watch for OSD faults on cp-03 specifically: `kubectl -n rook-ceph get pods -l app=rook-ceph-osd -o wide | grep cp-03` (and `ceph osd tree` in the toolbox).

@@ -1415,6 +1415,19 @@ For a periodic audit of the repository's Flux configuration quality, schema vali
 
 Re-run the audit after adding or removing major components; the commands are listed in the [How to Re-Audit](REPO-AUDIT.md#how-to-re-audit) section.
 
+### CI checks (GitHub Actions)
+
+Two workflows validate `kubernetes/**` on every pull request. Both run on GitHub-hosted `ubuntu-latest` runners with no cluster access; they validate different artifacts and neither subsumes the other.
+
+| Workflow | What it validates | Catches | Misses |
+|----------|-------------------|---------|--------|
+| `validate.yaml` — `scripts/validate.sh` (kubeconform on the **source** manifests, every kustomize overlay built) | Manifests are well-formed against the Flux/Kubernetes OpenAPI schemas | Typos, wrong field types, schema-invalid CRs, overlays that don't build | Whether a `Kustomization.spec.path` or `dependsOn` target exists; whether a chart version resolves or accepts our values |
+| `flux-render.yaml` — flux-local (**offline render** of the whole Flux tree, Helm templating included) | The graph resolves and everything renders | Broken Helm values, missing chart versions, bad Kustomization wiring | Schema errors in the *source* (that is `validate.yaml`'s job) |
+
+`flux-render.yaml` has two jobs: `render` (`flux-local test` as the merge gate, then `flux-local build` to a file that `scripts/validate-rendered.sh` runs kubeconform over — the *rendered* output; the script also accepts `-` for stdin) and `diff` (rendered-manifest diff of the PR against `main`, posted as one sticky PR comment by the bot App — the same 1Password → GitHub App token flow as `labeler.yaml`). Run the same checks locally with `task validate`, `task flux:test`, `task flux:validate` and `task flux:diff`.
+
+flux-local is sunsetted upstream; its successor `flate` hangs on this tree (home-operations/flate#828/#937) — see the migration item in [ROADMAP.md](ROADMAP.md).
+
 ---
 
 ## Bootstrap Runbook

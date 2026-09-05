@@ -4,6 +4,105 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-05 — `flux-render-ci-flate-eval`
+
+### Goal
+Distil bykaj/home-ops's Renovate and CI patterns, then add an offline Flux render workflow
+(test gate, post-render kubeconform, rendered-diff PR comment) — choosing between `flate` and
+`flux-local` on measured behaviour against this tree rather than on upstream status.
+
+### What we did
+- Reviewed `tmp/bykaj-home-ops` Renovate config against ours (both ~440 lines): modular
+  self-referencing presets (`github>bykaj/home-ops//.renovate/*.json5` — resolved from the default
+  branch, so not PR-testable), self-hosted Renovate action with App token + `:disableRateLimiting`,
+  `minimumGroupSize` conditional grouping, `overridePackageName` for Talos Factory images,
+  `changelogUrl`, Grafana custom datasource with human-readable titles, generic `oci://` custom
+  manager, labels-as-code. Verified the unusual options exist in Renovate docs; recommended six
+  adoptions, advised against the preset split (costs PR-testability and our inline rationale).
+- Explained the three-producer label design (`labels.yaml` registry + `label-sync`
+  `delete-other-labels`, `labeler.yaml` path globs for `area/*`, Renovate for `type/*`/`renovate/*`)
+  and why the registry is load-bearing (neither Renovate nor labeler creates missing labels). User
+  landed `labels.yaml`, `label-sync.yaml` and `labeler.yaml` (commits `fe5c8c6`, `89beabc`,
+  `b7f74d9`). Compared its secret handling with `renovate-pr-review.yml`: 1Password → App
+  installation token scoped at mint time (`permission-*` inputs; the job `permissions:` block is
+  inert for an App token), step-output mode avoids the 2026-06-23 env-dump leak class, fork guard.
+- Quantified GitHub Actions usage (private repo, Free plan): 183 billed min/month, dominated by
+  `validate.yaml` — 182 runs × ~46 s each rounded up to a minute; the 10-min review job is free on
+  the self-hosted runner. Separated minutes quota / concurrency (self-hosting helps) from API rate
+  limits (it does not; App tokens do). Branch protection is unavailable on this plan (`403`), so
+  trigger-level `paths:` filters are safe and no `success` gate is needed yet.
+- Read bykaj's `flux-local.yaml` (test + diff → sticky comment, `success` aggregation gate) and
+  `image-pull.yaml` (image-set diff → `talosctl image pull` on one node, Spegel fans out) and
+  mapped them against `validate.yaml`: complementary — kubeconform validates source schemas,
+  flux-local validates that the graph resolves and renders; `flux-local test` does no schema
+  validation at all.
+- Found `flux-local` sunsetted (8.4.0 prints a deprecation notice) in favour of
+  `home-operations/flate`. Evaluated flate 0.6.5 on this tree: every `test`/`build` run stalled
+  ~0.4 s in at 140–150 % CPU; a SIGQUIT goroutine dump showed 16 M goroutines in the DAG
+  dispatcher; `--concurrency 1` (the documented workaround) timed out at 15 min. Our graph is
+  clean (92 Kustomizations, 45 `dependsOn`, 0 dangling, 0 cycles) → upstream bugs flate#828 and
+  #937. Several early "44 s success" readings were artefacts (the "reconcile complete" line is a
+  shutdown summary; orphaned processes from `TaskStop` were also contending — killed them).
+- Measured flux-local 8.4.0 instead: `test --all-namespaces --enable-helm` 152 passed in 74 s;
+  `build all` 13 s; `diff` 18–19 s, empty patch on no change, a correct 532-byte rendered patch
+  for a 3-line values edit in a scratch `git clone --shared` (baseline must be a git checkout —
+  flux-local resolves `spec.path` from the git root). kubeconform on the render: 847 valid,
+  0 invalid after skipping `ConfigMapList` (dragonfly-operator List quirk) and dropping 57
+  kind-less docs (helm 4 `Pulled:/Digest:` summaries — absent in the CI image's helm 3). No
+  secret-var false positives: flux-local substitutes placeholders for SOPS `cluster-secrets`.
+- Built `.github/workflows/flux-render.yaml` (jobs `render`: test → build → kubeconform via
+  `mise-action`-installed tools; `diff`: two checkouts → helmrelease + kustomization diffs →
+  one sticky comment as the bot App, token minted after the diff, stale comment deleted on empty
+  delta), `scripts/validate-rendered.sh`, `pipx:flux-local` in `.mise.toml`, `task
+  flux:test|diff|validate`, and doc updates. Verified locally end-to-end (`mise install` 10 s,
+  `flux:test` 152 passed, `flux:validate` 847/0/0 with the corrected 57-dropped count, `flux:diff`
+  precondition rejects a bad `BASE`).
+- `/code-review` afterwards caught that `flux-render.yaml` had copied labeler.yaml's *pre-fix*
+  vault path (`op://Homelab/...`; corrected to `op://GitHub/...` in `b7f74d9` mid-session) — the
+  `diff` job would have failed at `Load Secrets` on every PR. Fixed, plus: inventory note now
+  records `github-bot` as living in the separate `GitHub` vault; the script resolves a relative
+  file argument before `cd`-ing to the repo root, accepts `-` for stdin (as the ROADMAP migration
+  step already documented), and does a single yq pass. Left as follow-up: Renovate keeps the
+  `pipx:flux-local` and `docker://…flux-local` pins in separate PRs (no cross-datasource group —
+  that pattern already misfired once here).
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.github/workflows/flux-render.yaml` | New: two-job offline render workflow (test gate + post-render kubeconform; rendered-diff sticky PR comment) |
+| `scripts/validate-rendered.sh` | New: render (optional) → drop kind-less docs → kubeconform with `validate.sh` flags + `-skip=ConfigMapList` |
+| `.mise.toml` | Added `"pipx:flux-local" = "8.4.0"` (first pipx backend use) |
+| `Taskfile.yaml` | Added `flux:test`, `flux:diff` (shared-clone baseline, `set -euo pipefail`), `flux:validate` |
+| `docs/CLUSTER.md` | New *CI checks (GitHub Actions)* subsection comparing `validate.yaml` and `flux-render.yaml` |
+| `docs/REPO-AUDIT.md` | Re-audit step 2b (`task flux:test && task flux:validate`); rendered-pass false-positive note |
+| `docs/ROADMAP.md` | New *Flux Render CI: Migrate flux-local → flate* item (precondition, migration steps, follow-ups); Completed row |
+| `docs/EXTERNAL-SECRETS.yaml` | Added `ci` mechanism and `github-bot` item (consumers `labeler.yaml`, `flux-render.yaml`); step-5 grep covers `.github/` |
+| `.github/labels.yaml`, `.github/workflows/label-sync.yaml`, `.github/workflows/labeler.yaml` | Added by user during the session (`fe5c8c6`, `89beabc`, `b7f74d9`) |
+
+### Key decisions
+- **flux-local now, flate later** — flate is the maintained successor but never completed a run
+  here; flux-local's container image is self-contained (helm 3 + kustomize), so its sunset only
+  means no further fixes. The workflow is named `flux-render.yaml` (not after either tool) so the
+  swap is a step-level change; the ROADMAP item records the exact precondition (`flate test all`
+  completes locally in < 5 min).
+- Separate workflow rather than folding into `validate.yaml` (user choice): the two validate
+  different artefacts, and `validate` stays a cheap unconditional smoke test.
+- Trigger-level `paths:` filter and no `success` gate: no branch protection on this plan, no
+  conditional jobs; bykaj's filter job + gate pattern is recorded as the migration if protection
+  is ever enabled (a skipped required check blocks merges forever).
+- No `${VAR}` false-positive filter in the rendered pass — measured unnecessary with flux-local
+  (placeholders substituted); the plan's jq/doc-drop filter was dropped rather than shipped unused.
+- App token minted *after* the diff succeeds (no secrets in scope on a failed render); both diff
+  types in one job with one sticky comment (a matrix would bill a second minute and post twice).
+- `--limit-bytes 10000` per patch and `--strip-attrs` (chart label/version/checksum) copied from
+  bykaj; comment footer points at the job log for truncated output.
+- Pre-existing loose ends left untouched and reported: `labeler.yaml` references a missing
+  `.github/labeler.yaml` config; `labels.yaml` lacks `renovate/mise` while `label-sync` deletes
+  unknown labels; `validate.yaml` tool versions drift from `.mise.toml` and `checkout@v7` is
+  unpinned.
+
+---
+
 ## 2026-09-05 — `ceph-tentacle-upgrade`
 
 ### Goal

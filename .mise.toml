@@ -27,3 +27,7 @@ flux-operator-mcp = "0.59.0"
 kustomize = "5.8.1"
 kubeconform = "0.8.0"
 crane = "0.22.1"
+# pipx backend (first use in this file). flux-local is sunsetted upstream — its successor `flate`
+# hangs on this tree (home-operations/flate#828/#937, see docs/ROADMAP.md). Renovate's mise manager
+# tracks pipx:* via PyPI. Needs helm + kustomize on PATH (both pinned above).
+"pipx:flux-local" = "8.4.0"

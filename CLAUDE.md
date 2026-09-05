@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-09-05 | `flux-render-ci-flate-eval` | Added flux-render CI (flux-local test + post-render kubeconform + diff comment); flate 0.6.5 hangs on this tree (#828) |
 > | 2026-09-05 | `ceph-tentacle-upgrade` | Upgraded Ceph 19.2.6 → 20.2.4 Tentacle in 4.5 min (rook mgr module off first, #18124); fixed open-webui Job TTL flap |
 > | 2026-09-04 | `rook-post-upgrade-hygiene-configkey-audit` | Dropped dead csi-metrics ServiceMonitor (root-caused upstream), audited config-key store for CVE-2026-50152, rotated jwt |
 > | 2026-09-04 | `ceph-cve-2025-30156-key-rotation` | Landed Ceph 19.2.6 + AES256K daemon key rotation (CVE-2025-30156) in one change; 10-min HEALTH_ERR window as designed |
@@ -11,7 +12,6 @@
 > | 2026-09-04 | `bifrost-image-tag-misfire` | Traced bifrost UpgradeFailed to Renovate mistaking a Helm chart artifact for an image; pinned v2.0.0, added guard rule |
 > | 2026-09-04 | `truenas-envoy-backend-https` | Moved TrueNAS/home-assistant to Envoy `Backend`; pinned TrueNAS ALPN to http/1.1, fixing WebSocket UI over HTTPS backend |
 > | 2026-09-03 | `ceph-public-network-migration-execute` | Executed 5-phase Ceph public_network migration to storage bond; found & fixed Rook mon-ip Node-object limitation |
-> | 2026-09-03 | `ceph-storage-bond-migration-plan` | Resolved both mon-migration/pod-reachability blockers; drafted & approved 5-phase Ceph public_network migration plan |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
