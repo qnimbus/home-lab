@@ -65,6 +65,20 @@ Distil bykaj/home-ops's Renovate and CI patterns, then add an offline Flux rende
   step already documented), and does a single yq pass. Left as follow-up: Renovate keeps the
   `pipx:flux-local` and `docker://…flux-local` pins in separate PRs (no cross-datasource group —
   that pattern already misfired once here).
+- CI verification after push (commit `3000a37`), four throwaway PRs from `.claude/worktrees/`
+  branches, all closed unmerged and deleted: **#108** comment-only spegel values edit → Render
+  green (1m52s), Diff green (1m43s), sticky comment posted by `qnimbus-homelab-assistant[bot]`
+  (proves `docker://…@sha256` parses and the 1Password → App-token path works) — showing a
+  *Kustomizations* diff, correctly: `configMapGenerator` renames the values ConfigMap on any byte
+  change; real `nodeSelector` change → comment rewritten in place (count stayed 1) with a
+  *HelmReleases* hunk; restoring the file from `main` triggered **no run at all** (`paths` filter is
+  evaluated against the PR's cumulative diff — `changedFiles=0`), so a render-neutral `ks.yaml`
+  comment was pushed instead → empty diff → stale comment deleted (count 0). **#109** spegel chart
+  `0.0.999` → `FetchReference … not found`, 1 failed/151 passed, Render red. **#110** cilium
+  `bpf.masquerade: not-a-bool` → `values don't meet the specifications of the schema(s)`, Render
+  red. **#111** docs-only → `Flux Render` not triggered. Render jobs 1m17s–2m03s, Diff 58s–1m50s.
+  Both findings (ConfigMap-hash diffs, full-revert leaves a stale comment) recorded in
+  CLUSTER.md → CI checks.
 
 ### Files changed
 | File | Change |

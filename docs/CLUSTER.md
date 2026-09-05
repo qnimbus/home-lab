@@ -1426,6 +1426,10 @@ Two workflows validate `kubernetes/**` on every pull request. Both run on GitHub
 
 `flux-render.yaml` has two jobs: `render` (`flux-local test` as the merge gate, then `flux-local build` to a file that `scripts/validate-rendered.sh` runs kubeconform over — the *rendered* output; the script also accepts `-` for stdin) and `diff` (rendered-manifest diff of the PR against `main`, posted as one sticky PR comment by the bot App — the same 1Password → GitHub App token flow as `labeler.yaml`). Run the same checks locally with `task validate`, `task flux:test`, `task flux:validate` and `task flux:diff`.
 
+Expect a *Kustomizations* diff even for a comment-only edit to an `app/helm/values.yaml`: those files are fed through `configMapGenerator`, so any byte change renames the generated `<app>-values-<hash>` ConfigMap and updates the HelmRelease's `valuesFrom` reference — a genuine change Flux applies, not noise. A *HelmReleases* section appears only when the chart's rendered output changes.
+
+Known limitation of the trigger-level `paths` filter: GitHub evaluates it against the PR's cumulative diff vs `main`, so a push that fully reverts a PR's `kubernetes/**` changes triggers no run — the previous diff comment stays until the next push that does touch `kubernetes/**` (verified 2026-09-05, PR #108). The stale-comment cleanup only fires for pushes that still touch `kubernetes/**` but render identically.
+
 flux-local is sunsetted upstream; its successor `flate` hangs on this tree (home-operations/flate#828/#937) — see the migration item in [ROADMAP.md](ROADMAP.md).
 
 ---
