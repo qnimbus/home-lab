@@ -11,6 +11,72 @@ Upgrade Ceph from Squid `v19.2.6` to Tentacle `v20.2.x` (≥ 20.2.4, never 20.2.
 review the Tentacle release notes and Rook's ceph-upgrade guide, disable the `rook` mgr module first,
 loosen the Renovate pin, land the bump via GitOps and watch it land.
 
+### What we did
+- Research: quay.io tags (v20.2.4 newest, built 2026-08-19, same four CVE fixes as 19.2.6); Tentacle
+  release notes 20.2.0–20.2.4 (RGW/MDS/NVMe-oF/EC items don't apply to an RBD-only cluster; `restful`
+  and `zabbix` mgr modules removed; new mClock 1000-IOPS SSD floor sits below every measured OSD
+  capacity here); Rook's ceph-upgrade guide (disable the `rook` mgr module first; 20.2.0 corrupts data
+  with `readAffinity`, which we enable).
+- Found the decisive blocker: rook/rook#18124 — on 20.2.3/20.2.4 the prometheus mgr module calls
+  `node_proxy_fullreport` on every scrape, the rook orchestrator doesn't implement it, and the mgr
+  records a module crash every ~15s forever (permanent HEALTH_WARN, unbounded crash list, eventually
+  `ceph crash` itself breaks). Upstream fix (tracker 79106) not in a Tentacle point release. Verified
+  in the v1.20.7 tag that Rook force-disables the module on 20.2.2–20.2.4
+  (`rookModuleDisabledForCephVersion`) and, via backported #18276, clears `ceph orch set backend`
+  before disabling it.
+- Verified from Rook source that nothing else changes on a major bump: `ShouldRotateCephxKeys` fires
+  only on a `keyGeneration` bump or keyType change (no re-rotation), and `osd.go` sets
+  `require-osd-release` itself once all OSDs report one version. Ceph's `PyModuleRegistry` only
+  raises `MGR_MODULE_ERROR` for missing *always-on* modules, so a dangling `restful` entry would have
+  been cosmetic only.
+- Live pre-checks: `restful`, `iostat`, `nfs` enabled (Squid's `mgr_initial_modules` default, not
+  ours), `require_osd_release squid`, `min_mon_release 19`, no crashes.
+- Commit 1 (`c9d41d3`): `mgr.modules` `rook: false` + `restful: false` with the why. `/code-review`
+  confirmed the mechanics against the v1.20.7 tag; fixed its two doc findings (ROADMAP item marked in
+  progress, cephImage comment cross-references the module entry). Watched it land: modules off,
+  `ceph orch status` → "No orchestrator configured", HEALTH_OK, dashboard + prometheus endpoints up.
+- Commit 2 (`b0bb9b6`, `feat!`): `cephImage.tag: v20.2.4`, Renovate pin `^v20\.2\.([4-9]|[1-9]\d+)$`
+  (regex unit-tested: accepts 20.2.4+, rejects 20.2.0–3, 20.1.x RCs, 19.x, 21.x). Rendered chart and
+  `task validate` green.
+- Watched the rollout with a 30s Monitor: 10:36:01 "upgrading ceph cluster to 20.2.4"; mons+mgrs by
+  10:36:32; OSDs one node-pair at a time (transient `OSD_DOWN`/`OSD_HOST_DOWN` HEALTH_WARN per pair,
+  normal with 2 OSDs/NVMe); all 25 deployments on 20.2.4 at 10:40:02; Rook's own guard logged
+  "disabling the rook mgr module for Ceph 20.2.4" (no-op); `require-osd-release tentacle` set
+  10:40:34; HEALTH_OK by 10:41. **4.5 minutes, no HEALTH_ERR, no pages.**
+- Final verification: `ceph versions` 15×20.2.4, `min_mon_release 20`, `status.cephx` untouched
+  (gen 2), 0 crashes, toolbox on 20.2.4, HelmRelease v13 succeeded, all Kustomizations Ready.
+- Side finding: the `open-webui` Kustomization failed for 2 min at 10:41 when the cluster
+  Kustomization flipping Ready re-triggered it — its bootstrap Job had `ttlSecondsAfterFinished:
+  3600` against a 1h interval, so Flux re-ran the (idempotent) Job hourly and, when a reconcile hit
+  the TTL deletion window, the server-side dry-run failed on the terminating Job's immutable pod
+  template, paging the Flux error Alert. Dropped the TTL (applying an unchanged manifest over a
+  completed Job is a no-op — the 10:30 reconcile proved it). Also noted Rook's harmless "timed out
+  waiting for PVC size" log line on every OSD reconcile with no PVC OSDs (fires pre-upgrade too).
+- Docs: ROADMAP Tentacle item ✅ with the observed timeline and the open-webui fix; cluster-doctor
+  state line → Ceph 20.2.4 Tentacle, `rook` module deliberately disabled.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/apps/rook-ceph/rook-ceph/cluster/app/helmrelease.yaml` | `rook` + `restful` mgr modules disabled; `cephImage.tag` → `v20.2.4`; comment history |
+| `renovate.json5` | Ceph pin `^v19.2.z` → `^v20.2.(>=4)` |
+| `kubernetes/apps/ai/open-webui/app/job-bootstrap-admin.yaml` | Dropped `ttlSecondsAfterFinished`, documented the re-apply race |
+| `.claude/agents/cluster-doctor.md` | Rook-Ceph state line → Ceph 20.2.4, rook module off |
+| `docs/ROADMAP.md` | Tentacle item ✅ with timeline; open-webui Job race ✅ |
+| `docs/SESSIONS.md` | This record |
+| `CLAUDE.md` | Session table row |
+
+### Key decisions
+- Disabled the `rook` mgr module in Git as a separate, earlier commit even though Rook 1.20.7
+  force-disables it on 20.2.2–20.2.4: the guide says *before* upgrading, a separate step gives a
+  zero-crash window, and the version guard vanishes the moment the range is left — Git should hold the
+  decision, not the operator's blocklist.
+- Renovate floor at 20.2.4, not 20.2.1: 20.2.0 is a data-corruption bug for us and 20.2.1–20.2.3
+  would have been a CVE regression relative to the 19.2.6 already running.
+- Fixed the open-webui Job TTL in this session rather than parking it: one line, and each blip
+  pages the shared Flux error channel, which erodes trust in real pages. Dropping the TTL (not
+  `force: "true"`) so the Job stops re-running hourly as well.
+
 ---
 
 ## 2026-09-04 — `rook-post-upgrade-hygiene-configkey-audit`

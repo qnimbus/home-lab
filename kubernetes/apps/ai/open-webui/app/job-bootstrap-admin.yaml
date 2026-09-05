@@ -5,7 +5,14 @@ metadata:
   name: open-webui-bootstrap-admin
 spec:
   backoffLimit: 3
-  ttlSecondsAfterFinished: 3600
+  # No ttlSecondsAfterFinished on purpose (removed 2026-09-05). With a 1h TTL and a 1h
+  # Kustomization interval, Flux re-created this Job every hour (idempotent, but a pointless
+  # pod launch) and, whenever a reconcile landed inside the TTL deletion window, its
+  # server-side dry-run failed on the terminating Job's immutable pod template
+  # ("Job.batch ... is invalid: spec.template: Invalid value") - a 2-minute blip that paged
+  # the Flux error Alert each time. Applying an unchanged manifest over a *completed* Job is a
+  # no-op, so leaving the finished Job in place is the stable state. To re-run the bootstrap
+  # deliberately: `kubectl -n ai delete job open-webui-bootstrap-admin` and Flux recreates it.
   # Bounds the health-check wait loop below, which otherwise has no timeout of its own -
   # without this, a pod stuck waiting on a permanently-unhealthy app would run forever
   # instead of ever counting against backoffLimit.
