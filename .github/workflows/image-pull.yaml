@@ -1,0 +1,134 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Image Pull
+
+# Pre-warms new/changed container images onto a node before a PR merges, modelled on bykaj's
+# image-pull.yaml. `extract` runs `flux-local get cluster --enable-images` against both `main`
+# and the PR head, `diff` computes the set of images only the PR introduces, and `pull` runs
+# `talosctl image pull` for each on a dedicated self-hosted runner. Spegel (DaemonSet, all 5
+# nodes — kubernetes/apps/kube-system/spegel/) then fans the pulled layer out cluster-wide, so
+# Flux's eventual reconcile after merge doesn't pay the cold-pull tax.
+#
+# `pull` runs on `home-lab-image-pull`, a dedicated runner scale set with zero Kubernetes RBAC —
+# its only privilege is a Talos ServiceAccount cert (os:admin; see
+# runners/home-lab-image-pull/talos-serviceaccount.yaml). `home-lab` (cluster-admin) is
+# deliberately not used here: its own rbac.yaml forbids pointing an auto-triggered workflow at it.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      # trigger-level filter instead of a separate billed "filter" job (flux-render.yaml convention)
+      - kubernetes/**
+
+concurrency:
+  group: image-pull-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  extract:
+    name: Image Pull - Extract Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        branch:
+          - default
+          - pull
+      fail-fast: false
+    outputs:
+      default: ${{ steps.extract.outputs.default }}
+      pull: ${{ steps.extract.outputs.pull }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ matrix.branch == 'default' && github.event.repository.default_branch || '' }}
+
+      - name: Gather Images
+        uses: docker://ghcr.io/allenporter/flux-local:v8.4.0@sha256:c0be852e30f299ce6a220cc992b0c21a2a0b0684cc17713b9d718e18d9c8beff
+        with:
+          args: >-
+            get cluster
+            --all-namespaces
+            --path /github/workspace/kubernetes/flux/cluster
+            --enable-images
+            --only-images
+            --output json
+            --output-file images.json
+
+      - name: Extract Images
+        id: extract
+        run: |-
+          echo "${{ matrix.branch }}=$(jq --compact-output '.' images.json)" >> "$GITHUB_OUTPUT"
+
+          echo "## Branch ${{ matrix.branch }} images" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          jq '.' images.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  diff:
+    if: ${{ needs.extract.outputs.default != needs.extract.outputs.pull }}
+    needs: extract
+    name: Image Pull - Diff Images
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      images: ${{ steps.diff.outputs.images }}
+    steps:
+      - name: Diff Images
+        id: diff
+        run: |-
+          images=$(jq --compact-output --null-input \
+              --argjson f1 '${{ needs.extract.outputs.default }}' \
+              --argjson f2 '${{ needs.extract.outputs.pull }}' \
+              '$f2 - $f1' \
+          )
+          echo "images=${images}" >> "$GITHUB_OUTPUT"
+
+          echo '## New images to pull' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          echo "$images" | jq >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  pull:
+    if: ${{ needs.diff.outputs.images != '[]' && github.event.pull_request.head.repo.full_name == github.repository }}
+    needs: diff
+    name: Image Pull - Pull Images
+    runs-on: home-lab-image-pull
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        image: ${{ fromJSON(needs.diff.outputs.images) }}
+      max-parallel: 4
+      fail-fast: false
+    env:
+      MATRIX_IMAGE: ${{ matrix.image }}
+    steps:
+      # mise-pinned, not a curl-latest install — matches .mise.toml's talosctl version.
+      - name: Install talosctl
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          install_args: talosctl
+
+      - name: Pull Image
+        run: talosctl --nodes "$NODE" image pull "${MATRIX_IMAGE}"
+
+  success:
+    if: ${{ !cancelled() }}
+    needs: pull
+    name: Image Pull - Success
+    runs-on: ubuntu-latest
+    steps:
+      - name: Any jobs failed?
+        if: ${{ contains(needs.*.result, 'failure') }}
+        run: exit 1
+
+      - name: All jobs passed or skipped?
+        if: ${{ !contains(needs.*.result, 'failure') }}
+        run: echo "All jobs passed or skipped" && echo "${{ toJSON(needs.*.result) }}"

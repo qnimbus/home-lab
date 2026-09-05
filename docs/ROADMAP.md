@@ -245,7 +245,6 @@ flux-local 8.4.0 is sunsetted upstream (prints a deprecation notice) in favour o
 - `flate diff all --base origin/main -o github` — single checkout plus `git fetch --depth=1 origin main`; the `--strip-attr` defaults already match the flux-local list; `-o github` emits `@@ <path> @@` hunks for a ```diff fence, so the sticky-comment step is unchanged
 
 **Follow-ups (independent of the tool):**
-- Image pre-pull workflow (bykaj `image-pull.yaml`): diff `get images` between `main` and the PR, `talosctl image pull` on the self-hosted runner; Spegel then fans the layer out cluster-wide. Needs a talosconfig secret mounted into the `home-lab` runner scale set.
 - If branch protection is ever enabled (needs GitHub Pro or a public repo): replace the trigger-level `paths:` filter with a `filter` job + terminal `success` gate (bykaj `flux-local.yaml`), otherwise a required check that is skipped by the path filter blocks merges forever.
 
 ### Renovate on an In-Cluster Runner
@@ -2276,6 +2275,7 @@ access turns out to be unavailable/undesirable at the time.
 | Area                          | Notes                                           |
 |-------------------------------|-------------------------------------------------|
 | Renovate: Mend app → self-hosted workflow | `.github/workflows/renovate.yaml` (2026-09-05): `renovatebot/github-action` v46.2.5 / Renovate 44.65.5 pinned, bot App token via 1Password, every 6 h + push-on-config + dispatch (`dryRun`, `logLevel`); `renovate-pr-review.yml` author gate moved to `qnimbus-homelab-assistant[bot]`. In-cluster runner parked — see [above](#renovate-on-an-in-cluster-runner) |
+| Image pre-pull workflow (bykaj `image-pull.yaml`) | `.github/workflows/image-pull.yaml` (2026-09-05): diffs `flux-local get cluster --enable-images` between `main` and the PR, `talosctl image pull`s new ones on a dedicated `home-lab-image-pull` runner (Talos `ServiceAccount` cert, `os:admin` — no confirmed narrower role covers image pull, and no Kubernetes RBAC at all), Spegel fans the layer out cluster-wide. Not `home-lab` — its `rbac.yaml` forbids auto-triggered workflows on the cluster-admin scale set. Reused tuppr's existing `kubernetesTalosAPIAccess` mechanism (`talos/patches/controller/machine-features.yaml`, control-plane-only, `allowedKubernetesNamespaces` extended to `actions-runner-system`) instead of a static talosconfig secret |
 | Persistent Storage (OpenEBS + Rook-Ceph) | OpenEBS LocalPV live; **Longhorn removed**, superseded by Rook-Ceph v1.19.6 (`ceph-block` default SC, `size=3`/`min_size=2`); the per-node dedicated disks (cp-01/cp-02: Kingston SNV3S1000G, cp-03: Crucial CT2000P310SSD8) are now wiped-to-raw Ceph OSDs on the `10.200.0.0/24` storage bond. Longhorn 3-replica ran 2026-05-23 → 2026-06-08 |
 | Pod Topology: scheduling concentration on cp-03   | Fixed imbalance; CoreDNS + Envoy proxies spread to 3 replicas 1/node (`DoNotSchedule`); Flux/cert-manager/ESO at 2 replicas + topology spread; stateful workloads (Prometheus/Alertmanager) accepted on cp-03 |
 | Talos machine configs         | 3 CP nodes, patches, schematic registered       |

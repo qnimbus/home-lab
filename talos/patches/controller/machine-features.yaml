@@ -5,4 +5,5 @@ machine:
       allowedRoles:
         - os:admin
       allowedKubernetesNamespaces:
-        - system-upgrade   # used by tuppr for Talos/k8s upgrades
+        - system-upgrade         # used by tuppr for Talos/k8s upgrades
+        - actions-runner-system  # home-lab-image-pull runner's Talos ServiceAccount (image pre-pull CI)

@@ -1,0 +1,15 @@
+---
+# No ClusterRoleBinding, no Role/RoleBinding here — this ServiceAccount is intentionally
+# bound to nothing. image-pull.yaml's `pull` job only runs `talosctl image pull`, which talks to
+# the Talos API (authorized separately via the talos.dev/v1alpha1 ServiceAccount in
+# talos-serviceaccount.yaml) and never touches the Kubernetes API. Explicitly setting
+# template.spec.serviceAccountName in helmrelease.yaml is required: leaving it unset lets the
+# gha-runner-scale-set chart auto-provision its own namespace-scoped Role (pods/exec/log, jobs,
+# secrets — all with create+delete) — see chart templates/kube_mode_role.yaml. That auto-Role
+# would grant this job Kubernetes-API privilege it has no use for, same rationale as
+# home-lab-readonly/rbac.yaml.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: home-lab-image-pull
+  namespace: actions-runner-system

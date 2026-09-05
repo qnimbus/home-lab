@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-09-05 | `image-pull-workflow` | Added image pre-pull CI (talosctl on a new no-RBAC runner via Talos ServiceAccount cert); rolled out live to 3 CP nodes |
 > | 2026-09-05 | `renovate-self-hosted-actions` | Replaced Mend-hosted Renovate app with a self-hosted `renovate.yaml` workflow (bot App, every 6h); parked in-cluster runner on RBAC/uid findings |
 > | 2026-09-05 | `flux-render-ci-flate-eval` | Added flux-render CI (flux-local test + post-render kubeconform + diff comment); flate 0.6.5 hangs on this tree (#828) |
 > | 2026-09-05 | `ceph-tentacle-upgrade` | Upgraded Ceph 19.2.6 → 20.2.4 Tentacle in 4.5 min (rook mgr module off first, #18124); fixed open-webui Job TTL flap |
@@ -11,7 +12,6 @@
 > | 2026-09-04 | `ceph-cve-2025-30156-key-rotation` | Landed Ceph 19.2.6 + AES256K daemon key rotation (CVE-2025-30156) in one change; 10-min HEALTH_ERR window as designed |
 > | 2026-09-04 | `rook-v120-upgrade-csi-drivers-draft` | Upgraded Rook to v1.20.7 with new ceph-csi-drivers chart + lockstep HR gates; caught hidden Ceph 19→20 bump, pinned 19.2.3 |
 > | 2026-09-04 | `bifrost-image-tag-misfire` | Traced bifrost UpgradeFailed to Renovate mistaking a Helm chart artifact for an image; pinned v2.0.0, added guard rule |
-> | 2026-09-04 | `truenas-envoy-backend-https` | Moved TrueNAS/home-assistant to Envoy `Backend`; pinned TrueNAS ALPN to http/1.1, fixing WebSocket UI over HTTPS backend |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
@@ -330,6 +330,7 @@ See **[CLUSTER.md → Key Architectural Decisions](docs/CLUSTER.md#key-architect
 | External Secrets + 1Password  | ✅ Done    | ESO + 1Password Connect deployed; `ClusterSecretStore` live |
 | Split DNS (ExternalDNS)       | ✅ Done    | `external-dns-cloudflare` (envoy-external, proxied) + `external-dns-unifi` (all gateways + services, webhook sidecar); chart v1.21.1 |
 | Renovate                      | ✅ Done    | `renovate.json5` + self-hosted `renovate.yaml` workflow (bot App, every 6 h; replaced the Mend app 2026-09-05); tracks Talos + K8s via `separateMinorPatch`; `talosctl` + `etcd` excluded (must match server version) |
+| Image pre-pull (`image-pull.yaml`) | ✅ Done | Diffs container images between `main` and a PR, `talosctl image pull`s new ones on a dedicated `home-lab-image-pull` runner (Talos ServiceAccount cert, `os:admin`, no Kubernetes RBAC), Spegel fans the layer out cluster-wide before merge |
 | Talos + Kubernetes upgrades   | ✅ Done    | tuppr deployed in `system-upgrade`; `TalosUpgrade` + `KubernetesUpgrade` CRDs at current running versions; upgrades triggered by Renovate PRs |
 | Open WebUI                    | ✅ Done    | `ai` namespace; CNPG-backed (not SQLite), Dragonfly websocket manager, pre-provisioned admin (no open signup window), KEDA scales to 0 on Postgres/Dragonfly outage. No LLM backend wired — added manually post-deploy. See [CLUSTER.md → Running Components](docs/CLUSTER.md) |
 

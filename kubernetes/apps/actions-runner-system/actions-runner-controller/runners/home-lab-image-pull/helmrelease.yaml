@@ -1,0 +1,58 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: home-lab-image-pull
+  namespace: actions-runner-system
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: gha-runner-scale-set
+    namespace: flux-system
+  values:
+    githubConfigUrl: "https://github.com/qnimbus/home-lab"
+    githubConfigSecret: home-lab-image-pull-runner-secret
+    minRunners: 0
+    maxRunners: 4 # matches image-pull.yaml's pull-job max-parallel
+    containerMode:
+      type: kubernetes
+      kubernetesModeWorkVolumeClaim:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: openebs-hostpath
+        resources:
+          requests:
+            storage: 5Gi # no builds here, just talosctl + a container image pull; small on purpose
+    controllerServiceAccount:
+      namespace: actions-runner-system
+      name: actions-runner-controller
+    template:
+      spec:
+        # Explicit, no-RBAC ServiceAccount (see rbac.yaml comment) — required even though it
+        # has zero bound Kubernetes permissions, to suppress the chart's auto-RBAC for kube mode.
+        serviceAccountName: home-lab-image-pull
+        containers:
+          - name: runner
+            # renovate: datasource=docker depName=ghcr.io/home-operations/actions-runner
+            image: ghcr.io/home-operations/actions-runner:2.336.0
+            command:
+              - /home/runner/run.sh
+            env:
+              - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+                value: "false"
+              # talosctl needs a node to target; Spegel (DaemonSet, all 5 nodes) fans the pulled
+              # layer out cluster-wide, so "whichever node this pod landed on" is enough.
+              - name: NODE
+                valueFrom:
+                  fieldRef:
+                    fieldPath: status.hostIP
+            volumeMounts:
+              - mountPath: /var/run/secrets/talos.dev
+                name: talos
+                readOnly: true
+        volumes:
+          # Populated by Talos itself from talos-serviceaccount.yaml — not 1Password.
+          - name: talos
+            secret:
+              secretName: home-lab-image-pull

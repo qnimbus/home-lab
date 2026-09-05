@@ -4,6 +4,84 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-05 — `image-pull-workflow`
+
+### Goal
+Add a GitHub Actions image pre-pull workflow, modelled on bykaj's `image-pull.yaml`, that diffs
+container images between `main` and a PR and pre-pulls new ones onto the cluster before merge.
+
+### What we did
+- Read `tmp/bykaj-home-ops/.github/workflows/image-pull.yaml` and this repo's ARC runner scale
+  sets, and found a real conflict up front: `home-lab` (the only cluster-admin scale set) has an
+  explicit rule in its own `rbac.yaml` forbidding auto-triggered workflows, but bykaj's `pull` job
+  runs on `pull_request` — auto-triggered by definition.
+- Went to plan mode. Researched Talos API RBAC (`docs.siderolabs.com/talos/v1.13/security/rbac`):
+  confirmed no role narrower than `os:admin` covers image pull (`os:reader`/`os:operator` both
+  enumerate their grants, and image pull is in neither). Found the cluster already uses Talos's
+  native `talos.dev/v1alpha1 ServiceAccount` CRD (`kubernetesTalosAPIAccess`) for tuppr, scoped to
+  the `system-upgrade` namespace — no static-talosconfig-secret pattern exists anywhere in the
+  repo to imitate instead.
+- Asked the user two `AskUserQuestion` rounds: resolved to build a **new dedicated runner scale
+  set** (`home-lab-image-pull`, zero Kubernetes RBAC) rather than amend `home-lab`'s policy or drop
+  the `pull_request` trigger, and to reuse the existing `actions-runner-system` namespace rather
+  than create a new one.
+- Caught and corrected a factual error in the drafted plan before executing anything: the
+  `kubernetesTalosAPIAccess` patch lives in `talos/patches/controller/machine-features.yaml` — a
+  `controlPlane:`-only patch (3 nodes) per `talconfig.yaml`, not the global 5-node patch as first
+  written. Re-verified `talconfig.yaml` directly rather than trusting the earlier read.
+- Verified Spegel is a live DaemonSet, `5/5` pods ready across all 3 control-planes and both
+  workers, before relying on it to fan a single-node pull out cluster-wide.
+- Implemented the new scale set (`rbac.yaml` bound to nothing, `talos-serviceaccount.yaml`
+  requesting `os:admin`, `externalsecret.yaml` reusing the existing `actions-runner` 1Password
+  item, `helmrelease.yaml` with `containerMode: kubernetes` + `NODE` via `status.hostIP` fieldRef +
+  a volume mount of the Talos-minted secret) and wired it into the runners' multi-doc `ks.yaml`.
+  Wrote `image-pull.yaml` reusing this repo's newer `flux-local`/`checkout` pins instead of
+  bykaj's older ones, `jdx/mise-action` to install `talosctl` instead of a curl-latest install, a
+  trigger-level `paths:` filter instead of a billed filter job, and a same-repo guard on the `pull`
+  job as defense-in-depth.
+- Validated structurally before touching the cluster: `kubectl kustomize` on the new directory,
+  `flux-local test` (154/154 passed), `flux-local build` + kubeconform (852 valid, 0 invalid).
+- With explicit user go-ahead, edited `talos/patches/controller/machine-features.yaml` to extend
+  `allowedKubernetesNamespaces` to `actions-runner-system`, ran `task talos:genconfig`, then rolled
+  `talosctl apply-config` to `cp-01` first (verified health), then `cp-02`/`cp-03`. Applied live
+  without a reboot on all three. Hit one transient read-after-apply lag — `talosctl get
+  machineconfig` briefly showed the pre-change config on `cp-02`/`cp-03` right after applying,
+  self-corrected on re-query seconds later — confirmed all 5 nodes stayed `Ready` and
+  `tuppr`/`rook-ceph` were unaffected.
+- Updated `CLUSTER.md`, `ROADMAP.md`, `EXTERNAL-SECRETS.yaml`, and `CLAUDE.md` to describe the new
+  workflow, runner, and the Talos ServiceAccount mechanism; moved the ROADMAP follow-up item to
+  Completed.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.github/workflows/image-pull.yaml` | new — `extract`/`diff`/`pull`/`success` jobs |
+| `kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab-image-pull/rbac.yaml` | new — ServiceAccount bound to nothing |
+| `.../home-lab-image-pull/talos-serviceaccount.yaml` | new — Talos `ServiceAccount` CRD, `os:admin` |
+| `.../home-lab-image-pull/externalsecret.yaml` | new — GitHub App registration secret |
+| `.../home-lab-image-pull/helmrelease.yaml` | new — runner scale set (kube mode, `NODE` fieldRef, Talos secret mount) |
+| `.../home-lab-image-pull/kustomization.yaml` | new |
+| `.../actions-runner-controller/ks.yaml` | added Kustomization block for the new scale set |
+| `talos/patches/controller/machine-features.yaml` | added `actions-runner-system` to the Talos API allow-list; applied live to cp-01/02/03 |
+| `docs/CLUSTER.md` | documented `image-pull.yaml` and the Talos ServiceAccount mechanism |
+| `docs/ROADMAP.md` | moved the image pre-pull item to Completed |
+| `docs/EXTERNAL-SECRETS.yaml` | added the `Image Pull` consumer under the `actions-runner` item |
+| `CLAUDE.md` | added a completion-table row |
+
+### Key decisions
+- New dedicated runner scale set instead of amending `home-lab`'s no-auto-trigger policy or
+  dropping the `pull_request` trigger — user's explicit choice; keeps the existing
+  cluster-admin/no-RBAC split precedent intact rather than diluting it.
+- Reused the `actions-runner-system` namespace rather than a new dedicated one (user's choice) —
+  accepted a wider, but still RBAC-gated, Talos-cert-issuance eligibility boundary in exchange for
+  less manifest sprawl.
+- Reused Talos's existing `kubernetesTalosAPIAccess` ServiceAccount CRD mechanism (already used by
+  tuppr) instead of a static talosconfig secret — no new secret shape introduced into the repo.
+- `os:admin` requested for the Talos ServiceAccount because no narrower Talos role is confirmed to
+  permit image pull — the same trade-off bykaj's own working config accepts.
+
+---
+
 ## 2026-09-05 — `renovate-self-hosted-actions`
 
 ### Goal
