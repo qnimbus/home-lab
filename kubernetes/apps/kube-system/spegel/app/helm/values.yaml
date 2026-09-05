@@ -5,7 +5,3 @@ spegel:
 service:
   registry:
     hostPort: 29999
-# ci-verify: comment-only change — must produce no rendered diff
-# ci-verify step 2: a real value change — must produce a rendered diff (DaemonSet nodeSelector)
-nodeSelector:
-  ci-verify: "true"
