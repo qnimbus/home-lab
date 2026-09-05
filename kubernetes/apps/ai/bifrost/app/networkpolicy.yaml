@@ -59,9 +59,9 @@ spec:
     # Cilium allow rules are additive and `except` only narrows the rule it appears in, so a
     # targeted /32 here re-permits that one host despite the RFC1918 exception above - no need
     # to touch the rule above. Keep it to the single IP and single port the model server binds.
-    # - toCIDR:
-    #     - "${NAS_LAN_HOST}/32"
-    #   toPorts:
-    #     - ports:
-    #         - port: "8081"  # llama.cpp --port; 8080 on the NAS is already the TrueNAS UI
-    #           protocol: TCP
+    - toCIDR:
+        - "${NAS_LAN_HOST}/32"
+      toPorts:
+        - ports:
+            - port: "8081"  # llama.cpp --port
+              protocol: TCP
