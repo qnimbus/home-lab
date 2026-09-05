@@ -80,6 +80,10 @@ jobs:
           permission-issues: write # dependency dashboard
           permission-workflows: write
           permission-checks: read # branch status for internalChecksFilter / dashboard
+          permission-statuses: read # separate GitHub App scope from checks; Renovate GETs
+          # .../commits/{sha}/statuses before opening a PR — a 403 here (x-accepted-github-
+          # permissions: statuses=read) aborts the whole repo run before it reaches the PR
+          # or dashboard-issue step. Confirmed via debug log, 2026-09-05.
 
       # No actions/checkout: Renovate clones the repository itself with the token.
       - name: Run Renovate
