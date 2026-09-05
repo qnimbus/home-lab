@@ -12,7 +12,7 @@ spec:
     operation: copy
   ref:
     # renovate: datasource=docker depName=ghcr.io/home-operations/charts-mirror/keda
-    tag: "2.20.1"
+    tag: "2.20.2"
   url: oci://ghcr.io/home-operations/charts-mirror/keda
   verify:
     provider: cosign
