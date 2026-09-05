@@ -43,7 +43,8 @@ spec:
     # which is exactly what Renovate's rook-ceph-cluster v1.20 PR would have
     # done. Ceph upgrades are their own Renovate PRs now; before merging one,
     # read Rook's ceph-upgrade guide for that release (Tentacle wants the `rook`
-    # mgr module disabled first, and v20.2.0 is off-limits with readAffinity).
+    # mgr module disabled first — already done, see cephClusterSpec.mgr.modules
+    # below — and v20.2.0 is off-limits with readAffinity).
     # The chart renders this into cephClusterSpec.cephVersion.image (and the
     # toolbox image) — do not also set cephVersion inside cephClusterSpec.
     #
@@ -183,9 +184,27 @@ spec:
             policy: mute
       mgr:
         modules:
-          # Required for Rook to drive the mgr.
+          # Disabled 2026-09-05 ahead of the Tentacle upgrade, per Rook's
+          # ceph-upgrade guide. Rook does NOT need this module to manage the
+          # cluster — it is the `ceph orch` backend, which only feeds a few
+          # dashboard pages (Hosts/Services/Inventory) and `ceph orch` / `ceph
+          # nfs cluster` CLI, none of which we use. On Ceph 20.2.3/20.2.4 the
+          # prometheus mgr module calls orch `node_proxy_fullreport` on every
+          # scrape, which the rook module does not implement, and the mgr
+          # records that as a module crash every ~15s forever (rook/rook#18124,
+          # tracker 79106; fix not yet in a Tentacle release). Rook 1.20.7
+          # force-disables it on 20.2.2–20.2.4 anyway; setting it here keeps
+          # Git honest and clears `ceph orch set backend` before the upgrade.
           - name: rook
-            enabled: true
+            enabled: false
+          # Ceph enabled this by default at cluster creation (mgr_initial_modules
+          # on Squid = "restful iostat nfs"); Tentacle removed the module
+          # (CVE-2023-46136 in its deps; dashboard is the REST API now). Nothing
+          # uses it. Disabled before the upgrade so no dangling entry is left in
+          # the MgrMap. Rook keeps issuing `mgr module disable restful`, which is
+          # a no-op once the module is gone.
+          - name: restful
+            enabled: false
           # Auto-tunes placement-group counts per pool — removes the classic
           # "how many PGs?" guesswork. Strongly recommended for new clusters.
           - name: pg_autoscaler

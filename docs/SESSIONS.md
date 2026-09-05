@@ -4,6 +4,15 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-05 — `ceph-tentacle-upgrade`
+
+### Goal
+Upgrade Ceph from Squid `v19.2.6` to Tentacle `v20.2.x` (≥ 20.2.4, never 20.2.0) under Rook v1.20.7:
+review the Tentacle release notes and Rook's ceph-upgrade guide, disable the `rook` mgr module first,
+loosen the Renovate pin, land the bump via GitOps and watch it land.
+
+---
+
 ## 2026-09-04 — `rook-post-upgrade-hygiene-configkey-audit`
 
 ### Goal

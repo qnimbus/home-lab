@@ -158,9 +158,20 @@ which stays parked: see the CVE follow-up below.
   `(MUTED, STICKY)`, toolbox picked up the rotated admin key by itself (no restart needed — the
   v1.20.7 toolbox watches the mounted mon keyring). Renovate PR #102 auto-closed.
   Later: flip the mutes to `unmute` and rotate CSI keys to `aes256k` once Talos ships kernel ≥ 7.0.
-- Tentacle (v20.2.x) later, as a deliberate PR: disable the `rook` mgr module first (Rook's
-  recommendation; the chart default flipped to disabled in v1.20, our explicit list keeps it on),
-  never v20.2.0 (data-corruption bug with `readAffinity`, which we enable).
+- **Tentacle (v20.2.4) — 🔄 IN PROGRESS 2026-09-05, session `ceph-tentacle-upgrade`.** Two
+  commits, in order:
+  1. ✅ Pre-step: `rook` and `restful` mgr modules set `enabled: false` in the cluster HR. The
+     `rook` module (the `ceph orch` backend, unused here) triggers a permanent mgr-module-crash
+     loop on 20.2.3/20.2.4 via the prometheus module's `node_proxy_fullreport` call
+     (rook/rook#18124, tracker 79106, no Tentacle backport yet); Rook 1.20.7 force-disables it on
+     20.2.2–20.2.4 but the guide says disable *before* upgrading. `restful` was Ceph's Squid-era
+     default and no longer exists in Tentacle.
+  2. ⏳ Image bump `cephImage.tag: v19.2.6 → v20.2.4` + Renovate pin loosened to `v20.2.x` with
+     x ≥ 4 (v20.2.0 data-corruption bug with `readAffinity`, which we enable; 20.2.1–20.2.3 miss
+     the CVE fixes). No key rotation expected (policy fires only on a `keyGeneration` bump or
+     keyType change), so no `HEALTH_ERR` window; Rook sets `require-osd-release tentacle` itself
+     once all OSDs report one version. mClock's new 1000-IOPS SSD floor is below every measured
+     OSD capacity here.
 - ✅ `csi-metrics` ServiceMonitor dropped (2026-09-04, `csi.serviceMonitor.enabled: false`). It was
   dead by construction: the ceph-csi-drivers chart (1.0.4 and upstream main) cannot set
   `Driver.spec.liveness.metricsPort`, and ceph-csi-operator's `reconcileLivenessService` creates the

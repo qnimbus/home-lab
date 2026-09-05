@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-09-05 | `ceph-tentacle-upgrade` | _in progress_ |
 > | 2026-09-04 | `rook-post-upgrade-hygiene-configkey-audit` | Dropped dead csi-metrics ServiceMonitor (root-caused upstream), audited config-key store for CVE-2026-50152, rotated jwt |
 > | 2026-09-04 | `ceph-cve-2025-30156-key-rotation` | Landed Ceph 19.2.6 + AES256K daemon key rotation (CVE-2025-30156) in one change; 10-min HEALTH_ERR window as designed |
 > | 2026-09-04 | `rook-v120-upgrade-csi-drivers-draft` | Upgraded Rook to v1.20.7 with new ceph-csi-drivers chart + lockstep HR gates; caught hidden Ceph 19→20 bump, pinned 19.2.3 |
