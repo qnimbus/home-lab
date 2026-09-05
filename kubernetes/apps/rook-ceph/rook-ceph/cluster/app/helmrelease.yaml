@@ -41,22 +41,24 @@ spec:
     # line (v1.19.x → Squid 19.2.3, v1.20.x → Tentacle 20.2.4), so leaving this
     # unset turns a Rook chart bump into an unreviewed Ceph *major* upgrade —
     # which is exactly what Renovate's rook-ceph-cluster v1.20 PR would have
-    # done. Ceph upgrades are their own Renovate PRs now; before merging one,
-    # read Rook's ceph-upgrade guide for that release (Tentacle wants the `rook`
-    # mgr module disabled first — already done, see cephClusterSpec.mgr.modules
-    # below — and v20.2.0 is off-limits with readAffinity).
+    # done. Ceph upgrades are their own Renovate PRs now (renovate.json5 pins
+    # the allowed line); before merging a *major* one, read Rook's ceph-upgrade
+    # guide and the Ceph release notes for that release.
     # The chart renders this into cephClusterSpec.cephVersion.image (and the
     # toolbox image) — do not also set cephVersion inside cephClusterSpec.
     #
-    # v19.2.6 (2026-09-04) is the CVE-2025-30156 fix (CephX AES-CBC ticket
-    # tampering). The fix is only complete once the daemon keys are rotated to
-    # AES256K, so this bump landed together with the keyGeneration bump under
-    # cephClusterSpec.security.cephx below — keep the two paired on any future
-    # Ceph bump that Rook's cephx guide says needs a rotation.
+    # History: v19.2.6 (2026-09-04) was the CVE-2025-30156 fix, landed together
+    # with the daemon keyGeneration bump under cephClusterSpec.security.cephx —
+    # keep those paired on any future bump Rook's cephx guide says needs a
+    # rotation. v20.2.4 Tentacle (2026-09-05): first Tentacle build with the
+    # same CVE fixes; 20.2.0 corrupts data with readAffinity (which we enable),
+    # 20.2.1–20.2.3 predate the CVE fixes. Prerequisite was disabling the
+    # `rook` mgr module (see cephClusterSpec.mgr.modules). Rook sets
+    # `osd require-osd-release tentacle` itself once every OSD reports 20.x.
     cephImage:
       repository: quay.io/ceph/ceph
       # renovate: datasource=docker depName=quay.io/ceph/ceph
-      tag: v19.2.6
+      tag: v20.2.4
     monitoring:
       enabled: true
       createPrometheusRules: true

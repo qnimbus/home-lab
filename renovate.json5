@@ -145,15 +145,16 @@
     },
     {
       // Ceph itself is pinned in the rook-ceph-cluster HelmRelease (cephImage.tag). Hold it on the
-      // Squid (v19) line: a Ceph major (Squid 19 → Tentacle 20) needs prep per Rook's ceph-upgrade
-      // guide (disable the `rook` mgr module first; never v20.2.0 with readAffinity) and Rook only
-      // supports Squid/Tentacle — Renovate offered v21.1.0 (PR #101) within hours of the pin
-      // landing. Ceph's x.1.z tags are release candidates and x.2.z stable, so only v19.2.z
-      // is allowed here. Bump the regex to the next line when that upgrade is actually planned.
-      description: "Ceph image — stay on Squid v19.2.z stable until a major upgrade is planned",
+      // Tentacle (v20) line: a Ceph major needs prep per Rook's ceph-upgrade guide and Rook 1.20
+      // only supports Squid/Tentacle — Renovate offered v21.1.0 (PR #101) within hours of the
+      // first pin landing. Ceph's x.1.z tags are release candidates and x.2.z stable. Floor is
+      // v20.2.4: 20.2.0 corrupts data with readAffinity (enabled here) and 20.2.1–20.2.3 predate
+      // the CVE-2025-30156 fixes we already run on Squid. Bump the regex to the next line (and
+      // read that line's release notes first) when a major upgrade is actually planned.
+      description: "Ceph image — stay on Tentacle v20.2.z (>= .4) until a major upgrade is planned",
       matchDatasources: ["docker"],
       matchPackageNames: ["quay.io/ceph/ceph"],
-      allowedVersions: "/^v19\\.2\\.\\d+$/",
+      allowedVersions: "/^v20\\.2\\.([4-9]|[1-9]\\d+)$/",
     },
     {
       // ceph-csi-drivers must stay at (or below) the ceph-csi-operator subchart version bundled in
