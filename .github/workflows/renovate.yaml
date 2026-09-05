@@ -1,0 +1,101 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Renovate
+
+# Self-hosted Renovate, replacing the Mend-hosted GitHub App (2026-09-05). Runs under the
+# repo's own bot App via the same 1Password → App-token flow as labeler.yaml, so PRs, commits
+# and the dependency dashboard are authored by qnimbus-homelab-assistant[bot]. Everything set
+# under `env:` below is Renovate *global* config (self-hosted only); repository config stays
+# in renovate.json5 and is unchanged by this move.
+#
+# Runs on GitHub-hosted runners for now. An in-cluster runner was investigated and parked —
+# home-lab-readonly has no RBAC for ARC's kubernetes container hook, and the hook runs job
+# containers as the image's own uid (Renovate: 12021) on a fsGroup-1001 volume. See
+# docs/ROADMAP.md "Renovate on an in-cluster runner".
+#
+# Budget: every 6 h × ~2-3 rounded-up billed minutes ≈ 250-360 min/month of the private-repo
+# 2000 min/month plan (hourly would be ~1500-2200 — the whole plan). Check Settings → Billing
+# after the first days before tightening the cron; add actions/cache on /tmp/renovate (mounted
+# by the action's default docker-volumes) if lookups dominate the run time. Note
+# renovate.json5's prHourlyLimit is really a per-run cap, so a backlog drains 2 PRs per run.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      # config change → immediate run (replaces the webhook the hosted app reacted to)
+      - renovate.json5
+      - .github/workflows/renovate.yaml
+  schedule:
+    - cron: 0 */6 * * * # every 6 h — see budget note above; dashboard checkbox actions wait for the next run
+  workflow_dispatch:
+    inputs:
+      dryRun:
+        description: Dry run (RENOVATE_DRY_RUN=full — extract, lookup, log, write nothing)
+        type: boolean
+        default: false
+        required: true
+      logLevel:
+        description: Log level
+        type: choice
+        default: info
+        options:
+          - info
+          - debug
+        required: true
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  renovate:
+    name: Renovate
+    runs-on: ubuntu-latest
+    # The App token lives 60 min; a healthy run is a few minutes — ceiling, not budget.
+    timeout-minutes: 20
+    steps:
+      - name: Load Secrets
+        id: load-secrets
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1 # zizmor: ignore[unpinned-tools]
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          GITHUB_BOT_APP_CLIENT_ID: op://GitHub/github-bot/GITHUB_BOT_APP_CLIENT_ID
+          GITHUB_BOT_APP_PRIVATE_KEY: op://GitHub/github-bot/GITHUB_BOT_APP_PRIVATE_KEY
+
+      # Scoped down from the App's installed permission set. `workflows: write` is required —
+      # without it GitHub rejects every branch touching .github/workflows/ (all actions/* bumps).
+      - name: Generate Token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ steps.load-secrets.outputs.GITHUB_BOT_APP_CLIENT_ID }}
+          private-key: ${{ steps.load-secrets.outputs.GITHUB_BOT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write # dependency dashboard
+          permission-workflows: write
+          permission-checks: read # branch status for internalChecksFilter / dashboard
+
+      # No actions/checkout: Renovate clones the repository itself with the token.
+      - name: Run Renovate
+        uses: renovatebot/github-action@39b914146caeff8cd512e61c8992f1d5913af85c # v46.2.5
+        env:
+          LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
+          # Explicit repository instead of autodiscover + filter — one repo, no listing call
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          # Empty on schedule/push (inputs unset) → normal run; `true` from dispatch → full dry run
+          RENOVATE_DRY_RUN: ${{ inputs.dryRun }}
+          RENOVATE_PLATFORM: github
+          # Commit through the GitHub API instead of `git push` — commits are signed and show as
+          # verified from the App with no GPG key to manage in CI
+          RENOVATE_PLATFORM_COMMIT: true
+          RENOVATE_INTERNAL_CHECKS_FILTER: strict
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          # renovate: datasource=docker depName=ghcr.io/renovatebot/renovate
+          renovate-version: 44.65.5

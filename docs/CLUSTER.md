@@ -1432,6 +1432,8 @@ Known limitation of the trigger-level `paths` filter: GitHub evaluates it agains
 
 flux-local is sunsetted upstream; its successor `flate` hangs on this tree (home-operations/flate#828/#937) — see the migration item in [ROADMAP.md](ROADMAP.md).
 
+**Renovate itself is a workflow too** (`renovate.yaml`, since 2026-09-05 — replaced the Mend-hosted app). It runs `renovatebot/github-action` on `ubuntu-latest` every 6 h, on every push to `main` that touches `renovate.json5` or the workflow, and on demand (`gh workflow run renovate.yaml -f dryRun=true -f logLevel=debug` for a write-nothing run). The token comes from the bot App via the same 1Password flow as `labeler.yaml`, so PRs, API-signed commits and the dependency dashboard are authored by `qnimbus-homelab-assistant[bot]`; anything gating on the Renovate author must use that login (`renovate-pr-review.yml` does). Repository config stays in `renovate.json5`; the workflow's `env:` holds only global (self-hosted-only) settings. Budget: ~2-3 billed minutes per run — every 6 h is ~250-360 min/month of the 2000-minute private-repo plan, hourly would be most of it; check Settings → Billing before tightening the cron. Trade-off vs the hosted app: no webhook immediacy — dashboard checkboxes and rebase requests act on the next scheduled run. An in-cluster runner is parked with its findings in [ROADMAP.md](ROADMAP.md#renovate-on-an-in-cluster-runner).
+
 ---
 
 ## Bootstrap Runbook

@@ -4,6 +4,76 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-05 — `renovate-self-hosted-actions`
+
+### Goal
+Replace the Mend-hosted Renovate GitHub App with a self-hosted `renovate.yaml` GitHub Actions
+workflow, modelled on bykaj/home-ops, running Renovate under our own bot App.
+
+### What we did
+- Investigated an in-cluster `container:` job first (bykaj-style) and parked it: the
+  `home-lab-readonly` ServiceAccount is deliberately bound to nothing, and ARC's kubernetes
+  container hook needs a namespaced Role (pods create/delete, `pods/exec`, `pods/log`, secrets
+  get/list) to spin up the job pod — exactly the privilege the readonly split exists to remove,
+  since that Role would let a job read the runner's own App private key. The hook also runs job
+  containers as the image's own uid (Renovate: `USER 12021`) with only `fsGroup: 1001` on the
+  work volume, a known `$GITHUB_OUTPUT`-write failure mode. `home-lab` has the RBAC but its
+  `rbac.yaml` forbids auto-triggered (schedule/push) workflows. Findings recorded in ROADMAP
+  rather than dropped.
+- Went to plan mode, ran read-only recon: confirmed the repo has no lockfiles (so the Renovate
+  slim image suffices), pulled latest pins (`renovatebot/github-action` v46.2.5, Renovate
+  44.65.5, ghcr.io index digest), confirmed the existing `# renovate: datasource=` regex
+  manager (any `.ya?ml` file) will track the new pin, and confirmed via `gh` that no Renovate
+  PRs or dashboard issue are currently open — a clean cutover with nothing to adopt across
+  identities.
+- Budget-checked cadence with the user before committing to hourly: at ~2-3 billed minutes/run
+  on `ubuntu-latest`, hourly would be ~1500-2200 min/month against the 2000-minute private-repo
+  plan that already carries ~280; user chose every 6 hours (~250-360 min/month), then confirmed
+  the same cadence explicitly mid-implementation.
+- Wrote `.github/workflows/renovate.yaml`: `renovatebot/github-action` under the bot App token
+  (1Password → `create-github-app-token`, same flow as `labeler.yaml`), scoped to
+  contents/pull-requests/issues/workflows write + checks/statuses read (workflows:write is
+  required or GitHub rejects any push touching `.github/workflows/`, i.e. every `actions/*`
+  bump). No checkout step — Renovate clones itself with the token. Triggers: cron every 6 h,
+  push to `main` on `renovate.json5`/the workflow, and `workflow_dispatch` with `dryRun`/
+  `logLevel` inputs.
+- Fixed `renovate-pr-review.yml`'s author gate (`pull_request.user.login`), which checked for
+  `renovate[bot]` and would have silently never matched once PRs come from
+  `qnimbus-homelab-assistant[bot]`.
+- Updated `docs/EXTERNAL-SECRETS.yaml` (new `github-bot` consumer), `docs/CLUSTER.md` (CI
+  checks section — cadence, budget, trade-offs vs the hosted app), `docs/ROADMAP.md`
+  (Completed row + a parked "Renovate on an In-Cluster Runner" item with the RBAC/uid findings
+  and the cheapest future path: no job container, run directly in the runner pod with
+  `actions/setup-node` + `npx renovate`), and the `CLAUDE.md` Renovate summary row.
+- Verified the new workflow parses (`yq`) and simulated the regex manager in Python against the
+  file to confirm it extracts `ghcr.io/renovatebot/renovate` → `44.65.5` correctly.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.github/workflows/renovate.yaml` | New — self-hosted Renovate workflow (bot App token, every-6h cron, push-on-config, dispatch) |
+| `.github/workflows/renovate-pr-review.yml` | Author gate updated to `qnimbus-homelab-assistant[bot]` |
+| `CLAUDE.md` | Renovate summary row updated |
+| `docs/CLUSTER.md` | CI checks section: added Renovate-workflow paragraph (cadence, budget, trade-offs) |
+| `docs/EXTERNAL-SECRETS.yaml` | Added Renovate consumer to the `github-bot` item; bumped `last_verified` |
+| `docs/ROADMAP.md` | Completed row; new parked item "Renovate on an In-Cluster Runner" |
+
+### Key decisions
+- Runner stays GitHub-hosted (`ubuntu-latest`) for now rather than in-cluster, to avoid granting
+  a namespaced Role that would expose the runner's own App private key to jobs — the exact
+  privilege the `home-lab-readonly`/`home-lab` split was created to prevent.
+- Cadence set to every 6 hours, not hourly, purely on Actions-minutes budget — hourly would
+  consume nearly the entire private-repo free-tier allowance by itself.
+- Suspend the Mend-hosted app before pushing the new workflow: the `push: paths` trigger fires
+  immediately on push, and two Renovate identities running concurrently would fight over the
+  same `renovate/*` branches. Suspension (not uninstall) is the rollback path.
+- No `actions/checkout` step in the new workflow — Renovate clones the repository itself with
+  the App token, so the checkout step in bykaj's version is unneeded billed time here.
+- Renovate 44.65.5 and `renovatebot/github-action` v46.2.5 pinned explicitly (not `latest`, as
+  bykaj does), tracked by the existing regex custom manager via a `# renovate:` annotation.
+
+---
+
 ## 2026-09-05 — `flux-render-ci-flate-eval`
 
 ### Goal

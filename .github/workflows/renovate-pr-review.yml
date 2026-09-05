@@ -36,12 +36,13 @@ jobs:
     # `synchronize` if anyone other than Renovate ever pushes to the branch, and that
     # would wrongly skip a legitimate Renovate PR. head.repo check rejects any PR whose
     # branch lives outside this repo (fork) as defense-in-depth against a third party
-    # somehow triggering this with secrets in scope — Renovate's GitHub App always
-    # pushes branches directly into this repo, so a fork head here is never genuine.
+    # somehow triggering this with secrets in scope — Renovate runs under our bot App
+    # (.github/workflows/renovate.yaml) and always pushes branches directly into this
+    # repo, so a fork head here is never genuine.
     # Manual runs (workflow_dispatch) skip both checks — see the input description above.
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event.pull_request.user.login == 'renovate[bot]' &&
+      (github.event.pull_request.user.login == 'qnimbus-homelab-assistant[bot]' &&
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: home-lab-readonly
     timeout-minutes: 30

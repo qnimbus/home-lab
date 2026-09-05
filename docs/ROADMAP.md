@@ -10,6 +10,7 @@ Pending work items for the cluster, roughly in priority / dependency order. Upda
   - [WAN Failover Router: Host Header Rewrite](#wan-failover-router-host-header-rewrite)
   - [Renovate PR-Review Workflow: Cost/Bug Investigation, Re-enable](#renovate-pr-review-workflow-costbug-investigation-re-enable)
   - [Flux Render CI: Migrate flux-local → flate](#flux-render-ci-migrate-flux-local--flate)
+  - [Renovate on an In-Cluster Runner](#renovate-on-an-in-cluster-runner)
   - [CloudNativePG: Backup, PITR, and Per-App Provisioning](#cloudnativepg-backup-pitr-and-per-app-provisioning)
   - [Postgres NFS Backup: Restore Drill](#postgres-nfs-backup-restore-drill)
   - [~~Longhorn Storage Network (Multus + Storage VLAN)~~ — ABANDONED, superseded by Rook-Ceph](#longhorn-storage-network-multus--storage-vlan--abandoned-superseded-by-rook-ceph)
@@ -246,6 +247,16 @@ flux-local 8.4.0 is sunsetted upstream (prints a deprecation notice) in favour o
 **Follow-ups (independent of the tool):**
 - Image pre-pull workflow (bykaj `image-pull.yaml`): diff `get images` between `main` and the PR, `talosctl image pull` on the self-hosted runner; Spegel then fans the layer out cluster-wide. Needs a talosconfig secret mounted into the `home-lab` runner scale set.
 - If branch protection is ever enabled (needs GitHub Pro or a public repo): replace the trigger-level `paths:` filter with a `filter` job + terminal `success` gate (bykaj `flux-local.yaml`), otherwise a required check that is skipped by the path filter blocks merges forever.
+
+### Renovate on an In-Cluster Runner
+
+**Status: parked (2026-09-05).** Renovate moved from the Mend-hosted app to `.github/workflows/renovate.yaml` (bykaj pattern: `renovatebot/github-action` under the bot App, every 6 h + push-on-config + dispatch). It runs on `ubuntu-latest` and costs ~2-3 billed minutes per run; an in-cluster runner would make it free and allow an hourly cron, but neither existing scale set fits as-is:
+
+- `home-lab-readonly` (where `renovate-pr-review.yml` runs) has a ServiceAccount bound to **nothing** by design. A `container:` job — or any `docker://` step — needs ARC's kubernetes container hook, which needs the chart's auto-provisioned namespaced Role (pods create/delete, `pods/exec`, `pods/log`, secrets get/list). That Role lets any job read the runner scale set's own GitHub App private key from the namespace, which is exactly the privilege the readonly split removed (see `runners/home-lab-readonly/rbac.yaml`).
+- `home-lab` has the RBAC (cluster-admin) but its `rbac.yaml` forbids auto-triggered (`schedule`/`push`) workflows.
+- The hook (`actions/runner-container-hooks`, k8s) creates the job pod with only `fsGroup: 1001`; the job container runs as the image's own uid (Renovate image: `USER 12021`), so writes to `$GITHUB_OUTPUT`/`_temp` on the 1001-owned work volume are a known failure mode unless an `ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE` forces `runAsUser: 1001` *and* the image tolerates that uid.
+
+**Cheapest viable shape when revisited:** no job container at all — run directly in the `home-lab-readonly` runner pod (`ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER=false` already), `actions/setup-node` (Renovate 44 needs `node ^24.11`) + `npx renovate@<pinned>`; the repo has no lockfiles, so Renovate needs only `git`, and no RBAC changes are required. A separate `home-lab-renovate` scale set with the kube-mode Role is the alternative if a real job container is wanted. Independent of the runner: add `actions/cache` on `/tmp/renovate` (the action's default `docker-volumes: /tmp:/tmp` exposes it) if lookups dominate run time.
 
 ### CloudNativePG: Backup, PITR, and Per-App Provisioning
 
@@ -2264,6 +2275,7 @@ access turns out to be unavailable/undesirable at the time.
 
 | Area                          | Notes                                           |
 |-------------------------------|-------------------------------------------------|
+| Renovate: Mend app → self-hosted workflow | `.github/workflows/renovate.yaml` (2026-09-05): `renovatebot/github-action` v46.2.5 / Renovate 44.65.5 pinned, bot App token via 1Password, every 6 h + push-on-config + dispatch (`dryRun`, `logLevel`); `renovate-pr-review.yml` author gate moved to `qnimbus-homelab-assistant[bot]`. In-cluster runner parked — see [above](#renovate-on-an-in-cluster-runner) |
 | Persistent Storage (OpenEBS + Rook-Ceph) | OpenEBS LocalPV live; **Longhorn removed**, superseded by Rook-Ceph v1.19.6 (`ceph-block` default SC, `size=3`/`min_size=2`); the per-node dedicated disks (cp-01/cp-02: Kingston SNV3S1000G, cp-03: Crucial CT2000P310SSD8) are now wiped-to-raw Ceph OSDs on the `10.200.0.0/24` storage bond. Longhorn 3-replica ran 2026-05-23 → 2026-06-08 |
 | Pod Topology: scheduling concentration on cp-03   | Fixed imbalance; CoreDNS + Envoy proxies spread to 3 replicas 1/node (`DoNotSchedule`); Flux/cert-manager/ESO at 2 replicas + topology spread; stateful workloads (Prometheus/Alertmanager) accepted on cp-03 |
 | Talos machine configs         | 3 CP nodes, patches, schematic registered       |

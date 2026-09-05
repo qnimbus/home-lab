@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-09-05 | `renovate-self-hosted-actions` | Replaced Mend-hosted Renovate app with a self-hosted `renovate.yaml` workflow (bot App, every 6h); parked in-cluster runner on RBAC/uid findings |
 > | 2026-09-05 | `flux-render-ci-flate-eval` | Added flux-render CI (flux-local test + post-render kubeconform + diff comment); flate 0.6.5 hangs on this tree (#828) |
 > | 2026-09-05 | `ceph-tentacle-upgrade` | Upgraded Ceph 19.2.6 → 20.2.4 Tentacle in 4.5 min (rook mgr module off first, #18124); fixed open-webui Job TTL flap |
 > | 2026-09-04 | `rook-post-upgrade-hygiene-configkey-audit` | Dropped dead csi-metrics ServiceMonitor (root-caused upstream), audited config-key store for CVE-2026-50152, rotated jwt |
@@ -11,7 +12,6 @@
 > | 2026-09-04 | `rook-v120-upgrade-csi-drivers-draft` | Upgraded Rook to v1.20.7 with new ceph-csi-drivers chart + lockstep HR gates; caught hidden Ceph 19→20 bump, pinned 19.2.3 |
 > | 2026-09-04 | `bifrost-image-tag-misfire` | Traced bifrost UpgradeFailed to Renovate mistaking a Helm chart artifact for an image; pinned v2.0.0, added guard rule |
 > | 2026-09-04 | `truenas-envoy-backend-https` | Moved TrueNAS/home-assistant to Envoy `Backend`; pinned TrueNAS ALPN to http/1.1, fixing WebSocket UI over HTTPS backend |
-> | 2026-09-03 | `ceph-public-network-migration-execute` | Executed 5-phase Ceph public_network migration to storage bond; found & fixed Rook mon-ip Node-object limitation |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
@@ -329,7 +329,7 @@ See **[CLUSTER.md → Key Architectural Decisions](docs/CLUSTER.md#key-architect
 | Rook-Ceph (`ceph-block`)      | ✅ Done    | Replicated-storage target; Rook v1.20.x (operator + cluster charts) + `ceph-csi-drivers` chart (owns the CSI driver since v1.20), Ceph image pinned in the cluster HR; `size=3`/`min_size=2`, host-net `cluster_network` on the `10.200.0.0/24` bond, `HEALTH_OK` with 3 host-spread OSDs. **`ceph-block` is the default StorageClass.** All consumers migrated (Phase 5: pgadmin, waha, kube-prometheus-stack — grafana+waha data restored from NFS). See [HARDWARE-ARCHITECTURE.md](docs/HARDWARE-ARCHITECTURE.md) |
 | External Secrets + 1Password  | ✅ Done    | ESO + 1Password Connect deployed; `ClusterSecretStore` live |
 | Split DNS (ExternalDNS)       | ✅ Done    | `external-dns-cloudflare` (envoy-external, proxied) + `external-dns-unifi` (all gateways + services, webhook sidecar); chart v1.21.1 |
-| Renovate                      | ✅ Done    | `renovate.json5` + GitHub App; tracks Talos + K8s via `separateMinorPatch`; `talosctl` + `etcd` excluded (must match server version) |
+| Renovate                      | ✅ Done    | `renovate.json5` + self-hosted `renovate.yaml` workflow (bot App, every 6 h; replaced the Mend app 2026-09-05); tracks Talos + K8s via `separateMinorPatch`; `talosctl` + `etcd` excluded (must match server version) |
 | Talos + Kubernetes upgrades   | ✅ Done    | tuppr deployed in `system-upgrade`; `TalosUpgrade` + `KubernetesUpgrade` CRDs at current running versions; upgrades triggered by Renovate PRs |
 | Open WebUI                    | ✅ Done    | `ai` namespace; CNPG-backed (not SQLite), Dragonfly websocket manager, pre-provisioned admin (no open signup window), KEDA scales to 0 on Postgres/Dragonfly outage. No LLM backend wired — added manually post-deploy. See [CLUSTER.md → Running Components](docs/CLUSTER.md) |
 
