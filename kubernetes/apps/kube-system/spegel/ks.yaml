@@ -25,3 +25,4 @@ spec:
       kind: HelmRelease
       name: *app
       namespace: kube-system
+# ci-verify step 3: render-neutral change under kubernetes/** — expect the stale diff comment to be deleted
