@@ -47,15 +47,28 @@ workflow, modelled on bykaj/home-ops, running Renovate under our own bot App.
   `actions/setup-node` + `npx renovate`), and the `CLAUDE.md` Renovate summary row.
 - Verified the new workflow parses (`yq`) and simulated the regex manager in Python against the
   file to confirm it extracts `ghcr.io/renovatebot/renovate` → `44.65.5` correctly.
+- After push, the first live run aborted with no PR and no dashboard issue. Root-caused via three
+  `gh workflow run -f logLevel=debug` iterations, reading the raw HTTP request/response in each
+  run's log rather than guessing from GitHub's UI: (1) `GET .../commits/{sha}/statuses` 403'd —
+  Commit statuses is a distinct GitHub App permission from Checks, not covered by the
+  `permission-checks: read` already requested; added `permission-statuses: read`. (2) That got
+  past the GET but `POST .../statuses/{sha}` (setting the `renovate/stability-days` branch status
+  from this repo's `stabilityDays` config) 403'd needing `statuses: write` — bumped to
+  `permission-statuses: write` (write implies read). (3) Third debug run succeeded end-to-end:
+  extracted 502 deps, opened PRs #112/#113, created dashboard issue #114, all authored by
+  `qnimbus-homelab-assistant[bot]`; confirmed Labeler/`validate`/Flux Render all fired on #112.
+  The remaining 403 in a clean run (`GET .../branches/main/protection`, needs
+  `administration: read`) is expected and already documented — GitHub gates that endpoint behind
+  a paid plan for private repos, and Renovate's own branch-protection detection swallows it.
 
 ### Files changed
 | File | Change |
 |------|--------|
-| `.github/workflows/renovate.yaml` | New — self-hosted Renovate workflow (bot App token, every-6h cron, push-on-config, dispatch) |
+| `.github/workflows/renovate.yaml` | New — self-hosted Renovate workflow (bot App token, every-6h cron, push-on-config, dispatch); permission set fixed twice post-push (`permission-statuses: write` added, after `read` proved insufficient) |
 | `.github/workflows/renovate-pr-review.yml` | Author gate updated to `qnimbus-homelab-assistant[bot]` |
 | `CLAUDE.md` | Renovate summary row updated |
-| `docs/CLUSTER.md` | CI checks section: added Renovate-workflow paragraph (cadence, budget, trade-offs) |
-| `docs/EXTERNAL-SECRETS.yaml` | Added Renovate consumer to the `github-bot` item; bumped `last_verified` |
+| `docs/CLUSTER.md` | CI checks section: added Renovate-workflow paragraph (cadence, budget, trade-offs) plus the Commit-statuses-vs-Checks permission gotcha found during live-run troubleshooting |
+| `docs/EXTERNAL-SECRETS.yaml` | Added Renovate consumer to the `github-bot` item (corrected to `statuses write`); bumped `last_verified` |
 | `docs/ROADMAP.md` | Completed row; new parked item "Renovate on an In-Cluster Runner" |
 
 ### Key decisions
@@ -69,6 +82,10 @@ workflow, modelled on bykaj/home-ops, running Renovate under our own bot App.
   same `renovate/*` branches. Suspension (not uninstall) is the rollback path.
 - No `actions/checkout` step in the new workflow — Renovate clones the repository itself with
   the App token, so the checkout step in bykaj's version is unneeded billed time here.
+- Diagnosed the post-push failures from the workflow's own `logLevel=debug` output (raw HTTP
+  status, body, and `x-accepted-github-permissions` response header) rather than from GitHub's
+  installation-settings UI, which groups permissions into rows that don't map 1:1 onto the
+  individual scopes GitHub actually enforces per API call.
 - Renovate 44.65.5 and `renovatebot/github-action` v46.2.5 pinned explicitly (not `latest`, as
   bykaj does), tracked by the existing regex custom manager via a `# renovate:` annotation.
 
