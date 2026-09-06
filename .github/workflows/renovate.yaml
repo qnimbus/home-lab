@@ -8,9 +8,10 @@ name: Renovate
 # under `env:` below is Renovate *global* config (self-hosted only); repository config stays
 # in renovate.json5 and is unchanged by this move.
 #
-# Runs on GitHub-hosted runners for now. An in-cluster runner was investigated and parked —
-# home-lab-readonly has no RBAC for ARC's kubernetes container hook, and the hook runs job
-# containers as the image's own uid (Renovate: 12021) on a fsGroup-1001 volume. See
+# Runs on GitHub-hosted runners for now. An in-cluster runner was investigated and parked — ARC's
+# kubernetes container hook runs job containers as the image's own uid (Renovate: 12021) on a
+# fsGroup-1001 volume, a known failure mode, and the only scale set now available (home-lab) is
+# cluster-admin + Talos os:admin — a bigger blast radius for an hourly job than this. See
 # docs/ROADMAP.md "Renovate on an in-cluster runner".
 #
 # Budget: every 6 h × ~2-3 rounded-up billed minutes ≈ 250-360 min/month of the private-repo

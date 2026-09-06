@@ -330,7 +330,7 @@ See **[CLUSTER.md → Key Architectural Decisions](docs/CLUSTER.md#key-architect
 | External Secrets + 1Password  | ✅ Done    | ESO + 1Password Connect deployed; `ClusterSecretStore` live |
 | Split DNS (ExternalDNS)       | ✅ Done    | `external-dns-cloudflare` (envoy-external, proxied) + `external-dns-unifi` (all gateways + services, webhook sidecar); chart v1.21.1 |
 | Renovate                      | ✅ Done    | `renovate.json5` + self-hosted `renovate.yaml` workflow (bot App, every 6 h; replaced the Mend app 2026-09-05); tracks Talos + K8s via `separateMinorPatch`; `talosctl` + `etcd` excluded (must match server version) |
-| Image pre-pull (`image-pull.yaml`) | ✅ Done | Diffs container images between `main` and a PR, `talosctl image pull`s new ones on a dedicated `home-lab-image-pull` runner (Talos ServiceAccount cert, `os:admin`, no Kubernetes RBAC), Spegel fans the layer out cluster-wide before merge |
+| Image pre-pull (`image-pull.yaml`) | ✅ Done | Diffs container images between `main` and a PR, `talosctl image pull`s new ones on `home-lab` (Talos ServiceAccount cert, `os:admin`), Spegel fans the layer out cluster-wide before merge |
 | Talos + Kubernetes upgrades   | ✅ Done    | tuppr deployed in `system-upgrade`; `TalosUpgrade` + `KubernetesUpgrade` CRDs at current running versions; upgrades triggered by Renovate PRs |
 | Open WebUI                    | ✅ Done    | `ai` namespace; CNPG-backed (not SQLite), Dragonfly websocket manager, pre-provisioned admin (no open signup window), KEDA scales to 0 on Postgres/Dragonfly outage. No LLM backend wired — added manually post-deploy. See [CLUSTER.md → Running Components](docs/CLUSTER.md) |
 

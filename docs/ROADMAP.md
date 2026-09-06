@@ -249,13 +249,35 @@ flux-local 8.4.0 is sunsetted upstream (prints a deprecation notice) in favour o
 
 ### Renovate on an In-Cluster Runner
 
-**Status: parked (2026-09-05).** Renovate moved from the Mend-hosted app to `.github/workflows/renovate.yaml` (bykaj pattern: `renovatebot/github-action` under the bot App, every 6 h + push-on-config + dispatch). It runs on `ubuntu-latest` and costs ~2-3 billed minutes per run; an in-cluster runner would make it free and allow an hourly cron, but neither existing scale set fits as-is:
+**Status: parked (2026-09-05); RBAC blocker removed 2026-09-06, still not done.** Renovate moved
+from the Mend-hosted app to `.github/workflows/renovate.yaml` (bykaj pattern:
+`renovatebot/github-action` under the bot App, every 6 h + push-on-config + dispatch). It runs on
+`ubuntu-latest` and costs ~2-3 billed minutes per run; an in-cluster runner would make it free and
+allow an hourly cron.
 
-- `home-lab-readonly` (where `renovate-pr-review.yml` runs) has a ServiceAccount bound to **nothing** by design. A `container:` job — or any `docker://` step — needs ARC's kubernetes container hook, which needs the chart's auto-provisioned namespaced Role (pods create/delete, `pods/exec`, `pods/log`, secrets get/list). That Role lets any job read the runner scale set's own GitHub App private key from the namespace, which is exactly the privilege the readonly split removed (see `runners/home-lab-readonly/rbac.yaml`).
-- `home-lab` has the RBAC (cluster-admin) but its `rbac.yaml` forbids auto-triggered (`schedule`/`push`) workflows.
-- The hook (`actions/runner-container-hooks`, k8s) creates the job pod with only `fsGroup: 1001`; the job container runs as the image's own uid (Renovate image: `USER 12021`), so writes to `$GITHUB_OUTPUT`/`_temp` on the 1001-owned work volume are a known failure mode unless an `ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE` forces `runAsUser: 1001` *and* the image tolerates that uid.
+Originally parked because neither scale set fit: `home-lab-readonly` (zero RBAC, where
+`renovate-pr-review.yml` ran) couldn't take a `container:`/`docker://` job without ARC's kubernetes
+container hook re-granting the namespaced Role the readonly split existed to remove, and `home-lab`
+(cluster-admin) forbade auto-triggered workflows. **That split was consolidated back into a single
+`home-lab` scale set on 2026-09-06** (see the Actions Runner Controller section in
+`docs/CLUSTER.md`) specifically to match bykaj's simpler model — `home-lab` now runs both
+auto-triggered workflows already, so the RBAC objection above no longer applies. What's still
+unresolved, independent of RBAC: the container hook (`actions/runner-container-hooks`, k8s) creates
+the job pod with only `fsGroup: 1001`; the job container runs as the image's own uid (Renovate
+image: `USER 12021`), so writes to `$GITHUB_OUTPUT`/`_temp` on the 1001-owned work volume are a
+known failure mode unless an `ACTIONS_RUNNER_CONTAINER_HOOK_TEMPLATE` forces `runAsUser: 1001` *and*
+the image tolerates that uid. Also worth weighing before revisiting: Renovate running as a
+`container:` job on `home-lab` would inherit that runner's `cluster-admin` + `os:admin` Talos
+access — a materially bigger blast radius for an hourly-scheduled job than the scoped
+`ubuntu-latest` runner it uses today, whether or not the container-hook issue gets fixed.
 
-**Cheapest viable shape when revisited:** no job container at all — run directly in the `home-lab-readonly` runner pod (`ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER=false` already), `actions/setup-node` (Renovate 44 needs `node ^24.11`) + `npx renovate@<pinned>`; the repo has no lockfiles, so Renovate needs only `git`, and no RBAC changes are required. A separate `home-lab-renovate` scale set with the kube-mode Role is the alternative if a real job container is wanted. Independent of the runner: add `actions/cache` on `/tmp/renovate` (the action's default `docker-volumes: /tmp:/tmp` exposes it) if lookups dominate run time.
+**Cheapest viable shape when revisited:** no job container at all — run directly in the `home-lab`
+runner pod (`ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER=false` already), `actions/setup-node` (Renovate
+44 needs `node ^24.11`) + `npx renovate@<pinned>`; the repo has no lockfiles, so Renovate needs only
+`git`. This sidesteps the container-hook uid issue entirely (no job container), but still inherits
+`home-lab`'s full privilege for the run — accept that trade-off explicitly before switching.
+Independent of the runner: add `actions/cache` on `/tmp/renovate` (the action's default
+`docker-volumes: /tmp:/tmp` exposes it) if lookups dominate run time.
 
 ### CloudNativePG: Backup, PITR, and Per-App Provisioning
 
@@ -2225,6 +2247,8 @@ access turns out to be unavailable/undesirable at the time.
 | Renovate: Mend app → self-hosted workflow | `.github/workflows/renovate.yaml` (2026-09-05): `renovatebot/github-action` v46.2.5 / Renovate 44.65.5 pinned, bot App token via 1Password, every 6 h + push-on-config + dispatch (`dryRun`, `logLevel`); `renovate-pr-review.yml` author gate moved to `qnimbus-homelab-assistant[bot]`. In-cluster runner parked — see [above](#renovate-on-an-in-cluster-runner) |
 | Renovate: split config into `.renovate/` presets | `renovate.json5` (repo root, unchanged path — the workflow's push-trigger depends on it) now only holds `$schema`, `extends`, dashboard/PR-limit/schedule/`ignorePaths`/`ignoreDeps` settings, and 4 manager `managerFilePatterns` overrides (`flux`, `helm-values`, `kubernetes`, `kustomize` — the `helmfile` override was removed, see below). 9 concern-specific local presets live under `.renovate/` (`groups`, `allowedVersions`, `autoMerge`, `semanticCommits`, `labels`, `overrides`, `customManagers`, `grafanaDashboards`, `changelogs`), referenced via `local>qnimbus/home-lab//.renovate/*.json5`. `minimumGroupSize` added to every multi-member group (bykaj pattern) so a group rule only fires once ≥2 members actually have a pending update, instead of opening a single-dependency PR under a group name. `changelogs.json5` adds explicit `changelogUrl` overrides for the 3 packages this repo shares with bykaj's (1Password Connect, Cloudflared, Spegel) — the 1Password rule had to be rewritten to match our depName (`connect`, the bare Helm chart) since we deploy it via the official chart rather than app-template with explicit `ghcr.io/1password/connect-*` image refs like bykaj's. Caveat: local presets always resolve from `main`, never a PR branch — validate a preset edit via `workflow_dispatch` + `dryRun: true` after merge, not a test PR. Also removed a pre-existing `helmfile:` `managerFilePatterns` override that silently replaced (not merged) Renovate's built-in helmfile-manager defaults, dropping the `helmfile.d/*.yaml` pattern and leaving `ops/bootstrap/helmfile.d/{00-crds,01-apps}.yaml` (cilium, coredns, spegel, cert-manager, flux-operator, flux-instance) untracked — see [QA.md](QA.md#why-werent-opsbootstraphelmfiled-yaml-releases-cilium-coredns-spegel-cert-manager-flux-operator-flux-instance-getting-renovate-prs) |
 | Image pre-pull workflow (bykaj `image-pull.yaml`) | `.github/workflows/image-pull.yaml` (2026-09-05): diffs `flux-local get cluster --enable-images` between `main` and the PR, `talosctl image pull`s new ones on a dedicated `home-lab-image-pull` runner (Talos `ServiceAccount` cert, `os:admin` — no confirmed narrower role covers image pull, and no Kubernetes RBAC at all), Spegel fans the layer out cluster-wide. Not `home-lab` — its `rbac.yaml` forbids auto-triggered workflows on the cluster-admin scale set. Reused tuppr's existing `kubernetesTalosAPIAccess` mechanism (`talos/patches/controller/machine-features.yaml`, control-plane-only, `allowedKubernetesNamespaces` extended to `actions-runner-system`) instead of a static talosconfig secret |
+| Image pre-pull workflow (bykaj `image-pull.yaml`) | `.github/workflows/image-pull.yaml` (2026-09-05): diffs `flux-local get cluster --enable-images` between `main` and the PR, `talosctl image pull`s new ones on `home-lab` via a Talos `ServiceAccount` cert (`os:admin` — no confirmed narrower role covers image pull), Spegel fans the layer out cluster-wide. Reused tuppr's existing `kubernetesTalosAPIAccess` mechanism (`talos/patches/controller/machine-features.yaml`, control-plane-only, `allowedKubernetesNamespaces` extended to `actions-runner-system`) instead of a static talosconfig secret. Originally ran on a dedicated zero-RBAC `home-lab-image-pull` scale set; consolidated into `home-lab` 2026-09-06 (see ARC runner consolidation row below) |
+| ARC runner consolidation (`home-lab`, `home-lab-readonly`, `home-lab-image-pull` → one `home-lab`) | 2026-09-06: dropped the privileged/zero-permission split built across the Renovate and image-pull sessions in favor of bykaj's single cluster-admin runner shape, per user request. `home-lab` gained a Talos `ServiceAccount` (`os:admin`); `renovate-pr-review.yml` and `image-pull.yaml`'s `pull` job both now run there. Trade-off accepted knowingly: both are `pull_request`-triggered, so they now run with full cluster-admin instead of scoped access — see `runners/home-lab/rbac.yaml` |
 | Persistent Storage (OpenEBS + Rook-Ceph) | OpenEBS LocalPV live; **Longhorn removed**, superseded by Rook-Ceph v1.19.6 (`ceph-block` default SC, `size=3`/`min_size=2`); the per-node dedicated disks (cp-01/cp-02: Kingston SNV3S1000G, cp-03: Crucial CT2000P310SSD8) are now wiped-to-raw Ceph OSDs on the `10.200.0.0/24` storage bond. Longhorn 3-replica ran 2026-05-23 → 2026-06-08 |
 | Pod Topology: scheduling concentration on cp-03   | Fixed imbalance; CoreDNS + Envoy proxies spread to 3 replicas 1/node (`DoNotSchedule`); Flux/cert-manager/ESO at 2 replicas + topology spread; stateful workloads (Prometheus/Alertmanager) accepted on cp-03 |
 | Talos machine configs         | 3 CP nodes, patches, schematic registered       |

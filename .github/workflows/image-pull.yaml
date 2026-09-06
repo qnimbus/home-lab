@@ -9,10 +9,10 @@ name: Image Pull
 # nodes — kubernetes/apps/kube-system/spegel/) then fans the pulled layer out cluster-wide, so
 # Flux's eventual reconcile after merge doesn't pay the cold-pull tax.
 #
-# `pull` runs on `home-lab-image-pull`, a dedicated runner scale set with zero Kubernetes RBAC —
-# its only privilege is a Talos ServiceAccount cert (os:admin; see
-# runners/home-lab-image-pull/talos-serviceaccount.yaml). `home-lab` (cluster-admin) is
-# deliberately not used here: its own rbac.yaml forbids pointing an auto-triggered workflow at it.
+# `pull` runs on `home-lab` — the same cluster-admin runner renovate-pr-review.yml uses — which
+# also carries a Talos ServiceAccount cert (os:admin; see runners/home-lab/talos-serviceaccount.yaml)
+# for talosctl. A dedicated zero-RBAC scale set for this job was tried and consolidated back into
+# home-lab on 2026-09-06 in favor of a single-runner setup; see docs/CLUSTER.md.
 
 on:
   pull_request:
@@ -100,7 +100,7 @@ jobs:
     if: ${{ needs.diff.outputs.images != '[]' && github.event.pull_request.head.repo.full_name == github.repository }}
     needs: diff
     name: Image Pull - Pull Images
-    runs-on: home-lab-image-pull
+    runs-on: home-lab
     timeout-minutes: 15
     strategy:
       matrix:

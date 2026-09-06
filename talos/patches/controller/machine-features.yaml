@@ -6,4 +6,4 @@ machine:
         - os:admin
       allowedKubernetesNamespaces:
         - system-upgrade         # used by tuppr for Talos/k8s upgrades
-        - actions-runner-system  # home-lab-image-pull runner's Talos ServiceAccount (image pre-pull CI)
+        - actions-runner-system  # home-lab runner's Talos ServiceAccount (talosctl, e.g. image pre-pull CI)
