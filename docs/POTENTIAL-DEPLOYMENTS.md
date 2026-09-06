@@ -122,7 +122,7 @@ Apps are grouped by functional area. Entries marked **✅ deployed** are already
 | App | Chart | Source | Notes |
 |-----|-------|--------|-------|
 | **actions-runner-controller** ✅ | `gha-runner-scale-set-controller` v0.14.2 | `ghcr.io/actions/actions-runner-controller-charts` | GitHub Actions ARC controller |
-| **runners (home-lab, home-lab-readonly)** ✅ | `gha-runner-scale-set` v0.14.2 | `ghcr.io/actions/actions-runner-controller-charts` | ARC runner scale sets, split into `home-lab` (privileged) and `home-lab-readonly` (zero-permission) groups |
+| **runners (home-lab)** ✅ | `gha-runner-scale-set` v0.14.2 | `ghcr.io/actions/actions-runner-controller-charts` | Single ARC runner scale set, `cluster-admin` + Talos `ServiceAccount`; a privileged/zero-permission split was tried and consolidated back into one 2026-09-06 |
 | **coder** | `coder` v2.33.5 | `ghcr.io/coder/chart` | Browser-based cloud development environments |
 | **publish-schemas** | `app-template` v5.0.1 | `ghcr.io/bjw-s-labs/helm/app-template` | CRD schema publishing job (feeds IDE validation) |
 

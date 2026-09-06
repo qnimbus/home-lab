@@ -563,19 +563,16 @@ Three Flux Kustomizations in `kubernetes/apps/rook-ceph/rook-ceph/ks.yaml`. The 
 
 ### Actions Runner Controller (ARC) · `v0.14.2` · `actions-runner-system`
 
-**GitHub Actions self-hosted runner pool.** ARC provisions ephemeral Kubernetes pod runners on demand via the scale set pattern. Three HelmReleases work together: the cluster-wide controller, the `home-lab` privileged runner scale set, and the `home-lab-readonly` zero-permission scale set.
+**GitHub Actions self-hosted runner pool.** ARC provisions ephemeral Kubernetes pod runners on demand via the scale set pattern. Two HelmReleases work together: the cluster-wide controller and the single `home-lab` runner scale set — a split into privileged/zero-permission scale sets (`home-lab-readonly`, `home-lab-image-pull`) was tried across two earlier sessions and consolidated back into one on 2026-09-06, matching bykaj's simpler single-runner shape (see `docs/ROADMAP.md` for what the split was for and why it was dropped).
 
 | Component | Type | Replicas | Role |
 |-----------|------|----------|------|
 | `actions-runner-controller` (gha-rs-controller) | Deployment | 1 | Cluster-wide controller that manages scale sets and creates runner pods on demand |
-| `home-lab` listener | Pod (ephemeral) | 1 (scales to 0 when idle) | Listens for queued GitHub Actions jobs; spins up runner pods per job; each pod uses a 25 Gi `openebs-hostpath` work volume |
-| `home-lab-readonly` listener | Pod (ephemeral) | 0–3 (scales to 0 when idle) | Zero-permission runner for automated Renovate PR reviews; 10 Gi `openebs-hostpath` work volume |
+| `home-lab` listener | Pod (ephemeral) | 0–3 (scales to 0 when idle) | Listens for queued GitHub Actions jobs; spins up runner pods per job; each pod uses a 10 Gi `openebs-hostpath` work volume |
 
-`home-lab` runner pods are launched with `cluster-admin` RBAC and a Talos `ServiceAccount` (`os:admin`) mounted at `/var/run/secrets/talos.dev` — giving workflow steps direct `kubectl` and `talosctl` access. Authentication uses a GitHub App (App ID + Installation ID + private key) sourced from 1Password via `ExternalSecret`. Runners are labelled `home-lab` and match the `runs-on: home-lab` label in workflows.
+`home-lab` runner pods are launched with `cluster-admin` RBAC and a Talos `ServiceAccount` (`os:admin`) mounted at `/var/run/secrets/talos.dev` — giving workflow steps direct `kubectl` and `talosctl` access. Authentication uses a GitHub App (App ID + Installation ID + private key) sourced from 1Password via `ExternalSecret`. Runners are labelled `home-lab` and match the `runs-on: home-lab` label in workflows. Both workflows that use it (`renovate-pr-review.yml`, `image-pull.yaml`'s `pull` job) trigger on `pull_request` — a known, accepted trade-off (see `runners/home-lab/rbac.yaml`'s comment): a bug in either, or a compromised bot-App key, has full cluster-admin rather than scoped access.
 
-`home-lab-readonly` runner pods use an explicit `actions-runner-readonly` `ServiceAccount` bound to **no** RBAC — this suppresses ARC's automatic namespace-scoped Role provisioning (`pods/exec`, `jobs`, `secrets` — create + delete), which would silently reintroduce the privilege the split exists to remove. Matched by `runs-on: home-lab-readonly`.
-
-> **Primary use**: automatic Renovate PR review via `claude-code-action` — the `pr-upgrade-reviewer` agent reviews every Renovate-opened major/minor PR on the zero-permission `home-lab-readonly` runner without consuming GitHub-hosted minutes. Patch-only and unlabeled PRs skip the review step entirely (read live labels via `gh pr view` before checkout to avoid the `opened`/`labeled` race).
+> **Primary use**: automatic Renovate PR review via `claude-code-action` (the `pr-upgrade-reviewer` agent reviews every Renovate-opened major/minor PR; patch-only and unlabeled PRs skip the review step, read live labels via `gh pr view` before checkout to avoid the `opened`/`labeled` race) and the `image-pull.yaml` pre-pull workflow's `talosctl image pull` step.
 
 ---
 
@@ -1010,17 +1007,15 @@ flowchart TD
 ```
 
 <details>
-<summary>actions-runner-system (3)</summary>
+<summary>actions-runner-system (2)</summary>
 
 ```mermaid
 flowchart TD
   flux_system_actions_runner_controller["actions-runner-controller"]
   flux_system_actions_runner_home_lab["actions-runner-home-lab"]
-  flux_system_actions_runner_home_lab_readonly["actions-runner-home-lab-readonly"]
   flux_system_onepassword_store(("onepassword-store · external-secrets")):::external
   flux_system_actions_runner_controller --> flux_system_onepassword_store
   flux_system_actions_runner_home_lab --> flux_system_actions_runner_controller
-  flux_system_actions_runner_home_lab_readonly --> flux_system_actions_runner_controller
   classDef external fill:#eee,stroke:#999,stroke-dasharray: 3 3
 ```
 
@@ -1434,7 +1429,7 @@ flux-local is sunsetted upstream; its successor `flate` hangs on this tree (home
 
 **Renovate itself is a workflow too** (`renovate.yaml`, since 2026-09-05 — replaced the Mend-hosted app). It runs `renovatebot/github-action` on `ubuntu-latest` every 6 h, on every push to `main` that touches `renovate.json5` or the workflow, and on demand (`gh workflow run renovate.yaml -f dryRun=true -f logLevel=debug` for a write-nothing run). The token comes from the bot App via the same 1Password flow as `labeler.yaml`, so PRs, API-signed commits and the dependency dashboard are authored by `qnimbus-homelab-assistant[bot]`; anything gating on the Renovate author must use that login (`renovate-pr-review.yml` does). Repository config stays in `renovate.json5`; the workflow's `env:` holds only global (self-hosted-only) settings. Budget: ~2-3 billed minutes per run — every 6 h is ~250-360 min/month of the 2000-minute private-repo plan, hourly would be most of it; check Settings → Billing before tightening the cron. Trade-off vs the hosted app: no webhook immediacy — dashboard checkboxes and rebase requests act on the next scheduled run. An in-cluster runner is parked with its findings in [ROADMAP.md](ROADMAP.md#renovate-on-an-in-cluster-runner).
 
-**Image pre-pull is a third workflow** (`image-pull.yaml`, since 2026-09-05). On every PR touching `kubernetes/**`, `extract`/`diff` (`ubuntu-latest`, `flux-local get cluster --enable-images`) compute the set of container images the PR introduces that `main` doesn't have, then `pull` runs `talosctl image pull` for each on `home-lab-image-pull` — a dedicated runner scale set with *zero* Kubernetes RBAC, whose only privilege is a Talos `ServiceAccount` cert (`os:admin`; no narrower Talos role is confirmed to cover image pull). Deliberately not `home-lab` (cluster-admin): that scale set's own `rbac.yaml` forbids pointing an auto-triggered workflow at it. Spegel (DaemonSet, all 5 nodes) fans the pulled layer out cluster-wide, so by the time the PR merges and Flux reconciles, the image is already warm everywhere — not just on whichever node the runner pod happened to land on. The Talos ServiceAccount mechanism reuses the same `machine.features.kubernetesTalosAPIAccess` feature already enabled for tuppr (`talos/patches/controller/machine-features.yaml` — control-plane nodes only, `allowedKubernetesNamespaces` extended to cover `actions-runner-system`); no static talosconfig secret was introduced.
+**Image pre-pull is a third workflow** (`image-pull.yaml`, since 2026-09-05). On every PR touching `kubernetes/**`, `extract`/`diff` (`ubuntu-latest`, `flux-local get cluster --enable-images`) compute the set of container images the PR introduces that `main` doesn't have, then `pull` runs `talosctl image pull` for each on `home-lab` — the same cluster-admin runner `renovate-pr-review.yml` uses, via the Talos `ServiceAccount` cert (`os:admin`; no narrower Talos role is confirmed to cover image pull) mounted on that scale set. (A dedicated zero-RBAC scale set for this job existed briefly and was consolidated back into `home-lab` on 2026-09-06 — see the Actions Runner Controller section above.) Spegel (DaemonSet, all 5 nodes) fans the pulled layer out cluster-wide, so by the time the PR merges and Flux reconciles, the image is already warm everywhere — not just on whichever node the runner pod happened to land on. The Talos ServiceAccount mechanism reuses the same `machine.features.kubernetesTalosAPIAccess` feature already enabled for tuppr (`talos/patches/controller/machine-features.yaml` — control-plane nodes only, `allowedKubernetesNamespaces` extended to cover `actions-runner-system`); no static talosconfig secret was introduced.
 
 **App permission gotcha (found via `logLevel=debug`, 2026-09-05): Commit statuses is a separate GitHub App permission from Checks, and it must be Write, not Read.** The App's installation-settings page groups permissions into rows that don't map 1:1 onto individual scopes, so it's easy to grant Checks and think status handling is covered. Renovate calls `GET .../commits/{sha}/statuses` before opening a PR (needs `statuses: read`) and `POST .../statuses/{sha}` to set the `renovate/stability-days` branch status from this repo's `stabilityDays` config (needs `statuses: write`); either 403ing aborts the entire repository run before it reaches PR creation or the dependency dashboard, with no PR and no dashboard issue as the only visible symptom. The one remaining 403 in a clean run — `GET .../branches/main/protection` needing `administration: read` — is expected and harmless: GitHub gates that endpoint behind a paid plan for private repos (same limitation noted above for branch protection), and Renovate's own branch-protection detection catches and skips it.
 
