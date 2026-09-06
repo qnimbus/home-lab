@@ -27,11 +27,9 @@
   dependencyDashboard: true,
   dependencyDashboardTitle: "Renovate Dashboard",
 
-  // Stagger PR creation to avoid saturating the Claude review workflow.
-  // Renovate runs every ~1h during the weekend window; prHourlyLimit caps new PRs per run,
-  // prConcurrentLimit caps total open PRs. A backlog drains at 2/hour, max 5 open at once.
-  prHourlyLimit: 2,
-  prConcurrentLimit: 10,
+  // Renovate runs every ~6hrs
+  prHourlyLimit: 2,       // This setting - if enabled - limits Renovate to a maximum of x PRs opened per hour (or run, in our case)
+  prConcurrentLimit: 10,  // This setting - if enabled - limits Renovate to a maximum of x concurrent PRs open at any time
 
   // Only scan on weekends — avoids noise during the week; change to "at any time" to run continuously
   schedule: ["at any time"],
