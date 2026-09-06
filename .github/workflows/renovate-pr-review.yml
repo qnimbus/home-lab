@@ -85,16 +85,30 @@ jobs:
           # against a PR with merge conflicts.
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/pull/{0}/head', inputs.pr_number) || '' }}
 
+      # Same 1Password → step-output pattern as flux-render.yaml/labeler.yaml/renovate.yaml.
+      # ANTHROPIC_API_KEY previously lived here as a GitHub Actions secret (Settings →
+      # Secrets and variables → Actions) after the 2026-06-23 leak — the key was sourced
+      # from a Kubernetes-injected env var that never went through GitHub's log-masking
+      # engine, so the action's own "Post Run" step echoed it in plaintext. That's fixed
+      # here differently: 1password/load-secrets-action calls core.setSecret() on every
+      # value it loads, registering it with the same runner-side masking engine
+      # `secrets.*` uses, so this is exempt from the failure mode that caused the original
+      # leak while restoring 1Password as the single source of truth. The item lives in
+      # the `GitHub` vault (not `homelab`) — see docs/EXTERNAL-SECRETS.yaml — to keep
+      # CI-scoped credentials segregated from the cluster-facing vault.
+      - name: Load Secrets
+        id: load-secrets
+        if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.run_review == 'true'
+        uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1 # zizmor: ignore[unpinned-tools]
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          ANTHROPIC_API_KEY: op://GitHub/anthropic/API_KEY
+
       - uses: anthropics/claude-code-action@v1
         if: github.event_name == 'workflow_dispatch' || steps.gate.outputs.run_review == 'true'
         timeout-minutes: 30
         with:
-          # ANTHROPIC_API_KEY is a GitHub Actions secret (Settings → Secrets and
-          # variables → Actions). GitHub auto-masks secrets.* everywhere in logs,
-          # including the action's own "Post Run" step that echoes its env: block —
-          # which is how the key leaked on 2026-06-23 when it was sourced from a
-          # Kubernetes-injected env var that GitHub had no way to know to scrub.
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ steps.load-secrets.outputs.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           allowed_bots: 'renovate' # Or '*' to allow all bots
           # Without this, the job log prints "Claude Code initialized" and then goes
