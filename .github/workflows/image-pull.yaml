@@ -110,6 +110,14 @@ jobs:
     env:
       MATRIX_IMAGE: ${{ matrix.image }}
     steps:
+      # mise-action reads .mise.toml for the pinned version — without a checkout here it finds no
+      # config, so it installs mise's own latest instead of .mise.toml's 1.13.0 pin, and (worse)
+      # leaves the shim unactivated: "No version is set for shim: talosctl" on the next step.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       # mise-pinned, not a curl-latest install — matches .mise.toml's talosctl version.
       - name: Install talosctl
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
