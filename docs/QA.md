@@ -1269,6 +1269,33 @@ Patch PRs (e.g. `v1.10.6 → v1.10.9`) are always safe to merge directly — Tal
 
 ---
 
+### Why weren't `ops/bootstrap/helmfile.d/*.yaml` releases (cilium, coredns, spegel, cert-manager, flux-operator, flux-instance) getting Renovate PRs?
+
+**Short answer:** `renovate.json5` used to carry a `helmfile: { managerFilePatterns: [...] }` override that restated only one of Renovate's two default file-match patterns for the `helmfile` manager. Since `managerFilePatterns` is a non-mergeable config field — setting it *replaces* the manager's defaults rather than adding to them — that override silently dropped the pattern that actually matches `helmfile.d/` files, leaving these six releases invisible to Renovate for months. The override has been removed (see `renovate.json5`, next to the `kubernetes:` manager block).
+
+**Detail:** Renovate's built-in `helmfile` manager ships with two default `managerFilePatterns`:
+```
+/(^|/)helmfile\.ya?ml(?:\.gotmpl)?$/
+/(^|/)helmfile\.d/.+\.ya?ml(?:\.gotmpl)?$/
+```
+The first matches a file literally named `helmfile.yaml`; the second matches any YAML file inside a directory named `helmfile.d/` — which is exactly this repo's bootstrap ladder layout (`ops/bootstrap/helmfile.d/00-crds.yaml`, `01-apps.yaml`). Both patterns are active by default, with no config needed.
+
+The removed override read:
+```json5
+helmfile: {
+  managerFilePatterns: ["/(^|/)helmfile\\.ya?ml$/"],
+},
+```
+This looks like it's just confirming the manager should scan `helmfile.yaml`-named files — but Renovate treats `managerFilePatterns` (like most array-typed config fields, e.g. `labels`) as **non-mergeable**: providing any value at all replaces the built-in default array wholesale, it does not append to it. The result was a manager that only ever looked for a file literally named `helmfile.yaml` — which doesn't exist anywhere in this repo — and therefore never scanned `ops/bootstrap/helmfile.d/*.yaml` at all. Renovate had zero visibility into the versions of cilium, coredns, spegel, cert-manager, flux-operator, or flux-instance pinned there.
+
+Confirmed against `bykaj/home-ops` (the reference repo this cluster's Renovate config is modeled on, `tmp/bykaj-home-ops/`): its `bootstrap/helmfile.d/01-apps.yaml` has the identical six-release structure, and its Renovate config never sets a `helmfile:` override at all — so both default patterns stay active and those releases get tracked automatically. This repo's override was a narrowing regression relative to upstream defaults, not a limitation shared with the reference repo.
+
+**Lesson — general Renovate gotcha, not just this manager:** never set `managerFilePatterns` (or any non-mergeable array field) to "confirm" or "restate" a default unless you've checked *all* of that manager's actual default patterns first (`docs.renovatebot.com/modules/manager/<name>/`). A partial restatement silently drops the patterns you didn't list, with no warning — Renovate has no way to tell "the user meant to narrow this" from "the user meant to reaffirm the default and missed one line."
+
+**How this was caught:** while reviewing whether `bykaj/home-ops` tracks these same six bootstrap releases, fetching Renovate's own `helmfile` manager docs revealed the second default pattern this repo's override was silently discarding.
+
+---
+
 ### Why does tuppr start spawning failing "downgrade" jobs after a manual Kubernetes upgrade?
 
 **Short answer:** When you run `talosctl upgrade-k8s` manually, the cluster advances to the new version *before* Git is updated. tuppr sees `CURRENT > TARGET` and tries to reconcile backward. `talosctl` refuses downgrade paths (e.g. 1.35→1.34), so the jobs fail safely — but they loop indefinitely until the CRD is cleaned up.

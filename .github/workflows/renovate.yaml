@@ -26,6 +26,7 @@ on:
     paths:
       # config change → immediate run (replaces the webhook the hosted app reacted to)
       - renovate.json5
+      - .renovate/**
       - .github/workflows/renovate.yaml
   schedule:
     - cron: 0 */6 * * * # every 6 h — see budget note above; dashboard checkbox actions wait for the next run

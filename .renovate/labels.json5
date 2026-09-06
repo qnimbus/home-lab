@@ -1,0 +1,16 @@
+{
+  // Label rules — type/* by update-type, renovate/* by datasource/manager.
+  // These combine: a PR for a minor Helm chart update gets both type/minor and renovate/helm
+
+  packageRules: [
+    { matchUpdateTypes: ["major"], labels: ["type/major"] },
+    { matchUpdateTypes: ["minor"], labels: ["type/minor"] },
+    { matchUpdateTypes: ["patch"], labels: ["type/patch"] },
+
+    { matchDatasources: ["docker"],          addLabels: ["renovate/container"] },
+    { matchDatasources: ["helm"],            addLabels: ["renovate/helm"] },
+    { matchManagers: ["github-actions"],     addLabels: ["renovate/github-action"] },
+    { matchDatasources: ["github-releases"], addLabels: ["renovate/github-release"] },
+    { matchManagers: ["mise"],               addLabels: ["renovate/mise"] },
+  ],
+}

@@ -1,0 +1,50 @@
+{
+  // Version pins/holds — packages deliberately kept off a specific line until a planned upgrade.
+
+  packageRules: [
+    {
+      // Ceph itself is pinned in the rook-ceph-cluster HelmRelease (cephImage.tag). Hold it on the
+      // Tentacle (v20) line: a Ceph major needs prep per Rook's ceph-upgrade guide and Rook 1.20
+      // only supports Squid/Tentacle — Renovate offered v21.1.0 (PR #101) within hours of the
+      // first pin landing. Ceph's x.1.z tags are release candidates and x.2.z stable. Floor is
+      // v20.2.4: 20.2.0 corrupts data with readAffinity (enabled here) and 20.2.1–20.2.3 predate
+      // the CVE-2025-30156 fixes we already run on Squid. Bump the regex to the next line (and
+      // read that line's release notes first) when a major upgrade is actually planned.
+      description: "Ceph image — stay on Tentacle v20.2.z (>= .4) until a major upgrade is planned",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["quay.io/ceph/ceph"],
+      allowedVersions: "/^v20\\.2\\.([4-9]|[1-9]\\d+)$/",
+    },
+    {
+      // ceph-csi-drivers must stay at (or below) the ceph-csi-operator subchart version bundled in
+      // the rook-ceph chart in use — the operator owns the CRDs. Upstream cuts both in lockstep,
+      // usually ahead of Rook's rebase. Pinned to the subchart version of the current Rook line
+      // (v1.20.x → 1.0.4); raise it together with the next Rook chart bump after checking
+      // deploy/charts/rook-ceph/Chart.yaml in that release. dependencyDashboardApproval was tried
+      // first and silently not honoured (see the quay.io/ceph/ceph rule above), hence the hard pin.
+      description: "ceph-csi-drivers chart — pin to the subchart version bundled in the Rook line in use",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["ghcr.io/home-operations/charts-mirror/ceph-csi-drivers"],
+      allowedVersions: "<=1.0.4",
+    },
+    {
+      // postgres-backup-local image major version must match the CNPG cluster's Postgres major.
+      // Remove this rule when the cluster upgrades to v18.
+      description: "postgres-backup-local — hold at v17 until CNPG cluster upgrades",
+      matchPackageNames: ["docker.io/prodrigestivill/postgres-backup-local"],
+      allowedVersions: "/^17/",
+    },
+    {
+      // maximhq/bifrost's Docker Hub repo mixes real container images (tagged vX.Y.Z) with
+      // Helm chart OCI artifacts pushed under bare semver tags (e.g. 2.1.29, no 'v' prefix).
+      // Renovate's docker datasource can't distinguish artifact types by tag string alone, so
+      // without this it will propose the chart artifact as an "image update" — the resulting
+      // tag has no OCI Entrypoint/Cmd at all, and the pod fails with CreateContainerError:
+      // "no command specified".
+      description: "maximhq/bifrost — restrict to v-prefixed container image tags (bare-semver tags are Helm chart OCI artifacts, not images)",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["maximhq/bifrost"],
+      allowedVersions: "/^v/",
+    },
+  ],
+}

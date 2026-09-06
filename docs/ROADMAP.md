@@ -2060,58 +2060,6 @@ envoy-gateway-config (dependsOn: certificates-import, cert-manager)
 
 ---
 
-#### Split Renovate Configuration (`.renovate/` directory)
-
-Instead of a single `renovate.json5`, split config into files by concern so each section
-is independently reviewable in PRs. Reference pattern: `bykaj/home-ops` uses
-`allowedVersions.json5`, `autoMerge.json5`, `groups.json5`, `customManagers.json5`,
-`labels.json5`, `semanticCommits.json5`, etc.
-
-**When to do this:** defer until `renovate.json5` feels unwieldy — roughly 400+ lines, or
-when adding KEDA scalers, VolSync rules, or complex `allowedVersions` blocks. As of 2026-05-22
-the file is ~282 lines and well-structured; the split adds overhead without much benefit yet.
-
-**How it actually works — important:**
-This is NOT a simple file-cut. Each split file must be a valid **Renovate local preset**,
-not a raw JSON5 fragment. Renovate loads them via `extends`, not by auto-scanning the directory.
-
-**Steps to implement:**
-1. Create `.renovate/` directory with one file per concern, each structured as a preset:
-   ```json5
-   // .renovate/groups.json5
-   {
-     description: "Package grouping rules",
-     packageRules: [ /* grouping rules only */ ],
-   }
-   ```
-   Suggested split for this repo:
-   - `.renovate/renovate.json5` — root config: `$schema`, `extends`, `schedule`, `ignorePaths`, `ignoreDeps`, manager file-pattern overrides
-   - `.renovate/groups.json5` — all `groupName` rules
-   - `.renovate/autoMerge.json5` — all `automerge: true` rules
-   - `.renovate/semanticCommits.json5` — commit message formatting + scope rules
-   - `.renovate/labels.json5` — label rules
-   - `.renovate/customManagers.json5` — regex custom manager
-
-2. Update the root config to reference each split file via `extends`:
-   ```json5
-   extends: [
-     "config:recommended",
-     // ... other presets ...
-     "local:.renovate/groups.json5",
-     "local:.renovate/autoMerge.json5",
-     "local:.renovate/semanticCommits.json5",
-     "local:.renovate/labels.json5",
-     "local:.renovate/customManagers.json5",
-   ],
-   ```
-
-3. Delete the original `renovate.json5` once the root config lives at `.renovate/renovate.json5`.
-
-**No cluster-level impact** — purely a repository ergonomics improvement. Validate by
-triggering a Renovate dry-run after the split (check the Dependency Dashboard issue for errors).
-
----
-
 #### Grafana-Operator: Full Native Migration (Future)
 
 **Context:** the `unpoller` deployment (2026-07-03 session) needed a cleaner way to manage
@@ -2275,6 +2223,7 @@ access turns out to be unavailable/undesirable at the time.
 | Area                          | Notes                                           |
 |-------------------------------|-------------------------------------------------|
 | Renovate: Mend app → self-hosted workflow | `.github/workflows/renovate.yaml` (2026-09-05): `renovatebot/github-action` v46.2.5 / Renovate 44.65.5 pinned, bot App token via 1Password, every 6 h + push-on-config + dispatch (`dryRun`, `logLevel`); `renovate-pr-review.yml` author gate moved to `qnimbus-homelab-assistant[bot]`. In-cluster runner parked — see [above](#renovate-on-an-in-cluster-runner) |
+| Renovate: split config into `.renovate/` presets | `renovate.json5` (repo root, unchanged path — the workflow's push-trigger depends on it) now only holds `$schema`, `extends`, dashboard/PR-limit/schedule/`ignorePaths`/`ignoreDeps` settings, and 4 manager `managerFilePatterns` overrides (`flux`, `helm-values`, `kubernetes`, `kustomize` — the `helmfile` override was removed, see below). 9 concern-specific local presets live under `.renovate/` (`groups`, `allowedVersions`, `autoMerge`, `semanticCommits`, `labels`, `overrides`, `customManagers`, `grafanaDashboards`, `changelogs`), referenced via `local>qnimbus/home-lab//.renovate/*.json5`. `minimumGroupSize` added to every multi-member group (bykaj pattern) so a group rule only fires once ≥2 members actually have a pending update, instead of opening a single-dependency PR under a group name. `changelogs.json5` adds explicit `changelogUrl` overrides for the 3 packages this repo shares with bykaj's (1Password Connect, Cloudflared, Spegel) — the 1Password rule had to be rewritten to match our depName (`connect`, the bare Helm chart) since we deploy it via the official chart rather than app-template with explicit `ghcr.io/1password/connect-*` image refs like bykaj's. Caveat: local presets always resolve from `main`, never a PR branch — validate a preset edit via `workflow_dispatch` + `dryRun: true` after merge, not a test PR. Also removed a pre-existing `helmfile:` `managerFilePatterns` override that silently replaced (not merged) Renovate's built-in helmfile-manager defaults, dropping the `helmfile.d/*.yaml` pattern and leaving `ops/bootstrap/helmfile.d/{00-crds,01-apps}.yaml` (cilium, coredns, spegel, cert-manager, flux-operator, flux-instance) untracked — see [QA.md](QA.md#why-werent-opsbootstraphelmfiled-yaml-releases-cilium-coredns-spegel-cert-manager-flux-operator-flux-instance-getting-renovate-prs) |
 | Image pre-pull workflow (bykaj `image-pull.yaml`) | `.github/workflows/image-pull.yaml` (2026-09-05): diffs `flux-local get cluster --enable-images` between `main` and the PR, `talosctl image pull`s new ones on a dedicated `home-lab-image-pull` runner (Talos `ServiceAccount` cert, `os:admin` — no confirmed narrower role covers image pull, and no Kubernetes RBAC at all), Spegel fans the layer out cluster-wide. Not `home-lab` — its `rbac.yaml` forbids auto-triggered workflows on the cluster-admin scale set. Reused tuppr's existing `kubernetesTalosAPIAccess` mechanism (`talos/patches/controller/machine-features.yaml`, control-plane-only, `allowedKubernetesNamespaces` extended to `actions-runner-system`) instead of a static talosconfig secret |
 | Persistent Storage (OpenEBS + Rook-Ceph) | OpenEBS LocalPV live; **Longhorn removed**, superseded by Rook-Ceph v1.19.6 (`ceph-block` default SC, `size=3`/`min_size=2`); the per-node dedicated disks (cp-01/cp-02: Kingston SNV3S1000G, cp-03: Crucial CT2000P310SSD8) are now wiped-to-raw Ceph OSDs on the `10.200.0.0/24` storage bond. Longhorn 3-replica ran 2026-05-23 → 2026-06-08 |
 | Pod Topology: scheduling concentration on cp-03   | Fixed imbalance; CoreDNS + Envoy proxies spread to 3 replicas 1/node (`DoNotSchedule`); Flux/cert-manager/ESO at 2 replicas + topology spread; stateful workloads (Prometheus/Alertmanager) accepted on cp-03 |

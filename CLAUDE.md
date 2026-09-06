@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-09-06 | `renovate-split-config` | Split renovate.json5 into 9 `.renovate/` local presets (bykaj pattern); added minimumGroupSize + changelogs.json5, adapted 1Password rule for this repo's depName |
 > | 2026-09-05 | `image-pull-workflow` | Added image pre-pull CI (talosctl on a new no-RBAC runner via Talos ServiceAccount cert); rolled out live to 3 CP nodes |
 > | 2026-09-05 | `renovate-self-hosted-actions` | Replaced Mend-hosted Renovate app with a self-hosted `renovate.yaml` workflow (bot App, every 6h); parked in-cluster runner on RBAC/uid findings |
 > | 2026-09-05 | `flux-render-ci-flate-eval` | Added flux-render CI (flux-local test + post-render kubeconform + diff comment); flate 0.6.5 hangs on this tree (#828) |
@@ -11,7 +12,6 @@
 > | 2026-09-04 | `rook-post-upgrade-hygiene-configkey-audit` | Dropped dead csi-metrics ServiceMonitor (root-caused upstream), audited config-key store for CVE-2026-50152, rotated jwt |
 > | 2026-09-04 | `ceph-cve-2025-30156-key-rotation` | Landed Ceph 19.2.6 + AES256K daemon key rotation (CVE-2025-30156) in one change; 10-min HEALTH_ERR window as designed |
 > | 2026-09-04 | `rook-v120-upgrade-csi-drivers-draft` | Upgraded Rook to v1.20.7 with new ceph-csi-drivers chart + lockstep HR gates; caught hidden Ceph 19→20 bump, pinned 19.2.3 |
-> | 2026-09-04 | `bifrost-image-tag-misfire` | Traced bifrost UpgradeFailed to Renovate mistaking a Helm chart artifact for an image; pinned v2.0.0, added guard rule |
 
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 

@@ -1,0 +1,104 @@
+{
+  // Auto-merge rules and release-age (soak-time) gating.
+  // automergeType: "branch" means Renovate pushes directly to the branch and
+  // merges when clean — no PR is created unless the branch has conflicts.
+  // ignoreTests: true is needed because this repo has no CI to wait for.
+
+  packageRules: [
+    {
+      // GitHub deprecates runner versions with little warning; a deprecated runner breaks
+      // CI entirely — creating a circular deadlock where CI can't approve its own fix.
+      // Auto-merge unconditionally breaks this cycle. Runner bumps are safe: they only
+      // update the runner binary, not workflow logic.
+      description: "Auto-merge GitHub Actions runner image (all update types)",
+      matchPackageNames: ["ghcr.io/home-operations/actions-runner"],
+      automerge: true,
+      automergeType: "branch",
+      ignoreTests: true,
+    },
+    {
+      description: "Auto-merge mise tool updates (minor + patch only)",
+      matchManagers: ["mise"],
+      automerge: true,
+      automergeType: "branch",
+      matchUpdateTypes: ["minor", "patch"],
+      ignoreTests: true,
+    },
+    {
+      description: "Auto-merge GitHub Actions (minor + patch + digest) after 3-day soak",
+      matchManagers: ["github-actions"],
+      automerge: true,
+      automergeType: "branch",
+      matchUpdateTypes: ["minor", "patch", "digest"],
+      minimumReleaseAge: "3 days",  // Gives the community time to catch regressions
+      ignoreTests: true,
+    },
+    {
+      description: "Auto-merge Helm chart patch updates after 3-day soak",
+      matchDatasources: ["helm"],
+      matchUpdateTypes: ["patch"],
+      automerge: true,
+      automergeType: "branch",
+      minimumReleaseAge: "3 days",
+      ignoreTests: true,
+    },
+    {
+      // Digest updates are same-tag SHA refreshes — no version change, very safe
+      description: "Auto-merge container image digest updates after 1-day soak",
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["digest"],
+      automerge: true,
+      automergeType: "branch",
+      minimumReleaseAge: "1 day",
+      ignoreTests: true,
+      matchPackageNames: ["!/siderolabs/installer/", "!/siderolabs/kubelet/"],
+    },
+    {
+      // Gate only — no automerge. Prevents PRs being opened against tags that appear
+      // before a release is fully published (e.g. missing release notes, RC artifacts).
+      // Pairs with the weekly schedule to give a practical 3–10 day community-regression window.
+      description: "Hold container image minor/patch PRs for 3-day soak",
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["minor", "patch"],
+      minimumReleaseAge: "3 days",
+      matchPackageNames: ["!/siderolabs/installer/", "!/siderolabs/kubelet/"],
+    },
+    {
+      // Curated list of minimal base/utility images — no app logic of our own runs in these,
+      // they're only ever used as init/sidecar containers (curl calls, static busybox tooling).
+      // Combines with the 3-day soak gate above (minimumReleaseAge isn't repeated here — rules
+      // merge). Add more depNames here as other low-risk utility images come up; do NOT widen
+      // this to app images (grafana, open-webui, etc.) — those can carry real breaking changes.
+      description: "Auto-merge minor/patch bumps for trusted utility/base images",
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["minor", "patch"],
+      matchPackageNames: ["alpine", "curlimages/curl"],
+      automerge: true,
+      automergeType: "branch",
+      ignoreTests: true,
+    },
+    {
+      // Upstreams that ship faster than the 3-day gate above can ever clear. Renovate
+      // always retargets to the newest release and minimumReleaseAge restarts from it,
+      // so against a ~2.5-day cadence the timer never expires; `schedule: every weekend`
+      // narrows it further to two scan days a week. The result is silent starvation
+      // rather than a safety gate — doco-cd sat 20 minors stale under the dashboard's
+      // "Pending Status Checks" while a heap-corruption bug already fixed upstream
+      // wedged all TrueNAS reconciliation (docs/QA.md, 2026-09-02).
+      //
+      // MUST stay after the 3-day rule: later packageRules win, and this only narrows
+      // that gate for the listed names. 1 day still soaks out an immediately-yanked
+      // release while reliably clearing before the next upstream tag lands.
+      //
+      // Deliberately no automerge — unlike the utility images above these are
+      // infrastructure agents that can break deployment itself, so the PR still gets
+      // reviewed. Add a depName here only once an upstream's cadence is demonstrably
+      // shorter than the 3-day gate; the fix for a merely-noisy repo is grouping.
+      description: "Shorter soak for fast-releasing infrastructure",
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["minor", "patch"],
+      matchPackageNames: ["ghcr.io/kimdre/doco-cd"],
+      minimumReleaseAge: "1 day",
+    },
+  ],
+}

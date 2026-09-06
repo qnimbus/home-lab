@@ -4,6 +4,84 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-06 — `renovate-split-config`
+
+### Goal
+Migrate Renovate configuration to a split `.renovate/` preset structure matching bykaj/home-ops,
+including an adapted `changelogs.json5` preset for the packages this repo shares with that
+reference.
+
+### What we did
+- Ran two parallel Explore agents to survey this repo's current 447-line `renovate.json5` and
+  bykaj/home-ops's `.renovate/` split-file structure (already cloned locally under
+  `tmp/bykaj-home-ops/`), then a Plan agent to produce a concrete rule-to-file mapping.
+- Verified two things directly against the repo rather than assuming: (1) no second "OCI
+  dependency" regex `customManager` is needed here — this repo's OCIRepository and Helmfile
+  chart references already use split `url`/`tag` fields that Renovate's built-in `flux`/`helmfile`
+  managers parse natively, unlike bykaj's inline `oci://name:tag` string format; (2) the exact
+  `minimumGroupSize` for each grouping rule, based on live matches grepped from the repo.
+- Created `.renovate/` with 8 concern-specific local presets (`groups`, `allowedVersions`,
+  `autoMerge`, `semanticCommits`, `labels`, `overrides`, `customManagers`, `grafanaDashboards`),
+  moving every existing `packageRule`/`customManager`/`customDatasource` verbatim (44
+  `packageRules` + 1 `customManager`, confirmed by counting before/after) and adding
+  `minimumGroupSize` to the 11 multi-member groups so a group only fires once ≥2 members are
+  actually pending.
+- Rewrote root `renovate.json5` down to just `$schema`, `extends`, and the repo-scan-level
+  settings (dashboard, PR limits, schedule, `ignorePaths`/`ignoreDeps`, manager
+  `managerFilePatterns` overrides), referencing the new presets via
+  `local>qnimbus/home-lab//.renovate/*.json5`.
+- Updated `.github/workflows/renovate.yaml`'s push-trigger `paths:` to include `.renovate/**` so
+  editing a preset still triggers an immediate run.
+- Updated `docs/ROADMAP.md`: removed the now-superseded draft "Split Renovate Configuration"
+  section, added a Completed-table row describing what actually landed.
+- Validated every new/edited file: installed the `json5` npm package into a scratch dir (not
+  available locally) to parse-check all `.renovate/*.json5` files plus the rewritten root config,
+  and confirmed the workflow YAML still parses.
+- Flagged directly to the user that the 2026-09-05 session (`renovate-self-hosted-actions`) had
+  already evaluated this same bykaj split and recommended *against* it, citing lost
+  PR-testability (local presets always resolve from `main`, never a PR branch) and lost inline
+  rationale comments. Proceeded anyway since the user asked for it explicitly: the
+  PR-testability cost is largely moot here (the workflow already only runs on push-to-main/
+  schedule, never against an open PR), and every comment block was moved with its rule verbatim
+  rather than summarized away.
+- Follow-up: reviewed bykaj's `.renovate/changelogs.json5` on request and added an adapted 9th
+  preset. Confirmed all three packages it patches (1Password Connect, Cloudflared, Spegel) are
+  actually deployed in this cluster before porting it. Rewrote the 1Password Connect rule rather
+  than copying it verbatim — this repo tracks the bare `connect` Helm chart (official chart, no
+  image override), not an image literally named `1password/...` the way bykaj's
+  app-template-based deployment does, so the original `/1password/` substring regex would have
+  silently matched nothing; replaced with `matchDatasources: ["helm"]` + `matchPackageNames:
+  ["connect"]` after confirming no other chart in the repo is named `connect`.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.renovate/groups.json5` | New — 13 grouping rules, `minimumGroupSize` added to 11 |
+| `.renovate/allowedVersions.json5` | New — 4 version pins/holds (Ceph, ceph-csi-drivers, postgres-backup-local, bifrost) |
+| `.renovate/autoMerge.json5` | New — 8 automerge/soak-time rules |
+| `.renovate/semanticCommits.json5` | New — 9 commit-message-shaping rules |
+| `.renovate/labels.json5` | New — 8 labeling rules |
+| `.renovate/overrides.json5` | New — WAHA regex-versioning rule |
+| `.renovate/customManagers.json5` | New — existing `# renovate:` annotation regex manager, unchanged |
+| `.renovate/grafanaDashboards.json5` | New — Grafana custom datasource + numeric-versioning rule |
+| `.renovate/changelogs.json5` | New — `changelogUrl` overrides for 1Password Connect, Cloudflared, Spegel |
+| `renovate.json5` | Rewritten — trimmed to `extends` + scan-level settings, now extends 9 local presets |
+| `.github/workflows/renovate.yaml` | Added `.renovate/**` to the push-trigger `paths:` list |
+| `docs/ROADMAP.md` | Removed superseded draft split-config section, added Completed-table row |
+
+### Key decisions
+- Kept the 6-hour cron, GitHub-hosted runner, 1Password-sourced GitHub App auth, explicit
+  `RENOVATE_REPOSITORIES` (no autodiscover), and the hard-won `create-github-app-token`
+  permission set from the 2026-09-05 session completely unchanged — this was a structural split,
+  not a chance to relitigate those incident-driven decisions.
+- Did not port bykaj's "OCI dependency" regex `customManager` — verified it would never match
+  anything in this repo given how OCIRepository/Helmfile chart refs are structured here.
+- Omitted `changelogs.json5` from the initial migration (no known bad-changelog-detection package
+  at the time); added it in a follow-up once the user pointed at bykaj's version specifically and
+  all three patched packages were confirmed present in this cluster.
+
+---
+
 ## 2026-09-05 — `image-pull-workflow`
 
 ### Goal

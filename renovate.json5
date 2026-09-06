@@ -6,6 +6,22 @@
     "docker:enableMajor",    // Also open PRs for major Docker image bumps (Talos, k8s use docker datasource)
     ":dependencyDashboard",  // Maintain a GitHub Issue listing every pending update — your control panel
     ":semanticCommits",      // Conventional commit messages on Renovate's own commits
+
+    // Local presets — split out of what used to be a single 447-line packageRules array.
+    // Each is resolved via the GitHub App token this repo's Renovate workflow already holds;
+    // resolution always reads from `main`, never from a PR branch — a preset edit only takes
+    // effect after merge (this repo's workflow only runs on push-to-main/schedule anyway, so
+    // that isn't a new limitation). Validate a preset change via `workflow_dispatch` +
+    // `dryRun: true` post-merge, not via a test PR.
+    "local>qnimbus/home-lab//.renovate/groups.json5",
+    "local>qnimbus/home-lab//.renovate/allowedVersions.json5",
+    "local>qnimbus/home-lab//.renovate/autoMerge.json5",
+    "local>qnimbus/home-lab//.renovate/semanticCommits.json5",
+    "local>qnimbus/home-lab//.renovate/labels.json5",
+    "local>qnimbus/home-lab//.renovate/overrides.json5",
+    "local>qnimbus/home-lab//.renovate/customManagers.json5",
+    "local>qnimbus/home-lab//.renovate/grafanaDashboards.json5",
+    "local>qnimbus/home-lab//.renovate/changelogs.json5",
   ],
 
   dependencyDashboard: true,
@@ -48,10 +64,15 @@
     // Pick up image tags inside helm/values.yaml files
     managerFilePatterns: ["/(^|/)kubernetes/.+\\.ya?ml$/"],
   },
-  helmfile: {
-    // Native helmfile manager handles chart: + version: pairs with # renovate: hints
-    managerFilePatterns: ["/(^|/)helmfile\\.ya?ml$/"],
-  },
+  // No `helmfile:` override here — deliberately. Renovate's built-in helmfile manager ships two
+  // default managerFilePatterns: one for a file literally named helmfile.yaml, and one for
+  // `**/helmfile.d/*.yaml` — the second is what covers ops/bootstrap/helmfile.d/*.yaml (cilium,
+  // coredns, spegel, cert-manager, flux-operator, flux-instance). A prior version of this file set
+  // managerFilePatterns to just the first pattern, intending to just restate the default — but
+  // managerFilePatterns is non-mergeable, so that silently replaced the whole default array and
+  // dropped the helmfile.d match, leaving those 6 releases untracked. See docs/QA.md, "Upgrades
+  // (tuppr + Renovate)" for the full story. Don't re-add this override unless you explicitly
+  // include the helmfile.d pattern alongside whatever you're adding.
   kubernetes: {
     // Raw Kubernetes manifests (image: fields, etc.)
     managerFilePatterns: ["/(^|/)kubernetes/.+\\.ya?ml$/"],
@@ -59,389 +80,4 @@
   kustomize: {
     managerFilePatterns: ["/(^|/)kustomization\\.ya?ml$/"],
   },
-
-  // ── Custom datasources ────────────────────────────────────────────────────────
-  // grafana.com dashboard revisions aren't a datasource Renovate understands natively.
-  // packageName is the numeric dashboard ID (e.g. "11315"); revisions come back oldest-first,
-  // so plain integer comparison ("loose" versioning below) picks the highest revision as latest.
-  customDatasources: {
-    "grafana-dashboard": {
-      defaultRegistryUrlTemplate: "https://grafana.com/api/dashboards/{{packageName}}/revisions",
-      transformTemplates: ['{"releases": items.{"version": $string(revision)}}'],
-    },
-  },
-
-  // ── Package rules ────────────────────────────────────────────────────────────
-  // Rules are evaluated top-to-bottom; multiple rules can apply to one package.
-  // Use groupName to merge related updates into a single PR.
-
-  packageRules: [
-
-    // Dashboard revisions are bare integers (e.g. "9", "37"), not semver — "loose"
-    // versioning compares them numerically instead of failing to parse.
-    {
-      description: "Grafana dashboard revisions — numeric versioning",
-      matchDatasources: ["custom.grafana-dashboard"],
-      versioning: "loose",
-    },
-
-    // ── Grouping ────────────────────────────────────────────────────────────────
-
-    {
-      // One PR per minor Talos version — tuppr enforces sequential minor upgrades at runtime,
-      // and Renovate must mirror that by not bundling v1.10→v1.12 into a single PR.
-      // Each PR bumps both talos/talenv.yaml:talosVersion and the TalosUpgrade CRD version.
-      description: "Talos — one PR per minor version (sequential upgrade path)",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["ghcr.io/siderolabs/installer"],
-      groupName: "Talos",
-      separateMajorMinor: true,
-      separateMinorPatch: true,
-      minimumReleaseAge: "5 days",
-    },
-    {
-      // Same rationale as Talos above — Kubernetes also requires sequential minor upgrades.
-      // Each PR bumps both talos/talenv.yaml:kubernetesVersion and the KubernetesUpgrade CRD version.
-      description: "Kubernetes — one PR per minor version (sequential upgrade path)",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["ghcr.io/siderolabs/kubelet"],
-      groupName: "Kubernetes",
-      separateMajorMinor: true,
-      separateMinorPatch: true,
-      minimumReleaseAge: "5 days",
-    },
-    // The single "Flux" group below used to span three datasources (mise, github-releases,
-    // docker) via a broad /flux-operator/ regex that matched both the mise CLI tool name and
-    // the OCI chart's depName. Cross-manager/cross-datasource grouping like that is unreliable —
-    // it silently dropped the docker-datasource chart deps (kubernetes/flux/meta/repos/oci/
-    // flux-operator.yaml + flux-instance.yaml + the ops/bootstrap helmfile ladder pins) from ever
-    // getting a PR, while the mise/github-releases members kept updating fine on their own. Split
-    // into two single-datasource groups so each stays within the pattern that already works
-    // elsewhere in this file (e.g. cert-manager, CoreDNS below — one datasource per group).
-    {
-      description: "Group Flux CLI tool (mise) + distribution (flux2) version bumps",
-      groupName: "Flux",
-      matchPackageNames: ["flux-operator", "flux-operator-mcp", "fluxcd/flux2"],
-    },
-    {
-      description: "Group flux-operator + flux-instance Helm chart bumps (OCIRepository + helmfile ladder)",
-      groupName: "Flux chart",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["/flux-operator/", "/flux-instance/"],
-    },
-    {
-      // The operator and cluster charts are cut from the same Rook release and must move in
-      // lockstep (the cluster chart's CRs target the operator's CRD schema). Renovate opened them
-      // as two independent PRs (#96/#97) for v1.20, which is exactly the split to avoid. The
-      // ceph-csi-drivers chart is deliberately not in this group — it follows the
-      // ceph-csi-operator release line, see kubernetes/flux/meta/repos/oci/ceph-csi-drivers.yaml.
-      // The same depName also tags the `rook.io/chart-version` annotations on the ceph-csi-drivers
-      // and rook-ceph-cluster HelmReleases (their dependsOn readyExpr lockstep gate), so those
-      // move in this PR too.
-      description: "Group rook-ceph operator + cluster chart bumps into one PR",
-      groupName: "Rook-Ceph chart",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["ghcr.io/rook/rook-ceph", "ghcr.io/rook/rook-ceph-cluster"],
-    },
-    {
-      // Ceph itself is pinned in the rook-ceph-cluster HelmRelease (cephImage.tag). Hold it on the
-      // Tentacle (v20) line: a Ceph major needs prep per Rook's ceph-upgrade guide and Rook 1.20
-      // only supports Squid/Tentacle — Renovate offered v21.1.0 (PR #101) within hours of the
-      // first pin landing. Ceph's x.1.z tags are release candidates and x.2.z stable. Floor is
-      // v20.2.4: 20.2.0 corrupts data with readAffinity (enabled here) and 20.2.1–20.2.3 predate
-      // the CVE-2025-30156 fixes we already run on Squid. Bump the regex to the next line (and
-      // read that line's release notes first) when a major upgrade is actually planned.
-      description: "Ceph image — stay on Tentacle v20.2.z (>= .4) until a major upgrade is planned",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["quay.io/ceph/ceph"],
-      allowedVersions: "/^v20\\.2\\.([4-9]|[1-9]\\d+)$/",
-    },
-    {
-      // ceph-csi-drivers must stay at (or below) the ceph-csi-operator subchart version bundled in
-      // the rook-ceph chart in use — the operator owns the CRDs. Upstream cuts both in lockstep,
-      // usually ahead of Rook's rebase. Pinned to the subchart version of the current Rook line
-      // (v1.20.x → 1.0.4); raise it together with the next Rook chart bump after checking
-      // deploy/charts/rook-ceph/Chart.yaml in that release. dependencyDashboardApproval was tried
-      // first and silently not honoured (see the quay.io/ceph/ceph rule above), hence the hard pin.
-      description: "ceph-csi-drivers chart — pin to the subchart version bundled in the Rook line in use",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["ghcr.io/home-operations/charts-mirror/ceph-csi-drivers"],
-      allowedVersions: "<=1.0.4",
-    },
-    {
-      description: "Group cert-manager chart + image bumps",
-      groupName: "cert-manager",
-      matchPackageNames: ["/cert-manager/"],
-    },
-    {
-      description: "Group CoreDNS chart + image bumps",
-      groupName: "CoreDNS",
-      matchPackageNames: ["/coredns/"],
-    },
-    {
-      description: "Group Spegel chart + image bumps",
-      groupName: "Spegel",
-      matchPackageNames: ["/spegel/"],
-    },
-    {
-      description: "Group Longhorn chart + image bumps",
-      groupName: "Longhorn",
-      matchPackageNames: ["/longhorn/"],
-    },
-    {
-      description: "Group kube-prometheus-stack chart + image bumps",
-      groupName: "kube-prometheus-stack",
-      matchPackageNames: ["/kube-prometheus-stack/", "/prometheus/", "/alertmanager/"],
-    },
-    {
-      description: "Group Envoy Gateway chart + image bumps",
-      groupName: "Envoy Gateway",
-      matchPackageNames: ["/envoy-gateway/"],
-    },
-    {
-      description: "Group ExternalDNS chart + image bumps",
-      groupName: "ExternalDNS",
-      matchPackageNames: ["/external-dns/"],
-    },
-    {
-      description: "Group External Secrets Operator chart + image bumps",
-      groupName: "External Secrets",
-      matchPackageNames: ["/external-secrets/"],
-    },
-
-    // ── Auto-merge ──────────────────────────────────────────────────────────────
-    // automergeType: "branch" means Renovate pushes directly to the branch and
-    // merges when clean — no PR is created unless the branch has conflicts.
-    // ignoreTests: true is needed because this repo has no CI to wait for.
-
-    {
-      // GitHub deprecates runner versions with little warning; a deprecated runner breaks
-      // CI entirely — creating a circular deadlock where CI can't approve its own fix.
-      // Auto-merge unconditionally breaks this cycle. Runner bumps are safe: they only
-      // update the runner binary, not workflow logic.
-      description: "Auto-merge GitHub Actions runner image (all update types)",
-      matchPackageNames: ["ghcr.io/home-operations/actions-runner"],
-      automerge: true,
-      automergeType: "branch",
-      ignoreTests: true,
-    },
-    {
-      description: "Auto-merge mise tool updates (minor + patch only)",
-      matchManagers: ["mise"],
-      automerge: true,
-      automergeType: "branch",
-      matchUpdateTypes: ["minor", "patch"],
-      ignoreTests: true,
-    },
-    {
-      description: "Auto-merge GitHub Actions (minor + patch + digest) after 3-day soak",
-      matchManagers: ["github-actions"],
-      automerge: true,
-      automergeType: "branch",
-      matchUpdateTypes: ["minor", "patch", "digest"],
-      minimumReleaseAge: "3 days",  // Gives the community time to catch regressions
-      ignoreTests: true,
-    },
-    {
-      description: "Auto-merge Helm chart patch updates after 3-day soak",
-      matchDatasources: ["helm"],
-      matchUpdateTypes: ["patch"],
-      automerge: true,
-      automergeType: "branch",
-      minimumReleaseAge: "3 days",
-      ignoreTests: true,
-    },
-    {
-      // Digest updates are same-tag SHA refreshes — no version change, very safe
-      description: "Auto-merge container image digest updates after 1-day soak",
-      matchDatasources: ["docker"],
-      matchUpdateTypes: ["digest"],
-      automerge: true,
-      automergeType: "branch",
-      minimumReleaseAge: "1 day",
-      ignoreTests: true,
-      matchPackageNames: ["!/siderolabs/installer/", "!/siderolabs/kubelet/"],
-    },
-    {
-      // Gate only — no automerge. Prevents PRs being opened against tags that appear
-      // before a release is fully published (e.g. missing release notes, RC artifacts).
-      // Pairs with the weekly schedule to give a practical 3–10 day community-regression window.
-      description: "Hold container image minor/patch PRs for 3-day soak",
-      matchDatasources: ["docker"],
-      matchUpdateTypes: ["minor", "patch"],
-      minimumReleaseAge: "3 days",
-      matchPackageNames: ["!/siderolabs/installer/", "!/siderolabs/kubelet/"],
-    },
-    {
-      // Curated list of minimal base/utility images — no app logic of our own runs in these,
-      // they're only ever used as init/sidecar containers (curl calls, static busybox tooling).
-      // Combines with the 3-day soak gate above (minimumReleaseAge isn't repeated here — rules
-      // merge). Add more depNames here as other low-risk utility images come up; do NOT widen
-      // this to app images (grafana, open-webui, etc.) — those can carry real breaking changes.
-      description: "Auto-merge minor/patch bumps for trusted utility/base images",
-      matchDatasources: ["docker"],
-      matchUpdateTypes: ["minor", "patch"],
-      matchPackageNames: ["alpine", "curlimages/curl"],
-      automerge: true,
-      automergeType: "branch",
-      ignoreTests: true,
-    },
-    {
-      // Upstreams that ship faster than the 3-day gate above can ever clear. Renovate
-      // always retargets to the newest release and minimumReleaseAge restarts from it,
-      // so against a ~2.5-day cadence the timer never expires; `schedule: every weekend`
-      // narrows it further to two scan days a week. The result is silent starvation
-      // rather than a safety gate — doco-cd sat 20 minors stale under the dashboard's
-      // "Pending Status Checks" while a heap-corruption bug already fixed upstream
-      // wedged all TrueNAS reconciliation (docs/QA.md, 2026-09-02).
-      //
-      // MUST stay after the 3-day rule: later packageRules win, and this only narrows
-      // that gate for the listed names. 1 day still soaks out an immediately-yanked
-      // release while reliably clearing before the next upstream tag lands.
-      //
-      // Deliberately no automerge — unlike the utility images above these are
-      // infrastructure agents that can break deployment itself, so the PR still gets
-      // reviewed. Add a depName here only once an upstream's cadence is demonstrably
-      // shorter than the 3-day gate; the fix for a merely-noisy repo is grouping.
-      description: "Shorter soak for fast-releasing infrastructure",
-      matchDatasources: ["docker"],
-      matchUpdateTypes: ["minor", "patch"],
-      matchPackageNames: ["ghcr.io/kimdre/doco-cd"],
-      minimumReleaseAge: "1 day",
-    },
-
-    // ── Semantic commit message formatting ──────────────────────────────────────
-
-    {
-      matchUpdateTypes: ["major"],
-      semanticCommitType: "feat",
-      commitMessagePrefix: "{{semanticCommitType}}({{semanticCommitScope}})!:",
-      commitMessageExtra: "( {{currentVersion}} → {{newVersion}} )",
-    },
-    {
-      matchUpdateTypes: ["minor"],
-      semanticCommitType: "feat",
-      commitMessageExtra: "( {{currentVersion}} → {{newVersion}} )",
-    },
-    {
-      matchUpdateTypes: ["patch"],
-      semanticCommitType: "fix",
-      commitMessageExtra: "( {{currentVersion}} → {{newVersion}} )",
-    },
-    {
-      matchUpdateTypes: ["digest"],
-      semanticCommitType: "chore",
-      commitMessageExtra: "( {{currentDigestShort}} → {{newDigestShort}} )",
-    },
-
-    // ── Semantic commit scopes (one per datasource/manager) ─────────────────────
-
-    {
-      matchDatasources: ["docker"],
-      semanticCommitScope: "container",
-      commitMessageTopic: "image {{depName}}",
-    },
-    {
-      matchDatasources: ["helm"],
-      semanticCommitScope: "helm",
-      commitMessageTopic: "chart {{depName}}",
-    },
-    {
-      matchManagers: ["github-actions"],
-      semanticCommitType: "ci",
-      semanticCommitScope: "github-action",
-      commitMessageTopic: "action {{depName}}",
-    },
-    {
-      matchDatasources: ["github-releases"],
-      semanticCommitScope: "github-release",
-      commitMessageTopic: "release {{depName}}",
-    },
-    {
-      matchManagers: ["mise"],
-      semanticCommitScope: "mise",
-      commitMessageTopic: "tool {{depName}}",
-    },
-
-    // ── Labels ──────────────────────────────────────────────────────────────────
-    // These combine: a PR for a minor Helm chart update gets both type/minor and renovate/helm
-
-    { matchUpdateTypes: ["major"], labels: ["type/major"] },
-    { matchUpdateTypes: ["minor"], labels: ["type/minor"] },
-    { matchUpdateTypes: ["patch"], labels: ["type/patch"] },
-
-    { matchDatasources: ["docker"],          addLabels: ["renovate/container"] },
-    { matchDatasources: ["helm"],            addLabels: ["renovate/helm"] },
-    { matchManagers: ["github-actions"],     addLabels: ["renovate/github-action"] },
-    { matchDatasources: ["github-releases"], addLabels: ["renovate/github-release"] },
-    { matchManagers: ["mise"],               addLabels: ["renovate/mise"] },
-
-    // ── Per-package versioning overrides ────────────────────────────────────────
-
-    {
-      // WAHA tags are prefixed with the engine name: gows-2026.4.3, noweb-2026.4.3, etc.
-      // The regex versioning extracts major.minor.patch from inside the prefix so Renovate
-      // only proposes updates within the same engine flavour (gows-* → gows-*).
-      description: "WAHA — parse version from gows-YYYY.M.P tag format",
-      matchPackageNames: ["docker.io/devlikeapro/waha"],
-      versioning: "regex:^gows-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
-    },
-
-    // ── Per-image version constraints ───────────────────────────────────────────
-
-    {
-      // postgres-backup-local image major version must match the CNPG cluster's Postgres major.
-      // Remove this rule when the cluster upgrades to v18.
-      description: "postgres-backup-local — hold at v17 until CNPG cluster upgrades",
-      matchPackageNames: ["docker.io/prodrigestivill/postgres-backup-local"],
-      allowedVersions: "/^17/",
-    },
-    {
-      // maximhq/bifrost's Docker Hub repo mixes real container images (tagged vX.Y.Z) with
-      // Helm chart OCI artifacts pushed under bare semver tags (e.g. 2.1.29, no 'v' prefix).
-      // Renovate's docker datasource can't distinguish artifact types by tag string alone, so
-      // without this it will propose the chart artifact as an "image update" — the resulting
-      // tag has no OCI Entrypoint/Cmd at all, and the pod fails with CreateContainerError:
-      // "no command specified".
-      description: "maximhq/bifrost — restrict to v-prefixed container image tags (bare-semver tags are Helm chart OCI artifacts, not images)",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["maximhq/bifrost"],
-      allowedVersions: "/^v/",
-    },
-
-    // ── Ignoring specific packages (examples — uncomment to use) ────────────────
-    //
-    // Permanently disable a package by name:
-    // { matchPackageNames: ["some/package"], enabled: false },
-    //
-    // Pin to a version range (stay on 1.x, ignore 2.0):
-    // { matchPackageNames: ["ghcr.io/siderolabs/installer"], allowedVersions: "<2.0.0" },
-    //
-    // Mute a specific update type globally (e.g. never open major Talos PRs):
-    // { matchPackageNames: ["ghcr.io/siderolabs/installer"], matchUpdateTypes: ["major"], enabled: false },
-
-  ],
-
-  // ── Custom regex manager ─────────────────────────────────────────────────────
-  // Handles files Renovate doesn't natively understand (talenv.yaml, scripts, etc.)
-  // Only activated when a "# renovate: datasource=..." annotation precedes the version line.
-
-  customManagers: [
-    {
-      description: "Process '# renovate: datasource=' annotations in YAML and shell files",
-      customType: "regex",
-      managerFilePatterns: [
-        "/(^|/).+\\.ya?ml$/",
-        "/(^|/).+\\.sh$/",
-        "/(^|/).+\\.env$/",
-      ],
-      matchStrings: [
-        // Matches annotation + value on the next line, e.g.:
-        //   # renovate: datasource=docker depName=ghcr.io/siderolabs/installer
-        //   talosVersion: v1.10.6
-        "datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)( repository=(?<registryUrl>\\S+))?\\n.+(:\\s|=)(&\\S+\\s)?(?<currentValue>\\S+)",
-      ],
-      datasourceTemplate: "{{#if datasource}}{{{datasource}}}{{else}}github-releases{{/if}}",
-    },
-  ],
 }

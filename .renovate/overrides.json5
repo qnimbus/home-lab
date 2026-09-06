@@ -1,0 +1,14 @@
+{
+  // Versioning / name overrides for packages with non-standard tag schemes.
+
+  packageRules: [
+    {
+      // WAHA tags are prefixed with the engine name: gows-2026.4.3, noweb-2026.4.3, etc.
+      // The regex versioning extracts major.minor.patch from inside the prefix so Renovate
+      // only proposes updates within the same engine flavour (gows-* → gows-*).
+      description: "WAHA — parse version from gows-YYYY.M.P tag format",
+      matchPackageNames: ["docker.io/devlikeapro/waha"],
+      versioning: "regex:^gows-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
+    },
+  ],
+}
