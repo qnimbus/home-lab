@@ -16,15 +16,17 @@ Concise answers to questions that came up during cluster operation. Each entry c
 **Networking**
 - [Why does cp-03 show many `eth0: renamed from tmp<random>` messages?](#why-does-the-talos-console-for-cp-03-show-many-eth0-renamed-from-tmprandom-kernel-messages)
 - [Why can't I reach the cluster nodes (both VLANs) while the internet works fine?](#why-cant-i-reach-the-cluster-nodes-both-vlans-while-the-internet-works-fine)
+- [Why does the cluster have a tagged VLAN 30 sub-interface on every node's mgmt NIC and a `pool-iot-smtp-relay` Cilium pool?](#why-does-the-cluster-have-a-tagged-vlan-30-sub-interface-on-every-nodes-mgmt-nic-and-a-pool-iot-smtp-relay-cilium-pool--isnt-10300024-supposed-to-be-iot-only)
 - [A single iperf3 stream over the storage bond tops out at ~9.7 Gbit/s — is the LACP bond broken? (+ how to benchmark the storage fabric)](#a-single-iperf3-stream-over-the-storage-bond-tops-out-at-97-gbits--is-the-lacp-bond-broken)
 - [Why does an externally-exposed app get `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` even though its Envoy certificate looks correct?](#why-does-an-externally-exposed-app-get-err_ssl_version_or_cipher_mismatch-even-though-its-envoy-certificate-looks-correct)
+- [Why does a pod get `i/o timeout` on a Talos node port (apid 50000, kubelet 10250) that works fine from a workstation?](#why-does-a-pod-get-io-timeout-on-a-talos-node-port-apid-50000-kubelet-10250-that-works-fine-from-a-workstation)
 
 **Cluster Recovery / Unclean Shutdown**
 - [After a simultaneous power-off, the dashboard shows ~90 failed pods — but the cluster looks healthy. What happened?](#after-a-simultaneous-power-off-of-all-nodes-the-dashboard-shows-90-failed-pods-and-a-failed-deployment--but-the-cluster-looks-healthy-what-happened)
 - [How do I recover when Cilium and CoreDNS are both gone simultaneously?](#how-do-i-recover-when-cilium-and-coredns-are-both-gone-simultaneously)
 - [A HelmRelease is Stalled with `MissingRollbackTarget` — how do I recover?](#a-helmrelease-is-stalled-with-missingrollbacktarget--how-do-i-recover)
-- [Longhorn finalizer patches fail with "failed calling webhook" — why?](#longhorn-finalizer-patches-fail-with-failed-calling-webhook--why)
-- [flux-instance is stuck uninstalling and Flux CRDs have disappeared — how do I recover?](#flux-instance-is-stuck-uninstalling-and-flux-crds-have-disappeared--how-do-i-recover)
+- [Longhorn finalizer patches fail with "failed calling webhook" — why?](#longhorn-finalizer-patches-fail-with-internal-error-failed-calling-webhook--why)
+- [flux-instance is stuck uninstalling and Flux CRDs have disappeared — how do I recover?](#flux-instance-is-stuck-in-uninstalling-state-and-flux-crds-have-disappeared--how-do-i-recover)
 
 **GitOps / Flux**
 - [How does the full Flux GitOps workflow fit together — what are the moving parts and how do they relate?](#how-does-the-full-flux-gitops-workflow-fit-together--what-are-the-moving-parts-and-how-do-they-relate)
@@ -44,6 +46,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 
 **Upgrades (tuppr + Renovate)**
 - [Does Renovate create incremental PRs per minor version, or one PR to the latest?](#does-renovate-create-incremental-prs-for-each-talosk8s-minor-version-or-one-pr-jumping-to-the-latest)
+- [Why weren't `ops/bootstrap/helmfile.d/*.yaml` releases getting Renovate PRs?](#why-werent-opsbootstraphelmfiledyaml-releases-cilium-coredns-spegel-cert-manager-flux-operator-flux-instance-getting-renovate-prs)
 - [Why does tuppr start failing "downgrade" jobs after a manual upgrade?](#why-does-tuppr-start-spawning-failing-downgrade-jobs-after-a-manual-kubernetes-upgrade)
 - [What caused the kube-apiserver v1.34.7 crash loop?](#what-caused-the-kube-apiserver-v1347-crash-loop-and-will-it-happen-again)
 - [Why does `task talos:wipe-ceph-osds-live` fail after a cluster reset?](#why-does-task-taloswipe-ceph-osds-live-fail-after-a-cluster-reset)
@@ -529,6 +532,49 @@ One level deep (`flux-webhook.vwn.io`, `apps.vwn.io`) → handshake succeeds, SA
 **Prevention:** `envoy-external`'s `certificateRefs` (`kubernetes/apps/network/envoy-gateway/config/gateway.yaml`) has an inline comment marking which certs are WAN-safe for new routes. Only `vwn-app-tls`/`vwn-casa-tls` (one level under their own zone roots) are safe without one of the fixes above; `cluster-vwn-io-tls`/`apps-vwn-io-tls` are origin-only until Cloudflare's edge coverage is extended.
 
 **Encountered 2026-06-19** while validating external connectivity with a `whoami` smoke-test app, after first fixing an unrelated, genuinely-real `cloudflared` SNI bug that looked like it would explain the same symptom but didn't.
+
+---
+
+### Why does a pod get `i/o timeout` on a Talos node port (apid 50000, kubelet 10250) that works fine from a workstation?
+
+**Short answer:** the port's `NetworkRuleConfig` in `talos/patches/global/network-firewall.yaml` doesn't list the pod CIDR. Cilium does **not** masquerade pod traffic destined to *cluster node IPs* — `enable-ipv4-masquerade` only SNATs traffic leaving the cluster — so the packet reaches Talos's nftables chain sourced from `10.42.x.x`, not a node IP. A rule allowlisting only `10.60.0.0/24` drops it. Your workstation works because it *is* on an allowlisted subnet.
+
+**The trap — three separate misdirections, all of which cost time here:**
+
+1. **The `talos` Service looks like the culprit and isn't.** Talos backs its own `talos` Service (`default` namespace, created by `machine.features.kubernetesTalosAPIAccess`) with an EndpointSlice of the three CP **node mgmt IPs**, not pod IPs. Connecting to its ClusterIP just DNATs you into the same blocked port, so the error names the ClusterIP (`dial tcp 10.43.23.108:50000: i/o timeout`) and sends you hunting through Cilium service programming, EndpointSlice health, and Maglev backend selection — all of which are fine.
+2. **It can masquerade as intermittent.** With three backends and only some nodes patched, the ClusterIP fails a *fraction* of connections. And a dropped SYN presents in two different ways depending on where in the connect/retry cycle it lands: a fast `i/o timeout`, or gRPC silently retrying its dial until the job's own timeout kills it (observed as a 15-minute hang with zero log output). Same rule, same packet, two symptoms that look like two bugs.
+3. **Only the *destination* node's rule matters.** A pod on cp-02 can reach a patched cp-01 while failing against its own unpatched node — which rules out same-node hairpin, socket-LB and every other source-side theory.
+
+**Confirm** — probe raw TCP from any pod with `bash`; `10.43.0.1:443` is the control that proves the probe itself works:
+```bash
+kubectl exec -i -n <ns> <pod> -- bash -s <<'EOF'
+for t in 10.43.0.1:443 10.60.0.201:50000 10.60.0.202:50000 10.60.0.203:50000; do
+  h=${t%:*}; p=${t#*:}; ok=0; fail=0
+  for i in $(seq 1 6); do
+    if timeout 3 bash -c "exec 3<>/dev/tcp/$h/$p" 2>/dev/null; then ok=$((ok+1)); else fail=$((fail+1)); fi
+  done
+  printf '  %-22s ok=%d fail=%d\n' "$t" "$ok" "$fail"
+done
+EOF
+```
+Then check what the node actually enforces — this is the ground truth, and it reflects the *running* config, not the repo:
+```bash
+talosctl -n 10.60.0.201 get nftableschains -o yaml | grep -A12 matchSourceAddress | grep -B8 "lo: 50000"
+```
+
+**Fix:** add `- subnet: 10.42.0.0/16` to that port's `ingress:` list, `task talos:genconfig`, then `task talos:apply IP=…`. It's a `no-reboot` change. Test first with `talosctl -n <ip> apply-config --mode=try --timeout=5m -f talos/clusterconfig/kubernetes-talos-<node>.yaml`, which auto-reverts — a firewall mistake then self-heals instead of locking you out.
+
+Apply to **all five nodes**, not just the control plane: `NODE` in the runner pod is `status.hostIP`, so a job landing on a worker targets that worker's apid directly.
+
+**Prevention — the recurring failure mode is a rule that was correct when written and went stale when a consumer landed later.** Both occurrences were exactly this: the firewall predates every pod-sourced caller. Whenever you add a workload that talks to a node port, re-check this file. To enumerate the in-cluster Talos API consumers — none of which are visible from the firewall file itself:
+```bash
+kubectl get serviceaccounts.talos.dev -A   # each one dials talos.default → <nodeIP>:50000
+```
+Note also that upstream (`bykaj/home-ops`, the source of several workflows here) runs **no** Talos host firewall at all — no `NetworkRuleConfig`, no `NetworkDefaultActionConfig`. Anything copied from there is validated against an L3-open apid and will give no hint that this allowlist needs maintaining.
+
+**Encountered twice:**
+- **2026-08-20** — kubelet `:10250`. Prometheus scrapes `nodeIP:10250` from a pod IP; `KubeletInstanceUnreachable` fired loudly and it was fixed same-day (`bb30dfb`).
+- **2026-09-07** — apid `:50000`. Broke `image-pull.yaml` on every run from its introduction (2026-09-05) — the workflow never once succeeded — and silently blocked **tuppr**'s Talos/Kubernetes upgrade path, which would have failed on the next Renovate version bump. Neither alerted: a non-blocking CI check just goes red, and tuppr only touches apid when an upgrade actually runs, so its CRs still read `Completed` from the last pre-firewall upgrade.
 
 ---
 

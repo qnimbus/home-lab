@@ -4,6 +4,90 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-07 — `talos-apid-firewall-podcidr`
+
+### Goal
+Root-cause why the `image-pull.yaml` workflow kept failing with `dial tcp 10.43.23.108:50000:
+i/o timeout`, fix it, and document the failure mode.
+
+### What we did
+- Probed raw TCP from pods on cp-01/cp-02/cp-03 (`/dev/tcp` loop via `kubectl exec`, with
+  `10.43.0.1:443` as a control). Port 50000 was unreachable from **every** pod on **every** node —
+  disproving the earlier "intermittent, 2 of 3 runs" reading. `gh run list` confirmed all four
+  historical runs failed: the workflow had never once succeeded since its 2026-09-05 introduction.
+- Traced it to the `apid-ingress` `NetworkRuleConfig`, which allowlisted only `10.60.0.0/24` and
+  `10.10.0.0/24`. Confirmed against the running config with `talosctl get nftableschains`. Cilium
+  does not masquerade pod traffic destined to *cluster node IPs*, so packets reach Talos's nftables
+  chain sourced from `10.42.x.x` and are dropped. The `talos` Service ClusterIP named in the error
+  was a red herring — its EndpointSlice is backed by the CP node mgmt IPs, so it just DNATs into
+  the same blocked port.
+- Established the rule was correct when written (2026-08-20) and went stale when pod-sourced
+  callers landed 16 days later (`3028374`, 2026-09-05) — the same failure mode as kubelet `:10250`,
+  fixed in `bb30dfb` only after Prometheus broke loudly.
+- Compared against `bykaj/home-ops`, the upstream source of this workflow: **zero** host-firewall
+  config (`NetworkRuleConfig`, `NetworkDefaultActionConfig`, `portSelector`, `ingressDeny` — all 0
+  hits). Identical `KubeTalosAPIAccessConfig` and identical `talosctl --nodes "$NODE" image pull`.
+  His apid is L3-open, which is why the copied workflow works there and gave no signal that this
+  allowlist needed maintaining.
+- Found a second, silent victim via `kubectl get serviceaccounts.talos.dev -A`:
+  `system-upgrade/tuppr-talosconfig`. tuppr drives real Talos/Kubernetes upgrades over the same
+  `talos.default` endpoint from a pod IP; its CRs read `Completed` only from the last pre-firewall
+  upgrade (66 d prior), so the next Renovate version bump would have failed mid-upgrade. Not
+  directly observed failing — it was idle — but the mechanism is identical and now moot.
+- Added `10.42.0.0/16` to `apid-ingress`; deliberately left `trustd-ingress` (`:50001`) alone.
+- Validated with `talosctl apply-config --mode=try --timeout=5m` on cp-01 before persisting
+  anything. The differential was decisive: `.201` flipped to `ok=3 fail=0` while `.202`/`.203`
+  stayed blocked, and a pod on **cp-02** reached the patched cp-01 — proving only the *destination*
+  node's rule matters and ruling out every source-side / same-node-hairpin theory.
+- Rolled out to all five nodes (`task talos:apply`), no reboots. Post-rollout probes from pods on
+  two different nodes: `ok=6 fail=0` to all five node IPs *and* the ClusterIP.
+- Reran run `34029723091` — first green in the workflow's history; `Pull Images` in **29 s** vs
+  1 m 21 s (fast failure) and 15 m 15 s (hung dial). One runner landed on worker-02, confirming the
+  all-five-node rollout was load-bearing rather than tidiness.
+- Wrote the `docs/QA.md` entry, including the three misdirections that cost the most time and the
+  `serviceaccounts.talos.dev` check that enumerates the otherwise-invisible consumers.
+
+Also completed earlier in this same conversation (already committed as `2a28184` / `b2d6061`):
+moved `ANTHROPIC_API_KEY` in `renovate-pr-review.yml` off a plain GitHub Actions secret and onto
+`1password/load-secrets-action` sourcing `op://GitHub/anthropic/API_KEY`, preserving log-masking via
+the action's internal `core.setSecret()` and keeping CI credentials in the `GitHub` vault rather
+than the cluster-facing `homelab` one.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `talos/patches/global/network-firewall.yaml` | Added `10.42.0.0/16` to `apid-ingress`; comment now names both in-cluster consumers and records that upstream runs no firewall |
+| `docs/QA.md` | New Networking entry on pod → Talos-node-port `i/o timeout`; repaired 2 broken ToC anchors and added 2 headings that were missing from the ToC (now 42/42, validated) |
+| `.github/workflows/renovate-pr-review.yml` | (committed `2a28184`) Added 1Password `Load Secrets` step; `anthropic_api_key` now reads from its step output |
+| `docs/EXTERNAL-SECRETS.yaml` | (committed `2a28184`) Added CI-tier `anthropic` entry for the `GitHub` vault; refreshed `last_verified` |
+
+### Key decisions
+- **Rolled out to all five nodes, not just the control plane.** `NODE` in the runner pod is
+  `status.hostIP`, so a job scheduled onto a worker targets that worker's apid directly — one did
+  exactly that during the verification rerun. A CP-only rollout would have left an intermittent
+  failure that looked like a fresh bug.
+- **`--mode=try` before persisting.** On a firewall change the auto-revert means a mistake
+  self-heals instead of locking us out, and it bought a clean single-node differential that proved
+  the mechanism rather than just the outcome.
+- **Pod CIDR is the narrowest scope the mechanism allows.** Talos `NetworkRuleConfig` matches on
+  source subnet alone — it has no notion of pod identity. This widens reachability, not
+  authorization: apid still requires a client cert, and `kubernetesTalosAPIAccess` only mints those
+  for ServiceAccounts in `system-upgrade` / `actions-runner-system` at `os:admin`. A
+  CiliumNetworkPolicy could scope egress further if that's ever wanted.
+- **Did not widen `trustd-ingress`.** Port 50001 is node-to-node cert exchange; no pod needs it, and
+  the fix shouldn't become a habit of adding the pod CIDR everywhere.
+- **The 15-minute hang was never a separate bug.** A dropped SYN presents either as a fast
+  `i/o timeout` or as gRPC retrying its dial until the job timeout kills it. Same rule, same packet,
+  two symptoms — worth remembering before splitting one incident into two investigations.
+
+### Open items
+- Orphaned `AutoscalingRunnerSet` CRs (`home-lab-readonly`, `home-lab-image-pull`) still sit in a
+  reconcile-error loop in `actions-runner-system`, left over from the 2026-09-05 consolidation
+  (`beaaccc`) with their backing Secrets already deleted. Unrelated to this issue; not yet cleaned up.
+- ~~Two pre-existing `docs/QA.md` ToC anchors don't resolve.~~ Fixed in this session — see below.
+
+---
+
 ## 2026-09-06 — `renovate-split-config`
 
 ### Goal

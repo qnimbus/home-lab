@@ -44,6 +44,33 @@ portSelector:
 ingress:
   - subnet: 10.60.0.0/24
   - subnet: 10.10.0.0/24
+  # Same pod-IP-as-source case as kubelet above. machine.features.kubernetesTalosAPIAccess
+  # (talos/patches/controller/machine-features.yaml) exists so in-cluster pods can call apid;
+  # Talos backs its own `talos` Service in the `default` namespace with the node mgmt IPs, so a
+  # pod dialling it lands on <nodeIP>:50000. Cilium does not masquerade pod traffic destined to
+  # cluster node IPs, so that packet arrives here sourced from 10.42.x.x, not a node IP.
+  #
+  # Omitting it broke BOTH in-cluster apid consumers — check `kubectl get serviceaccounts.talos.dev
+  # -A` before ever narrowing this rule again, since neither one is visible from this file:
+  #   - system-upgrade/tuppr-talosconfig  — tuppr's Talos/Kubernetes upgrade path. Silent: its CRs
+  #     still read Completed from the last upgrade before the firewall landed (2026-08-20), and it
+  #     only reaches apid when an upgrade actually runs.
+  #   - actions-runner-system/home-lab    — image-pull CI. Failed every run from its introduction
+  #     (2026-09-05) to this fix (2026-09-07) with `dial tcp 10.43.23.108:50000: i/o timeout`;
+  #     never once succeeded.
+  #
+  # Both rules here were correct when written — 2026-08-20 predates every pod-sourced apid caller.
+  # They went stale when the consumers landed, which is the failure mode to watch for: kubelet's
+  # 10.42.0.0/16 was likewise only added (bb30dfb) after Prometheus broke loudly. Upstream
+  # (bykaj/home-ops, this workflow's source) runs no host firewall at all, so its image-pull
+  # works unmodified and offers no hint that this allowlist needs maintaining.
+  #
+  # This widens *reachability* only, not authorization. apid still requires a valid client cert,
+  # and kubernetesTalosAPIAccess only mints those for ServiceAccounts in allowedKubernetesNamespaces
+  # (system-upgrade, actions-runner-system) at the allowedRoles it lists — a pod elsewhere in the
+  # cluster gets a TLS handshake failure, not access. Talos NetworkRuleConfig matches on source
+  # subnet alone, so the pod CIDR is the narrowest expressible scope here.
+  - subnet: 10.42.0.0/16
 ---
 apiVersion: v1alpha1
 kind: NetworkRuleConfig
