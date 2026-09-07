@@ -105,7 +105,10 @@ jobs:
     strategy:
       matrix:
         image: ${{ fromJSON(needs.diff.outputs.images) }}
-      max-parallel: 4
+      # Must not exceed the home-lab scale set's maxRunners (3, see
+      # runners/home-lab/helmrelease.yaml) — a 4th matrix leg would sit unassigned while still
+      # burning this job's 15-minute clock, which is exactly where the mise cache stall bites.
+      max-parallel: 3
       fail-fast: false
     env:
       MATRIX_IMAGE: ${{ matrix.image }}
@@ -119,10 +122,46 @@ jobs:
           persist-credentials: false
 
       # mise-pinned, not a curl-latest install — matches .mise.toml's talosctl version.
+      #
+      # Bounded because a mise cache restore can hang this step indefinitely. Observed 2026-09-07
+      # (run 34029723091 → PR #115): every matrix leg got a cache hit, but two of three then sat
+      # at zero bytes for 101s before `Failed to restore: The operation cannot be completed in
+      # timeout`. mise-action recovered fine — fresh-installed talosctl in 20s and exported PATH —
+      # and then its node process simply never exited, leaving the step silent until the job's
+      # 15-minute clock killed it. GitHub closed actions/setup-go#645 (same signature) saying an
+      # aborted cache download that "appears to hang" is expected, so the bound has to live here.
+      #
+      # continue-on-error + a 2-minute budget converts that 15-minute hang into a ~2-minute detour
+      # into the fallback below. The cache is left enabled: on the happy path it restores 61 MB in
+      # ~3s and makes this step 9s instead of ~20s. cache_save stays on so the entry keeps getting
+      # refreshed — parallel legs share one key, so all but the winner log a harmless
+      # "Unable to reserve cache ... another job may be creating this cache" and move on.
       - name: Install talosctl
+        id: mise
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          # Best-effort: abort a stalled segment after 1 min rather than the 10-min default. The
+          # step timeout above is the actual guarantee — this only shortens the wasted window.
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: "1"
         with:
           install_args: talosctl
+
+      # .mise.toml stays the single source of truth for the version — parsed here, never duplicated.
+      # $GITHUB_PATH entries are prepended, so this wins over any half-initialised mise shim left
+      # behind by a cancelled step ("No version is set for shim: talosctl").
+      - name: Install talosctl (fallback)
+        if: ${{ steps.mise.outcome != 'success' }}
+        run: |-
+          version="$(sed -n 's/^talosctl[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' .mise.toml)"
+          [ -n "$version" ] || { echo "could not parse talosctl version from .mise.toml"; exit 1; }
+          echo "mise step did not complete (${{ steps.mise.outcome }}) — installing talosctl ${version} directly"
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o "$HOME/.local/bin/talosctl" \
+            "https://github.com/siderolabs/talos/releases/download/v${version}/talosctl-linux-amd64"
+          chmod +x "$HOME/.local/bin/talosctl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Pull Image
         run: talosctl --nodes "$NODE" image pull "${MATRIX_IMAGE}"
