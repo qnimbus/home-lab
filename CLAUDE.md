@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-09-08 | `tuppr-053-post-merge` | Merged tuppr 0.5.3; fixed persisted `placement: soft` (job could die on the rebooting node) and never-scraped metrics |
 > | 2026-09-07 | `talos-apid-firewall-podcidr` | Talos firewall dropped all pod-sourced apid traffic — image-pull CI never passed, tuppr upgrades silently blocked; fixed |
 > | 2026-09-06 | `renovate-split-config` | Split renovate.json5 into 9 `.renovate/` local presets (bykaj pattern); added minimumGroupSize + changelogs.json5, adapted 1Password rule for this repo's depName |
 > | 2026-09-05 | `image-pull-workflow` | Added image pre-pull CI (talosctl on a new no-RBAC runner via Talos ServiceAccount cert); rolled out live to 3 CP nodes |
@@ -11,7 +12,6 @@
 > | 2026-09-05 | `flux-render-ci-flate-eval` | Added flux-render CI (flux-local test + post-render kubeconform + diff comment); flate 0.6.5 hangs on this tree (#828) |
 > | 2026-09-05 | `ceph-tentacle-upgrade` | Upgraded Ceph 19.2.6 → 20.2.4 Tentacle in 4.5 min (rook mgr module off first, #18124); fixed open-webui Job TTL flap |
 > | 2026-09-04 | `rook-post-upgrade-hygiene-configkey-audit` | Dropped dead csi-metrics ServiceMonitor (root-caused upstream), audited config-key store for CVE-2026-50152, rotated jwt |
-> | 2026-09-04 | `ceph-cve-2025-30156-key-rotation` | Landed Ceph 19.2.6 + AES256K daemon key rotation (CVE-2025-30156) in one change; 10-min HEALTH_ERR window as designed |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).

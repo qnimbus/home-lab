@@ -4,6 +4,85 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-08 — `tuppr-053-post-merge`
+
+### Goal
+Merge Renovate PR #117 (tuppr chart `0.1.36` → `0.5.3`), verify the rollout, and act on what the
+four-minor jump made available or exposed.
+
+### What we did
+- Reviewed the jump before merging rather than after: 28 releases, four `⚠ BREAKING CHANGES`
+  blocks. Three did not apply — the removed `drain.deleteLocalData`/`force`/`ignoreDaemonSets`/
+  `skipWaitForDeleteTimeout` fields were never set, the v0.4.0 apprise-go notification rework is
+  inert with `notification.enabled: false`, and v0.5.0's cel-go/apprise-go bumps are internal. The
+  fourth (v0.3.0) did: it deleted `controller.metrics.enabled`/`.secure` and
+  `controller.health.port`, all of which this repo set or relied on.
+- Pulled both charts locally and diffed them. 0.5.3 ships a `values.schema.json`, so the first
+  question was whether the now-dead `controller.metrics.enabled` would be *rejected* — it is not:
+  neither the root nor `controller` sets `additionalProperties: false`, so the key is silently
+  ignored. Confirmed by rendering 0.5.3 against this repo's own values file (exit 0) before
+  merging, establishing that the merge could not fail the release.
+- Squash-merged as `e1bea58` at a deliberately quiet moment: all 5 nodes sat at Talos v1.13.2 /
+  K8s v1.36.1, matching `talenv.yaml` and both upgrade CRs, so no upgrade was in flight and the
+  controller restart could not interrupt one.
+- Verified the rollout end to end. `OCIRepository` fetched `0.5.3@sha256:ff23fb16…` (the same
+  digest as the locally-analysed chart), the HelmRelease reached `tuppr.v2`, the controller
+  acquired its leader lease and registered both validating webhooks with no errors, and both
+  upgrade CRs survived the schema migration as `Completed`. `flux get all -A --status-selector
+  ready=false` returned nothing cluster-wide. The running digest `sha256:6fd143c4…` is exactly the
+  one the `image-pull` CI pre-pulled on the PR.
+- Found `policy.placement: soft` persisted on the live `TalosUpgrade`. tuppr changed that default
+  to `hard` in v0.2.6, but CRD structural defaults are stamped into an object when it is written
+  and are never re-applied, so the CR kept the value it was created with under 0.1.36. Flux could
+  not heal it either: the manifest named no `placement`, so server-side apply owned no such field.
+  `soft` is only *preferred* anti-affinity — the upgrade job can be scheduled onto the very node
+  it is rebooting and be killed mid-upgrade (the failure v0.1.38 patched around). Pinned `hard` in
+  Git; the webhook's `Soft placement preset used.` warning disappears with it.
+- Found tuppr's metrics had never been scraped. `monitoring.serviceMonitor` defaults to false and
+  was never enabled, so there was no ServiceMonitor in `system-upgrade` and no `tuppr_*` series in
+  Prometheus — while `controller.metrics.enabled: true` in the values file made it look handled.
+  Enabled ServiceMonitor, PrometheusRule and the shipped Grafana dashboard.
+- Checked the rule set would not fire on arrival before enabling it: queried the live `:8081`
+  endpoint and found `tuppr_upgrade_progressing{reason="Completed"}`, which `TupprUpgradeBlocked`'s
+  `reason=~"Waiting.*|Suspended"` does not match, with every phase and failure series at 0. Also
+  confirmed Prometheus' `serviceMonitorSelector` and `ruleSelector` are both `{}` (match-all, so no
+  extra labels are needed), the dashboard ConfigMap already carries `grafana_dashboard: "1"` for
+  the kube-prometheus-stack sidecar, and `system-upgrade` has no NetworkPolicy to block the scrape.
+- Set `policy.waitForVolumeDetach: true` (upstream `false`). Its own CRD description names the
+  failure this cluster is exposed to: `ceph-block` is the default StorageClass, so most workloads
+  hold RWO RBD volumes and a fast reboot can orphan a mount, landing the pod in Multi-Attach on
+  the next node.
+- Validated both changes with a server-side dry-run through tuppr's own 0.5.3 validating webhook,
+  and checked that the kustomize build propagates the new `tuppr-values-…` ConfigMap hash into the
+  HelmRelease's `valuesFrom`, so the values change actually triggers an upgrade.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `kubernetes/flux/meta/repos/oci/tuppr.yaml` | Chart tag `0.1.36` → `0.5.3` (PR #117, merged as `e1bea58`) |
+| `kubernetes/apps/system-upgrade/tuppr/app/helm/values.yaml` | Dropped dead `controller.metrics.enabled`; enabled ServiceMonitor, PrometheusRule and dashboard |
+| `kubernetes/apps/system-upgrade/tuppr/upgrade/talosupgrade.yaml` | Pinned `policy.placement: hard`, set `waitForVolumeDetach: true`, corrected stale 4-node comment |
+
+### Key decisions
+- Pinned `placement` explicitly rather than deleting and recreating the CR to pick up the new
+  default. Recreation would also have worked, but it throws away status/history for a field Git
+  should own anyway; naming it in the manifest additionally stops the same drift recurring the
+  next time upstream changes a default.
+- Left `policy.debug` at the upstream default (`true`) and recorded why inline. The webhook warns
+  about it on every apply, so without a comment someone will eventually "fix" it — but a node
+  upgrade is rare and hard to re-run, and the verbose job log is worth more than the noise.
+- Did not set `talos.prePull`: it already defaults to `true` in 0.4.3+, and writing defaults into
+  the manifest is noise. Noted in a comment instead, since it complements this repo's `image-pull`
+  CI (that warms *workload* images; `prePull` warms the *Talos installer* image).
+- Deferred v0.4.1's Alertmanager silences. Genuinely useful here given upgrade reboots and the
+  recurring `CephNodeNetworkPacketDrops`, but it needs an Alertmanager address plus per-CR
+  matchers — a design decision, not a mechanical follow-up.
+- Left the 33-day-old `Succeeded` pod `tuppr-74ffd6866f-d6m5k` alone. kubelet marks pods Succeeded
+  on graceful node shutdown and the 0-replica ReplicaSet never garbage-collects them; it is
+  cosmetic and unrelated to this merge.
+
+---
+
 ## 2026-09-07 — `talos-apid-firewall-podcidr`
 
 ### Goal
