@@ -45,6 +45,7 @@ Concise answers to questions that came up during cluster operation. Each entry c
 - [A healthy Deployment shows both `Available` and `Progressing` — is something wrong?](#a-healthy-deployment-shows-both-available-and-progressing--is-something-wrong)
 
 **Upgrades (tuppr + Renovate)**
+- [How does tuppr work, and how do I find out a Talos/Kubernetes update is available?](#how-does-tuppr-work-and-how-do-i-find-out-a-taloskubernetes-update-is-available)
 - [Does Renovate create incremental PRs per minor version, or one PR to the latest?](#does-renovate-create-incremental-prs-for-each-talosk8s-minor-version-or-one-pr-jumping-to-the-latest)
 - [Why weren't `ops/bootstrap/helmfile.d/*.yaml` releases getting Renovate PRs?](#why-werent-opsbootstraphelmfiledyaml-releases-cilium-coredns-spegel-cert-manager-flux-operator-flux-instance-getting-renovate-prs)
 - [Why does tuppr start failing "downgrade" jobs after a manual upgrade?](#why-does-tuppr-start-spawning-failing-downgrade-jobs-after-a-manual-kubernetes-upgrade)
@@ -1297,6 +1298,57 @@ kubectl get deployment <name> -n <ns> -o jsonpath='{.status.conditions[*]}'
 ---
 
 ## Upgrades (tuppr + Renovate)
+
+### How does tuppr work, and how do I find out a Talos/Kubernetes update is available?
+
+**Short answer:** tuppr never looks for updates — it is a reconciler, not a watcher. It only compares the version declared in its CRs against what the nodes actually run, and closes the gap. **Renovate** is what tells you a release exists, and it does so as a pull request. Merging that PR is what starts the upgrade.
+
+**Detail — the version is declared, not discovered:**
+
+| CR | Field | Current |
+|----|-------|---------|
+| `TalosUpgrade/cluster` | `spec.talos.version` | `v1.13.2` |
+| `KubernetesUpgrade/kubernetes` | `spec.kubernetes.version` | `v1.36.1` |
+
+Equal to what the nodes run → tuppr idles in phase `Completed` (which is why both CRs sit `Completed` for months at a time). Different → it drives nodes to the declared version, `parallelism: 1`, honouring `spec.policy`.
+
+**Detail — Renovate is the notifier.** Each version string carries a `# renovate:` comment, tracked as two datasources across four files:
+
+| Datasource | Files bumped together |
+|---|---|
+| `ghcr.io/siderolabs/installer` (Talos) | `talos/talenv.yaml` + `.../tuppr/upgrade/talosupgrade.yaml` |
+| `ghcr.io/siderolabs/kubelet` (Kubernetes) | `talos/talenv.yaml` + `.../tuppr/upgrade/kubernetesupgrade.yaml` |
+
+Both files move in one PR by design (`.renovate/groups.json5`). `talenv.yaml` feeds **talhelper**, which generates the machine config a node gets when it is reimaged or newly joined; the CR feeds **tuppr**, which upgrades nodes already running. If only the CR moved, a reimaged node would silently come back on the old version.
+
+Talos and Kubernetes are also excluded from every automerge rule in `.renovate/autoMerge.json5` (`!/siderolabs/installer/`, `!/siderolabs/kubelet/`). Everything else in the repo can self-merge after its soak; these always wait for a human. Renovate runs every 6 h from `.github/workflows/renovate.yaml`.
+
+**The whole chain:**
+
+```
+Renovate (every 6h) → PR opened → you review + merge
+   → Flux reconciles → CR version changes
+   → tuppr sees declared ≠ actual → rolling upgrade, one node at a time
+```
+
+There is no separate "go" button: merging the PR *is* the trigger, and the run proceeds unattended.
+
+**How you hear about it once it is running:**
+
+| Channel | Covers | Where it goes |
+|---|---|---|
+| tuppr notifications (apprise) | per-node progress: started / finished | Pushover, direct from tuppr |
+| `TalosUpgradeFailed`, `TalosUpgradeNodeFailed`, `KubernetesUpgradeFailed`, `TupprOperatorAbsent` | failures | Pushover (`critical`, repeats hourly) |
+| `TalosUpgradeStuck`, `KubernetesUpgradeStuck`, `TupprUpgradeBlocked`, `UpgradeJobRunningTooLong`, `TupprUpgradeFailureRate` | degraded / slow | Pushover (`warning`) |
+| Grafana dashboard | visual state | `grafana_dashboard` sidecar |
+
+The two are complementary and easy to confuse: Alertmanager only ever tells you something went **wrong**, so without tuppr's own notifications a healthy 1–3 h rolling upgrade is invisible until it ends.
+
+**Why alerts go quiet mid-run.** A planned drain + reboot legitimately trips node, workload-churn and Ceph alerts. `spec.silences` on the TalosUpgrade holds Alertmanager silences **only while a run is active**, releasing them when it finishes, with `maxDuration: 4h` as a failsafe so a wedged run starts alerting again. The silences deliberately cover only the expected consequences of a reboot — `CephHealthError`, `CephMonDownQuorumAtRisk`, `CephOSDDownHigh`, `KubeAPIDown` and tuppr's own failure alerts keep paging throughout.
+
+**Gotcha:** the validating webhook checks `spec.silences` against the *running* operator's configuration. If you add silences before the chart has `silences.enabled` + `alertmanager.address`, the apply succeeds but warns `spec.silences is configured but the operator has no Alertmanager connection … no silences will be created`. The `tuppr` → `tuppr-upgrade` Kustomization `dependsOn` already orders this correctly (operator upgrades first, CR second); the warning only shows up if you dry-run the CR ahead of the chart change.
+
+---
 
 ### Does Renovate create incremental PRs for each Talos/K8s minor version, or one PR jumping to the latest?
 
