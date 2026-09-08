@@ -1,5 +1,5 @@
 # renovate: datasource=docker depName=ghcr.io/siderolabs/installer
-talosVersion: v1.13.2
+talosVersion: v1.13.10
 talosImageURL: "factory.talos.dev/installer/631787e15e2dee0387dcf3673c4c9d71b82f119441e67050ede3baa5bd8a1178"
 # renovate: datasource=docker depName=ghcr.io/siderolabs/kubelet
 kubernetesVersion: v1.36.1
