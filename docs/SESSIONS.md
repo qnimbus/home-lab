@@ -8,7 +8,8 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ### Goal
 Merge Renovate PR #117 (tuppr chart `0.1.36` → `0.5.3`), verify the rollout, and act on what the
-four-minor jump made available or exposed.
+four-minor jump made available or exposed — which grew into fixing a stale CRD default, wiring
+tuppr into kube-prometheus-stack, and closing the notification gap that exposed.
 
 ### What we did
 - Reviewed the jump before merging rather than after: 28 releases, four `⚠ BREAKING CHANGES`
@@ -65,6 +66,29 @@ four-minor jump made available or exposed.
   a from-scratch bootstrap the Helm install would fail on `no matches for kind` and remediation
   would uninstall the release, taking `tuppr-upgrade` with it. Added the dependency, following the
   `keda` → `grafana-operator-instance` precedent.
+- Verified the reconcile once the branch was merged to `main` (`41f6774`). Both Kustomizations
+  Ready at that revision with the new `dependsOn` live, the CR serving `placement: hard` and
+  `waitForVolumeDetach: true`, HelmRelease at `tuppr.v3`. Confirmed the data path rather than the
+  objects: Prometheus now returns `tuppr_build_info{version="0.5.3", job="tuppr-metrics-service"}`,
+  closing a scrape gap that had been open since tuppr was first deployed, and all 9 alert rules
+  load across 5 groups as `state=inactive health=ok`. Checked the rules endpoint specifically —
+  an empty `ALERTS` query alone cannot distinguish "quiet" from "never loaded".
+- Closed the notification gap the alerting work exposed. Alertmanager only ever fires when
+  something is *wrong*, so a healthy 1–3 h rolling upgrade was invisible until it ended. Enabled
+  tuppr's own apprise notifications for per-node progress, and paired them with v0.4.1's
+  Alertmanager silences (previously deferred) so the run that is working as designed is no longer
+  the one most likely to page.
+- Established apprise-go's Pushover URL format from source rather than assuming parity with
+  upstream Apprise: `internal/notify/pushover.go` takes the user key from the URL userinfo and the
+  token from the host, with `secure_protocols: ["pover"]` — so `pover://<user-key>@<token>`. A bad
+  apprise URL fails silently, so guessing was not acceptable. That let the notification reuse the
+  existing 1Password `alertmanager` item instead of needing a new vault entry; both fields were
+  confirmed to resolve non-empty from the live `alertmanager-secret`.
+- Wrote the silences to cover only the expected consequences of a planned drain + reboot, and
+  checked all 23 alertnames against the live rule set first — a typo would match nothing and page
+  anyway. Also recorded the mechanism in `docs/QA.md`, since the non-obvious part (tuppr never
+  looks for updates; Renovate is the notifier and merging its PR is the trigger) is split across
+  two subsystems and neither half reads as the whole story on its own.
 
 ### Files changed
 | File | Change |
@@ -73,6 +97,10 @@ four-minor jump made available or exposed.
 | `kubernetes/apps/system-upgrade/tuppr/app/helm/values.yaml` | Dropped dead `controller.metrics.enabled`; enabled ServiceMonitor, PrometheusRule and dashboard |
 | `kubernetes/apps/system-upgrade/tuppr/upgrade/talosupgrade.yaml` | Pinned `policy.placement: hard`, set `waitForVolumeDetach: true`, corrected stale 4-node comment |
 | `kubernetes/apps/system-upgrade/tuppr/ks.yaml` | Added `dependsOn: kube-prometheus-stack` to the operator Kustomization for the newly-rendered monitoring CRDs |
+| `kubernetes/apps/system-upgrade/tuppr/app/externalsecret.yaml` | New — builds the apprise `pover://` URL from the existing 1Password `alertmanager` item |
+| `kubernetes/apps/system-upgrade/tuppr/app/kustomization.yaml` | Added the ExternalSecret to `resources` |
+| `docs/QA.md` | New entry (+ TOC link): how tuppr and Renovate deliver upgrades, and how you get notified |
+| `docs/EXTERNAL-SECRETS.yaml` | Recorded tuppr as a second consumer of the `alertmanager` item |
 
 ### Key decisions
 - Pinned `placement` explicitly rather than deleting and recreating the CR to pick up the new
@@ -85,12 +113,24 @@ four-minor jump made available or exposed.
 - Did not set `talos.prePull`: it already defaults to `true` in 0.4.3+, and writing defaults into
   the manifest is noise. Noted in a comment instead, since it complements this repo's `image-pull`
   CI (that warms *workload* images; `prePull` warms the *Talos installer* image).
-- Deferred v0.4.1's Alertmanager silences. Genuinely useful here given upgrade reboots and the
-  recurring `CephNodeNetworkPacketDrops`, but it needs an Alertmanager address plus per-CR
-  matchers — a design decision, not a mechanical follow-up. The review strengthened the case:
+- Deferred v0.4.1's Alertmanager silences at first — an Alertmanager address plus per-CR matchers
+  read as a design decision rather than a mechanical follow-up — then implemented them later in the
+  session once the case had been made twice over. The review had already shown
   `UpgradeJobRunningTooLong` fires on `tuppr_upgrade_jobs_active > 0` for a hard-coded 1h against a
   single cluster-wide gauge with no values knob, so a *healthy* 5-node run at `parallelism: 1` plus
-  the detach wait can page. Silencing during runs is the fix; the caveat is recorded in `values.yaml`.
+  the detach wait can page; a run-scoped silence fixes that while leaving the alert live outside a
+  run, which is when a stuck job actually means something.
+- Scoped the silences to the expected consequences of a planned reboot and nothing else.
+  `CephHealthError`, `CephMonDownQuorumAtRisk`, `CephOSDDownHigh`, `KubeAPIDown` and tuppr's own
+  Failed/NodeFailed/Stuck alerts keep paging throughout — the point is to mute the noise a
+  deliberate drain makes, never the detectors that would say *this upgrade* is going wrong. The
+  silences are held only while a run is active, and `maxDuration: 4h` means a wedged run starts
+  alerting again instead of staying quiet.
+- Reused the 1Password `alertmanager` item for the notification URL instead of creating a
+  dedicated one. It avoided blocking the change on a new vault entry, and the Pushover
+  credentials were already the right destination. The cost is coupling — rotating them re-renders
+  both Secrets, and tuppr can only notify wherever Alertmanager does — recorded on the item in
+  `docs/EXTERNAL-SECRETS.yaml` as a second consumer so it is visible at rotation time.
 - Accepted that `waitForVolumeDetach` makes runs longer rather than trying to bound them.
   `policy.timeout` covers only the per-node `talosctl` command, so the drain is gated by Rook's
   OSD/mon/mgr PDBs and serialises on Ceph recovery between nodes. That is the intended trade for

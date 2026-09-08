@@ -4,7 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
-> | 2026-09-08 | `tuppr-053-post-merge` | Merged tuppr 0.5.3; fixed persisted `placement: soft` (job could die on the rebooting node) and never-scraped metrics |
+> | 2026-09-08 | `tuppr-053-post-merge` | Merged tuppr 0.5.3; fixed persisted `placement: soft`, wired never-scraped metrics, added notifications + silences |
 > | 2026-09-07 | `talos-apid-firewall-podcidr` | Talos firewall dropped all pod-sourced apid traffic — image-pull CI never passed, tuppr upgrades silently blocked; fixed |
 > | 2026-09-06 | `renovate-split-config` | Split renovate.json5 into 9 `.renovate/` local presets (bykaj pattern); added minimumGroupSize + changelogs.json5, adapted 1Password rule for this repo's depName |
 > | 2026-09-05 | `image-pull-workflow` | Added image pre-pull CI (talosctl on a new no-RBAC runner via Talos ServiceAccount cert); rolled out live to 3 CP nodes |
