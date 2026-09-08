@@ -8,8 +8,23 @@ spec:
   talos:
     # renovate: datasource=docker depName=ghcr.io/siderolabs/installer
     version: v1.13.2
+    # talos.prePull defaults to true (chart 0.4.3+) — the installer image is pulled on every node
+    # before the first cordon, so a bad tag/schematic parks the run before any disruption
   policy:
     rebootMode: default
-  # Upgrade one node at a time; safe default for a 4-node cluster (3 CPs + 1 worker)
-  # where losing two CP nodes simultaneously would break etcd quorum
+    # Pinned rather than left to the CRD default. tuppr changed this default soft -> hard in
+    # v0.2.6, but CRD defaults are written into the object at creation time and are never
+    # re-applied, so this CR still carried the soft value it was created with under 0.1.36.
+    # soft is only *preferred* anti-affinity: the upgrade job can land on the very node it is
+    # rebooting and get killed mid-upgrade. hard forbids that (degrades to preferred if single-node).
+    placement: hard
+    # Non-default (upstream false). ceph-block is the default StorageClass, so most workloads hold
+    # RWO RBD volumes; without this a fast reboot orphans the mount and the pod lands in
+    # Multi-Attach on the next node. Makes tuppr drain and wait for CSI detach before rebooting.
+    waitForVolumeDetach: true
+    # policy.debug is deliberately left at the upstream default (true). The validating webhook
+    # warns about it on every apply, but a node upgrade is rare and hard to re-run — the verbose
+    # job log is worth more than the noise. Do not "fix" the warning by turning it off.
+  # Upgrade one node at a time — this is a 5-node cluster (3 CP + 2 workers) and taking two
+  # control-plane nodes down together would break etcd quorum
   parallelism: 1
