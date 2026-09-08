@@ -5,9 +5,13 @@ name: Image Pull
 # Pre-warms new/changed container images onto a node before a PR merges, modelled on bykaj's
 # image-pull.yaml. `extract` runs `flux-local get cluster --enable-images` against both `main`
 # and the PR head, `diff` computes the set of images only the PR introduces, and `pull` runs
-# `talosctl image pull` for each on a dedicated self-hosted runner. Spegel (DaemonSet, all 5
-# nodes — kubernetes/apps/kube-system/spegel/) then fans the pulled layer out cluster-wide, so
-# Flux's eventual reconcile after merge doesn't pay the cold-pull tax.
+# `talosctl image pull` for each on a dedicated self-hosted runner. That warms exactly one node —
+# Spegel (DaemonSet, all 5 nodes — kubernetes/apps/kube-system/spegel/) copies nothing. It is a
+# peer-to-peer pull-through mirror: containerd on every node is pointed at its local Spegel
+# (/etc/cri/conf.d/hosts/_default/hosts.toml), which resolves a digest by asking its peers. So
+# Flux's reconcile after merge fetches the layer from the node that already holds it over LAN
+# rather than from the upstream registry — the cold pull is paid once, here. Fail-open: a 200ms
+# dial_timeout means containerd drops straight through to the registry if Spegel is unavailable.
 #
 # `pull` runs on `home-lab` — the same cluster-admin runner renovate-pr-review.yml uses — which
 # also carries a Talos ServiceAccount cert (os:admin; see runners/home-lab/talos-serviceaccount.yaml)

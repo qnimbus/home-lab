@@ -39,8 +39,10 @@ spec:
             env:
               - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
                 value: "false"
-              # talosctl needs a node to target; Spegel (DaemonSet, all 5 nodes) fans any pulled
-              # layer out cluster-wide, so "whichever node this pod landed on" is enough.
+              # talosctl needs a node to target, and any node will do: Spegel (DaemonSet, all 5
+              # nodes) is a peer-to-peer pull-through mirror, so whichever node this pod lands on
+              # becomes the peer the others fetch the layer from when Flux reconciles. The layer
+              # is not replicated — it stays on that one node until another node actually needs it.
               - name: NODE
                 valueFrom:
                   fieldRef:
