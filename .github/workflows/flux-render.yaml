@@ -74,6 +74,17 @@ jobs:
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           install_args: kubeconform yq
+          # The action pin above covers the action, not the mise binary it downloads: with no
+          # `version`, it asks mise.jdx.dev/VERSION for "latest" and then fetches that tag from
+          # GitHub releases (fetch_from_github defaults true). Those two update out of order, so
+          # a version can be advertised hours before its assets exist — 2026-09-08, VERSION
+          # returned 2026.9.3 while the GitHub release 404'd, and every render on every open PR
+          # died on `curl: (22)` before rendering anything. Re-running does not help; it clears
+          # only when upstream publishes. A soak window makes that race unreachable, and doubles
+          # as protection against a same-day mise regression. Prefer this over a hard `version`
+          # pin: no second toolchain version to track, and nothing to rot when Renovate is not
+          # watching it. Same reasoning as minimumReleaseAge in .renovate/groups.json5.
+          minimum_release_age: "24h"
 
       - name: kubeconform on rendered output
         run: bash scripts/validate-rendered.sh rendered.yaml

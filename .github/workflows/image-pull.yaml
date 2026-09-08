@@ -151,6 +151,12 @@ jobs:
           SEGMENT_DOWNLOAD_TIMEOUT_MINS: "1"
         with:
           install_args: talosctl
+          # Soak window on mise's own version, not on the tools it installs — see the same knob in
+          # flux-render.yaml for the incident. Orthogonal to continue-on-error above: that handles
+          # a cache-restore stall (mise already installed, node process never exits), this handles
+          # resolving a version whose release assets are not published yet. Neither covers the
+          # other, so both stay.
+          minimum_release_age: "24h"
 
       # .mise.toml stays the single source of truth for the version — parsed here, never duplicated.
       # $GITHUB_PATH entries are prepended, so this wins over any half-initialised mise shim left
