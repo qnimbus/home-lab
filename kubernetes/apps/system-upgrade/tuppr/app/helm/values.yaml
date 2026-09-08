@@ -14,5 +14,9 @@ monitoring:
     enabled: true  # Prometheus' serviceMonitor(Namespace)Selector are both {} — matches without extra labels
   prometheusRule:
     enabled: true  # upgrade Failed/Stuck/Blocked alerts + TupprOperatorAbsent (absent(tuppr_build_info))
+    # Caveat: UpgradeJobRunningTooLong is `tuppr_upgrade_jobs_active > 0` for a hard-coded 1h on one
+    # cluster-wide gauge with no per-job identity, and the chart exposes no knob for it. With
+    # parallelism 1 over 5 nodes plus the waitForVolumeDetach drain, a *healthy* full-cluster run
+    # can exceed that and page. Silence it during runs rather than turning the rule set off.
   dashboards:
     enabled: true  # ConfigMap ships grafana_dashboard="1"; the Grafana sidecar searches ALL namespaces

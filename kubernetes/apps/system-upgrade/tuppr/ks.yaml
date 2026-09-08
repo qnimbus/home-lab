@@ -11,6 +11,13 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: tuppr
+  dependsOn:
+    # ServiceMonitor + PrometheusRule CRDs, which the chart renders now that
+    # monitoring.* is enabled. Without this a from-scratch bootstrap races: both
+    # Kustomizations start together, the Helm install fails on "no matches for kind",
+    # and remediation uninstalls the release — taking tuppr-upgrade down with it.
+    - name: kube-prometheus-stack
+      namespace: flux-system
   wait: false
   prune: true
   interval: 1h

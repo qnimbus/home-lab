@@ -32,9 +32,12 @@ four-minor jump made available or exposed.
   ready=false` returned nothing cluster-wide. The running digest `sha256:6fd143c4…` is exactly the
   one the `image-pull` CI pre-pulled on the PR.
 - Found `policy.placement: soft` persisted on the live `TalosUpgrade`. tuppr changed that default
-  to `hard` in v0.2.6, but CRD structural defaults are stamped into an object when it is written
-  and are never re-applied, so the CR kept the value it was created with under 0.1.36. Flux could
-  not heal it either: the manifest named no `placement`, so server-side apply owned no such field.
+  to `hard` in v0.2.6, but structural defaulting only fills fields that are *absent* — `placement`
+  already existed in the 0.1.36 CRD with default `soft`, so it was materialised on the object then
+  and no later default change could touch it. (Contrast `talos.prePull`, which did not exist in
+  0.1.36: being absent, it picked up its new `true` default by itself — visible on the live CR
+  after the upgrade.) Flux could not heal it either: the manifest named no `placement`, so
+  server-side apply owned no such field.
   `soft` is only *preferred* anti-affinity — the upgrade job can be scheduled onto the very node
   it is rebooting and be killed mid-upgrade (the failure v0.1.38 patched around). Pinned `hard` in
   Git; the webhook's `Soft placement preset used.` warning disappears with it.
@@ -55,6 +58,13 @@ four-minor jump made available or exposed.
 - Validated both changes with a server-side dry-run through tuppr's own 0.5.3 validating webhook,
   and checked that the kustomize build propagates the new `tuppr-values-…` ConfigMap hash into the
   HelmRelease's `valuesFrom`, so the values change actually triggers an upgrade.
+- Ran `/code-review` over the branch, which caught a bootstrap-ordering regression the live-cluster
+  checks could not: enabling `monitoring.*` makes the chart render `monitoring.coreos.com/v1`
+  objects, but the `tuppr` Kustomization had no `dependsOn` while `kube-prometheus-stack` lands
+  late (behind `rook-ceph-cluster`). On a live cluster the CRDs already exist so nothing fails; on
+  a from-scratch bootstrap the Helm install would fail on `no matches for kind` and remediation
+  would uninstall the release, taking `tuppr-upgrade` with it. Added the dependency, following the
+  `keda` → `grafana-operator-instance` precedent.
 
 ### Files changed
 | File | Change |
@@ -62,6 +72,7 @@ four-minor jump made available or exposed.
 | `kubernetes/flux/meta/repos/oci/tuppr.yaml` | Chart tag `0.1.36` → `0.5.3` (PR #117, merged as `e1bea58`) |
 | `kubernetes/apps/system-upgrade/tuppr/app/helm/values.yaml` | Dropped dead `controller.metrics.enabled`; enabled ServiceMonitor, PrometheusRule and dashboard |
 | `kubernetes/apps/system-upgrade/tuppr/upgrade/talosupgrade.yaml` | Pinned `policy.placement: hard`, set `waitForVolumeDetach: true`, corrected stale 4-node comment |
+| `kubernetes/apps/system-upgrade/tuppr/ks.yaml` | Added `dependsOn: kube-prometheus-stack` to the operator Kustomization for the newly-rendered monitoring CRDs |
 
 ### Key decisions
 - Pinned `placement` explicitly rather than deleting and recreating the CR to pick up the new
@@ -76,7 +87,15 @@ four-minor jump made available or exposed.
   CI (that warms *workload* images; `prePull` warms the *Talos installer* image).
 - Deferred v0.4.1's Alertmanager silences. Genuinely useful here given upgrade reboots and the
   recurring `CephNodeNetworkPacketDrops`, but it needs an Alertmanager address plus per-CR
-  matchers — a design decision, not a mechanical follow-up.
+  matchers — a design decision, not a mechanical follow-up. The review strengthened the case:
+  `UpgradeJobRunningTooLong` fires on `tuppr_upgrade_jobs_active > 0` for a hard-coded 1h against a
+  single cluster-wide gauge with no values knob, so a *healthy* 5-node run at `parallelism: 1` plus
+  the detach wait can page. Silencing during runs is the fix; the caveat is recorded in `values.yaml`.
+- Accepted that `waitForVolumeDetach` makes runs longer rather than trying to bound them.
+  `policy.timeout` covers only the per-node `talosctl` command, so the drain is gated by Rook's
+  OSD/mon/mgr PDBs and serialises on Ceph recovery between nodes. That is the intended trade for
+  not hitting Multi-Attach; `spec.healthChecks` is the lever if the wait needs gating, and is
+  noted inline as a follow-up.
 - Left the 33-day-old `Succeeded` pod `tuppr-74ffd6866f-d6m5k` alone. kubelet marks pods Succeeded
   on graceful node shutdown and the 0-replica ReplicaSet never garbage-collects them; it is
   cosmetic and unrelated to this merge.

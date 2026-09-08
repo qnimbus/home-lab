@@ -13,14 +13,20 @@ spec:
   policy:
     rebootMode: default
     # Pinned rather than left to the CRD default. tuppr changed this default soft -> hard in
-    # v0.2.6, but CRD defaults are written into the object at creation time and are never
-    # re-applied, so this CR still carried the soft value it was created with under 0.1.36.
+    # v0.2.6, but defaulting only fills fields that are *absent*: placement already existed in the
+    # 0.1.36 CRD (default soft), so it was materialised as soft on this object and no later default
+    # change could touch it. Contrast prePull above, which did not exist in 0.1.36 — being absent,
+    # it picked up its new default on its own.
     # soft is only *preferred* anti-affinity: the upgrade job can land on the very node it is
     # rebooting and get killed mid-upgrade. hard forbids that (degrades to preferred if single-node).
     placement: hard
     # Non-default (upstream false). ceph-block is the default StorageClass, so most workloads hold
     # RWO RBD volumes; without this a fast reboot orphans the mount and the pod lands in
     # Multi-Attach on the next node. Makes tuppr drain and wait for CSI detach before rebooting.
+    # Cost: policy.timeout (30m) bounds the per-node talosctl command, NOT this drain. Rook's
+    # OSD/mon/mgr PDBs block eviction while Ceph is still recovering from the previous node, so a
+    # full 5-node run serialises on Ceph recovery and can run long. If an OSD never returns, the
+    # run parks in Draining with the node cordoned — see spec.healthChecks to gate on Ceph first.
     waitForVolumeDetach: true
     # policy.debug is deliberately left at the upstream default (true). The validating webhook
     # warns about it on every apply, but a node upgrade is rare and hard to re-run — the verbose
