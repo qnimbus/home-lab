@@ -34,3 +34,42 @@ spec:
   # Upgrade one node at a time — this is a 5-node cluster (3 CP + 2 workers) and taking two
   # control-plane nodes down together would break etcd quorum
   parallelism: 1
+  # Alertmanager silences held only while a run is active and released the moment it finishes, so
+  # these are not standing silences. maxDuration is the failsafe: a run still holding a silence
+  # past it starts alerting again, so a wedged upgrade cannot stay quiet indefinitely.
+  #
+  # Scope is deliberately "expected consequences of a planned drain + reboot", never the detectors
+  # that would tell you *this upgrade* went wrong. Still paging throughout: CephHealthError,
+  # CephMonDownQuorumAtRisk, CephOSDDownHigh, CephFilesystem*, KubeAPIDown, and tuppr's own
+  # TalosUpgradeFailed / TalosUpgradeNodeFailed / TalosUpgradeStuck.
+  # Every alertname below was checked to exist in this cluster's rule set — a typo would silently
+  # match nothing and page anyway.
+  silences:
+    # A node deliberately leaving and rejoining the cluster.
+    - matchers:
+        - name: alertname
+          matchType: "=~"
+          value: KubeNodeNotReady|KubeNodeUnreachable|KubeNodeReadinessFlapping|KubeNodeEviction|KubeletDown
+      maxDuration: 4h
+    # Workload churn caused by draining that node — replicas move, DaemonSet pods go missing,
+    # PDBs sit at their floor while pods reschedule.
+    - matchers:
+        - name: alertname
+          matchType: "=~"
+          value: KubeDeploymentReplicasMismatch|KubeDaemonSetNotScheduled|KubeDaemonSetRolloutStuck|KubeContainerWaiting|KubePodNotReady|KubePdbNotEnoughHealthyPods
+      maxDuration: 4h
+    # Ceph reacting to one host going away. size=3/min_size=2 tolerates a single host by design,
+    # and CephNodeNetworkPacketDrops is the known recurring e1000e false positive (see QA.md).
+    - matchers:
+        - name: alertname
+          matchType: "=~"
+          value: CephOSDDown|CephOSDHostDown|CephMonDown|CephHealthWarning|CephOSDFlapping|CephDaemonSlowOps|CephNodeNetworkPacketDrops
+      maxDuration: 4h
+    # tuppr's own false positive: UpgradeJobRunningTooLong is a hard-coded 1h on a cluster-wide
+    # gauge with no chart knob, and a healthy 5-node run at parallelism 1 plus the
+    # waitForVolumeDetach drain can exceed that. Silencing it during runs is the intended fix —
+    # outside a run it still works, which is when a stuck job actually matters.
+    - matchers:
+        - name: alertname
+          value: UpgradeJobRunningTooLong
+      maxDuration: 4h
