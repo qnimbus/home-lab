@@ -34,14 +34,19 @@ spec:
   # Upgrade one node at a time — this is a 5-node cluster (3 CP + 2 workers) and taking two
   # control-plane nodes down together would break etcd quorum
   parallelism: 1
-  # Alertmanager silences held only while a run is active and released the moment it finishes, so
-  # these are not standing silences. maxDuration is the failsafe: a run still holding a silence
-  # past it starts alerting again, so a wedged upgrade cannot stay quiet indefinitely.
+  # Alertmanager silences held only while a run is active and released as each node finishes, so
+  # these are not standing silences. Observed on the 2026-09-09 run: tuppr creates a fresh batch
+  # per node sized to that node's expected work (7-17m in practice) and expires it on completion
+  # — maxDuration below is the *cap* on that per-node figure, not the duration itself, so a wedged
+  # upgrade cannot stay quiet longer than the cap.
   #
   # Scope is deliberately "expected consequences of a planned drain + reboot", never the detectors
   # that would tell you *this upgrade* went wrong. Still paging throughout: CephHealthError,
-  # CephMonDownQuorumAtRisk, CephOSDDownHigh, CephFilesystem*, KubeAPIDown, and tuppr's own
-  # TalosUpgradeFailed / TalosUpgradeNodeFailed / TalosUpgradeStuck.
+  # CephPGsInactive, CephPGUnavailableBlockingIO, CephFilesystem*, KubeAPIDown, and tuppr's own
+  # TalosUpgradeFailed / TalosUpgradeNodeFailed / TalosUpgradeStuck. Those key on data actually
+  # being unavailable rather than on redundancy being temporarily reduced, which is the line that
+  # matters during a rolling reboot — see the Ceph group below for why the two alerts that used to
+  # be on this list had to move.
   # Every alertname below was checked to exist in this cluster's rule set — a typo would silently
   # match nothing and page anyway.
   silences:
@@ -60,10 +65,21 @@ spec:
       maxDuration: 4h
     # Ceph reacting to one host going away. size=3/min_size=2 tolerates a single host by design,
     # and CephNodeNetworkPacketDrops is the known recurring e1000e false positive (see QA.md).
+    #
+    # CephMonDownQuorumAtRisk and CephOSDDownHigh were deliberately excluded on the first pass,
+    # as "escalation" alerts that should still page. The 2026-09-09 v1.13.10 run proved that
+    # wrong: both are pure functions of "one host is down" at this cluster's size, so they fire
+    # on every node, every run, carrying no information the two alerts above don't already give.
+    #   CephOSDDownHigh:         count(osd_up==0)/count(osd_up)*100 >= 10, and no `for:` clause.
+    #                            10 OSDs at 2/host — one host is 20%, and even ONE OSD is 10%.
+    #   CephMonDownQuorumAtRisk: fires when MON_DOWN and mons-in-quorum == floor(n/2)+1.
+    #                            With 3 mons the minimum is 2, so downing any mon host trips it.
+    # Both would need topology-aware thresholds to mean anything here, and the chart exposes no
+    # knob. The real detectors are left unsilenced below.
     - matchers:
         - name: alertname
           matchType: "=~"
-          value: CephOSDDown|CephOSDHostDown|CephMonDown|CephHealthWarning|CephOSDFlapping|CephDaemonSlowOps|CephNodeNetworkPacketDrops
+          value: CephOSDDown|CephOSDHostDown|CephMonDown|CephHealthWarning|CephOSDFlapping|CephDaemonSlowOps|CephNodeNetworkPacketDrops|CephMonDownQuorumAtRisk|CephOSDDownHigh
       maxDuration: 4h
     # tuppr's own false positive: UpgradeJobRunningTooLong is a hard-coded 1h on a cluster-wide
     # gauge with no chart knob, and a healthy 5-node run at parallelism 1 plus the
