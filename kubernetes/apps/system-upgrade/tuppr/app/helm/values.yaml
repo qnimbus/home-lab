@@ -16,6 +16,15 @@ notification:
   enabled: true
   secretName: tuppr-notification-secret  # ExternalSecret target; key defaults to "url"
 
+# The chart injects the apprise URL as NOTIFICATION_URL via secretKeyRef, and env vars sourced from
+# a Secret are not live-updated. Without this, rotating the Pushover credentials in 1Password
+# re-renders the Secret but the running pod keeps the stale URL until it happens to restart —
+# notifications then go nowhere silently, which is the exact blind spot enabling them was meant to
+# close. Matches how every other ExternalSecret consumer here is wired (pgadmin, waha, open-webui,
+# cloudflared, …); the chart's own values comment suggests this key for reloader.
+deploymentAnnotations:
+  reloader.stakater.com/auto: "true"
+
 # Lets tuppr hold Alertmanager silences for the duration of a run. This only configures how it
 # reaches Alertmanager — *what* gets silenced is per-resource, in spec.silences on the TalosUpgrade.
 # The chart hard-fails the render if enabled is set without an address.
