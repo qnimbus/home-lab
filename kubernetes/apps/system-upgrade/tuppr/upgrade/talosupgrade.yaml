@@ -25,8 +25,12 @@ spec:
     # Multi-Attach on the next node. Makes tuppr drain and wait for CSI detach before rebooting.
     # Cost: policy.timeout (30m) bounds the per-node talosctl command, NOT this drain. Rook's
     # OSD/mon/mgr PDBs block eviction while Ceph is still recovering from the previous node, so a
-    # full 5-node run serialises on Ceph recovery and can run long. If an OSD never returns, the
-    # run parks in Draining with the node cordoned — see spec.healthChecks to gate on Ceph first.
+    # full 5-node run serialises on Ceph recovery and can run long. The drain itself uses a
+    # hard-coded 10m DrainOptions.Timeout, and the volume-detach wait is 2m and best-effort — it
+    # proceeds anyway on timeout. Neither of those is policy.timeout either.
+    # If a drain fails, tuppr does NOT leave the node cordoned: upgrade.go rolls the whole batch
+    # back, uncordoning every node including the failing one, then requeues after 1m and retries
+    # in Draining. See spec.healthChecks to gate the run on Ceph health before it starts instead.
     waitForVolumeDetach: true
     # policy.debug is deliberately left at the upstream default (true). The validating webhook
     # warns about it on every apply, but a node upgrade is rare and hard to re-run — the verbose
