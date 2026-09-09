@@ -4,6 +4,104 @@ A running record of work done, files modified, and decisions made across Claude 
 
 ---
 
+## 2026-09-09 — `resolve-cp-01-schematic-divergence`
+
+### Goal
+Answer why Renovate opened two competing Kubernetes PRs, then carry the Talos `v1.13.10` rollout
+through — which surfaced a two-month-old schematic divergence on `talos-cp-01`, a Flux-stalling
+bug left by the previous session, and two blind spots in the alerting that session had just added.
+
+### What we did
+- Explained why Renovate opened both #120 (`kubelet v1.36.1 → v1.36.4`) and #121 (`→ v1.37.0`):
+  `separateMinorPatch: true` in `.renovate/groups.json5` splits the stream so a patch can be taken
+  without being forced onto the next minor. They edit the same two lines and are mutually exclusive.
+- Established from Talos' own source — not the docs, whose support-matrix pages 404 — that #121 is
+  unsupported: `release-1.13` sets `DefaultKubernetesVersion = 1.36.3` with
+  `SupportedKubernetesVersions = 6` counted *backwards*, and `1.37.0` first appears in
+  `release-1.14`. Recommended #120 now, #121 only after a Talos 1.14 bump.
+- Root-caused the `Render` check failing on every open PR: `mise-action` is SHA-pinned but the mise
+  binary is not, and with no `version` it asks `mise.jdx.dev/VERSION` for latest (`2026.9.3`) then
+  downloads from GitHub releases, where that tag does not exist — `curl: (22)`, five retries, dead.
+  Not transient: still 404ing hours later. Fixed with `minimum_release_age: "24h"` at both call
+  sites (`fb41c30`), confirmed present in the pinned v4.3.0 by reading `action.yml` at that SHA.
+- Kept `image-pull`'s `continue-on-error` fallback rather than replacing it: it guards a
+  cache-restore stall where mise installs *successfully* and its node process never exits
+  (2026-09-07, run 34029723091). Version selection was never the problem there, so the soak window
+  cannot cover it and neither mechanism subsumes the other.
+- `/git-commit` incidentally revealed Flux had been stuck on `41f6774` since the previous session's
+  work merged: `ExternalSecret/tuppr-notification` carried no `metadata.namespace`, so Flux failed
+  the whole `tuppr` Kustomization and parked `tuppr-upgrade` behind its `dependsOn`. The silences
+  and notification Secret had therefore never reached the cluster. Fixed in `c30a0a2`.
+- Traced why: the manifest was modelled on kube-prometheus-stack's ExternalSecret, which correctly
+  omits the namespace because *that* app's `ks.yaml` sets `targetNamespace: observability`. tuppr's
+  sets none, so every namespaced resource under `app/` carries its own.
+- Watched PR #119 (`installer v1.13.2 → v1.13.10`). tuppr parked the run in `Pending` before
+  touching a node: `talos-cp-01`'s runtime schematic `1aaf7513` did not match the `631787e1` in
+  `.machine.install.image`, and it refuses to reinstall across a mismatch that might drop extensions.
+- Fetched both schematics from the Image Factory: the difference was exactly `siderolabs/i915`.
+  `ee97e6b` (2026-07-09) added it and moved `talosImageURL` to `631787e1`; the other four nodes
+  picked it up out of band, cp-01 never did. tuppr compares content-hash IDs, so it cannot tell a
+  strict superset from an arbitrary difference — refusing is the correct default.
+- Converged cp-01 with a one-shot `factory-url` + `schematic` node-annotation pair in
+  `talconfig.yaml`. Both keys were required: per tuppr's docs `factory-url` alone builds
+  `<factory-url>/<runtime schematic>:<version>`, which would have unblocked the upgrade while
+  rebuilding cp-01 on `1aaf7513` — a successful-looking run that silently re-cements the divergence.
+- Ran the rollout to completion: 5/5 nodes on `v1.13.10`, zero failures, all five on `631787e1`,
+  i915 installed on cp-01, Ceph back to `HEALTH_OK` with 10/10 OSDs and `noout` cleared.
+  `policy.placement: hard` proved itself — worker-02's upgrade job ran on cp-01, never on the node
+  being rebooted.
+- Confirmed convergence from `talosctl get extensions` rather than the `extensions.talos.dev/schematic`
+  node annotation, which lagged and still read `1aaf7513` for several minutes after the fact.
+- Removed the transient annotations afterwards. The first attempt's `--dry-run` caught that the
+  branch predated PR #119, so applying would also have rewritten `.machine.install.image` back to
+  `:v1.13.2` on a node running `v1.13.10`. Rebased onto `origin/main` and re-applied cleanly.
+- Corrected the silence scope after `CephMonDownQuorumAtRisk` and `CephOSDDownHigh` paged mid-run.
+  Both are pure functions of "one host is down" at this cluster's size — `CephOSDDownHigh` is
+  `>= 10%` with no `for:` and 2 OSDs/host of 10, `CephMonDownQuorumAtRisk` trips whenever quorum
+  equals `floor(n/2)+1`, which 3 mons always do when one is down.
+- Added `PrometheusRule/tuppr-pending-rules` covering the `Pending` phase for both CRs, closing the
+  gap that let the `BuildTargetImage` block sit ~19 minutes with no alert and no notification.
+
+### Files changed
+| File | Change |
+|------|--------|
+| `.github/workflows/flux-render.yaml` | Added `minimum_release_age: "24h"` to the mise-action call (`fb41c30`) |
+| `.github/workflows/image-pull.yaml` | Same soak window; kept the existing `continue-on-error` fallback (`fb41c30`) |
+| `kubernetes/apps/system-upgrade/tuppr/app/externalsecret.yaml` | Added the missing `metadata.namespace` that had stalled Flux (`c30a0a2`) |
+| `talos/talconfig.yaml` | Added then removed cp-01's transient tuppr annotations; left a do-not-re-add note |
+| `kubernetes/apps/system-upgrade/tuppr/upgrade/talosupgrade.yaml` | Moved the two arithmetic-guaranteed Ceph alerts into the silence group; corrected the `maxDuration` and keep-paging comments |
+| `kubernetes/apps/system-upgrade/tuppr/app/prometheusrule.yaml` | New — `TalosUpgradePending` / `KubernetesUpgradePending`, 15m |
+| `kubernetes/apps/system-upgrade/tuppr/app/kustomization.yaml` | Registered the new PrometheusRule |
+
+### Key decisions
+- **`minimum_release_age` over pinning `version`.** A hard pin adds a second toolchain version to
+  track and rot when Renovate is not watching it; the soak window needs no maintenance and also
+  guards a same-day mise regression. It reduces rather than eliminates the risk — a version left
+  unpublished past 24h would still be selected — so `version` remains the escalation.
+- **Converge cp-01 rather than pin it.** `schematic.yaml`'s own comment ("inert on cp-01 (AMD, no
+  Intel iGPU PCI ID)") shows the intent was always that all five nodes carry i915. Pinning cp-01 to
+  its own schematic would have needed a per-node image override and re-litigating every future
+  schematic change.
+- **Treat the convergence annotations as transient.** Left in `talconfig.yaml` they would pin cp-01
+  to `631787e1` permanently, so a later `schematic.yaml` change would silently skip this node — the
+  same bug inverted and harder to spot. Removed once the runtime schematic matched
+  `.machine.install.image`, which is when tuppr's default path works unaided.
+- **Silence `CephMonDownQuorumAtRisk` and `CephOSDDownHigh` after all.** They were excluded on the
+  first pass as escalation detectors that should still page; the run proved they carry no
+  information beyond `CephOSDDown`/`CephMonDown` at this topology. Scope alerts by their expression
+  against real node and daemon counts, not by what the name implies. `CephHealthError`,
+  `CephPGsInactive` and `CephPGUnavailableBlockingIO` are the real detectors and stay unsilenced.
+- **Key the new alerts on the phase metric, not `tuppr_upgrade_progressing`.** That gauge reads `0`
+  even after a clean finish (`reason="Completed"`), so `== 0` carries no signal — which is also why
+  the chart's `TupprUpgradeBlocked` (`reason=~"Waiting.*|Suspended"`) missed a `BuildTargetImage`
+  block. `for: 15m` clears the normal pre-pull window (under 2 minutes for five nodes, Spegel-warmed)
+  while beating the 19 minutes that block ran unnoticed.
+- **Always read the whole `--dry-run` diff before `task talos:apply`.** talhelper renders the entire
+  machine config from `talenv.yaml`, so an apply meant to change one annotation carries every
+  branch-vs-main drift with it. There is no partial apply.
+
+---
+
 ## 2026-09-08 — `tuppr-053-post-merge`
 
 ### Goal

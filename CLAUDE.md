@@ -4,6 +4,7 @@
 >
 > | Date | Session | Summary |
 > |------|---------|---------|
+> | 2026-09-09 | `resolve-cp-01-schematic-divergence` | Rolled Talos v1.13.10 to 5 nodes; converged cp-01's pre-i915 schematic, unstuck Flux, rescoped upgrade silences |
 > | 2026-09-08 | `tuppr-053-post-merge` | Merged tuppr 0.5.3; fixed persisted `placement: soft`, wired never-scraped metrics, added notifications + silences |
 > | 2026-09-07 | `talos-apid-firewall-podcidr` | Talos firewall dropped all pod-sourced apid traffic — image-pull CI never passed, tuppr upgrades silently blocked; fixed |
 > | 2026-09-06 | `renovate-split-config` | Split renovate.json5 into 9 `.renovate/` local presets (bykaj pattern); added minimumGroupSize + changelogs.json5, adapted 1Password rule for this repo's depName |
@@ -11,7 +12,6 @@
 > | 2026-09-05 | `renovate-self-hosted-actions` | Replaced Mend-hosted Renovate app with a self-hosted `renovate.yaml` workflow (bot App, every 6h); parked in-cluster runner on RBAC/uid findings |
 > | 2026-09-05 | `flux-render-ci-flate-eval` | Added flux-render CI (flux-local test + post-render kubeconform + diff comment); flate 0.6.5 hangs on this tree (#828) |
 > | 2026-09-05 | `ceph-tentacle-upgrade` | Upgraded Ceph 19.2.6 → 20.2.4 Tentacle in 4.5 min (rook mgr module off first, #18124); fixed open-webui Job TTL flap |
-> | 2026-09-04 | `rook-post-upgrade-hygiene-configkey-audit` | Dropped dead csi-metrics ServiceMonitor (root-caused upstream), audited config-key store for CVE-2026-50152, rotated jwt |
 This repository provisions and manages a bare-metal Talos Linux Kubernetes cluster using GitOps (FluxCD). Infrastructure-as-Code only: no manual `kubectl apply`, no imperative changes that are not reflected in Git.
 
 > For a log of operational Q&A — behaviour that looked wrong but wasn't, diagnosis tips, cluster-specific gotchas — see [QA.md](docs/QA.md).
