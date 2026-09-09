@@ -1307,7 +1307,7 @@ kubectl get deployment <name> -n <ns> -o jsonpath='{.status.conditions[*]}'
 
 | CR | Field | Current |
 |----|-------|---------|
-| `TalosUpgrade/cluster` | `spec.talos.version` | `v1.13.2` |
+| `TalosUpgrade/cluster` | `spec.talos.version` | `v1.13.10` |
 | `KubernetesUpgrade/kubernetes` | `spec.kubernetes.version` | `v1.36.1` |
 
 Equal to what the nodes run → tuppr idles in phase `Completed` (which is why both CRs sit `Completed` for months at a time). Different → it drives nodes to the declared version, `parallelism: 1`, honouring `spec.policy`.
@@ -1344,7 +1344,11 @@ There is no separate "go" button: merging the PR *is* the trigger, and the run p
 
 The two are complementary and easy to confuse: Alertmanager only ever tells you something went **wrong**, so without tuppr's own notifications a healthy 1–3 h rolling upgrade is invisible until it ends.
 
-**Why alerts go quiet mid-run.** A planned drain + reboot legitimately trips node, workload-churn and Ceph alerts. `spec.silences` on the TalosUpgrade holds Alertmanager silences **only while a run is active**, releasing them when it finishes, with `maxDuration: 4h` as a failsafe so a wedged run starts alerting again. The silences deliberately cover only the expected consequences of a reboot — `CephHealthError`, `CephMonDownQuorumAtRisk`, `CephOSDDownHigh`, `KubeAPIDown` and tuppr's own failure alerts keep paging throughout.
+**Why alerts go quiet mid-run.** A planned drain + reboot legitimately trips node, workload-churn and Ceph alerts. `spec.silences` on the TalosUpgrade holds Alertmanager silences **only while a run is active**. tuppr creates a fresh batch per node, sized to that node's expected work (7–17 min observed on the 2026-09-09 run) and expires it as the node completes; `maxDuration: 4h` is the *cap* on that per-node figure, not the duration, so a wedged run cannot stay quiet past it.
+
+The silences cover the expected consequences of a reboot. `CephHealthError`, `CephPGsInactive`, `CephPGUnavailableBlockingIO`, `KubeAPIDown` and tuppr's own `TalosUpgradeFailed`/`TalosUpgradeNodeFailed`/`TalosUpgradeStuck` keep paging throughout — they key on data actually being unavailable rather than on redundancy being temporarily reduced.
+
+`CephMonDownQuorumAtRisk` and `CephOSDDownHigh` were on that keep-paging list until 2026-09-09 and are now **silenced during runs**, because at this cluster's size both are pure functions of "one host is down": `CephOSDDownHigh` is `>= 10%` with no `for:` and there are 2 OSDs per host of 10, and `CephMonDownQuorumAtRisk` trips whenever quorum equals `floor(n/2)+1`, which 3 mons always do when one is down. `UpgradeJobRunningTooLong` is likewise silenced during a run (hard-coded 1 h on a cluster-wide gauge) and still fires outside one. Do not wait on any of these three mid-run — they will not page.
 
 **Gotcha:** the validating webhook checks `spec.silences` against the *running* operator's configuration. If you add silences before the chart has `silences.enabled` + `alertmanager.address`, the apply succeeds but warns `spec.silences is configured but the operator has no Alertmanager connection … no silences will be created`. The `tuppr` → `tuppr-upgrade` Kustomization `dependsOn` already orders this correctly (operator upgrades first, CR second); the warning only shows up if you dry-run the CR ahead of the chart change.
 
