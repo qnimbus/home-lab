@@ -220,6 +220,15 @@ nodes:
     # same Rook mon-ip workaround, this node's storage-bond address.
     nodeAnnotations:
       network.rook.io/mon-ip: "10.200.0.201"
+      # Historical note — do not re-add tuppr factory-url/schematic annotations here.
+      # Until 2026-09-09 this node ran schematic 1aaf7513 (the pre-i915 set) while
+      # talenv.yaml declared 631787e1; ee97e6b added siderolabs/i915 and the other four
+      # nodes picked it up, cp-01 never did. tuppr blocked the v1.13.10 upgrade rather
+      # than reinstall across a schematic it could not prove was a superset. A one-shot
+      # pair of factory-url + schematic annotations converged it during that upgrade and
+      # was removed afterwards: cp-01's runtime schematic now matches
+      # .machine.install.image, so tuppr's default path works unaided. Re-adding them
+      # would pin this node, and a future schematic.yaml change would silently skip it.
     patches:
       - "@./patches/node/machine-volumes-1tb.yaml"
       # IOT VLAN 30 — tagged sub-interface on the mgmt trunk NIC. See talos-worker-01's
