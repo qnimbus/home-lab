@@ -15,7 +15,7 @@ instance:
     provider: github
     interval: 5m0s
     url: "https://github.com/qnimbus/home-lab"
-    ref: refs/heads/main
+    ref: refs/heads/housekeeping
     path: ./kubernetes/flux/cluster
     pullSecret: flux-github-app
   commonMetadata:
