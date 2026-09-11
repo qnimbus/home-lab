@@ -23,7 +23,7 @@ gh = "2.100.0"
 1password = "2.34.0"
 flux-operator = "0.60.0"
 # renovate: datasource=github-releases depName=controlplaneio-fluxcd/flux-operator
-flux-operator-mcp = "0.59.0"
+flux-operator-mcp = "0.60.0"
 kustomize = "5.8.1"
 kubeconform = "0.8.0"
 crane = "0.22.1"
