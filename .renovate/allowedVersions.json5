@@ -1,6 +1,5 @@
 {
-  // Version pins/holds — packages deliberately kept off a specific line until a planned upgrade.
-
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
   packageRules: [
     {
       // Ceph itself is pinned in the rook-ceph-cluster HelmRelease (cephImage.tag). Hold it on the
@@ -45,6 +44,12 @@
       matchDatasources: ["docker"],
       matchPackageNames: ["maximhq/bifrost"],
       allowedVersions: "/^v/",
+    },
+    {
+      description: "CoreDNS 1.14.3+ prefetch poisons autopath answers, hold until coredns/coredns#8390 is fixed",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["ghcr.io/coredns/charts/coredns"],
+      enabled: false,
     },
   ],
 }
