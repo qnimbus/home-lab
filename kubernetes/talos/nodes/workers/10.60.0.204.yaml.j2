@@ -1,0 +1,104 @@
+# talos-worker-01
+# ---------------
+# Model: Lenovo M920Q #1 (i5-8500T, 64GB, X520-DA2) — temporary CP until M90q #2
+# joined; now pure worker.
+# NICs:
+#   - e1000e: eno1 (mgmt, single onboard NIC — driver selector is unambiguous here)
+#   - ixgbe:  enp1s0f0          b4:96:91:10:95:cc  (storage bond)
+#   - ixgbe:  enp1s0f1          b4:96:91:10:95:ce  (storage bond)
+# Disk: IRP-SSDPR-P44N-01T-30 (GoodRam IRDM PRO NANO) — system disk; Kingston SNV3S1000G is Ceph OSD
+---
+apiVersion: v1alpha1
+kind: HostnameConfig
+hostname: talos-worker-01
+---
+apiVersion: v1alpha1
+kind: UnattendedInstallConfig
+provisioning:
+  diskSelector:
+    match: disk.model == "IRP-SSDPR-P44N-01T-30"
+---
+apiVersion: v1alpha1
+kind: LinkAliasConfig
+name: mgmt0
+selector:
+  match: link.driver == "e1000e"
+---
+apiVersion: v1alpha1
+kind: LinkConfig
+name: mgmt0
+mtu: 1500
+addresses:
+  - address: 10.60.0.204/24
+routes:
+  - gateway: 10.60.0.1
+---
+# IOT VLAN 30 — see cp-01's file / docs/QA.md for full rationale.
+apiVersion: v1alpha1
+kind: VLANConfig
+name: eno1.30
+vlanID: 30
+parent: eno1
+mtu: 1500
+addresses:
+  - address: 10.30.0.204/24
+---
+apiVersion: v1alpha1
+kind: SysctlConfig
+params:
+  net.ipv6.conf.eno1/30.disable_ipv6: "1"
+  # Experimental — see cp-02's file / docs/QA.md.
+  net.core.netdev_budget: "1000"
+  net.core.netdev_budget_usecs: "16000"
+---
+apiVersion: v1alpha1
+kind: LinkAliasConfig
+name: bond-storage-m0
+selector:
+  match: mac(link.permanent_addr).startsWith("b4:96:91:10:95:cc")
+---
+apiVersion: v1alpha1
+kind: LinkAliasConfig
+name: bond-storage-m1
+selector:
+  match: mac(link.permanent_addr).startsWith("b4:96:91:10:95:ce")
+---
+apiVersion: v1alpha1
+kind: BondConfig
+name: bond-storage
+links:
+  - bond-storage-m0
+  - bond-storage-m1
+bondMode: 802.3ad
+lacpRate: fast
+miimon: 100
+updelay: 200
+downdelay: 200
+xmitHashPolicy: layer3+4
+mtu: 9000
+addresses:
+  - address: 10.200.0.204/24
+---
+apiVersion: v1alpha1
+kind: VolumeConfig
+name: EPHEMERAL
+provisioning:
+  diskSelector:
+    match: system_disk
+  maxSize: 120GiB
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: local-hostpath
+provisioning:
+  diskSelector:
+    match: system_disk
+  minSize: 100GiB
+  grow: true
+---
+# Legacy fields — see cp-01's file / cluster.yaml.j2 for why.
+machine:
+  nodeLabels:
+    topology.kubernetes.io/zone: homelab-worker-01
+  nodeAnnotations:
+    network.rook.io/mon-ip: "10.200.0.204"

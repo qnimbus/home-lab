@@ -1,0 +1,107 @@
+# talos-cp-01
+# ----------
+# Model: Minisforum MS-A2 (AMD Ryzen 9 9955HX, 32c, 96GB ECC, X710) — permanent CP anchor
+# NICs:
+#   - igc:   enp4s0 (mgmt)   38:05:25:33:c9:74
+#   - i40e:  enp5s0f0np0     38:05:25:33:c9:75  (storage bond)
+#   - i40e:  enp5s0f1np1     38:05:25:33:c9:76  (storage bond)
+# Disk: nvme-KINGSTON_SNV3S1000G (serial required — cp-03 shares this drive model)
+---
+apiVersion: v1alpha1
+kind: HostnameConfig
+hostname: talos-cp-01
+---
+apiVersion: v1alpha1
+kind: UnattendedInstallConfig
+provisioning:
+  diskSelector:
+    match: disk.model == "KINGSTON SNV3S1000G" && disk.serial == "50026B7686F8B787"
+---
+apiVersion: v1alpha1
+kind: LinkAliasConfig
+name: mgmt0
+selector:
+  match: mac(link.permanent_addr).startsWith("38:05:25:33:c9:74")
+---
+apiVersion: v1alpha1
+kind: LinkConfig
+name: mgmt0
+mtu: 1500
+addresses:
+  - address: 10.60.0.201/24
+routes:
+  - gateway: 10.60.0.1
+---
+# IOT VLAN 30 — tagged sub-interface on the mgmt trunk NIC. parent: must be the
+# raw interface name, never a LinkAliasConfig alias, or Cilium's BPF VLAN filter
+# overflows on a duplicate subinterface. Full rationale: docs/QA.md.
+apiVersion: v1alpha1
+kind: VLANConfig
+name: enp4s0.30
+vlanID: 30
+parent: enp4s0
+mtu: 1500
+addresses:
+  - address: 10.30.0.201/24
+---
+apiVersion: v1alpha1
+kind: SysctlConfig
+params:
+  net.ipv6.conf.enp4s0/30.disable_ipv6: "1"
+---
+apiVersion: v1alpha1
+kind: LinkAliasConfig
+name: bond-storage-m0
+selector:
+  match: mac(link.permanent_addr).startsWith("38:05:25:33:c9:75")
+---
+apiVersion: v1alpha1
+kind: LinkAliasConfig
+name: bond-storage-m1
+selector:
+  match: mac(link.permanent_addr).startsWith("38:05:25:33:c9:76")
+---
+apiVersion: v1alpha1
+kind: BondConfig
+name: bond-storage
+links:
+  - bond-storage-m0
+  - bond-storage-m1
+bondMode: 802.3ad
+lacpRate: fast
+miimon: 100
+updelay: 200
+downdelay: 200
+xmitHashPolicy: layer3+4
+mtu: 9000
+addresses:
+  - address: 10.200.0.201/24
+---
+apiVersion: v1alpha1
+kind: VolumeConfig
+name: EPHEMERAL
+provisioning:
+  diskSelector:
+    match: system_disk
+  maxSize: 120GiB
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: local-hostpath
+provisioning:
+  diskSelector:
+    match: system_disk
+  minSize: 100GiB
+  grow: true
+---
+# Legacy fields (see cluster.yaml.j2's machine.kubelet comment for why the
+# fleet-wide KubeNodeConfig document was dropped — same field-name reasoning
+# extends to per-node labels/annotations, which must stay legacy too since
+# they'd otherwise resurrect the conflict).
+machine:
+  nodeLabels:
+    topology.kubernetes.io/zone: homelab-cp-01
+  nodeAnnotations:
+    # Rook can't see the storage-bond IP as the Node's K8s address — pins its
+    # mon bind IP explicitly. See docs/QA.md (Rook issue #14829).
+    network.rook.io/mon-ip: "10.200.0.201"

@@ -1,0 +1,77 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/lefthook.json
+# Lefthook docs: https://lefthook.dev/configuration/
+# To disable lefthook run: `LEFTHOOK=0 git commit`
+
+pre-commit:
+  parallel: true
+  skip:
+    - merge
+    - rebase
+  commands:
+    format-mise:
+      glob: ".mise/config.toml"
+      run: mise fmt
+      stage_fixed: true
+
+    mise-lock:
+      glob:
+        - ".mise.toml"
+        - ".mise/config.toml"
+      # -p pins which platforms the lockfile is generated for. mise infers the
+      # set from an existing lockfile (including for newly added tools), so this
+      # only decides the bootstrap case where no lockfile exists yet — without it
+      # a fresh lock would pick up musl and windows entries nothing here installs.
+      run: mise lock -p linux-x64,linux-arm64,macos-arm64 && git add .mise/mise.lock
+
+    format-markdown:
+      glob:
+        - "*.md"
+        - "*.mdx"
+        - "*.markdown"
+      run: oxfmt oxfmt --config=.oxfmtrc.json  {staged_files}
+      exclude: []
+      stage_fixed: true
+
+    format-json:
+      glob:
+        - "*.json"
+        - "*.jsonc"
+        - "*.json5"
+      run: oxfmt oxfmt --config=.oxfmtrc.json  {staged_files}
+      exclude: []
+      stage_fixed: true
+
+    format-yaml:
+      glob:
+        - "*.yaml"
+        - "*.yml"
+      run: oxfmt oxfmt --config=.oxfmtrc.json  {staged_files}
+      exclude:
+        - "*.sops.yaml"
+        - "*.sops.yml"
+      stage_fixed: true
+
+    format-shellcheck:
+      glob:
+        - "*.sh"
+      run: shellcheck {staged_files}
+      exclude: []
+
+    actionlint:
+      glob:
+        - ".github/workflows/*.yml"
+        - ".github/workflows/*.yaml"
+      run: >-
+        actionlint -shellcheck=
+        -config-file .github/actionlint.yaml {staged_files}
+
+    zizmor:
+      glob:
+        - ".github/workflows/*.yml"
+        - ".github/workflows/*.yaml"
+        - ".actions/**/action.yml"
+        - ".actions/**/action.yaml"
+        - ".github/actions/**/action.yml"
+        - ".github/actions/**/action.yaml"
+      run: zizmor --offline {staged_files}

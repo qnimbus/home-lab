@@ -1,16 +1,17 @@
 #!/usr/bin/env -S just --justfile
 
-set quiet := true
+set minimum-version := '1.55.0'
+
+set default-list
+set default-script
+set lazy
+set quiet
+set script-interpreter := ['bash', '-euo', 'pipefail']
 set shell := ['bash', '-euo', 'pipefail', '-c']
 
-mod bootstrap "ops/bootstrap"
-mod ceph "ops/ceph"
-mod cnpg "ops/cnpg"
-mod talos "talos"
-
-[private]
-default:
-    just --list
+# Talos Recipes
+[group('talos')]
+mod talos "kubernetes/talos"
 
 [private]
 log lvl msg *args:

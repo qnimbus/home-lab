@@ -1,0 +1,73 @@
+{
+  "sops.binPath": "/home/bas/.local/share/mise/shims/sops",
+  "sops.defaults.ageKeyFile": "age.key",
+  "sops.enabled": true,
+  "sops.configPath": "./.sopsrc.yaml",
+  "workbench.editorAssociations": {
+    "*.md": "vscode.markdown.preview.editor"
+  },
+  "workbench.diffEditorAssociations": {
+    "*.md": "default"
+  },
+  "editor.bracketPairColorization.enabled": true,
+  "editor.fontFamily": "FiraCode Nerd Font",
+  "editor.fontLigatures": true,
+  "editor.fontSize": 14,
+  "editor.guides.bracketPairs": true,
+  "editor.guides.bracketPairsHorizontal": true,
+  "editor.guides.highlightActiveBracketPair": true,
+  "editor.hover.delay": 1500,
+  "editor.rulers": [100],
+  "editor.stickyScroll.enabled": false,
+  "explorer.autoReveal": true,
+  "files.associations": {
+    "**/*.json5": "json5",
+    "**/*.just": "just"
+  },
+  "files.trimTrailingWhitespace": true,
+  "material-icon-theme.files.associations": {
+    "*.gotmpl": "smarty",
+    "*.sops.yaml": "lock",
+    "helmfile.yaml": "helm",
+    "kubeconfig": "kubernetes",
+    "talosconfig": "kubernetes"
+  },
+  "material-icon-theme.folders.associations": {
+    // top level
+    ".github/workflows": "ci",
+    ".private": "archive",
+    ".renovate": "robot",
+    "home-ops": "git",
+    "bootstrap": "seeders",
+    "flux": "pipe",
+    "talos": "linux",
+    // namespaces
+    "actions-runner-system": "github",
+    "cert-manager": "guard",
+    "default": "home",
+    "external": "connection",
+    "external-secrets": "guard",
+    "flux-system": "pipe",
+    "infrastructure": "server",
+    "kube-system": "kubernetes",
+    "media": "video",
+    "network": "context",
+    "observability": "event",
+    "rook-ceph": "dump",
+    "system": "base",
+    "system-upgrade": "update"
+  },
+  "terminal.integrated.fontSize": 14,
+  "vs-kubernetes": {
+    "vs-kubernetes.kubeconfig": "${workspaceFolder}/kubernetes/kubeconfig",
+    "vs-kubernetes.knownKubeconfigs": ["${workspaceFolder}/kubernetes/kubeconfig"]
+  },
+  "yaml.schemaStore.enable": true,
+  "yaml.schemas": {
+    "kubernetes": "./kubernetes/**/*.yaml"
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "bluebrown.yamlfmt"
+  },
+  "yamlfmt.args": ["-lint"]
+}

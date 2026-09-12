@@ -2,10 +2,10 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
 
   extends: [
-    "config:recommended",    // Sensible defaults: PR limits, grouping minor+patch, etc..
-    "docker:enableMajor",    // Also open PRs for major Docker image bumps (Talos, k8s use docker datasource)
-    ":dependencyDashboard",  // Maintain a GitHub Issue listing every pending update — your control panel
-    ":semanticCommits",      // Conventional commit messages on Renovate's own commits
+    "config:recommended", // Sensible defaults: PR limits, grouping minor+patch, etc..
+    "docker:enableMajor", // Also open PRs for major Docker image bumps (Talos, k8s use docker datasource)
+    ":dependencyDashboard", // Maintain a GitHub Issue listing every pending update — your control panel
+    ":semanticCommits", // Conventional commit messages on Renovate's own commits
 
     // Local presets — split out of what used to be a single 447-line packageRules array.
     // Each is resolved via the GitHub App token this repo's Renovate workflow already holds;
@@ -28,8 +28,8 @@
   dependencyDashboardTitle: "Renovate Dashboard",
 
   // Renovate runs every ~6hrs
-  prHourlyLimit: 2,       // This setting - if enabled - limits Renovate to a maximum of x PRs opened per hour (or run, in our case)
-  prConcurrentLimit: 10,  // This setting - if enabled - limits Renovate to a maximum of x concurrent PRs open at any time
+  prHourlyLimit: 2, // This setting - if enabled - limits Renovate to a maximum of x PRs opened per hour (or run, in our case)
+  prConcurrentLimit: 10, // This setting - if enabled - limits Renovate to a maximum of x concurrent PRs open at any time
 
   // Only scan on weekends — avoids noise during the week; change to "at any time" to run continuously
   schedule: ["at any time"],
@@ -39,16 +39,9 @@
   ignorePaths: ["**/*.sops.*", ".devcontainer/**"],
 
   // Dependencies managed outside Renovate — do not open PRs for these.
-  // 1password: distributed via AgileBits' servers, no compatible datasource.
   // talosctl: CLI tool in .mise.toml — must match the running Talos server version; bump manually alongside Talos PRs.
   // etcd: CLI tool in .mise.toml — must match the etcd version bundled with the running Talos release.
-  // Note: ghcr.io/siderolabs/installer + kubelet are intentionally NOT ignored — tuppr manages upgrades via
-  // TalosUpgrade/KubernetesUpgrade CRDs, and Renovate drives version bumps via separateMinorPatch PRs.
-  ignoreDeps: [
-    "1password",
-    "talosctl",
-    "etcd",
-  ],
+  ignoreDeps: ["talos", "etcd"],
 
   // ── Manager file-pattern overrides ──────────────────────────────────────────
   // Renovate's built-in managers each have a default set of filename globs they

@@ -1,0 +1,229 @@
+# Control-plane-only documents, including machine.type. See README.md's Gotchas
+# section: machine.ca/cluster.ca merge as a cert+key unit, so crt must be repeated
+# alongside key here even though cluster.yaml.j2 already set crt fleet-wide.
+---
+machine:
+  type: controlplane
+  ca:
+    crt: op://homelab/talos/MACHINE_CA_CRT
+    key: op://homelab/talos/MACHINE_CA_KEY
+cluster:
+  ca:
+    crt: op://homelab/talos/CLUSTER_CA_CRT
+    key: op://homelab/talos/CLUSTER_CA_KEY
+  aggregatorCA:
+    crt: op://homelab/talos/CLUSTER_AGGREGATORCA_CRT
+    key: op://homelab/talos/CLUSTER_AGGREGATORCA_KEY
+  etcd:
+    ca:
+      crt: op://homelab/talos/CLUSTER_ETCD_CA_CRT
+      key: op://homelab/talos/CLUSTER_ETCD_CA_KEY
+    extraArgs:
+      listen-metrics-urls: http://0.0.0.0:2381
+    advertisedSubnets:
+      - 10.60.0.0/24
+  serviceAccount:
+    key: op://homelab/talos/CLUSTER_SERVICEACCOUNT_KEY
+  # Legacy field, kept as-is: confirmed live on the cluster today (no
+  # KubeEtcdEncryptionConfig document in use) — do not switch kinds without
+  # first verifying Talos v1.14 treats them as equivalent.
+  secretboxEncryptionSecret: op://homelab/talos/CLUSTER_SECRETBOXENCRYPTIONSECRET
+  # No new-style equivalent exists anywhere (checked KubeNodeConfig and
+  # KubeClusterConfig's complete field lists). Verified live (real
+  # apply-config --dry-run against a CP node, not just local `machineconfig
+  # patch` which gave a false-negative pass here): a KubeNodeConfig document
+  # of ANY shape — even just nodeIP alone, no labels/annotations/taints —
+  # unconditionally conflicts with this field. Since running workloads on
+  # control planes is non-negotiable for this 5-node cluster, KubeNodeConfig
+  # was dropped fleet-wide (see cluster.yaml.j2's machine.kubelet/nodeLabels
+  # comment) rather than losing this. (An earlier attempt used
+  # KubeNodeConfig.taints:{} thinking it was the replacement — wrong on two
+  # counts: that field maps to .machine.nodeTaints, unrelated, and empty maps
+  # are silently dropped by Go's `omitempty` anyway.)
+  allowSchedulingOnControlPlanes: true
+---
+apiVersion: v1alpha1
+kind: KubeAPIServerConfig
+certExtraSANs:
+  - 127.0.0.1
+  - "10.60.0.2"
+extraArgs:
+  enable-aggregator-routing: "true"
+image: registry.k8s.io/kube-apiserver:{{ k8s_version }}
+---
+# Unlike the legacy inline cluster.apiServer.authorizationConfig (deprecated field,
+# which the doc comments say Node+RBAC are "always added" for regardless), the
+# standalone KubeAPIServerConfig document has no such field or default at all —
+# authorization now lives in its own per-authorizer KubeAuthorizerConfig document.
+# Omitting these crashes the apiserver: "authorizers: Required value: at least one
+# authorization mode must be defined". Discovered live during Phase D cutover
+# (cp-01/cp-02 apiserver went CONTAINER_EXITED) — matches Talos's own
+# DefaultAuthorizationConfig() (name/type pairs below are exact).
+apiVersion: v1alpha1
+kind: KubeAuthorizerConfig
+name: node
+type: Node
+---
+apiVersion: v1alpha1
+kind: KubeAuthorizerConfig
+name: rbac
+type: RBAC
+---
+# Same story as KubeAuthorizerConfig above: with no KubeAuthenticationConfig
+# document, Talos writes an empty {} file for --authentication-config instead
+# of falling back to any default, and kube-apiserver refuses to start ("Object
+# 'Kind' is missing"). Values match Talos's own DefaultAuthenticationConfig().
+apiVersion: v1alpha1
+kind: KubeAuthenticationConfig
+configuration:
+  apiVersion: apiserver.config.k8s.io/v1
+  kind: AuthenticationConfiguration
+  anonymous:
+    enabled: true
+    conditions:
+      - path: /livez
+      - path: /readyz
+      - path: /healthz
+  jwt: []
+---
+apiVersion: v1alpha1
+kind: KubeAuditPolicyConfig
+configuration:
+  apiVersion: audit.k8s.io/v1
+  kind: Policy
+  rules:
+    - level: Metadata
+---
+apiVersion: v1alpha1
+kind: KubeAdmissionControlConfig
+name: PodSecurity
+configuration:
+  apiVersion: pod-security.admission.config.k8s.io/v1
+  kind: PodSecurityConfiguration
+  defaults:
+    enforce: "privileged"
+    enforce-version: "latest"
+    audit: "baseline"
+    audit-version: "latest"
+    warn: "baseline"
+    warn-version: "latest"
+  exemptions:
+    usernames: []
+    runtimeClasses: []
+    namespaces: []
+---
+apiVersion: v1alpha1
+kind: KubeControllerManagerConfig
+extraArgs:
+  bind-address: 0.0.0.0
+image: registry.k8s.io/kube-controller-manager:{{ k8s_version }}
+---
+apiVersion: v1alpha1
+kind: KubeCoreDNSConfig
+enabled: false   # replaced by Cilium's DNS proxy / external CoreDNS HelmRelease
+---
+apiVersion: v1alpha1
+kind: KubeProxyConfig
+enabled: false   # replaced by Cilium kube-proxy replacement
+image: registry.k8s.io/kube-proxy:{{ k8s_version }}
+---
+apiVersion: v1alpha1
+kind: KubeSchedulerConfig
+config:
+  apiVersion: kubescheduler.config.k8s.io/v1
+  kind: KubeSchedulerConfiguration
+  profiles:
+    - schedulerName: default-scheduler
+      plugins:
+        score:
+          disabled:
+            - name: ImageLocality
+      pluginConfig:
+        - name: PodTopologySpread
+          args:
+            defaultingType: List
+            defaultConstraints:
+              - maxSkew: 1
+                topologyKey: kubernetes.io/hostname
+                whenUnsatisfiable: ScheduleAnyway
+extraArgs:
+  bind-address: 0.0.0.0
+image: registry.k8s.io/kube-scheduler:{{ k8s_version }}
+---
+apiVersion: v1alpha1
+kind: Layer2VIPConfig
+name: 10.60.0.2
+link: mgmt0
+---
+# KubeTalosAPIAccessConfig is schema-restricted to control-plane nodes only —
+# Talos rejects it on workers outright. This means actions-runner-system pods
+# needing apid access (talosctl image pre-pull CI) only get it when scheduled
+# on a CP node; there's no config-level fix if a runner pod lands on a worker.
+# Confirmed live: actions-runner-system has no node-scheduling restriction
+# today, so this is a real, unresolved gap — not a style choice.
+apiVersion: v1alpha1
+kind: KubeTalosAPIAccessConfig
+allowedRoles:
+  - os:admin
+allowedKubernetesNamespaces:
+  - system-upgrade
+  - actions-runner-system
+---
+# Control-plane-only ingress firewall rules. See cluster.yaml.j2 and docs/QA.md
+# for the shared design rationale.
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: kube-apiserver-ingress
+portSelector:
+  ports:
+    - 6443
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24
+  - subnet: 10.10.0.0/24
+  - subnet: 10.42.0.0/16
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: etcd-ingress
+portSelector:
+  ports:
+    - 2379-2380
+  protocol: tcp
+ingress:
+  # Restricted to the 3 control-plane node IPs — only they are legitimate etcd clients/peers.
+  - subnet: 10.60.0.201/32
+  - subnet: 10.60.0.202/32
+  - subnet: 10.60.0.203/32
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: etcd-metrics-ingress
+portSelector:
+  ports:
+    - 2381
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: kube-controller-manager-ingress
+portSelector:
+  ports:
+    - 10257
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24
+  - subnet: 10.42.0.0/16
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: kube-scheduler-ingress
+portSelector:
+  ports:
+    - 10259
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24
+  - subnet: 10.42.0.0/16

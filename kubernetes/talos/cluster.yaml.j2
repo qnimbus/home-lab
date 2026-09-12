@@ -1,0 +1,202 @@
+# Documents applied to every node. See README.md for the rendering pipeline and
+# docs/QA.md for incident history behind the non-obvious settings below.
+---
+version: v1alpha1
+machine:
+  ca:
+    crt: op://homelab/talos/MACHINE_CA_CRT
+  certSANs:
+    - 127.0.0.1
+    - "10.60.0.2"
+  features:
+    apidCheckExtKeyUsage: true
+    diskQuotaSupport: true
+    rbac: true
+  # Kept fully legacy — see cluster.allowSchedulingOnControlPlanes below for
+  # why: KubeNodeConfig's mere presence (even with only nodeIP set, no
+  # labels/annotations) unconditionally conflicts with that field, with no
+  # new-style replacement anywhere. Since nodeIP.validSubnets' only legacy
+  # home is here under machine.kubelet, and machine.kubelet itself
+  # wholesale-conflicts with a KubeletConfig document the same way
+  # (verified live), the whole kubelet area stays legacy too rather than
+  # splitting nodeIP out. Values otherwise identical to the KubeletConfig
+  # equivalent this replaces.
+  kubelet:
+    image: ghcr.io/siderolabs/kubelet:{{ k8s_version }}
+    defaultRuntimeSeccompProfileEnabled: true
+    disableManifestsDirectory: true
+    nodeIP:
+      validSubnets:
+        - 10.60.0.0/24
+    extraConfig:
+      featureGates:
+        ImageVolume: true
+        ResourceHealthStatus: true
+      serializeImagePulls: false
+      maxPods: 250
+      evictionHard:
+        memory.available: "500Mi"
+        nodefs.available: "10%"
+      kubeReserved:
+        cpu: "200m"
+        memory: "512Mi"
+      systemReserved:
+        cpu: "250m"
+        memory: "500Mi"
+  nodeLabels:
+    topology.kubernetes.io/region: homelab
+  token: op://homelab/talos/MACHINE_TOKEN
+cluster:
+  ca:
+    crt: op://homelab/talos/CLUSTER_CA_CRT
+  clusterName: kubernetes
+  controlPlane:
+    endpoint: https://10.60.0.2:6443
+  # No new-style document exists for CNI selection in Talos v1.14 — only
+  # dnsDomain/podSubnets/serviceSubnets moved to KubeNetworkConfig, and
+  # cni.name has no new home. Unlike .machine.kubelet/.machine.install above,
+  # `.cluster.network` CANNOT be split: verified live that using
+  # KubeNetworkConfig for dnsDomain/podSubnets/serviceSubnets while keeping
+  # only cni.name here still triggers "cluster network config is already set".
+  # So this whole block stays legacy — cni.name: none is functionally required
+  # (prevents Talos installing Flannel over Cilium), which settles it in
+  # favor of legacy syntax over new-style-everywhere purity.
+  network:
+    cni:
+      name: none   # Cilium installed via GitOps instead
+    dnsDomain: cluster.local
+    podSubnets:
+      - 10.42.0.0/16
+    serviceSubnets:
+      - 10.43.0.0/16
+  token: op://homelab/talos/CLUSTER_TOKEN
+---
+apiVersion: v1alpha1
+kind: ResolverConfig
+hostDNS:
+  enabled: true
+  resolveMemberNames: true
+  forwardKubeDNSToHost: false   # pods use CoreDNS; forwarding would bypass cluster search domain
+nameservers:
+  - address: 10.60.0.1
+searchDomains:
+  disableDefault: true
+---
+apiVersion: v1alpha1
+kind: StaticHostConfig
+name: 10.60.0.2
+hostnames:
+  - kube-vip.home.arpa
+---
+apiVersion: v1alpha1
+kind: DiscoveryServiceConfig
+name: default
+endpoint: https://discovery.talos.dev/
+---
+apiVersion: v1alpha1
+kind: DiscoveryIdentityConfig
+clusterID: op://homelab/talos/CLUSTER_ID
+clusterSecret: op://homelab/talos/CLUSTER_SECRET
+---
+# install.grubUseUKICmdline (currently true live) has no new-style equivalent
+# and no legacy-coexistence path either (machine.install wholesale-conflicts
+# with UnattendedInstallConfig, verified live) — dropped. Low-stakes: we don't
+# set extraKernelArgs anywhere, so GRUB cmdline construction behavior on next
+# actual reinstall is unlikely to matter in practice.
+apiVersion: v1alpha1
+kind: UnattendedInstallConfig
+installer:
+  image: factory.talos.dev/installer/{{ schematic }}:{{ talos_version }}
+provisioning:
+  wipe: false
+---
+apiVersion: v1alpha1
+kind: SysctlConfig
+params:
+  # inotify: Flux/monitoring open thousands of watches; kernel default exhausts fast.
+  fs.inotify.max_user_instances: "8192"
+  fs.inotify.max_user_watches: "1048576"
+  # TCP buffers + BBR: sized for the 10GbE Ceph storage bond. See docs/QA.md.
+  net.core.rmem_max: "134217728"
+  net.core.wmem_max: "134217728"
+  net.ipv4.tcp_rmem: "4096 87380 134217728"
+  net.ipv4.tcp_wmem: "4096 65536 134217728"
+  net.core.netdev_max_backlog: "300000"
+  net.ipv4.tcp_slow_start_after_idle: "0"
+  net.ipv4.tcp_no_metrics_save: "1"
+  net.core.default_qdisc: "fq"
+  net.ipv4.tcp_congestion_control: "bbr"
+---
+apiVersion: v1alpha1
+kind: EtcFileConfig
+name: nfsmount.conf
+mode: 0o644
+contents: |
+  [ NFSMount_Global_Options ]
+  nfsvers=4.2
+  hard=True
+  noatime=True
+  nconnect=16
+---
+# Modernized to containerd 2.x plugin paths (confirmed live on Talos v1.14 nodes;
+# the old io.containerd.grpc.v1.cri paths this replaced no longer exist).
+apiVersion: v1alpha1
+kind: CRICustomizationConfig
+name: cri-opts
+content: |
+  [plugins]
+    [plugins."io.containerd.cri.v1.runtime"]
+      enable_unprivileged_ports = true
+      enable_unprivileged_icmp = true
+    [plugins."io.containerd.cri.v1.images"]
+      discard_unpacked_layers = false
+---
+apiVersion: v1alpha1
+kind: KubePrismConfig
+port: 7445
+---
+apiVersion: v1alpha1
+kind: TimeSyncConfig
+ntp:
+  servers:
+    - time.cloudflare.com
+    - ntp.time.nl
+    - nl.pool.ntp.org
+    - time.google.com
+---
+# Talos-native ingress firewall — closes an IOT-VLAN L2 exposure gap the network
+# firewall alone doesn't cover. NEVER add 10.30.0.0/24 to any rule here. Full
+# incident history (dates, alert names, affected consumers): docs/QA.md.
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: kubelet-ingress
+portSelector:
+  ports:
+    - 10250
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24
+  - subnet: 10.42.0.0/16   # Prometheus scrapes kubelet from a pod IP, not a node IP
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: apid-ingress
+portSelector:
+  ports:
+    - 50000
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24
+  - subnet: 10.10.0.0/24
+  - subnet: 10.42.0.0/16   # in-cluster apid consumers (tuppr, actions-runner) — see docs/QA.md before narrowing
+---
+apiVersion: v1alpha1
+kind: NetworkRuleConfig
+name: trustd-ingress
+portSelector:
+  ports:
+    - 50001
+  protocol: tcp
+ingress:
+  - subnet: 10.60.0.0/24
+  - subnet: 10.10.0.0/24

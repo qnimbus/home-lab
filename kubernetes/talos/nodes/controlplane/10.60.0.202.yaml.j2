@@ -1,0 +1,105 @@
+# talos-cp-02
+# ----------
+# Model: Lenovo M90q #1 (i5-10500T, 6C/12T, 64GB, +X520-DA2 SFP+ 10GbE) — permanent CP
+# NICs:
+#   - e1000e: eno1              6c:24:08:4b:3f:e1  (mgmt)
+#   - ixgbe:  enp2s0f0          90:e2:ba:e8:ea:64  (storage bond)
+#   - ixgbe:  enp2s0f1          90:e2:ba:e8:ea:65  (storage bond)
+# Disk: nvme-KINGSTON_SNV3S1000G (model alone is sufficient here — cp-01/cp-03 need serial)
+---
+apiVersion: v1alpha1
+kind: HostnameConfig
+hostname: talos-cp-02
+---
+apiVersion: v1alpha1
+kind: UnattendedInstallConfig
+provisioning:
+  diskSelector:
+    match: disk.model == "KINGSTON SNV3S1000G"
+---
+apiVersion: v1alpha1
+kind: LinkAliasConfig
+name: mgmt0
+selector:
+  match: mac(link.permanent_addr).startsWith("6c:24:08:4b:3f:e1")
+---
+apiVersion: v1alpha1
+kind: LinkConfig
+name: mgmt0
+mtu: 1500
+addresses:
+  - address: 10.60.0.202/24
+routes:
+  - gateway: 10.60.0.1
+---
+# IOT VLAN 30 — see 10.60.0.201.yaml.j2 / docs/QA.md for full rationale.
+apiVersion: v1alpha1
+kind: VLANConfig
+name: eno1.30
+vlanID: 30
+parent: eno1
+mtu: 1500
+addresses:
+  - address: 10.30.0.202/24
+---
+apiVersion: v1alpha1
+kind: SysctlConfig
+params:
+  net.ipv6.conf.eno1/30.disable_ipv6: "1"
+  # Experimental (2026-08-05) — targets recurring CephNodeNetworkPacketDrops on
+  # this node's e1000e mgmt NIC. Unconfirmed effect; see docs/QA.md before
+  # reverting or extending to other nodes.
+  net.core.netdev_budget: "1000"
+  net.core.netdev_budget_usecs: "16000"
+---
+apiVersion: v1alpha1
+kind: LinkAliasConfig
+name: bond-storage-m0
+selector:
+  match: mac(link.permanent_addr).startsWith("90:e2:ba:e8:ea:64")
+---
+apiVersion: v1alpha1
+kind: LinkAliasConfig
+name: bond-storage-m1
+selector:
+  match: mac(link.permanent_addr).startsWith("90:e2:ba:e8:ea:65")
+---
+apiVersion: v1alpha1
+kind: BondConfig
+name: bond-storage
+links:
+  - bond-storage-m0
+  - bond-storage-m1
+bondMode: 802.3ad
+lacpRate: fast
+miimon: 100
+updelay: 200
+downdelay: 200
+xmitHashPolicy: layer3+4
+mtu: 9000
+addresses:
+  - address: 10.200.0.202/24
+---
+apiVersion: v1alpha1
+kind: VolumeConfig
+name: EPHEMERAL
+provisioning:
+  diskSelector:
+    match: system_disk
+  maxSize: 120GiB
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: local-hostpath
+provisioning:
+  diskSelector:
+    match: system_disk
+  minSize: 100GiB
+  grow: true
+---
+# Legacy fields — see cp-01's file / cluster.yaml.j2 for why.
+machine:
+  nodeLabels:
+    topology.kubernetes.io/zone: homelab-cp-02
+  nodeAnnotations:
+    network.rook.io/mon-ip: "10.200.0.202"

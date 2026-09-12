@@ -7,17 +7,18 @@
 .claude/worktrees/*
 .claude/settings.local.json
 
-# Ignore IDE/editor specific files and folders
-.vscode/
-
 # Ignore build artifacts and assets (e.g. iso images, VM images, etc.)
-assets/
+assets/*
 tmp/
 
-# Ignore sensitive files and environment variables
+# Kubernetes
 kubeconfig
+talosconfig
+
+# Ignore sensitive files and environment variables
 age.key
 .env
+
 # Exception: these hold only Renovate-tracked image version pins, no secrets —
 # doco-cd needs them present on TrueNAS after cloning (see truenas/README.md).
 !truenas/docker/*/.env

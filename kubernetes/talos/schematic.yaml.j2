@@ -1,0 +1,14 @@
+# Talos Image Factory schematic — https://factory.talos.dev
+# Run ./scripts/bootstrap.sh iso to auto-register and download the factory ISO.
+# The factory ISO embeds extensions at boot time; the standard ISO does not.
+customization:
+  systemExtensions:
+    officialExtensions:
+      # Intel iGPU
+      - siderolabs/i915               # Intel iGPU driver + firmware (UHD 630) — enables gpu.intel.com/i915
+      - siderolabs/intel-ucode        # CPU microcode — loads only on Intel nodes (M920Q)
+      - siderolabs/mei
+      # NFS Performance
+      - siderolabs/nfsrahead
+      # AMD CPU
+      - siderolabs/amd-ucode          # CPU microcode — loads only on AMD nodes (MS-A2)

@@ -1,0 +1,52 @@
+---
+ignore: |
+  *.sops.*
+
+extends: default
+
+rules:
+  anchors:
+    forbid-undeclared-aliases: true
+    forbid-duplicated-anchors: true
+    forbid-unused-anchors: false
+
+  braces:
+    min-spaces-inside: 0
+    max-spaces-inside: 0
+
+  brackets:
+    min-spaces-inside: 0
+    max-spaces-inside: 0
+
+  comments:
+    require-starting-space: true
+    min-spaces-from-content: 1
+
+  indentation:
+    spaces: 2
+    indent-sequences: true
+    check-multi-line-strings: false
+
+  line-length: disable
+
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: false
+
+  empty-values:
+    forbid-in-block-mappings: true
+    forbid-in-flow-mappings: true
+    forbid-in-block-sequences: true
+
+  document-start:
+    present: true
+
+  quoted-strings:
+    quote-type: double
+    required: false
+
+  truthy:
+    allowed-values:
+      - "true"
+      - "false"
+    check-keys: false

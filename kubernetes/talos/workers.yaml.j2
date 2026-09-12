@@ -1,0 +1,6 @@
+# Worker-only documents. cluster.yaml.j2 already sets machine.ca.crt / cluster.ca.crt
+# fleet-wide, and workers never need the CA private key — verify via dry-run
+# (§Phase C) that no repeat is needed here before assuming this is complete.
+---
+machine:
+  type: worker
