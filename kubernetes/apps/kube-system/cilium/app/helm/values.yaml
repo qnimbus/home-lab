@@ -20,8 +20,23 @@ bgpControlPlane:
   enabled: true
 bpf:
   masquerade: true
-  # Talos workaround: https://github.com/siderolabs/talos/issues/10002
-  hostLegacyRouting: true
+  # Removed hostLegacyRouting: true (was here since the initial commit,
+  # never revisited). Traced the actual bug via siderolabs/talos#10002's
+  # comment thread rather than the one-line summary that was here before:
+  # Cilium's BPF host routing + bpf.masquerade=true (set above) breaks
+  # return-path delivery for DNS forwarded to the host resolver — confirmed
+  # by a Talos maintainer as a general upstream Cilium bug (cilium/cilium
+  # #36761), not Talos-specific. Two independent fixes exist: Talos-side
+  # forwardKubeDNSToHost: false, or this flag. talos/cluster.yaml.j2 already
+  # sets forwardKubeDNSToHost: false — for an unrelated reason (preserving
+  # the cluster search domain) — so this flag was redundant, paying legacy
+  # routing's real perf cost (skips the BPF redirect fast path, traverses
+  # netfilter/conntrack in the host namespace) for a bug already closed off
+  # from the other side. Chart default (false = BPF host routing) applies
+  # now. Confirmed live before removing: `cilium status --verbose` showed
+  # "Routing: Network: Native Host: Legacy"; watch it flip to "BPF" after
+  # rollout, and watch pods come up Running (not another hard dependency
+  # crash like tonight's BBR one) before considering this done.
 cgroup:
   automount:
     enabled: false
