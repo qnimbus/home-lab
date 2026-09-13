@@ -1,16 +1,16 @@
 ---
 autoDirectNodeRoutes: true
-# Base mechanism (fq qdisc on pod veths, prerequisite for eBPF egress pacing)
-# plus BBR congestion control in place of the kernel default (CUBIC) — less
-# bufferbloat and better throughput under sustained load (VolSync/restic to
-# the NAS, Plex egress) without backing off hard on the first sign of loss
-# the way CUBIC does. bbrHostNamespaceOnly left at its default (false), so
-# BBR applies fleet-wide, not just host-networked pods. Confirmed available
-# before enabling, not assumed: `talosctl -n 10.60.0.201 read
-# /proc/sys/net/ipv4/tcp_available_congestion_control` -> "reno bbr cubic".
-bandwidthManager:
-  enabled: true
-  bbr: true
+# REVERTED live 2026-09-13: crash-looped cilium-agent on 2/5 nodes with
+# "BPF bandwidth manager's BBR setup requires BPF host routing." BBR hard-
+# requires bpf.hostLegacyRouting: false, which directly conflicts with the
+# hostLegacyRouting: true Talos workaround below (siderolabs/talos#10002).
+# Verified BBR was available in the kernel before enabling, but didn't cross-
+# check it against that pre-existing setting — real gap in the pre-check, not
+# a flaky failure. Revisit only alongside confirming whether talos#10002 is
+# still applicable on the installed Talos version; don't re-enable blind.
+# bandwidthManager:
+#   enabled: true
+#   bbr: true
 # Field path verified live against the installed chart (helm show values
 # cilium/cilium --version 1.20.1): bgpControlPlane.enabled, default false.
 # secretsNamespace.name defaults to kube-system (not cilium-secrets — that
