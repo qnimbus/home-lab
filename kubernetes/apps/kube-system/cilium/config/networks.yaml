@@ -13,13 +13,22 @@ spec:
 # Single-IP pool reserved for kube-api only (serviceSelector below), so it can
 # never be auto-picked by an unpinned Service and can't collide with the
 # envoy-external/envoy-internal block in `pool`.
+#
+# Pinned to 10.60.0.2 — the same address as talos/controlplane.yaml.j2's
+# Layer2VIPConfig, not a separate IP. Talos's own VIP already ARPs this
+# address on the control-plane nodes from the moment Talos is up, independent
+# of Cilium/CNI; this Service exists so external-dns can publish a hostname
+# for it, and so BGP (once configured for this pool) can upgrade single-node
+# ARP failover into real ECMP across all 3 control planes for routed clients.
+# l2-policy below excludes this Service so Cilium never ARPs the same IP
+# itself and fights with Talos's own ownership of it.
 apiVersion: cilium.io/v2
 kind: CiliumLoadBalancerIPPool
 metadata:
   name: pool-kube-api
 spec:
   blocks:
-    - cidr: "10.60.0.250/32"
+    - cidr: "10.60.0.2/32"
   serviceSelector:
     matchLabels:
       "io.kubernetes.service.namespace": kube-system
@@ -66,6 +75,15 @@ metadata:
   name: l2-policy
 spec:
   loadBalancerIPs: true
+  serviceSelector:
+    # Excludes kube-api: its LB IP (10.60.0.2, see pool-kube-api above) is the
+    # same address Talos's own Layer2VIPConfig (talos/controlplane.yaml.j2)
+    # already ARPs on the control-plane nodes directly. Announcing it here too
+    # would give the address two independent, uncoordinated ARP owners —
+    # Talos's VIP election and Cilium's L2 leader election can pick different
+    # nodes, flapping/blackholing the apiserver VIP itself.
+    matchExpressions:
+      - { key: "io.kubernetes.service.name", operator: NotIn, values: ["kube-api"] }
   # Interfaces intentionally unspecified: Cilium announces on all interfaces.
   # The storage bond (`bond-storage`, all 5 nodes, 10.200.0.0/24) has no
   # gateway/default route back to the management subnet, so ARP announcements
