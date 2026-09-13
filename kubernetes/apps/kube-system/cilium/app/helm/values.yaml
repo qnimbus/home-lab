@@ -1,5 +1,12 @@
 ---
 autoDirectNodeRoutes: true
+# Field path verified live against the installed chart (helm show values
+# cilium/cilium --version 1.20.1): bgpControlPlane.enabled, default false.
+# secretsNamespace.name defaults to kube-system (not cilium-secrets — that
+# was true for chart 1.18.x, not this version); left at default since no
+# peer auth secret exists yet (see bgp.conf's comment on adding one later).
+bgpControlPlane:
+  enabled: true
 bpf:
   masquerade: true
   # Talos workaround: https://github.com/siderolabs/talos/issues/10002
