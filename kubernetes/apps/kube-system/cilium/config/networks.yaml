@@ -1,73 +1,4 @@
 ---
-# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/cilium.io/ciliumloadbalancerippool_v2.json
-apiVersion: cilium.io/v2
-kind: CiliumLoadBalancerIPPool
-metadata:
-  name: pool
-spec:
-  blocks:
-    - start: "10.60.0.230"
-      stop: "10.60.0.249"
----
-# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/cilium.io/ciliumloadbalancerippool_v2.json
-# Single-IP pool reserved for kube-api only (serviceSelector below), so it can
-# never be auto-picked by an unpinned Service and can't collide with the
-# envoy-external/envoy-internal block in `pool`.
-#
-# Pinned to 10.60.0.2 — the same address as talos/controlplane.yaml.j2's
-# Layer2VIPConfig, not a separate IP. Talos's own VIP already ARPs this
-# address on the control-plane nodes from the moment Talos is up, independent
-# of Cilium/CNI; this Service exists so external-dns can publish a hostname
-# for it, and so BGP (once configured for this pool) can upgrade single-node
-# ARP failover into real ECMP across all 3 control planes for routed clients.
-# l2-policy below excludes this Service so Cilium never ARPs the same IP
-# itself and fights with Talos's own ownership of it.
-apiVersion: cilium.io/v2
-kind: CiliumLoadBalancerIPPool
-metadata:
-  name: pool-kube-api
-spec:
-  blocks:
-    - cidr: "10.60.0.2/32"
-  serviceSelector:
-    matchLabels:
-      "io.kubernetes.service.namespace": kube-system
-      "io.kubernetes.service.name": kube-api
----
-# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/cilium.io/ciliumloadbalancerippool_v2.json
-# Single-IP pool reserved for smtp-relay's IOT-facing VIP only (serviceSelector below).
-# Announced via the tagged VLAN 30 sub-interface each node carries on its mgmt trunk NIC
-# (talos/talconfig.yaml) — gives the IOT-VLAN printer an in-segment path to smtp-relay
-# that never crosses the UniFi inter-VLAN firewall. See docs/QA.md.
-apiVersion: cilium.io/v2
-kind: CiliumLoadBalancerIPPool
-metadata:
-  name: pool-iot-smtp-relay
-spec:
-  blocks:
-    - cidr: "10.30.0.240/32"
-  serviceSelector:
-    matchLabels:
-      "io.kubernetes.service.namespace": mail
-      "io.kubernetes.service.name": smtp-relay
----
-# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/cilium.io/ciliumloadbalancerippool_v2.json
-# Single-IP pool reserved for Plex's IOT-facing VIP only (serviceSelector below). Same
-# rationale as pool-iot-smtp-relay above: a Google TV streamer on 10.30.0.0/24 can't route to
-# 10.60.0.0/24 at all (UniFi gateway blocks IOT-initiated cross-VLAN traffic by design),
-# so Plex needs an in-segment IOT-side VIP too. See docs/QA.md.
-apiVersion: cilium.io/v2
-kind: CiliumLoadBalancerIPPool
-metadata:
-  name: pool-iot-plex
-spec:
-  blocks:
-    - cidr: "10.30.0.234/32"
-  serviceSelector:
-    matchLabels:
-      "io.kubernetes.service.namespace": media
-      "io.kubernetes.service.name": plex
----
 # yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/cilium.io/ciliuml2announcementpolicy_v2alpha1.json
 apiVersion: cilium.io/v2alpha1
 kind: CiliumL2AnnouncementPolicy
@@ -76,14 +7,24 @@ metadata:
 spec:
   loadBalancerIPs: true
   serviceSelector:
-    # Excludes kube-api: its LB IP (10.60.0.2, see pool-kube-api above) is the
-    # same address Talos's own Layer2VIPConfig (talos/controlplane.yaml.j2)
-    # already ARPs on the control-plane nodes directly. Announcing it here too
-    # would give the address two independent, uncoordinated ARP owners —
-    # Talos's VIP election and Cilium's L2 leader election can pick different
-    # nodes, flapping/blackholing the apiserver VIP itself.
+    # Only the two IOT-facing VIPs stay on L2 now (pool-iot-smtp-relay,
+    # pool-iot-plex — mail/media namespaces): BGP (bgp.conf, the
+    # CiliumBGP* resources below) took over kube-api, envoy-external,
+    # envoy-internal, and victoria-logs-syslog once peering, 5-way ECMP,
+    # live failover (~17s recovery, one node's session killed outright), and
+    # real per-connection flow-hashing were all verified working. kube-api
+    # was already excluded before that for a second reason too: its LB IP
+    # (10.60.0.2) is the same address Talos's own Layer2VIPConfig
+    # (talos/controlplane.yaml.j2) ARPs on the control-plane nodes directly —
+    # L2-announcing it here as well would give that address two independent,
+    # uncoordinated ARP owners.
+    #
+    # Positive include (mail/media) rather than a NotIn list of individual
+    # service names, so this selector and the CiliumBGPAdvertisement's below
+    # stay complementary automatically — any future LoadBalancer Service
+    # gets BGP by default, with nothing to update here.
     matchExpressions:
-      - { key: "io.kubernetes.service.name", operator: NotIn, values: ["kube-api"] }
+      - { key: "io.kubernetes.service.namespace", operator: In, values: ["mail", "media"] }
   # Interfaces intentionally unspecified: Cilium announces on all interfaces.
   # The storage bond (`bond-storage`, all 5 nodes, 10.200.0.0/24) has no
   # gateway/default route back to the management subnet, so ARP announcements
@@ -99,75 +40,3 @@ spec:
   nodeSelector:
     matchLabels:
       kubernetes.io/os: linux
----
-# BGP peering to the UDM Pro Max — see bgp.conf (same directory) for the
-# router-side FRR config this must match: local ASN 64514 here pairs with
-# `neighbor k8s remote-as 64514` there, peerASN 64513/peerAddress 10.60.0.1
-# pairs with `router bgp 64513` / `bgp router-id 10.60.0.1` there.
-#
-# Deliberately NOT yet removing kube-api/envoy-* from l2-policy above once
-# this lands — L2 and BGP both active briefly is redundant but not harmful;
-# only cut L2 once `cilium bgp peers` shows ESTABLISHED for all 5 nodes and
-# `cilium bgp routes` shows the expected VIPs, so there's no reachability gap
-# if peering doesn't come up cleanly on the first try.
-apiVersion: cilium.io/v2
-kind: CiliumBGPClusterConfig
-metadata:
-  name: bgp-cluster-config
-spec:
-  nodeSelector:
-    matchLabels:
-      kubernetes.io/os: linux
-  bgpInstances:
-    - name: cilium
-      localASN: 64514
-      peers:
-        - name: udm
-          peerASN: 64513
-          peerAddress: 10.60.0.1
-          peerConfigRef:
-            name: bgp-peer-config
----
-# Fast timers (default is 180s hold / 60s keepalive) for quick failure
-# detection on VIP failover — matches bgp.conf's expectations, no equivalent
-# timer config needed on the FRR side (it accepts whatever the peer offers).
-# No neighbor password/authSecretRef yet — see bgp.conf's comment; add one
-# here (spec.authSecretRef, in the kube-system namespace per values.yaml's
-# bgpControlPlane.secretsNamespace default) if that hardening ever lands.
-apiVersion: cilium.io/v2
-kind: CiliumBGPPeerConfig
-metadata:
-  name: bgp-peer-config
-spec:
-  timers:
-    holdTimeSeconds: 9
-    keepAliveTimeSeconds: 3
-  families:
-    - afi: ipv4
-      safi: unicast
-      advertisements:
-        matchLabels:
-          advertise: bgp
----
-# Advertises every LoadBalancer Service's IP over BGP EXCEPT mail/media
-# (smtp-relay, plex) — the two IOT-facing VIPs that must stay L2-only
-# forever (see l2-policy above and pool-iot-* comments: BGP can't replicate
-# their VLAN-30-presence firewall bypass, it's pure L3 routing). This
-# mirrors l2-policy's exclusion in reverse, so kube-api/envoy-external/
-# envoy-internal (and any future LB Service outside those two namespaces)
-# get picked up automatically with no per-service opt-in needed.
-apiVersion: cilium.io/v2
-kind: CiliumBGPAdvertisement
-metadata:
-  name: bgp-advertisement
-  labels:
-    advertise: bgp
-spec:
-  advertisements:
-    - advertisementType: Service
-      service:
-        addresses:
-          - LoadBalancerIP
-      selector:
-        matchExpressions:
-          - { key: "io.kubernetes.service.namespace", operator: NotIn, values: ["mail", "media"] }

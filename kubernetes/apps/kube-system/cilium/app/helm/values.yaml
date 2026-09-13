@@ -1,5 +1,16 @@
 ---
 autoDirectNodeRoutes: true
+# Base mechanism (fq qdisc on pod veths, prerequisite for eBPF egress pacing)
+# plus BBR congestion control in place of the kernel default (CUBIC) — less
+# bufferbloat and better throughput under sustained load (VolSync/restic to
+# the NAS, Plex egress) without backing off hard on the first sign of loss
+# the way CUBIC does. bbrHostNamespaceOnly left at its default (false), so
+# BBR applies fleet-wide, not just host-networked pods. Confirmed available
+# before enabling, not assumed: `talosctl -n 10.60.0.201 read
+# /proc/sys/net/ipv4/tcp_available_congestion_control` -> "reno bbr cubic".
+bandwidthManager:
+  enabled: true
+  bbr: true
 # Field path verified live against the installed chart (helm show values
 # cilium/cilium --version 1.20.1): bgpControlPlane.enabled, default false.
 # secretsNamespace.name defaults to kube-system (not cilium-secrets — that
@@ -15,6 +26,13 @@ cgroup:
   automount:
     enabled: false
   hostRoot: /sys/fs/cgroup
+# Renders cilium-dashboard/cilium-operator-dashboard ConfigMaps the
+# GrafanaDashboard CRs in grafanadashboard.yaml reference by name — matches
+# this repo's existing pattern (observability/unpoller, system/keda). Not
+# enabling hubble.metrics.dashboards yet: it's nested under hubble.metrics,
+# which is deliberately still unconfigured (see hubble comment below).
+dashboards:
+  enabled: true
 # Bond/mgmt-NIC layout, confirmed live via `talosctl get links` (2026-09-03):
 #   cp-01:                management=enp4s0 (I225/I226 igc), storage=bond-storage
 #   cp-02/03/worker-01/02: management=eno1  (I219-LM e1000e), storage=bond-storage
@@ -55,6 +73,18 @@ devices: eno1+ enp4s0+ bond-storage
 MTU: 1500
 endpointRoutes:
   enabled: true
+# Explicit decision, not chart default left on by accident: base Hubble is a
+# lightweight per-node flow-recording listener in cilium-agent (local
+# hubble.sock only, no extra Deployment). Relay aggregates all 5 nodes' flows
+# into one queryable stream — cheap (1 replica, no resource overrides in the
+# chart), and would have made this session's BGP/L2 debugging (which node
+# actually served a connection, DNS/policy verdicts like the bifrost
+# incident) a live query instead of workarounds like SAN-diffing repeated
+# curls. UI and Prometheus metrics deliberately held off for now.
+hubble:
+  enabled: true
+  relay:
+    enabled: true
 ipam:
   mode: kubernetes
 ipv4NativeRoutingCIDR: "10.42.0.0/16"
@@ -67,10 +97,23 @@ l2announcements:
 loadBalancer:
   algorithm: maglev
   mode: dsr
-localRedirectPolicy: true
+# localRedirectPolicy (singular) is deprecated as of this chart version —
+# schema comment says "please use 'localRedirectPolicies.enabled' instead".
+# Confirmed both render the same enable-local-redirect-policy flag via
+# `helm template`; migrated ahead of the deprecated alias being removed.
+localRedirectPolicies:
+  enabled: true
 operator:
-  replicas: 1
+  dashboards:
+    enabled: true
+  replicas: 2 # chart default; was pinned to 1, a needless SPOF for LB IPAM/CRD reconciliation
   rollOutPods: true
+# Enable path MTU discovery so Cilium's datapath correctly generates ICMP
+# fragmentation-needed replies — relevant given the real PMTUD-blackhole
+# incident documented above (bond-storage's 9000 MTU vs. the 1500 pod-network
+# MTU). Doesn't replace the MTU pin, complements it.
+pmtuDiscovery:
+  enabled: true
 rollOutCiliumPods: true
 routingMode: native
 securityContext:
@@ -93,5 +136,12 @@ securityContext:
       - NET_ADMIN
       - SYS_ADMIN
       - SYS_RESOURCE
+# enabled was missing — hostNamespaceOnly alone is a no-op while the parent
+# feature is off (default false). Confirmed via `helm template`: without
+# `enabled: true` the rendered agent config keeps bpf-lb-sock: "false"
+# regardless of hostNamespaceOnly. hostNamespaceOnly matters for the
+# k8sServiceHost/k8sServicePort local-proxy pattern above — keeps socket LB
+# out of the pod namespace's path to the apiserver.
 socketLB:
+  enabled: true
   hostNamespaceOnly: true
