@@ -13,6 +13,14 @@ set shell := ['bash', '-euo', 'pipefail', '-c']
 [group('talos')]
 mod talos "kubernetes/talos"
 
+# Bootstrap Recipes
+[group('bootstrap')]
+mod bootstrap "kubernetes/bootstrap"
+
+# Kubernetes Recipes
+[group('k8s')]
+mod k8s "kubernetes"
+
 [private]
 log lvl msg *args:
     gum log -t rfc3339 -s -l "{{ lvl }}" "{{ msg }}" {{ args }}

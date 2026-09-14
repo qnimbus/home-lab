@@ -6,4 +6,5 @@ resources:
   - ./rbac.yaml
   - ./externalsecret.yaml
   - ./talos-serviceaccount.yaml
+  - ./ocirepository.yaml
   - ./helmrelease.yaml

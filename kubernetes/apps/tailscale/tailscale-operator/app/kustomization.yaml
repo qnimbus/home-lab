@@ -5,5 +5,6 @@ kind: Kustomization
 resources:
   - ./namespace.yaml
   - ./externalsecret.yaml
+  - ./ocirepository.yaml
   - ./helmrelease.yaml
   - ./rbac.yaml

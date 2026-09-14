@@ -18,8 +18,7 @@ spec:
           kind: Deployment
   chartRef:
     kind: OCIRepository
-    name: app-template
-    namespace: flux-system
+    name: plex
   values:
     controllers:
       plex:

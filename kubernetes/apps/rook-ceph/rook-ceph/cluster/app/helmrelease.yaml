@@ -4,35 +4,19 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: rook-ceph-cluster
-  annotations:
-    # The Rook chart line this release is meant to run against — see the
-    # dependsOn readyExpr below. Renovate bumps it in the same grouped PR as
-    # the rook-ceph/rook-ceph-cluster OCIRepository tags (same depName).
-    # renovate: datasource=docker depName=ghcr.io/rook/rook-ceph
-    rook.io/chart-version: v1.20.7
 spec:
   chartRef:
     kind: OCIRepository
     name: rook-ceph-cluster
-    namespace: flux-system
   interval: 1h
-  # HelmRelease-level ordering. This HR uses chartRef, so a rook-ceph-cluster
-  # OCI tag bump upgrades the release as soon as source-controller sees it —
-  # the Kustomization ordering in ks.yaml only sequences the HR *object*, which
-  # does not change on a tag bump. Rook requires rook-ceph → ceph-csi-drivers →
-  # rook-ceph-cluster on every upgrade.
+  # Ordering (rook-ceph → ceph-csi-drivers → rook-ceph-cluster, required on
+  # every upgrade) comes from the Kustomization-level dependsOn in
+  # ../../ks.yaml, not from the entries below — each app's OCIRepository lives
+  # inside its own Kustomization path, so a Renovate tag bump changes that
+  # Kustomization's tree and its wait: true health check genuinely re-polls
+  # the dependency HelmRelease's Ready condition on every upgrade.
   dependsOn:
     - name: rook-ceph-operator
-      # Lockstep gate, identical to the one in the ceph-csi-drivers HR (keep
-      # them in sync): wait until the operator release is on the chart line in
-      # the annotation above. readyExpr replaces the default Ready check, so
-      # Ready/generation are restated. Recovery after a rolled-back operator
-      # upgrade: revert the commit (tags + annotations) and the gate reopens.
-      readyExpr: >-
-        has(dep.status.history) && dep.status.history.size() > 0 &&
-        dep.status.history[0].chartVersion == self.metadata.annotations['rook.io/chart-version'] &&
-        dep.status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True') &&
-        dep.metadata.generation == dep.status.observedGeneration
     - name: ceph-csi-drivers
   # The chart's CephCluster name + the operator namespace.
   values:
@@ -318,19 +302,19 @@ spec:
         # (MS-A2) the system disk is nvme0n1 and the OSD spare is nvme1n1 — the
         # reverse of worker-01/worker-02. A kernel-name selector would be a data-loss footgun.
         nodes:
-          - name: talos-cp-01                          # MS-A2 — Crucial T500 2TB (CT2000T500SSD8, S/N 2545543A2190)
+          - name: talos-cp-01 # MS-A2 — Crucial T500 2TB (CT2000T500SSD8, S/N 2545543A2190)
             devices:
               - name: /dev/disk/by-id/nvme-CT2000T500SSD8_2545543A2190
-          - name: talos-cp-02                          # M90q #1 — Crucial T500 2TB (CT2000T500SSD8, S/N 25405348D601)
+          - name: talos-cp-02 # M90q #1 — Crucial T500 2TB (CT2000T500SSD8, S/N 25405348D601)
             devices:
               - name: /dev/disk/by-id/nvme-CT2000T500SSD8_25405348D601
-          - name: talos-cp-03                          # M90q #2 — Crucial T500 2TB (CT2000T500SSD8, S/N 254053487747)
+          - name: talos-cp-03 # M90q #2 — Crucial T500 2TB (CT2000T500SSD8, S/N 254053487747)
             devices:
               - name: /dev/disk/by-id/nvme-CT2000T500SSD8_254053487747
-          - name: talos-worker-01                      # M920q #1 — Crucial P310 2TB (CT2000P310SSD8, S/N 252450B1A33B; DRAM-less)
+          - name: talos-worker-01 # M920q #1 — Crucial P310 2TB (CT2000P310SSD8, S/N 252450B1A33B; DRAM-less)
             devices:
               - name: /dev/disk/by-id/nvme-CT2000P310SSD8_252450B1A33B
-          - name: talos-worker-02                      # M920q #2 — Crucial T500 2TB (CT2000T500SSD8, S/N 2545542DA3BA); replaced Kingston NV3 1TB 2026-06-25, now matches the other 4 nodes' OSD disk
+          - name: talos-worker-02 # M920q #2 — Crucial T500 2TB (CT2000T500SSD8, S/N 2545542DA3BA); replaced Kingston NV3 1TB 2026-06-25, now matches the other 4 nodes' OSD disk
             devices:
               - name: /dev/disk/by-id/nvme-CT2000T500SSD8_2545542DA3BA
     # Replicated RBD pool + its StorageClass. size=3 / failureDomain=host means

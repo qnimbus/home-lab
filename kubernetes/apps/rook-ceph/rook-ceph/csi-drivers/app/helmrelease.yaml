@@ -4,17 +4,10 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: ceph-csi-drivers
-  annotations:
-    # The Rook chart line this release is meant to run against. Read by the
-    # dependsOn readyExpr below; Renovate bumps it in the same grouped PR as the
-    # rook-ceph/rook-ceph-cluster OCIRepository tags (same depName).
-    # renovate: datasource=docker depName=ghcr.io/rook/rook-ceph
-    rook.io/chart-version: v1.20.7
 spec:
   chartRef:
     kind: OCIRepository
     name: ceph-csi-drivers
-    namespace: flux-system
   interval: 1h
   # Rook ≥ v1.19.5 stamps the Driver/OperatorConfig CRs it created with
   # meta.helm.sh/release-name=ceph-csi-drivers (+ managed-by=Helm) so that
@@ -22,21 +15,12 @@ spec:
   # Helm's ownership check. Any other release name breaks the adoption.
   releaseName: ceph-csi-drivers
   dependsOn:
+    # Ordering comes from the Kustomization-level dependsOn in ../../ks.yaml,
+    # not from this entry — the OCIRepository lives inside this app's own
+    # Kustomization path (ocirepository.yaml), so a Renovate tag bump changes
+    # that Kustomization's tree and its wait: true health check genuinely
+    # re-polls the operator HelmRelease's Ready condition on every upgrade.
     - name: rook-ceph-operator
-      # Lockstep gate (readyExpr replaces the default Ready check, hence the
-      # restated Ready/generation clauses): only reconcile once the operator
-      # release is on the chart line named in the annotation above. A plain
-      # dependsOn would not do this — when Renovate lands the operator and
-      # cluster tags in one commit, the operator HR is still Ready on the old
-      # chart at the moment this HR is evaluated, and Rook requires
-      # rook-ceph → ceph-csi-drivers → rook-ceph-cluster on every upgrade.
-      # Recovery if an operator upgrade fails and is rolled back: revert the
-      # commit (tags + annotations together) and the gate opens again.
-      readyExpr: >-
-        has(dep.status.history) && dep.status.history.size() > 0 &&
-        dep.status.history[0].chartVersion == self.metadata.annotations['rook.io/chart-version'] &&
-        dep.status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True') &&
-        dep.metadata.generation == dep.status.observedGeneration
   # The cluster-wide install remediation (retries: 1, remediateLastFailure)
   # answers a failed install with `helm uninstall`. For this release that
   # would delete the adopted Driver (the ceph-csi-operator then tears down the

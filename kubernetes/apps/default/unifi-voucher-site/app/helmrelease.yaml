@@ -17,8 +17,7 @@ spec:
           kind: Deployment
   chartRef:
     kind: OCIRepository
-    name: app-template
-    namespace: flux-system
+    name: unifi-voucher-site
   values:
     controllers:
       *app :

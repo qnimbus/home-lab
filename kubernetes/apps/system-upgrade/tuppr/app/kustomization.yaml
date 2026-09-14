@@ -15,5 +15,6 @@ configurations:
 resources:
   - ./namespace.yaml
   - ./externalsecret.yaml
+  - ./ocirepository.yaml
   - ./helmrelease.yaml
   - ./prometheusrule.yaml

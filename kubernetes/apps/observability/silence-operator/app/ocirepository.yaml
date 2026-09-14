@@ -1,0 +1,15 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/source.toolkit.fluxcd.io/ocirepository_v1.json
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: silence-operator
+spec:
+  interval: 1h
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+  url: oci://gsoci.azurecr.io/charts/giantswarm/silence-operator
+  ref:
+    # renovate: datasource=docker depName=gsoci.azurecr.io/charts/giantswarm/silence-operator
+    tag: "0.20.1"

@@ -10,7 +10,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: blackbox-exporter
-    namespace: flux-system
   valuesFrom:
     - kind: ConfigMap
       name: blackbox-exporter-values

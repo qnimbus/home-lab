@@ -17,7 +17,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: forgejo
-    namespace: flux-system
   values:
     # image.registry/repository/rootless already default to code.forgejo.org/forgejo/forgejo
     # rootless — leaving image.tag unset tracks the chart's own appVersion pairing rather

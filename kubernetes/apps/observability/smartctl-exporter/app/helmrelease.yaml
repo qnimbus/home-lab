@@ -10,7 +10,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: smartctl-exporter
-    namespace: flux-system
   valuesFrom:
     - kind: ConfigMap
       name: smartctl-exporter-values

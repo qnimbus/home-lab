@@ -9,7 +9,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: silence-operator
-    namespace: flux-system
   values:
     alertmanagerAddress: http://kube-prometheus-stack-alertmanager.observability.svc.cluster.local:9093
     networkPolicy:

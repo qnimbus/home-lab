@@ -9,8 +9,7 @@ spec:
   interval: 1h
   chartRef:
     kind: OCIRepository
-    name: gha-runner-scale-set
-    namespace: flux-system
+    name: home-lab
   values:
     githubConfigUrl: "https://github.com/qnimbus/home-lab"
     githubConfigSecret: home-lab-runner-secret

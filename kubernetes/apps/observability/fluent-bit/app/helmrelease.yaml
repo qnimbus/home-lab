@@ -9,7 +9,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: fluent-bit
-    namespace: flux-system
   values:
     config:
       service: |-

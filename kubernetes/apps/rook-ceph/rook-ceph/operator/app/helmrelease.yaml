@@ -7,8 +7,7 @@ metadata:
 spec:
   chartRef:
     kind: OCIRepository
-    name: rook-ceph
-    namespace: flux-system
+    name: rook-ceph-operator
   interval: 1h
   values:
     # Let the chart manage Rook's CRDs (CephCluster, CephBlockPool, …).

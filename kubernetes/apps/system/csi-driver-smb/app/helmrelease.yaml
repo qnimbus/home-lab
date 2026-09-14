@@ -10,7 +10,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: csi-driver-smb
-    namespace: flux-system
   # Deliberately driver-only — no storageClass block. There is no concrete SMB
   # consumer app in this cluster yet, and unlike NFS, SMB shares each need their
   # own explicit source path/credentials, so there's nothing generic to provision

@@ -13,6 +13,7 @@ generatorOptions:
 configurations:
   - ./helm/kustomizeconfig.yaml
 resources:
+  - ./ocirepository.yaml
   - ./helmrelease.yaml
   - ./probes.yaml
   - ./prometheusrule.yaml

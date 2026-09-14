@@ -9,8 +9,7 @@ spec:
   interval: 1h
   chartRef:
     kind: OCIRepository
-    name: gha-runner-scale-set-controller
-    namespace: flux-system
+    name: actions-runner-controller
   values:
     # Explicit SA name so the runner scale set can reference it deterministically.
     serviceAccount:

@@ -9,7 +9,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: flux-instance
-    namespace: flux-system
   dependsOn:
     - name: flux-operator
       namespace: flux-system

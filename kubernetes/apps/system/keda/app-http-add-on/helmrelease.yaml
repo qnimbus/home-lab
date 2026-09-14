@@ -9,4 +9,3 @@ spec:
   chartRef:
     kind: OCIRepository
     name: keda-add-ons-http
-    namespace: flux-system

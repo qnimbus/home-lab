@@ -9,7 +9,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: flux-operator
-    namespace: flux-system
   valuesFrom:
     - kind: ConfigMap
       name: flux-operator-values

@@ -9,7 +9,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: grafana-operator
-    namespace: flux-system
   values:
     serviceMonitor:
       enabled: true

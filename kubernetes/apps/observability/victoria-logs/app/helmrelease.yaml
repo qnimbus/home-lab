@@ -9,7 +9,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: victoria-logs
-    namespace: flux-system
   values:
     # Avoids the double "victoria-logs-victoria-logs-single" name; server Service
     # ends up named victoria-logs-server (referenced by fluent-bit's output config).

@@ -17,8 +17,7 @@ spec:
           kind: Deployment
   chartRef:
     kind: OCIRepository
-    name: app-template
-    namespace: flux-system
+    name: open-webui
   values:
     controllers:
       open-webui:

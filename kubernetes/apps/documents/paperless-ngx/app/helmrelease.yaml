@@ -16,8 +16,7 @@ spec:
           kind: Deployment
   chartRef:
     kind: OCIRepository
-    name: app-template
-    namespace: flux-system
+    name: paperless-ngx
   values:
     controllers:
       # First multi-container controller in this repo: gotenberg/tika are tightly-coupled

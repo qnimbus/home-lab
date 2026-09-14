@@ -10,7 +10,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: openebs
-    namespace: flux-system
   values:
     localpv-provisioner:
       localpv:

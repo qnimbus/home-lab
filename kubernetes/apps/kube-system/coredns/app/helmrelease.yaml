@@ -9,7 +9,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: coredns
-    namespace: flux-system
   valuesFrom:
     - kind: ConfigMap
       name: coredns-values
