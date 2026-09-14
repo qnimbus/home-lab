@@ -1,5 +1,4 @@
 {
-  "sops.binPath": "/home/bas/.local/share/mise/shims/sops",
   "sops.defaults.ageKeyFile": "age.key",
   "sops.enabled": true,
   "sops.configPath": "./.sopsrc.yaml",
