@@ -9,6 +9,7 @@ data:
   DOMAIN_APP: "vwn.app"
   DOMAIN_CLUSTER: "cluster.vwn.io"
   # Hosts
+  NAS_HOST: "10.200.0.41"
   NAS_LAN_HOST: "10.10.0.41"
   HOME_ASSISTANT_LAN_HOST: "10.10.0.21"
   # Network CIDRs

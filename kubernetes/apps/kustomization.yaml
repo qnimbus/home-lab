@@ -22,7 +22,6 @@ resources:
   - ./default
   - ./documents
   - ./finance
-  - ./development
   - ./node-feature-discovery
   - ./intel-device-plugins
   - ./media

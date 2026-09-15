@@ -8,6 +8,7 @@ components:
 replacements:
   - path: ../../components/replacements/ks.yaml
 resources:
+  - ./forgejo/ks.yaml
   - ./homepage/ks.yaml
   - ./unifi-voucher-site/ks.yaml
   # - ./whoami/ks.yaml # Uncomment to deploy whoami app
