@@ -55,24 +55,12 @@ spec:
         superuser: false
         passwordSecret:
           name: firefly-db-secret
-      - name: forgejo
-        ensure: present
-        login: true
-        superuser: false
-        passwordSecret:
-          name: forgejo-db-secret
       - name: paperless
         ensure: present
         login: true
         superuser: false
         passwordSecret:
           name: paperless-db-secret
-      - name: open_webui
-        ensure: present
-        login: true
-        superuser: false
-        passwordSecret:
-          name: open-webui-db-secret
       - name: n8n
         ensure: present
         login: true
