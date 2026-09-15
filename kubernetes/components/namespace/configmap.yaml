@@ -1,0 +1,22 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-settings
+data:
+  CLUSTER_TIMEZONE: "Europe/Amsterdam"
+  # Cluster domain names
+  DOMAIN_APP: "vwn.app"
+  DOMAIN_CLUSTER: "cluster.vwn.io"
+  # Hosts
+  NAS_LAN_HOST: "10.10.0.41"
+  HOME_ASSISTANT_LAN_HOST: "10.10.0.21"
+  # Network CIDRs
+  LAN_CIDR: 10.10.0.0/24
+  IOT_CIDR: 10.30.0.0/24
+  POD_CIDR: 10.42.0.0/16
+  SERVICE_CIDR: 10.43.0.0/16
+  TAILSCALE_CIDR: 100.64.0.0/10 # Tailscale's own standard CGNAT range for tailnet client IPs (documented, provider-wide constant — not specific to this tailnet)
+  # Reserved IPs for LoadBalancer services
+  LB_IP_PLEX: 10.60.0.233
+  LB_IP_PLEX_IOT: 10.30.0.234
