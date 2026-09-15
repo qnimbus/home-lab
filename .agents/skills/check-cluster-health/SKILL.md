@@ -1,6 +1,7 @@
 ---
 name: check-cluster-health
 description: Use when asked to check cluster health, find what's broken, triage an alert, or verify nothing regressed before/after a change — a live, read-only sweep of Flux, workloads, nodes, and Ceph, cross-checked against active Silences so known/accepted noise isn't reported as a new incident ("is the cluster healthy", "anything broken", "is everything OK")
+context: fork
 ---
 
 # Check cluster health

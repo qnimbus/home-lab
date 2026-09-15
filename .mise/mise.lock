@@ -202,6 +202,81 @@ checksum = "sha256:117a5c7cc0315984388ccffe1f3bd0e95fc2d5663440dea61c27d3fdc0e87
 url = "https://github.com/etcd-io/etcd/releases/download/v3.6.14/etcd-v3.6.14-windows-amd64.zip"
 url_api = "https://api.github.com/repos/etcd-io/etcd/releases/assets/487552231"
 
+[[tools.flux-operator]]
+version = "0.60.0"
+backend = "aqua:controlplaneio-fluxcd/flux-operator"
+specifiers = ["0.60.0"]
+
+[tools.flux-operator."platforms.linux-arm64"]
+checksum = "sha256:5452ad9c3287607849c4f67869389aeac101cb2eb67fdb9243bfff06713612cb"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.60.0/flux-operator_0.60.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/557336832"
+provenance = "github-attestations"
+
+[tools.flux-operator."platforms.linux-x64"]
+checksum = "sha256:dd7d504bf02117fc8625ef7e71fe757473a9d69cc1d6369586d0e3ae19e40e01"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.60.0/flux-operator_0.60.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/557336826"
+provenance = "github-attestations"
+
+[tools.flux-operator."platforms.macos-arm64"]
+checksum = "sha256:9a40772ed9fa12263fb172d963a4da388811f295c45689861f670d25ce0bb3f0"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.60.0/flux-operator_0.60.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/557336834"
+provenance = "github-attestations"
+
+[[tools.flux-operator-mcp]]
+version = "0.60.0"
+backend = "aqua:controlplaneio-fluxcd/flux-operator/flux-operator-mcp"
+specifiers = ["0.60.0"]
+
+[tools.flux-operator-mcp."platforms.linux-arm64"]
+checksum = "sha256:48eb277faa19b303834e07c3c1128993302c78079b7122735240322c687c6fff"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.60.0/flux-operator-mcp_0.60.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/557336877"
+provenance = "github-attestations"
+
+[tools.flux-operator-mcp."platforms.linux-x64"]
+checksum = "sha256:0e9baa3263cb0d7a13bcacee979648a669a828840ef5b415bf81c77d71d7f36d"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.60.0/flux-operator-mcp_0.60.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/557336890"
+provenance = "github-attestations"
+
+[tools.flux-operator-mcp."platforms.macos-arm64"]
+checksum = "sha256:b9cfd1871fdd90b6e2f41f10a154602c3a1fccbd553a3b8c78e6bb4766cbd83e"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.60.0/flux-operator-mcp_0.60.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/557336889"
+provenance = "github-attestations"
+
+[[tools.flux2]]
+version = "2.9.5"
+backend = "aqua:fluxcd/flux2"
+specifiers = ["2.9.5"]
+
+[tools.flux2."platforms.linux-arm64"]
+checksum = "sha256:f3e159af616ec0b9bd0a405c2185cf09d06b74652c1de3c7f377e8166826651a"
+url = "https://github.com/fluxcd/flux2/releases/download/v2.9.5/flux_2.9.5_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/538282890"
+
+[tools.flux2."platforms.linux-arm64".provenance.slsa]
+url = "https://github.com/fluxcd/flux2/releases/download/v2.9.5/provenance.intoto.jsonl"
+
+[tools.flux2."platforms.linux-x64"]
+checksum = "sha256:b853df82adfd7736f580692f9f734473d571606307139f8fd20c2a80dd1ff473"
+url = "https://github.com/fluxcd/flux2/releases/download/v2.9.5/flux_2.9.5_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/538282891"
+
+[tools.flux2."platforms.linux-x64".provenance.slsa]
+url = "https://github.com/fluxcd/flux2/releases/download/v2.9.5/provenance.intoto.jsonl"
+
+[tools.flux2."platforms.macos-arm64"]
+checksum = "sha256:2869ef7151a6f1b27e6b5d2a6804f3ef23c7bdaa06a74e00d3fe5bfc646547fd"
+url = "https://github.com/fluxcd/flux2/releases/download/v2.9.5/flux_2.9.5_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/538282876"
+
+[tools.flux2."platforms.macos-arm64".provenance.slsa]
+url = "https://github.com/fluxcd/flux2/releases/download/v2.9.5/provenance.intoto.jsonl"
+
 [[tools.gh]]
 version = "2.100.0"
 backend = "aqua:cli/cli"
