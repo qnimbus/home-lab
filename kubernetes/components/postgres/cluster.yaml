@@ -1,0 +1,51 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/postgresql.cnpg.io/cluster_v1.json
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ${APP}-postgres
+  annotations:
+    # Required for same-path/same-serverName rebuilds via bootstrap.recovery.
+    # The default check blocks recovery when the destination archive is non-empty,
+    # which is exactly the case when the rebuilt cluster reuses the same Barman
+    # path. Safe here because the recovered cluster inherits the source's
+    # system_identifier and writes new WAL on a new timeline (no name collisions).
+    cnpg.io/skipEmptyWalArchiveCheck: enabled
+spec:
+  bootstrap:
+    recovery:
+      source: &archive ${APP}-backup-archive
+      database: ${POSTGRES_DATABASE:=${APP}}
+      owner: ${POSTGRES_USERNAME:=${APP}}
+  enableSuperuserAccess: true
+  externalClusters:
+    - name: *archive
+      plugin:
+        name: barman-cloud.cloudnative-pg.io
+        parameters:
+          barmanObjectName: ${APP}-postgres-backup
+          serverName: ${APP}
+  # renovate: datasource=docker depName=ghcr.io/cloudnative-pg/postgresql
+  imageName: ${POSTGRES_IMAGE:=ghcr.io/cloudnative-pg/postgresql:18.6-standard-trixie@sha256:c2a773217853c6e0ffe7da9c37ea456466efb20cf844f27511a73fa6a81e3152}
+  instances: ${POSTGRES_INSTANCES:=1}
+  maxSyncReplicas: ${POSTGRES_SYNC_REPLICAS:=0}
+  minSyncReplicas: ${POSTGRES_SYNC_REPLICAS:=0}
+  monitoring:
+    enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: ${APP}-postgres-backup
+        serverName: ${APP}
+  postgresql:
+    parameters:
+      archive_timeout: 5min
+      max_connections: "100"
+  primaryUpdateStrategy: unsupervised
+  resources:
+    requests:
+      memory: 256Mi
+  storage:
+    size: ${POSTGRES_STORAGE:=5Gi}
+    storageClass: openebs-hostpath

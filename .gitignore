@@ -1,10 +1,9 @@
 # Ignore files and directories that should not be committed to the repository
 .archive/
-.agents
-.claude/skills
-.claude/worktrees
-.claude/skills/*
-.claude/worktrees/*
+.private/
+.task/
+.venv/
+*.iso
 .claude/settings.local.json
 
 # Ignore build artifacts and assets (e.g. iso images, VM images, etc.)
@@ -16,8 +15,17 @@ kubeconfig
 talosconfig
 
 # Ignore sensitive files and environment variables
-age.key
 .env
+*.pub
+*.key
+*.decrypted~*.yaml
+age.key
+cloudflare-tunnel.json
+github-deploy.key
+github-deploy.key.pub
+github-push-token.txt
+1password-credentials.json
+onepassword.env
 
 # Exception: these hold only Renovate-tracked image version pins, no secrets —
 # doco-cd needs them present on TrueNAS after cloning (see truenas/README.md).

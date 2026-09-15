@@ -6,14 +6,10 @@ metadata:
   name: forgejo
 spec:
   interval: 1h
-  # KEDA (scaledobject.yaml) scales this Deployment's replicas directly; without
-  # this, Flux's drift detection reverts it back to the chart's desired replica
-  # count on the next reconcile/drift check, undoing scale-to-zero within the hour.
-  driftDetection:
-    ignore:
-      - paths: ["/spec/replicas"]
-        target:
-          kind: Deployment
+  # Placeholder so components/postgres's JSON6902 patch (appends to
+  # /spec/dependsOn/-) has an existing array to append to — see
+  # kubernetes/components/postgres/kustomization.yaml.
+  dependsOn: []
   chartRef:
     kind: OCIRepository
     name: forgejo
@@ -39,22 +35,32 @@ spec:
           SSH_DOMAIN: forgejo.${DOMAIN_CLUSTER}
         database:
           DB_TYPE: postgres
-          HOST: "${PG_HOST}:5432"
-          NAME: forgejo
-          USER: forgejo
+          # Dedicated cluster (components/postgres), same namespace as this
+          # Deployment now — no more cross-namespace secret duplication needed.
+          HOST: "${APP}-postgres-rw:5432"
       # cache/queue/session deliberately left unset: this chart's own template falls
       # back to memory/level/memory when unspecified, which is correct for a single
       # replicaCount deployment — no Redis/Valkey instance needed for one consumer.
+      #
+      # NAME/USER/PASSWD all read from the CNPG-generated forgejo-postgres-app
+      # Secret rather than being hardcoded — stays correct if POSTGRES_DATABASE/
+      # POSTGRES_USERNAME are ever overridden away from the ${APP} default.
       additionalConfigFromEnvs:
+        - name: GITEA__DATABASE__NAME
+          valueFrom:
+            secretKeyRef:
+              name: forgejo-postgres-app
+              key: dbname
+        - name: GITEA__DATABASE__USER
+          valueFrom:
+            secretKeyRef:
+              name: forgejo-postgres-app
+              key: username
         - name: GITEA__DATABASE__PASSWD
           valueFrom:
             secretKeyRef:
-              # NOT forgejo-db-secret — that Secret lives in the `database` namespace
-              # (for CNPG's same-namespace passwordSecret reference) and a Pod can't
-              # reference a Secret across namespaces. forgejo-admin-secret carries a
-              # same-namespace copy of DB_PASSWORD for exactly this reason.
-              name: forgejo-admin-secret
-              key: DB_PASSWORD
+              name: forgejo-postgres-app
+              key: password
     persistence:
       storageClass: ceph-block
     httpRoute:

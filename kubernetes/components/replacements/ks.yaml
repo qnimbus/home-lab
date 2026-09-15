@@ -7,6 +7,7 @@
     - select:
         kind: Kustomization
         group: kustomize.toolkit.fluxcd.io
+        labelSelector: replacements.flux.home.arpa/disabled notin (true)
       fieldPaths:
         - metadata.namespace
       options:
@@ -14,6 +15,7 @@
     - select:
         kind: Kustomization
         group: kustomize.toolkit.fluxcd.io
+        labelSelector: replacements.flux.home.arpa/disabled notin (true)
       fieldPaths:
         - spec.targetNamespace
       options:
