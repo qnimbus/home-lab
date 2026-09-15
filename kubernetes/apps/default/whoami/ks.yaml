@@ -13,8 +13,8 @@ spec:
   interval: 1h
   path: ./kubernetes/apps/default/whoami/app
   prune: true
-  wait: false
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
+  wait: false

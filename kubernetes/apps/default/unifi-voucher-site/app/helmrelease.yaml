@@ -5,6 +5,9 @@ kind: HelmRelease
 metadata:
   name: &app unifi-voucher-site
 spec:
+  chartRef:
+    kind: OCIRepository
+    name: unifi-voucher-site
   interval: 1h
   # KEDA (interceptorroute.yaml + the http-scaler component's ScaledObject) scales
   # this Deployment's replicas directly; without this, Flux's drift detection
@@ -15,10 +18,14 @@ spec:
       - paths: ["/spec/replicas"]
         target:
           kind: Deployment
-  chartRef:
-    kind: OCIRepository
-    name: unifi-voucher-site
   values:
+    defaultPodOptions:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
     controllers:
       *app :
         containers:
@@ -28,12 +35,12 @@ spec:
               # renovate: datasource=docker depName=docker.io/glenndehaan/unifi-voucher-site
               tag: 8.13.0@sha256:07a9ca6fe9dbb358f6f3d45d41654d882d03d8770672e47bc0d4734f8857d4f2
             env:
-              TZ: "${CLUSTER_TIMEZONE}"
-              LOG_LEVEL: info
-              UNIFI_SITE_ID: default
               # No portal login — acceptable only because this app is internal-only
               # (envoy-internal, LAN/VPN); revisit if exposure is ever widened.
               AUTH_DISABLE: "true"
+              LOG_LEVEL: info
+              TZ: "${CLUSTER_TIMEZONE}"
+              UNIFI_SITE_ID: default
               # ── Every other env var this app supports (github.com/glenndehaan/unifi-voucher-site),
               # commented out at its documented default. Uncomment + set to override.
               # UniFi controller connection — UNIFI_IP/UNIFI_PORT/UNIFI_TOKEN come from
@@ -91,34 +98,27 @@ spec:
                   name: unifi-voucher-site-secret
             probes:
               liveness: &probes
-                enabled: true
                 custom: true
+                enabled: true
                 spec:
+                  failureThreshold: 3
                   httpGet:
                     path: /
                     port: &port 3000
                   initialDelaySeconds: 5
                   periodSeconds: 10
                   timeoutSeconds: 3
-                  failureThreshold: 3
               readiness: *probes
-            securityContext:
-              allowPrivilegeEscalation: false
-              readOnlyRootFilesystem: true
-              capabilities: { drop: ["ALL"] }
             resources:
               requests:
                 cpu: 10m
                 memory: 128Mi
               limits:
                 memory: 256Mi
-    defaultPodOptions:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: { drop: ["ALL"] }
+              readOnlyRootFilesystem: true
     persistence:
       tmp:
         type: emptyDir

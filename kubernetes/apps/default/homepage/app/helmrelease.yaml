@@ -10,11 +10,24 @@ spec:
     name: homepage
   interval: 1h
   values:
+    defaultPodOptions:
+      # Homepage's "kubernetes" widget and Gateway API service auto-discovery need the
+      # cluster-wide read access granted below — v5 defaults this to false.
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
     controllers:
       *app :
-        strategy: Recreate
         annotations:
           reloader.stakater.com/auto: "true"
+        serviceAccount:
+          identifier: *app
+        strategy: Recreate
         containers:
           app:
             image:
@@ -22,14 +35,14 @@ spec:
               # renovate: datasource=docker depName=ghcr.io/gethomepage/homepage
               tag: v2.0.0@sha256:638dacf5c844e908dc06c1fd57a2b5694f8efd91f91f152829ea0c2f547458f2
             env:
-              TZ: "${CLUSTER_TIMEZONE}"
-              LOG_LEVEL: "info"
               HOMEPAGE_ALLOWED_HOSTS: "homepage.${DOMAIN_CLUSTER}"
               # https://gethomepage.dev/configs/mcp/ — read-only; HOMEPAGE_MCP_ALLOW_WRITE is
               # skipped since /app/config is a ConfigMap mount (always read-only in-cluster).
               # No HOMEPAGE_AUTH_ENABLED session auth is configured, so the endpoint relies on
               # HOMEPAGE_MCP_TOKEN (from homepage-secret via envFrom below) for auth instead.
               HOMEPAGE_MCP_ENABLED: "true"
+              LOG_LEVEL: "info"
+              TZ: "${CLUSTER_TIMEZONE}"
             envFrom:
               - secretRef:
                   name: &secret homepage-secret
@@ -41,21 +54,8 @@ spec:
                 memory: 256Mi
             securityContext:
               allowPrivilegeEscalation: false
-              readOnlyRootFilesystem: true
               capabilities: { drop: ["ALL"] }
-        serviceAccount:
-          identifier: *app
-
-    defaultPodOptions:
-      # Homepage's "kubernetes" widget and Gateway API service auto-discovery need the
-      # cluster-wide read access granted below — v5 defaults this to false.
-      automountServiceAccountToken: true
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
+              readOnlyRootFilesystem: true
 
     persistence:
       config:
@@ -75,9 +75,15 @@ spec:
     # gethomepage.dev/* annotations on other apps' HTTPRoutes instead of a hand-maintained
     # services.yaml, and populate the kubernetes cluster/node resource widget.
     rbac:
+      bindings:
+        *app :
+          roleRef:
+            identifier: *app
+          subjects:
+            - identifier: *app
+          type: ClusterRoleBinding
       roles:
         *app :
-          type: ClusterRole
           rules:
             - apiGroups: [""]
               resources: [namespaces, pods, nodes]
@@ -88,13 +94,7 @@ spec:
             - apiGroups: [metrics.k8s.io]
               resources: [nodes, pods]
               verbs: [get, list]
-      bindings:
-        *app :
-          type: ClusterRoleBinding
-          roleRef:
-            identifier: *app
-          subjects:
-            - identifier: *app
+          type: ClusterRole
 
     service:
       app:

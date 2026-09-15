@@ -5,12 +5,12 @@ kind: HTTPRoute
 metadata:
   name: homepage
 spec:
+  hostnames:
+    - "homepage.${DOMAIN_CLUSTER}"
   parentRefs:
     - name: envoy-internal
       namespace: network
       sectionName: https
-  hostnames:
-    - "homepage.${DOMAIN_CLUSTER}"
   rules:
     - backendRefs:
         - name: homepage

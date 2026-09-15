@@ -5,38 +5,26 @@ kind: HelmRelease
 metadata:
   name: forgejo
 spec:
-  interval: 1h
-  # Placeholder so components/**/ JSON6902 patch has an existing array to append to.
-  # (appends to /spec/dependsOn/-) — see kubernetes/components/**/kustomization.yaml.
-  dependsOn: []
   chartRef:
     kind: OCIRepository
     name: forgejo
+  # Placeholder so components/**/ JSON6902 patch has an existing array to append to.
+  # (appends to /spec/dependsOn/-) — see kubernetes/components/**/kustomization.yaml.
+  dependsOn: []
+  interval: 1h
   values:
     # image.registry/repository/rootless already default to code.forgejo.org/forgejo/forgejo
     # rootless — leaving image.tag unset tracks the chart's own appVersion pairing rather
     # than jumping ahead to an app release the pinned chart version wasn't tested against.
     containerSecurityContext:
       allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      runAsNonRoot: true
-      runAsUser: 1000
-      runAsGroup: 1000
       capabilities:
         drop: ["ALL"]
+      readOnlyRootFilesystem: true
+      runAsGroup: 1000
+      runAsNonRoot: true
+      runAsUser: 1000
     gitea:
-      admin:
-        existingSecret: forgejo-admin-secret
-      config:
-        server:
-          DOMAIN: forgejo.${DOMAIN_CLUSTER}
-          ROOT_URL: https://forgejo.${DOMAIN_CLUSTER}
-          SSH_DOMAIN: forgejo.${DOMAIN_CLUSTER}
-        database:
-          DB_TYPE: postgres
-          # Dedicated cluster (components/postgres), same namespace as this
-          # Deployment now — no more cross-namespace secret duplication needed.
-          HOST: "${APP}-postgres-rw:5432"
       # cache/queue/session deliberately left unset: this chart's own template falls
       # back to memory/level/memory when unspecified, which is correct for a single
       # replicaCount deployment — no Redis/Valkey instance needed for one consumer.
@@ -48,22 +36,34 @@ spec:
         - name: GITEA__DATABASE__NAME
           valueFrom:
             secretKeyRef:
-              name: forgejo-postgres-app
               key: dbname
+              name: forgejo-postgres-app
         - name: GITEA__DATABASE__USER
           valueFrom:
             secretKeyRef:
-              name: forgejo-postgres-app
               key: username
+              name: forgejo-postgres-app
         - name: GITEA__DATABASE__PASSWD
           valueFrom:
             secretKeyRef:
-              name: forgejo-postgres-app
               key: password
-    persistence:
-      storageClass: ceph-block
+              name: forgejo-postgres-app
+      admin:
+        existingSecret: forgejo-admin-secret
+      config:
+        database:
+          DB_TYPE: postgres
+          # Dedicated cluster (components/postgres), same namespace as this
+          # Deployment now — no more cross-namespace secret duplication needed.
+          HOST: "${APP}-postgres-rw:5432"
+        server:
+          DOMAIN: forgejo.${DOMAIN_CLUSTER}
+          ROOT_URL: https://forgejo.${DOMAIN_CLUSTER}
+          SSH_DOMAIN: forgejo.${DOMAIN_CLUSTER}
     httpRoute:
       enabled: false
+    persistence:
+      storageClass: ceph-block
     tcpRoute:
       enabled: true
       parentRefs:

@@ -5,12 +5,12 @@ kind: HTTPRoute
 metadata:
   name: whoami
 spec:
+  hostnames:
+    - "whoami.${DOMAIN_APP}"
   parentRefs:
     - name: envoy-external
       namespace: network
       sectionName: https
-  hostnames:
-    - "whoami.${DOMAIN_APP}"
   rules:
     - backendRefs:
         - name: whoami

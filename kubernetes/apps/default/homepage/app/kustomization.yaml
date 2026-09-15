@@ -2,14 +2,8 @@
 # yaml-language-server: $schema=https://json.schemastore.org/kustomization
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-resources:
-  - ./externalsecret.yaml
-  - ./ocirepository.yaml
-  - ./helmrelease.yaml
-  - ./httproute.yaml
 configMapGenerator:
-  - name: homepage-config
-    files:
+  - files:
       - ./config/settings.yaml
       - ./config/kubernetes.yaml
       - ./config/widgets.yaml
@@ -19,5 +13,11 @@ configMapGenerator:
       - ./config/proxmox.yaml
       - ./config/custom.css
       - ./config/custom.js
+    name: homepage-config
     options:
       disableNameSuffixHash: true
+resources:
+  - ./externalsecret.yaml
+  - ./ocirepository.yaml
+  - ./helmrelease.yaml
+  - ./httproute.yaml

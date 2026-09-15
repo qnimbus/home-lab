@@ -12,17 +12,6 @@ spec:
       app.kubernetes.io/name: *app
   components:
     - ../../../../components/keda/http-scaler
-  interval: 1h
-  path: ./kubernetes/apps/default/unifi-voucher-site/app
-  postBuild:
-    substitute:
-      APP: *app
-  prune: true
-  wait: false
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
   dependsOn:
     # InterceptorRoute/ScaledObject CRDs don't exist until the add-on's
     # operator installs them — see bootstrap-ordering rule in CLAUDE.md.
@@ -33,3 +22,14 @@ spec:
       kind: HelmRelease
       name: *app
       namespace: default
+  interval: 1h
+  path: ./kubernetes/apps/default/unifi-voucher-site/app
+  postBuild:
+    substitute:
+      APP: *app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  wait: false

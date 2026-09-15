@@ -5,11 +5,17 @@ kind: HelmRelease
 metadata:
   name: whoami
 spec:
-  interval: 1h
   chartRef:
     kind: OCIRepository
     name: whoami
+  interval: 1h
   values:
+    defaultPodOptions:
+      securityContext:
+        fsGroup: 65534
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
     controllers:
       whoami:
         containers:
@@ -32,12 +38,6 @@ spec:
               allowPrivilegeEscalation: false
               capabilities:
                 drop: ["ALL"]
-    defaultPodOptions:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 65534
-        runAsGroup: 65534
-        fsGroup: 65534
     service:
       app:
         controller: whoami

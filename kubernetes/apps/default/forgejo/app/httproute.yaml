@@ -5,18 +5,18 @@ kind: HTTPRoute
 metadata:
   name: forgejo
   annotations:
-    gethomepage.dev/enabled: "true"
-    gethomepage.dev/name: "Forgejo"
     gethomepage.dev/description: "Self-hosted git"
+    gethomepage.dev/enabled: "true"
     gethomepage.dev/group: "Development"
     gethomepage.dev/icon: "forgejo"
+    gethomepage.dev/name: "Forgejo"
 spec:
+  hostnames:
+    - "forgejo.${DOMAIN_CLUSTER}"
   parentRefs:
     - name: envoy-internal
       namespace: network
       sectionName: https
-  hostnames:
-    - "forgejo.${DOMAIN_CLUSTER}"
   rules:
     - backendRefs:
         - name: forgejo-http
