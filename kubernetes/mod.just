@@ -4,9 +4,12 @@ set quiet
 set script-interpreter := ['bash', '-euo', 'pipefail']
 set shell := ['bash', '-euo', 'pipefail', '-c']
 
+[group('database')]
+mod database "apps/database"
+
 [doc('Apply local Flux Kustomization')]
 apply-ks ns ks:
-    just k8s render-local-ks "{{ ks }}" "{{ ns }}" | kubectl apply --server-side --force-conflicts --field-manager=kustomize-controller -f -
+    just k8s render-local-ks "{{ ns }}" "{{ ks }}" | kubectl apply --server-side --force-conflicts --field-manager=kustomize-controller -f -
 
 [doc('Browse a PVC')]
 browse-pvc ns claim:
@@ -34,7 +37,7 @@ debug-node node:
 
 [doc('Delete local Flux Kustomization')]
 delete-ks ns ks:
-    just k8s render-local-ks "{{ ks }}" "{{ ns }}" | kubectl delete -f -
+    just k8s render-local-ks "{{ ns }}" "{{ ks }}" | kubectl delete -f -
 
 [doc('Prune pods in Failed, Pending, or Succeeded state')]
 prune-pods:
@@ -77,8 +80,12 @@ toolbox:
     fi
 
 [doc('View a secret')]
-view-secret ns secret:
-    kubectl view-secret -n {{ ns }} {{ secret }}
+view-secret ns secret="":
+    if [ -n "{{ secret }}" ]; then
+        kubectl view-secret -n "{{ ns }}" "{{ secret }}"
+    else
+        kubectl view-secret -n "{{ ns }}"
+    fi
 
 [private]
 render-local-ks ns ks:

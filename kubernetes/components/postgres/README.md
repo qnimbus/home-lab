@@ -187,3 +187,20 @@ healthCheckExprs:
   dedicated cluster's own health. An app switching to a dedicated cluster
   needs its own `Probe` against `${APP}-postgres-rw` before that scaler
   would be meaningful again.
+- **No backup-failure alerting.** The shared `postgres-v17` cluster has a
+  dead-man's-switch `PrometheusRule` pair
+  (`kubernetes/apps/database/cloudnative-pg/cluster/app/prometheusrule.yaml`:
+  `PostgresScheduledBackupMissed`/`PostgresScheduledBackupFailed`) watching
+  `barman_cloud_cloudnative_pg_io_last_{available,failed}_backup_timestamp` —
+  the plugin's own exporter metric, not the legacy
+  `cnpg_collector_last_available_backup_timestamp`/`Cluster.status`
+  fields, which are permanently stuck at zero for any CNPG-plugin-interface
+  backup (confirmed live on both `postgres-v17` and `forgejo-postgres`; see
+  [cloudnative-pg/plugin-barman-cloud#380](https://github.com/cloudnative-pg/plugin-barman-cloud/issues/380)).
+  This component has no equivalent — right now, if a dedicated cluster's
+  backups silently stopped working, nothing would surface it. Future
+  improvement: a parameterized version of that same rule pair (swap the
+  hardcoded `postgres-v17`/`database` labels for `${APP}-postgres`/the
+  consuming namespace) added to this component, so every future adopter
+  gets the alerting for free instead of each one needing to remember to
+  add it by hand.
