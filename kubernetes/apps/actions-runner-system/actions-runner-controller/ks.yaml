@@ -5,20 +5,12 @@ kind: Kustomization
 metadata:
   name: &app actions-runner-controller
   labels:
-    substitution.flux.home.arpa/disabled: "true"
     decryption.flux.home.arpa/disabled: "true"
+    substitution.flux.home.arpa/disabled: "true"
 spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
-  wait: true
-  prune: true
-  interval: 1h
-  path: ./kubernetes/apps/actions-runner-system/actions-runner-controller/app
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
   dependsOn:
     - name: onepassword-store
       namespace: flux-system
@@ -27,6 +19,13 @@ spec:
       kind: HelmRelease
       name: *app
       namespace: actions-runner-system
+  interval: 1h
+  path: ./kubernetes/apps/actions-runner-system/actions-runner-controller/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -34,8 +33,8 @@ kind: Kustomization
 metadata:
   name: actions-runner-home-lab
   labels:
-    substitution.flux.home.arpa/disabled: "true"
     decryption.flux.home.arpa/disabled: "true"
+    substitution.flux.home.arpa/disabled: "true"
 spec:
   commonMetadata:
     labels:
@@ -44,16 +43,15 @@ spec:
   # dependsOn blocks the dry-run until ARC registers its CRD types.
   dependsOn:
     - name: actions-runner-controller
-  wait: true
-  prune: true
-  interval: 1h
-  path: ./kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: home-lab
       namespace: actions-runner-system
+  interval: 1h
+  path: ./kubernetes/apps/actions-runner-system/actions-runner-controller/runners/home-lab
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system

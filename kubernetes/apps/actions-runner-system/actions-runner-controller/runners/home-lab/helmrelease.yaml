@@ -6,34 +6,30 @@ metadata:
   name: home-lab
   namespace: actions-runner-system
 spec:
-  interval: 1h
   chartRef:
     kind: OCIRepository
     name: home-lab
+  interval: 1h
   values:
-    githubConfigUrl: "https://github.com/qnimbus/home-lab"
-    githubConfigSecret: home-lab-runner-secret
-    minRunners: 0
-    maxRunners: 3
     containerMode:
-      type: kubernetes
       kubernetesModeWorkVolumeClaim:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: openebs-hostpath
         resources:
           requests:
             storage: 10Gi # revisit if heavier workflow jobs (image builds, large test suites) are added
+        storageClassName: openebs-hostpath
+      type: kubernetes
     controllerServiceAccount:
-      namespace: actions-runner-system
       name: actions-runner-controller
+      namespace: actions-runner-system
+    githubConfigSecret: home-lab-runner-secret
+    githubConfigUrl: "https://github.com/qnimbus/home-lab"
+    maxRunners: 3
+    minRunners: 0
     template:
       spec:
-        serviceAccountName: actions-runner
         containers:
-          - name: runner
-            # renovate: datasource=docker depName=ghcr.io/home-operations/actions-runner
-            image: ghcr.io/home-operations/actions-runner:2.336.0
-            command:
+          - command:
               - /home/runner/run.sh
             env:
               - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
@@ -46,10 +42,14 @@ spec:
                 valueFrom:
                   fieldRef:
                     fieldPath: status.hostIP
+            # renovate: datasource=docker depName=ghcr.io/home-operations/actions-runner
+            image: ghcr.io/home-operations/actions-runner:2.336.0
+            name: runner
             volumeMounts:
               - mountPath: /var/run/secrets/talos.dev
                 name: talos
                 readOnly: true
+        serviceAccountName: actions-runner
         volumes:
           # Populated by Talos itself from talos-serviceaccount.yaml — not 1Password.
           - name: talos
