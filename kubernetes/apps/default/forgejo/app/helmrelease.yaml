@@ -6,9 +6,8 @@ metadata:
   name: forgejo
 spec:
   interval: 1h
-  # Placeholder so components/postgres's JSON6902 patch (appends to
-  # /spec/dependsOn/-) has an existing array to append to — see
-  # kubernetes/components/postgres/kustomization.yaml.
+  # Placeholder so components/**/ JSON6902 patch has an existing array to append to.
+  # (appends to /spec/dependsOn/-) — see kubernetes/components/**/kustomization.yaml.
   dependsOn: []
   chartRef:
     kind: OCIRepository
