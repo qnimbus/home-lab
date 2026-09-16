@@ -7,7 +7,6 @@ metadata:
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: ${CLUSTER_ACME_EMAIL}
     privateKeySecretRef:
       name: letsencrypt-production
     solvers:
@@ -18,8 +17,8 @@ spec:
               key: API_TOKEN
         selector:
           dnsZones:
-            - ${DOMAIN_APP}
-            - ${DOMAIN_CASA}
-            - ${DOMAIN_CLUSTER}
-            - ${DOMAIN_APPS}
-            - ${DOMAIN_IO}
+            - vwn.app
+            - vwn.casa
+            - cluster.vwn.io
+            - apps.vwn.io
+            - vwn.io
