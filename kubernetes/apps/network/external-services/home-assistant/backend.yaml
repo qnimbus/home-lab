@@ -3,10 +3,7 @@
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
 metadata:
-  name: &app home-assistant
-  labels:
-    app.kubernetes.io/name: *app
-    app.kubernetes.io/instance: *app
+  name: home-assistant
 spec:
   endpoints:
     - ip:

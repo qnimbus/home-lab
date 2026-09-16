@@ -3,15 +3,10 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app truenas
-  namespace: flux-system
+  name: truenas
   labels:
-    app.kubernetes.io/name: *app
+    decryption.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: network
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   interval: 1h
   path: ./kubernetes/apps/network/external-services/truenas
   prune: true
@@ -27,15 +22,10 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app home-assistant
-  namespace: flux-system
+  name: home-assistant
   labels:
-    app.kubernetes.io/name: *app
+    decryption.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: network
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   interval: 1h
   path: ./kubernetes/apps/network/external-services/home-assistant
   prune: true
@@ -51,15 +41,10 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app canon
-  namespace: flux-system
+  name: canon
   labels:
-    app.kubernetes.io/name: *app
+    decryption.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: network
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   interval: 1h
   path: ./kubernetes/apps/network/external-services/canon
   prune: true
@@ -73,15 +58,10 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app wan-failover
-  namespace: flux-system
+  name: wan-failover
   labels:
-    app.kubernetes.io/name: *app
+    decryption.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: network
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   interval: 1h
   path: ./kubernetes/apps/network/external-services/wan-failover
   prune: true
@@ -95,15 +75,10 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app adam
-  namespace: flux-system
+  name: adam
   labels:
-    app.kubernetes.io/name: *app
+    decryption.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: network
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   interval: 1h
   path: ./kubernetes/apps/network/external-services/adam
   prune: true
@@ -117,15 +92,10 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app anna
-  namespace: flux-system
+  name: anna
   labels:
-    app.kubernetes.io/name: *app
+    decryption.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: network
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   interval: 1h
   path: ./kubernetes/apps/network/external-services/anna
   prune: true

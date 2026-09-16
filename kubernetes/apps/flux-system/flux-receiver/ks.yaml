@@ -16,7 +16,7 @@ spec:
     - name: onepassword-connect
       namespace: flux-system
     - name: envoy-gateway-config
-      namespace: flux-system
+      namespace: network
   wait: true
   prune: true
   interval: 1h

@@ -3,15 +3,7 @@
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: Backend
 metadata:
-  name: &app truenas
-  labels:
-    app.kubernetes.io/name: *app
-    app.kubernetes.io/instance: *app
-  # Envoy Gateway Backend rather than a Service + hand-managed EndpointSlice: newer TrueNAS
-  # versions validate the scheme of the request they actually receive (notably /_download), so
-  # terminating TLS at Envoy and re-originating plain HTTP made TrueNAS reject its own UI's
-  # downloads. Talking HTTPS on 8443 end-to-end keeps that check happy. Requires
-  # `extensionApis.enableBackend` on the envoy-gateway HelmRelease.
+  name: truenas
 spec:
   endpoints:
     - ip:

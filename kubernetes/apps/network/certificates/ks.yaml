@@ -3,91 +3,33 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app certificates-import
-  namespace: flux-system
+  name: certificates-import
+  labels:
+    decryption.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: network
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   interval: 1h
-  wait: true
-  prune: true
   path: ./kubernetes/apps/network/certificates/import
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    - name: onepassword-store
-      namespace: flux-system
-  healthChecks:
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      name: vwn-app-tls
-      namespace: network
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      name: vwn-casa-tls
-      namespace: network
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      name: cluster-vwn-io-tls
-      namespace: network
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      name: apps-vwn-io-tls
-      namespace: network
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      name: vwn-io-tls
-      namespace: network
+  wait: true
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app certificates-export
-  namespace: flux-system
+  name: certificates-export
+  labels:
+    decryption.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: network
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
+  dependsOn:
+    - name: certificates-import
   interval: 1h
-  wait: true
-  prune: true
   path: ./kubernetes/apps/network/certificates/export
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    - name: cert-manager
-      namespace: cert-manager
-    - name: certificates-import
-      namespace: flux-system
-    # PHASE 2 (rollout step 6) complete: the PushSecrets below confirmed-backfilled
-    # 1Password (2026-08-04), so certificates-import always resolves — restoring these
-    # TLS Secrets from 1Password before cert-manager needs to re-issue anything.
-  healthChecks:
-    - apiVersion: cert-manager.io/v1
-      kind: Certificate
-      name: wildcard-vwn-app
-      namespace: network
-    - apiVersion: cert-manager.io/v1
-      kind: Certificate
-      name: wildcard-vwn-casa
-      namespace: network
-    - apiVersion: cert-manager.io/v1
-      kind: Certificate
-      name: wildcard-cluster-vwn-io
-      namespace: network
-    - apiVersion: cert-manager.io/v1
-      kind: Certificate
-      name: wildcard-apps-vwn-io
-      namespace: network
-    - apiVersion: cert-manager.io/v1
-      kind: Certificate
-      name: wildcard-vwn-io
-      namespace: network

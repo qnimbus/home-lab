@@ -2,10 +2,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: &app wan-failover
-  labels:
-    app.kubernetes.io/name: *app
-    app.kubernetes.io/instance: *app
+  name: wan-failover
   annotations:
     # Bypasses Envoy Gateway entirely: the router firmware validates the inbound Host header
     # against its own management IP, and Envoy Gateway has no supported way to rewrite Host to
