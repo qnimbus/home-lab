@@ -3,6 +3,8 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: cluster-settings
+  labels:
+    reconcile.fluxcd.io/watch: "Enabled"
 data:
   CLUSTER_TIMEZONE: "Europe/Amsterdam"
   # Cluster domain names
