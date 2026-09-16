@@ -6,6 +6,6 @@ components:
   - ../../components/namespace
 namespace: actions-runner-system
 replacements:
-  - path: ../../components/replacements/ks.yaml
+  - path: ../../components/replacements/replacements.yaml
 resources:
   - ./actions-runner-controller/ks.yaml

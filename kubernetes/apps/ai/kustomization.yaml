@@ -6,5 +6,5 @@ components:
   - ../../components/namespace
 namespace: ai
 replacements:
-  - path: ../../components/replacements/ks.yaml
+  - path: ../../components/replacements/replacements.yaml
 resources: []

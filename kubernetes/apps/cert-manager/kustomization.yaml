@@ -6,6 +6,6 @@ namespace: cert-manager
 components:
   - ../../components/namespace
 replacements:
-  - path: ../../components/replacements/ks.yaml
+  - path: ../../components/replacements/replacements.yaml
 resources:
   - ./cert-manager/ks.yaml
