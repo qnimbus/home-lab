@@ -22,7 +22,6 @@ spec:
           app:
             image:
               repository: docker.io/cloudflare/cloudflared
-              # renovate: datasource=docker depName=docker.io/cloudflare/cloudflared
               tag: "2026.8.3"
             env:
               NO_AUTOUPDATE: "true"
@@ -65,6 +64,14 @@ spec:
         ports:
           http:
             port: *port
+    serviceMonitor:
+      app:
+        endpoints:
+          - port: http
+            scheme: http
+            path: /metrics
+            interval: 1m
+            scrapeTimeout: 30s
     persistence:
       config-file:
         type: configMap
