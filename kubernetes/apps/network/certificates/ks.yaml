@@ -64,9 +64,7 @@ spec:
     namespace: flux-system
   dependsOn:
     - name: cert-manager
-      namespace: flux-system
-    - name: cluster-issuers
-      namespace: flux-system
+      namespace: cert-manager
     - name: certificates-import
       namespace: flux-system
     # PHASE 2 (rollout step 6) complete: the PushSecrets below confirmed-backfilled

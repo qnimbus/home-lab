@@ -267,6 +267,40 @@ and this note both exist because of a real prior incident — see the
 `CNPG_V17_CURRENT_CLUSTER` comment in that app's `ks.yaml` — this class of
 mistake has already cost a PITR recovery once in this cluster's history.)
 
+## Step 7: Fix `dependsOn` references elsewhere in the repo
+
+Step 1's wrapper `namespace: <group>` transformer relocates the app's
+`Kustomization` CR itself, not just its rendered resources — confirmed live
+when cert-manager's migration broke four other Kustomizations
+(`cloudnative-pg-operator`, `plugin-barman-cloud`,
+`intel-device-plugins-operator`, `certificates-export`) that each
+`dependsOn` it. Flux defaults an omitted `dependsOn[].namespace` to the
+_referencing_ Kustomization's own namespace, not the target's — so any
+bare `dependsOn: [{name: <app>}]` elsewhere in the repo that pointed at an
+app now moving out of `flux-system` silently starts resolving against the
+wrong namespace, and fails with `dependency '<referencer-ns>/<app>' not
+found` on the next reconcile.
+
+Find every candidate before pushing:
+
+```bash
+grep -rln "name: <app>\$" kubernetes/apps --include=ks.yaml
+```
+
+For each hit outside `<group>` itself, check whether it's a `dependsOn`
+entry (not just a `healthChecks`/`metadata.name` match) and, if so, add or
+fix explicit `namespace: <group>`. Also check for a `dependsOn` on any
+Kustomization _deleted_ as part of this migration (e.g. two app-groups
+merged into one, like `cluster-issuers` folding into `cert-manager`) —
+remove those entries outright rather than repointing them.
+
+`kustomize build` has no visibility into cross-file `dependsOn`
+resolution at all — verify against the live cluster after deploying:
+
+```bash
+kubectl get kustomization -A | grep -i "not found\|False"
+```
+
 ## Common mistakes
 
 - **Removing `spec.targetNamespace` before `replacements` is wired in.**
@@ -302,3 +336,7 @@ mistake has already cost a PITR recovery once in this cluster's history.)
   `components/postgres` (Step 3b.6).** Its dependency-injection patch is a
   JSON6902 append — it errors outright if there's no existing array to
   append to, it doesn't create one.
+- **Forgetting that other Kustomizations elsewhere in the repo can `dependsOn`
+  an app inside `<group>` with a bare, namespace-less reference (Step 7).**
+  Migrating the target's CR out of `flux-system` breaks every such reference
+  silently — no `kustomize build` catches it, only a live reconcile does.

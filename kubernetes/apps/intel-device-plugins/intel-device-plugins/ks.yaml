@@ -20,6 +20,7 @@ spec:
   dependsOn:
     # The operator's admission webhook needs cert-manager-issued certs.
     - name: cert-manager
+      namespace: cert-manager
   sourceRef:
     kind: GitRepository
     name: flux-system
