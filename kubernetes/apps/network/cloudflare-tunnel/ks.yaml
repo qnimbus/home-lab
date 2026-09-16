@@ -3,14 +3,14 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: cloudflared-tunnel-id
+  name: cloudflare-tunnel-id
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
   wait: false
   prune: true
   interval: 1h
-  path: ./kubernetes/apps/network/cloudflared/tunnel-id
+  path: ./kubernetes/apps/network/cloudflare-tunnel/tunnel-id
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -25,12 +25,12 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app cloudflared
+  name: &app cloudflare-tunnel
   labels:
     decryption.flux.home.arpa/disabled: "true"
     # CLOUDFLARE_TUNNEL_ID must stay out of the fleet-wide plaintext
     # cluster-settings ConfigMap (unlike the domain/host vars) — sourced
-    # instead from the dedicated cloudflared-tunnel-id-secret above, per
+    # instead from the dedicated cloudflare-tunnel-id-secret above, per
     # bykaj's home-ops cloudflare-tunnel pattern.
     substitution.flux.home.arpa/disabled: "true"
 spec:
@@ -40,7 +40,7 @@ spec:
   wait: false
   prune: true
   interval: 1h
-  path: ./kubernetes/apps/network/cloudflared/app
+  path: ./kubernetes/apps/network/cloudflare-tunnel/app
   postBuild:
     substituteFrom:
       - kind: Secret
@@ -53,7 +53,7 @@ spec:
     name: flux-system
     namespace: flux-system
   dependsOn:
-    - name: cloudflared-tunnel-id
+    - name: cloudflare-tunnel-id
     - name: envoy-gateway-config
     - name: onepassword-store
       namespace: flux-system

@@ -3,15 +3,15 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: cloudflared
+  name: cloudflare-tunnel
 spec:
   interval: 1h
   chartRef:
     kind: OCIRepository
-    name: cloudflared
+    name: cloudflare-tunnel
   values:
     controllers:
-      cloudflared:
+      cloudflare-tunnel:
         annotations:
           # config.yaml is mounted via subPath, which Kubernetes never live-updates —
           # Reloader forces a rolling restart so ConfigMap edits actually take effect.
