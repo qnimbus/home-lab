@@ -3,9 +3,36 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: cloudflared-tunnel-id
+  labels:
+    decryption.flux.home.arpa/disabled: "true"
+spec:
+  wait: true
+  prune: true
+  interval: 1h
+  path: ./kubernetes/apps/network/cloudflared/tunnel-id
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  healthChecks:
+    - apiVersion: external-secrets.io/v1
+      kind: ExternalSecret
+      name: cloudflare-tunnel-id
+      namespace: network
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: &app cloudflared
   labels:
     decryption.flux.home.arpa/disabled: "true"
+    # CLOUDFLARE_TUNNEL_ID must stay out of the fleet-wide plaintext
+    # cluster-settings ConfigMap (unlike the domain/host vars) — sourced
+    # instead from the dedicated cloudflared-tunnel-id-secret above, per
+    # bykaj's home-ops cloudflare-tunnel pattern.
+    substitution.flux.home.arpa/disabled: "true"
 spec:
   commonMetadata:
     labels:
@@ -14,11 +41,19 @@ spec:
   prune: true
   interval: 1h
   path: ./kubernetes/apps/network/cloudflared/app
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: cloudflare-tunnel-id-secret
+      - kind: ConfigMap
+        name: cluster-settings
+        optional: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
   dependsOn:
+    - name: cloudflared-tunnel-id
     - name: envoy-gateway-config
     - name: onepassword-store
       namespace: flux-system
