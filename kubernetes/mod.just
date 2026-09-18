@@ -21,7 +21,7 @@ browse-pvc ns claim:
 cron-minute name:
     echo $(( $(echo -n "{{ name }}" | cksum | cut -d' ' -f1) % 60 ))
 
-[doc('Manual database backup')]
+[doc('Trigger a manual database backup')]
 db-backup ns app:
     kubectl apply -f - <<EOF
     apiVersion: postgresql.cnpg.io/v1
