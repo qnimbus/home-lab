@@ -361,10 +361,16 @@ spec:
           volumeBindingMode: Immediate
           mountOptions: ["discard"]
           parameters:
-            # Passive: only compresses when Ceph detects the data is actually
-            # compressible, so this is a free capacity win with negligible CPU cost.
-            compression_algorithm: zstd
-            compression_mode: passive
+            # compression_algorithm/compression_mode intentionally NOT set here:
+            # StorageClass.parameters is immutable after creation, so adding them
+            # to this already-existing "ceph-block" SC breaks every Helm upgrade
+            # ("field is immutable") instead of taking effect. Confirmed live
+            # 2026-09-18 — cascaded into every Kustomization dependsOn
+            # rook-ceph-cluster going unready. Enabling compression on this pool
+            # requires deleting and recreating the StorageClass out-of-band
+            # (safe for existing PVs — dynamic provisioning only reads the SC at
+            # PVC-creation time), then re-adding these values — do that as its
+            # own deliberate step, not bundled with an unrelated change.
             imageFormat: "2"
             imageFeatures: layering,fast-diff,object-map,deep-flatten,exclusive-lock
             csi.storage.k8s.io/provisioner-secret-name: rook-csi-rbd-provisioner
