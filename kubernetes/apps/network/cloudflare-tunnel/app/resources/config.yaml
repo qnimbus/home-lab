@@ -8,19 +8,19 @@ originRequest:
 
 ingress:
   - hostname: "*.${DOMAIN_APP}"
-    service: https://envoy-external.network.svc.cluster.local
+    service: &service https://envoy-external.network.svc.cluster.local
   - hostname: "${DOMAIN_APP}"
-    service: https://envoy-external.network.svc.cluster.local
+    service: *service
   - hostname: "*.${DOMAIN_CASA}"
-    service: https://envoy-external.network.svc.cluster.local
+    service: *service
   - hostname: "${DOMAIN_CASA}"
-    service: https://envoy-external.network.svc.cluster.local
+    service: *service
   - hostname: "*.${DOMAIN_APPS}"
-    service: https://envoy-external.network.svc.cluster.local
+    service: *service
   - hostname: "${DOMAIN_APPS}"
-    service: https://envoy-external.network.svc.cluster.local
+    service: *service
   - hostname: "*.${DOMAIN_IO}"
-    service: https://envoy-external.network.svc.cluster.local
+    service: *service
   - hostname: "${DOMAIN_IO}"
-    service: https://envoy-external.network.svc.cluster.local
+    service: *service
   - service: http_status:404
