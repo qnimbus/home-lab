@@ -17,7 +17,9 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Install validation tools
         env:
@@ -40,3 +42,11 @@ jobs:
         run: |
           bash scripts/validate.sh \
             -d kubernetes
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: "24"
+
+      - name: Validate Renovate config
+        run: bash scripts/validate-renovate.sh
