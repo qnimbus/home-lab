@@ -86,6 +86,12 @@ spec:
     toolbox:
       enabled: true
     cephClusterSpec:
+      # Governs device-wipe behavior only when the CephCluster is torn down (not
+      # day-to-day operation) — lets a rebuilt cluster reuse a device that still
+      # carries a stale bluestore signature from a prior cluster instead of Rook
+      # refusing to touch it.
+      cleanupPolicy:
+        wipeDevicesFromOtherClusters: true
       cephConfig:
         global:
           # All three OSD drives are NVMe SSDs — enable background discard/TRIM
@@ -146,6 +152,9 @@ spec:
       dashboard:
         enabled: true
         ssl: false
+        # Feeds the dashboard's own embedded graphs (separate from the Grafana
+        # dashboards below) — without it they render blank.
+        prometheusEndpoint: http://prometheus-operated.observability.svc.cluster.local:9090
       healthCheck:
         # Ceph ≥ 19.2.6 raises these four as HEALTH_WARN for as long as any
         # CephX key is still AES. Here that is by design: the CSI key must stay
@@ -223,6 +232,21 @@ spec:
             - 10.200.0.0/24
           cluster:
             - 10.200.0.0/24
+      # Tolerate tuppr's per-node "about to upgrade" taint so mon/mgr keep
+      # running through a Talos node upgrade instead of being evicted —
+      # OSDs are pinned per-node/device anyway (storage.nodes below) and have
+      # nowhere else to go regardless, so PreferNoSchedule just discourages
+      # Rook from provisioning new ones there mid-upgrade.
+      placement:
+        all:
+          tolerations:
+            - key: tuppr.home-operations.com/outdated
+              operator: Exists
+        osd:
+          tolerations:
+            - key: tuppr.home-operations.com/outdated
+              operator: Exists
+              effect: PreferNoSchedule
       security:
         cephx:
           # --- CVE-2025-30156 daemon key rotation (2026-09-04) ----------------
@@ -337,6 +361,10 @@ spec:
           volumeBindingMode: Immediate
           mountOptions: ["discard"]
           parameters:
+            # Passive: only compresses when Ceph detects the data is actually
+            # compressible, so this is a free capacity win with negligible CPU cost.
+            compression_algorithm: zstd
+            compression_mode: passive
             imageFormat: "2"
             imageFeatures: layering,fast-diff,object-map,deep-flatten,exclusive-lock
             csi.storage.k8s.io/provisioner-secret-name: rook-csi-rbd-provisioner
