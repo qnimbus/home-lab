@@ -21,7 +21,7 @@ spec:
   dependsOn:
     # PVC for the server StatefulSet.
     - name: rook-ceph-cluster
-      namespace: flux-system
+      namespace: rook-ceph
     # ServiceMonitor/dashboard-sidecar CRDs and labels this HelmRelease relies on.
     - name: kube-prometheus-stack
       namespace: flux-system

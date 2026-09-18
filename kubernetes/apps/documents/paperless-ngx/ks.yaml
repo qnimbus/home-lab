@@ -70,6 +70,7 @@ spec:
     - name: paperless-ngx-db
     - name: onepassword-store
     - name: rook-ceph-cluster
+      namespace: rook-ceph
     - name: dragonfly
     # ReplicationSource/ReplicationDestination CRDs don't exist until the operator installs
     # them — see bootstrap-ordering rule in CLAUDE.md.

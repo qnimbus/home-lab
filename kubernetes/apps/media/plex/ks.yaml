@@ -47,6 +47,7 @@ spec:
     # ClusterSecretStore to exist first.
     - name: onepassword-store
     - name: rook-ceph-cluster
+      namespace: rook-ceph
     # ReplicationSource/ReplicationDestination CRDs don't exist until the operator
     # installs them — see bootstrap-ordering rule in CLAUDE.md.
     - name: volsync

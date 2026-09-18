@@ -37,6 +37,7 @@ spec:
     - name: cloudnative-pg-cluster
     - name: onepassword-store
     - name: rook-ceph-cluster
+      namespace: rook-ceph
     # InterceptorRoute/ScaledObject CRDs don't exist until the add-on's
     # operator installs them — see bootstrap-ordering rule in CLAUDE.md.
     - name: keda-add-ons-http
