@@ -75,3 +75,9 @@ pre-commit:
         - ".github/actions/**/action.yml"
         - ".github/actions/**/action.yaml"
       run: zizmor --offline {staged_files}
+
+    validate-renovate:
+      glob:
+        - "renovate.json5"
+        - ".renovate/*.json5"
+      run: bash scripts/validate-renovate.sh
