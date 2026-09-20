@@ -51,7 +51,7 @@ spec:
             image:
               repository: dpage/pgadmin4
               # renovate: datasource=docker depName=dpage/pgadmin4
-              tag: "9.15.0"
+              tag: "9.18.0"
             env:
               PGADMIN_CONFIG_CONSOLE_LOG_LEVEL: "20"
               PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "False"
