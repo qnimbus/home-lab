@@ -4,9 +4,9 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app configarr
-  namespace: flux-system
+  labels:
+    decryption.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: downloads
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
@@ -23,3 +23,4 @@ spec:
     # sonarr/radarr 1Password items those apps' own ExternalSecrets already consume (see
     # app/externalsecret.yaml) — no new item, no PVC, no volsync component needed.
     - name: onepassword-store
+      namespace: flux-system
