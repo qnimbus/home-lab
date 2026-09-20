@@ -30,18 +30,43 @@ spec:
               # Confirmed live: this image listens on Sonarr's traditional default port
               # (8989), not 80 — an earlier assumption that home-operations images normalize
               # to 80 was wrong and caused a probe-port mismatch / CrashLoopBackOff.
-              liveness: &probes
+              # Probes are split (they used to share one timeoutSeconds: 1 probe): kubelet was
+              # restarting this pod after /ping timeouts (195 restarts in 8d as of 2026-09-20,
+              # all clean exits). The stall itself is not root-caused — sabnzbd has the same
+              # node, NFS backing and 1s probe and restarted once — so this widens tolerance
+              # rather than fixing it. startup gates the other two (5m budget), liveness needs
+              # 6 consecutive 5s timeouts (~1m) before killing, readiness drops the pod from
+              # the Service after 3 without restarting it.
+              startup:
                 enabled: true
                 custom: true
                 spec:
                   httpGet:
                     path: /ping
-                    port: 8989
-                  initialDelaySeconds: 0
+                    port: &port 8989
                   periodSeconds: 10
-                  timeoutSeconds: 1
+                  timeoutSeconds: 5
+                  failureThreshold: 30
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /ping
+                    port: *port
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+                  failureThreshold: 6
+              readiness:
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /ping
+                    port: *port
+                  periodSeconds: 10
+                  timeoutSeconds: 5
                   failureThreshold: 3
-              readiness: *probes
             resources:
               requests:
                 cpu: 20m
@@ -70,6 +95,15 @@ spec:
         existingClaim: "${APP}-nfs-config"
         globalMounts:
           - path: /config
+      # Text logs on node-local disk instead of the NFS config PVC, to take their constant
+      # small appends off the NFS mount — a trial for the /ping timeout restarts (see the
+      # probes comment), not a proven cause: logs.db and the main sqlite DB stay on NFS in
+      # /config. Survives container restarts but not pod recreation; console logs still
+      # reach kubectl logs.
+      logs:
+        type: emptyDir
+        globalMounts:
+          - path: /config/logs
       # Same raw NFS export media/plex already mounts (not the dynamic nfs StorageClass —
       # see that HelmRelease's comment). Sonarr needs both the downloads staging area
       # (to detect completed grabs) and the library (to hardlink the imported file) on this
