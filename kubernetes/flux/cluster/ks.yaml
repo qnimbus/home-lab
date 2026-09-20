@@ -89,7 +89,8 @@ spec:
         group: kustomize.toolkit.fluxcd.io
         kind: Kustomization
         labelSelector: decryption.flux.home.arpa/disabled notin (true)
-    - patch: |-
+    - # Add postBuild substitutions to all Kustomizations
+      patch: |-
         apiVersion: kustomize.toolkit.fluxcd.io/v1
         kind: Kustomization
         metadata:
@@ -107,24 +108,20 @@ spec:
         group: kustomize.toolkit.fluxcd.io
         kind: Kustomization
         labelSelector: substitution.flux.home.arpa/disabled notin (true)
-    - patch: |-
+    - # Add default timings to all Kustomizations
+      patch: |-
         apiVersion: kustomize.toolkit.fluxcd.io/v1
         kind: Kustomization
         metadata:
           name: not-used
         spec:
           retryInterval: 2m
-          timeout: 5m
+          timeout: 15m
       target:
         group: kustomize.toolkit.fluxcd.io
         kind: Kustomization
-    # Drift detection default — opt out per-release with label:
-    #   drift-detection.flux.home.arpa/disabled: "true"
-    # Add spec.driftDetection.ignore rules to the HelmRelease for paths
-    # managed by other controllers (e.g. HPA → /spec/replicas, VPA → resources).
-    # Both HelmRelease-defaults and drift-detection patches are in one block so
-    # Kustomize list-replace semantics don't drop one in favour of the other.
-    - patch: |-
+    - # Add default HelmRelease remediation settings and drift detection
+      patch: |-
         apiVersion: kustomize.toolkit.fluxcd.io/v1
         kind: Kustomization
         metadata:
@@ -139,35 +136,17 @@ spec:
                 spec:
                   install:
                     crds: CreateReplace
-                    # RetryOnFailure retries the Helm install in-place (faster than
-                    # uninstall+reinstall between attempts). After 1 retry Flux
-                    # uninstalls the failed release (remediateLastFailure) so the
-                    # next reconciliation starts clean.
-                    # On persistent failure: check the failure reason with
-                    #   flux logs --kind=HelmRelease --name=<name> -n <namespace>
-                    # then fix values or the chart version and push — Flux retries
-                    # on the next interval, or trigger immediately with:
-                    #   flux reconcile helmrelease <name> -n <namespace>
                     strategy:
                       name: RetryOnFailure
-                    remediation:
-                      retries: 1
-                      remediateLastFailure: true
                   timeout: 15m
                   upgrade:
                     cleanupOnFail: true
                     crds: CreateReplace
-                    # RetryOnFailure retries the upgrade in-place up to 3 times.
-                    # On exhaustion Flux rolls back to the previous release revision
-                    # (remediateLastFailure + rollback) and marks the HelmRelease
-                    # failed. Fix the issue and push, or force a retry with:
-                    #   flux reconcile helmrelease <name> -n <namespace>
                     strategy:
-                      name: RetryOnFailure
+                      name: RemediateOnFailure
                     remediation:
                       remediateLastFailure: true
-                      retries: 3
-                      strategy: rollback
+                      retries: 2
               target:
                 group: helm.toolkit.fluxcd.io
                 kind: HelmRelease
