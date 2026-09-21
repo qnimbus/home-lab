@@ -75,7 +75,9 @@ spec:
     # ReplicationSource/ReplicationDestination CRDs don't exist until the operator installs
     # them — see bootstrap-ordering rule in CLAUDE.md.
     - name: volsync
+      namespace: system
     # pv.yaml's nodeStageSecretRef points at the smb-credentials Secret ESO creates
     # asynchronously in csi-driver-smb's namespace — wait: true there guarantees it's
     # Ready before this Kustomization's Pod tries to mount the SMB PVCs.
     - name: csi-driver-smb
+      namespace: system

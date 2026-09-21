@@ -51,6 +51,7 @@ spec:
     # ReplicationSource/ReplicationDestination CRDs don't exist until the operator
     # installs them — see bootstrap-ordering rule in CLAUDE.md.
     - name: volsync
+      namespace: system
     # Provides the intel.feature.node.kubernetes.io/gpu node label and the
     # gpu.intel.com/i915 extended resource this HelmRelease relies on.
     - name: intel-device-plugins-gpu

@@ -4,7 +4,8 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app reloader
-  namespace: flux-system
+  labels:
+    decryption.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: reloader
   commonMetadata:

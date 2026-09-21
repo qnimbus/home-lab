@@ -2,6 +2,13 @@
 # yaml-language-server: $schema=https://json.schemastore.org/kustomization
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+# `namespace:` relocates the Kustomization CRs below into `system`. Unlike default/downloads,
+# each app in this group deploys into its own namespace (keda, volsync, ...), so every ks.yaml
+# keeps its explicit spec.targetNamespace and components/replacements is deliberately NOT wired
+# in — it would overwrite targetNamespace with `system` and relocate every operator.
+namespace: system
+components:
+  - ../../components/namespace
 resources:
   - ./csi-driver-nfs/ks.yaml
   - ./csi-driver-smb/ks.yaml
