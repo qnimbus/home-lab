@@ -9,14 +9,16 @@ Moves an app-group's Flux `Kustomization` CRs out of the centralized
 `flux-system` namespace into their own namespace-scoped tree, mirroring
 bykaj's `home-ops` convention. Already applied to `kubernetes/apps/default`
 and `kubernetes/apps/development` — use those two as reference
-implementations. For Step 3, `kubernetes/apps/database/pgadmin` is the
-reference for the relocate-and-keep-shared-cluster path (3a), and
-`kubernetes/apps/development/forgejo` (`ks.yaml` and `app/helmrelease.yaml`)
+implementations (`development` is now just the wrapper — forgejo moved to
+`default` — so per-app `ks.yaml` examples live in `default`). For Step 3,
+`kubernetes/apps/database/pgadmin` is the reference for the
+relocate-and-keep-shared-cluster path (3a), and
+`kubernetes/apps/default/forgejo` (`ks.yaml` and `app/helmrelease.yaml`)
 is the reference for actually migrating an app off the shared cluster (3b).
 
 Read `kubernetes/components/namespace/` (Namespace placeholder +
 `cluster-settings` ConfigMap component) and
-`kubernetes/components/replacements/ks.yaml` (injects
+`kubernetes/components/replacements/replacements.yaml` (injects
 `metadata.namespace`/`spec.targetNamespace`) before starting — every step
 below depends on understanding what those two components actually do.
 
@@ -29,7 +31,7 @@ namespace: <group>
 components:
   - ../../components/namespace
 replacements:
-  - path: ../../components/replacements/ks.yaml
+  - path: ../../components/replacements/replacements.yaml
 ```
 
 Remove `./namespace.yaml` from `resources:` and delete the file if present.
@@ -40,7 +42,7 @@ conflict") if both exist.
 ## Step 2: Per-app `ks.yaml` — every doc that actually belongs in `<group>`
 
 - Remove `metadata.namespace: flux-system` and `spec.targetNamespace:
-<group>`. Both are now injected automatically by `replacements/ks.yaml`,
+<group>`. Both are now injected automatically by `replacements/replacements.yaml`,
   sourced from the rendered `Namespace` object's name.
 - Add `labels: {decryption.flux.home.arpa/disabled: "true"}` **unless** this
   app ships its own `*.sops.yaml` (check:
@@ -237,12 +239,26 @@ finalizer-triggered prune deleting them first.
 
 For a stateless app this just risks a brief involuntary teardown+recreate
 (short downtime, no lasting harm). For an app with **any persistent
-resource** — a `components/volsync` PVC, a `components/postgres` `Cluster`
-and its storage, anything else backed by real data — this is a genuine
-data-loss risk, not a theoretical one. Check first:
+resource** — a PVC from `components/volsync` or `components/nfs-config`, a
+`components/postgres` `Cluster` and its storage, anything else backed by
+real data — this is a genuine data-loss risk, not a theoretical one. Check
+first:
 
 ```bash
-grep -n "components/volsync\|components/postgres" kubernetes/apps/<group>/<app>/ks.yaml
+grep -nE "components/(volsync|nfs-config|postgres)" kubernetes/apps/<group>/<app>/ks.yaml
+grep -rl "kind: PersistentVolumeClaim" kubernetes/apps/<group>/<app>   # PVC declared in the app's own manifests
+```
+
+The first pattern only knows today's components — confirm the current set
+with `grep -rl "kind: PersistentVolumeClaim" kubernetes/components` and add
+any new one. `components/nfs-config` is the easy one to miss: its `/config`
+PVC has no backup, and the `nfs` StorageClass is `reclaimPolicy: Delete`
+with no `onDelete` parameter, so csi-driver-nfs's default (`delete`) removes
+the volume's directory on the NAS as soon as the PVC is pruned. Confirm a
+group's live reclaim policies with:
+
+```bash
+kubectl get pv -o custom-columns=NAME:.metadata.name,RECLAIM:.spec.persistentVolumeReclaimPolicy,CLAIM:.spec.claimRef.name,NS:.spec.claimRef.namespace | grep -E "NAME|<group>"
 ```
 
 If the app has persistent state, before pushing the namespace-relocation
@@ -324,6 +340,11 @@ kubectl get kustomization -A | grep -i "not found\|False"
   old CR first (Step 6).** The PVC/Cluster's own identity never changes —
   the risk is Flux pruning it as a side effect of deleting the superseded
   `flux-system` Kustomization, not the resource actually moving anywhere.
+- **Reading a non-match on the Step 6 grep as "stateless" without checking
+  the components list.** `components/nfs-config` apps match neither
+  `volsync` nor `postgres`, yet own an unbacked-up PVC on a
+  `reclaimPolicy: Delete` StorageClass — hit for real in the `downloads`
+  migration (`prowlarr`/`sonarr`/`radarr`/`sabnzbd`).
 - **Treating an empty `Cluster.status.lastSuccessfulBackup`/
   `firstRecoverabilityPoint` as a failed backup (Step 3b.9).** It's
   permanently empty for CNPG-plugin-interface backups on _every_ cluster in
