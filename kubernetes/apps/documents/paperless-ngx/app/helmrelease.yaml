@@ -190,7 +190,7 @@ spec:
             port: *port
     persistence:
       config:
-        existingClaim: "${VOLSYNC_CLAIM:=paperless-ngx-config}"
+        existingClaim: "paperless-ngx-config"
         globalMounts:
           - path: *dataPath
       archive:

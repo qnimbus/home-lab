@@ -6,4 +6,5 @@ resources:
   - ./ocirepository.yaml
   - ./helmrelease.yaml
   - ./httproute.yaml
+  - ./pvc.yaml
   - ./scaledobject.yaml

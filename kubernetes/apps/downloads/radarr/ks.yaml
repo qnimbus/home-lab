@@ -41,7 +41,7 @@ spec:
       namespace: flux-system
     # nfs StorageClass source — required for the nfs-config PVC.
     - name: csi-driver-nfs
-      namespace: flux-system
+      namespace: system
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease

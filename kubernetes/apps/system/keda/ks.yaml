@@ -4,7 +4,9 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app keda
-  namespace: flux-system
+  labels:
+    decryption.flux.home.arpa/disabled: "true"
+    replacements.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: keda
   commonMetadata:
@@ -33,7 +35,9 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app2 keda-add-ons-http
-  namespace: flux-system
+  labels:
+    decryption.flux.home.arpa/disabled: "true"
+    replacements.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: keda
   commonMetadata:
@@ -43,6 +47,7 @@ spec:
   # wires an app into it (e.g. pgadmin) — keep this Kustomization ahead of consumers.
   dependsOn:
     - name: keda
+      namespace: system
   wait: true
   prune: true
   interval: 1h

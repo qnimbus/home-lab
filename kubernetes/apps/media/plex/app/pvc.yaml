@@ -1,0 +1,23 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/yannh/kubernetes-json-schema/refs/heads/master/master/persistentvolumeclaim.json
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${APP}
+  labels:
+    # Create-once: Flux skips this claim if it already exists, so the live PVC (which can carry
+    # an immutable dataSourceRef from the removed VolSync bootstrap-restore) is never re-applied.
+    # Keep it declared here — dropping it from this Kustomization would let Flux prune the volume.
+    # Because of that, resizing needs the live PVC patched directly; editing storage below only
+    # affects a freshly created claim.
+    kustomize.toolkit.fluxcd.io/ssa: IfNotPresent
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # /config only (metadata DB, thumbnails, subtitle cache) — the media library itself is a
+      # separate raw NFS mount, not part of this PVC. Cluster has ~3TiB usable ceph-block
+      # capacity total; kept conservative.
+      storage: 20Gi
+  storageClassName: ceph-block
