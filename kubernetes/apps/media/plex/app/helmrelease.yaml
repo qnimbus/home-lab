@@ -190,7 +190,7 @@ spec:
             port: *port
     persistence:
       config:
-        existingClaim: "${VOLSYNC_CLAIM:=${APP}}"
+        existingClaim: plex
         globalMounts:
           - path: /config
       # Native in-tree NFS volume (no PVC/StorageClass) — deliberately not the dynamic nfs

@@ -123,6 +123,6 @@ spec:
             port: *port
     persistence:
       config:
-        existingClaim: "${VOLSYNC_CLAIM:=n8n}"
+        existingClaim: n8n
         globalMounts:
           - path: /home/node/.n8n

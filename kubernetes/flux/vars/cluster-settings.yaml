@@ -14,11 +14,3 @@ data:
   # this must stay in sync with whatever's actually verified in the SES console, not with
   # DOMAIN_CLUSTER or any other in-cluster-only domain.
   MAIL_FROM_ADDRESS: "noreply@bvw.email"
-  # VolSync defaults — single source of truth for every consumer of components/volsync.
-  # Variable names must match the ${VAR:=default} tokens in that Component's templates
-  # exactly, or Flux's substitution simply won't override the inline fallback.
-  # NAS host itself is NAS_HOST, in cluster-secrets (not duplicated here).
-  VOLSYNC_NFS_PATH: "/mnt/tank/Cluster/volsync"
-  VOLSYNC_STORAGECLASS: "ceph-block"
-  VOLSYNC_SNAPSHOTCLASS: "ceph-block-snapshot"
-  VOLSYNC_CACHE_STORAGECLASS: "openebs-hostpath"
