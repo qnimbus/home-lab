@@ -54,7 +54,7 @@ conflict") if both exist.
 - For every `dependsOn` entry, add explicit `namespace: flux-system` if the
   target lives there — true for virtually all shared infra
   (`onepassword-store`, `rook-ceph-cluster`, `cloudnative-pg-cluster`,
-  `volsync`, `envoy-gateway-config`, etc.), but verify per name, don't
+  `envoy-gateway-config`, etc.), but verify per name, don't
   assume:
   ```bash
   grep -rn "name: &app <dep-name>$" kubernetes/apps --include=ks.yaml -A1
@@ -239,13 +239,13 @@ finalizer-triggered prune deleting them first.
 
 For a stateless app this just risks a brief involuntary teardown+recreate
 (short downtime, no lasting harm). For an app with **any persistent
-resource** — a PVC from `components/volsync` or `components/nfs-config`, a
+resource** — a PVC from `components/nfs-config` or in the app's own `pvc.yaml`, a
 `components/postgres` `Cluster` and its storage, anything else backed by
 real data — this is a genuine data-loss risk, not a theoretical one. Check
 first:
 
 ```bash
-grep -nE "components/(volsync|nfs-config|postgres)" kubernetes/apps/<group>/<app>/ks.yaml
+grep -nE "components/(nfs-config|postgres)" kubernetes/apps/<group>/<app>/ks.yaml
 grep -rl "kind: PersistentVolumeClaim" kubernetes/apps/<group>/<app>   # PVC declared in the app's own manifests
 ```
 

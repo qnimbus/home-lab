@@ -408,7 +408,7 @@ spec:
     # the chart's own default ("ceph-block" — identical to the ceph-block
     # StorageClass name; distinct API kinds so no functional collision, but
     # confusing in `kubectl get` output). Not the cluster-default snapshot
-    # class — consumers (e.g. VolSync) reference it by name explicitly.
+    # class — consumers (e.g. backup tooling) reference it by name explicitly.
     cephBlockPoolsVolumeSnapshotClass:
       enabled: true
       name: ceph-block-snapshot
