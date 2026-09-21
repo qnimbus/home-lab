@@ -4,9 +4,13 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: csi-driver-nfs
-  namespace: csi-driver-nfs
 spec:
   interval: 1h
+  # TEMPORARY (namespace move; remove once the old release is uninstalled and this one is Ready):
+  # helm-controller adopts pre-existing objects on install by default, which would start a second
+  # node plugin next to the running one. Refuse to adopt until the old release is gone.
+  install:
+    disableTakeOwnership: true
   chartRef:
     kind: OCIRepository
     name: csi-driver-nfs

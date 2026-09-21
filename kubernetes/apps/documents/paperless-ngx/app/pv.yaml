@@ -29,7 +29,7 @@ spec:
       source: //${NAS_HOST}/Archive
     nodeStageSecretRef:
       name: smb-credentials
-      namespace: csi-driver-smb
+      namespace: system
 ---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/yannh/kubernetes-json-schema/refs/heads/master/master/persistentvolume.json
 apiVersion: v1
@@ -54,4 +54,4 @@ spec:
       source: //${NAS_HOST}/Backup
     nodeStageSecretRef:
       name: smb-credentials
-      namespace: csi-driver-smb
+      namespace: system
