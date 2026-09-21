@@ -37,7 +37,7 @@ skip it locally unless the user has it installed; CI (`flux-render.yaml`) alread
 every PR.
 
 **A nonzero `validate.sh` exit is not automatically a real finding.** It validates _source_
-manifests, before Flux resolves `postBuild.substitute` — any `${APP}`, `${VOLSYNC_CLAIM}`,
+manifests, before Flux resolves `postBuild.substitute` — any `${APP}`, `${APP_SUBDOMAIN}`,
 `${DOMAIN_*}` placeholder still literal in a `metadata.name` or `hostnames` field fails
 kubeconform's schema/DNS-label check even though Flux would apply it correctly post-substitution.
 This is a known, standing false-positive category (see `docs/REPO-AUDIT.md` § Validation

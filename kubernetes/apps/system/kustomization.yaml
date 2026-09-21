@@ -16,4 +16,3 @@ resources:
   - ./keda/ks.yaml
   - ./reloader/ks.yaml
   - ./snapshot-controller/ks.yaml
-  - ./volsync/ks.yaml

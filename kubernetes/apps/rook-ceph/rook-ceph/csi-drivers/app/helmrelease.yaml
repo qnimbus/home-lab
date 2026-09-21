@@ -99,8 +99,8 @@ spec:
         # VolumeSnapshotClass and every existing PV. Renaming orphans them all.
         name: rook-ceph.rbd.csi.ceph.com
         # Chart default for RBD is `none`, which drops the csi-snapshotter
-        # sidecar — VolSync's ReplicationSources snapshot ceph-block PVCs through
-        # ceph-block-snapshot. `volumeSnapshot` matches the sidecar that was
+        # sidecar — snapshot-based PVC backups go through ceph-block-snapshot,
+        # which needs it. `volumeSnapshot` matches the sidecar that was
         # live (no VolumeGroupSnapshot feature gate).
         snapshotPolicy: volumeSnapshot
         # Chart default is 30s. Rook has always run the sidecars with

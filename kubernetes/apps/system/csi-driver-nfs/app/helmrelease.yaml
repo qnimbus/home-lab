@@ -21,7 +21,7 @@ spec:
       # General-purpose RWX pool for future NAS-backed workloads (photo libraries,
       # shared media) where Ceph capacity should be conserved — see docs/ROADMAP.md
       # "Future Storage Options". Dedicated export (not the existing /mnt/tank/Cluster
-      # export used by postgres-backup-local/Volsync) because this provisioner creates
+      # export used by postgres-backup-local) because this provisioner creates
       # and deletes a subdirectory per PVC under this path; sharing it with a
       # hand-managed export risks the provisioner deleting data it doesn't own.
       parameters:
@@ -29,7 +29,7 @@ spec:
         share: /mnt/tank/Cluster/k8s-nfs-csi
       # Mirrors talos/patches/global/machine-files.yaml's /etc/nfsmount.conf global
       # defaults, so CSI-mounted volumes behave identically to the direct NFS mounts
-      # already used by postgres-backup-local/Volsync.
+      # already used by postgres-backup-local.
       mountOptions:
         - nfsvers=4.2
         - nconnect=16

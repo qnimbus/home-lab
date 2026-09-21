@@ -5,8 +5,8 @@ kind: Silence
 metadata:
   name: ceph-node-nfsmount-diskspace-warning
 spec:
-  # Talos writes /etc/nfsmount.conf via a machine.files patch (NFS client defaults for
-  # VolSync); node-exporter's filesystem collector enumerates it as its own mountpoint,
+  # Talos writes /etc/nfsmount.conf via a machine.files patch (NFS client defaults);
+  # node-exporter's filesystem collector enumerates it as its own mountpoint,
   # duplicating CephNodeDiskspaceWarning (fired twice for worker-02, 2026-06-23,
   # byte-identical values). Previously fixed at the source by excluding the path via
   # --collector.filesystem.mount-points-exclude (kube-prometheus-stack/app/helm/values.yaml);
