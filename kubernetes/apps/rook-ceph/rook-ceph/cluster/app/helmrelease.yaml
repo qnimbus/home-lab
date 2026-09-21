@@ -350,6 +350,13 @@ spec:
           failureDomain: host
           replicated:
             size: 3
+          # Pool-level compression, off for now (46 GiB stored of 9.1 TiB raw — not
+          # worth the OSD CPU). Applies live to all RBD images in the pool, existing
+          # PVCs included, but only to data written afterwards. `aggressive`, not
+          # `passive`: passive needs a compressible hint and librbd sends none.
+          # parameters:
+          #   compression_algorithm: zstd
+          #   compression_mode: aggressive
         storageClass:
           enabled: true
           name: ceph-block
@@ -361,16 +368,10 @@ spec:
           volumeBindingMode: Immediate
           mountOptions: ["discard"]
           parameters:
-            # compression_algorithm/compression_mode intentionally NOT set here:
-            # StorageClass.parameters is immutable after creation, so adding them
-            # to this already-existing "ceph-block" SC breaks every Helm upgrade
-            # ("field is immutable") instead of taking effect. Confirmed live
-            # 2026-09-18 — cascaded into every Kustomization dependsOn
-            # rook-ceph-cluster going unready. Enabling compression on this pool
-            # requires deleting and recreating the StorageClass out-of-band
-            # (safe for existing PVs — dynamic provisioning only reads the SC at
-            # PVC-creation time), then re-adding these values — do that as its
-            # own deliberate step, not bundled with an unrelated change.
+            # No compression_* keys: compression is a pool property, not a StorageClass
+            # parameter (see the commented `parameters` under this pool's spec), and
+            # StorageClass.parameters is immutable — adding keys here failed every Helm
+            # upgrade with "field is immutable" (2026-09-18).
             imageFormat: "2"
             imageFeatures: layering,fast-diff,object-map,deep-flatten,exclusive-lock
             csi.storage.k8s.io/provisioner-secret-name: rook-csi-rbd-provisioner
