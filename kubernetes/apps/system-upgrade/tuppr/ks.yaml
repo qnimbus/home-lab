@@ -4,8 +4,8 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: tuppr
-  namespace: flux-system
   labels:
+    decryption.flux.home.arpa/disabled: "true"
     substitution.flux.home.arpa/disabled: "true"
 spec:
   commonMetadata:
@@ -64,8 +64,8 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: tuppr-upgrade
-  namespace: flux-system
   labels:
+    decryption.flux.home.arpa/disabled: "true"
     substitution.flux.home.arpa/disabled: "true"
 spec:
   commonMetadata:
@@ -76,7 +76,7 @@ spec:
   # operator is healthy and the CRD types are registered in the API server.
   dependsOn:
     - name: tuppr
-      namespace: flux-system
+      namespace: system-upgrade
   wait: true
   prune: true
   interval: 1h
