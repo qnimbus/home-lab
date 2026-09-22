@@ -15,7 +15,7 @@ spec:
   dependsOn:
     # GrafanaDashboard CRD + the external Grafana CR the dashboard's instanceSelector targets.
     - name: grafana-operator-instance
-      namespace: flux-system
+      namespace: observability
   wait: true
   prune: true
   interval: 1h

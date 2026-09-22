@@ -46,7 +46,6 @@ generatorOptions:
 configurations:
   - ./helm/kustomizeconfig.yaml
 resources:
-  - ./namespace.yaml
   - ./ocirepository.yaml
   - ./helmrelease.yaml
   - ./httproute.yaml

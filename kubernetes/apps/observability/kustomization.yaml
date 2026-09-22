@@ -2,6 +2,25 @@
 # yaml-language-server: $schema=https://json.schemastore.org/kustomization
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+namespace: observability
+components:
+  - ../../components/namespace
+patches:
+  - patch: |-
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: not-used
+        labels:
+          # node-exporter (kube-prometheus-stack) requires privileged pods: hostNetwork,
+          # hostPID, hostPath volumes (/proc, /sys, /), and hostPort 9100. Without this
+          # label the namespace inherits the cluster baseline PSA policy, which blocks
+          # node-exporter pods. Mirrors rook-ceph's own kustomization.yaml patch.
+          pod-security.kubernetes.io/enforce: privileged
+          pod-security.kubernetes.io/warn: privileged
+          pod-security.kubernetes.io/audit: privileged
+replacements:
+  - path: ../../components/replacements/replacements.yaml
 resources:
   - ./kube-prometheus-stack/ks.yaml
   - ./smartctl-exporter/ks.yaml

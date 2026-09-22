@@ -4,9 +4,9 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: victoria-logs
-  namespace: flux-system
+  labels:
+    decryption.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: observability
   commonMetadata:
     labels:
       app.kubernetes.io/name: victoria-logs
@@ -24,7 +24,7 @@ spec:
       namespace: rook-ceph
     # ServiceMonitor/dashboard-sidecar CRDs and labels this HelmRelease relies on.
     - name: kube-prometheus-stack
-      namespace: flux-system
+      namespace: observability
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease

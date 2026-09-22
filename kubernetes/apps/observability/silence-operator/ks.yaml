@@ -4,9 +4,9 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: silence-operator
-  namespace: flux-system
+  labels:
+    decryption.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: observability
   commonMetadata:
     labels:
       app.kubernetes.io/name: silence-operator
@@ -29,9 +29,9 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: silence-operator-silences
-  namespace: flux-system
+  labels:
+    decryption.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: observability
   commonMetadata:
     labels:
       app.kubernetes.io/name: silence-operator
@@ -39,7 +39,7 @@ spec:
   # HelmRelease installs it -- dependsOn blocks this Kustomization's dry-run until then.
   dependsOn:
     - name: silence-operator
-      namespace: flux-system
+      namespace: observability
   wait: true
   prune: true
   interval: 1h

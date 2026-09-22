@@ -43,7 +43,7 @@ spec:
     # simply tolerate that transient failure — a valid alternative, deliberately not taken
     # here because a failed tuppr install gets uninstalled by remediation rather than retried.
     - name: kube-prometheus-stack
-      namespace: flux-system
+      namespace: observability
   wait: false
   prune: true
   interval: 1h
