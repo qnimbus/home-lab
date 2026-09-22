@@ -5,8 +5,8 @@ CloudNative-PG backed PostgreSQL component, adapted from
 a dedicated `Cluster` per consuming app. Use for a new app that needs its
 own isolated database — **not** a drop-in replacement for the existing
 shared `postgres-v17` cluster in `kubernetes/apps/database/cloudnative-pg/`,
-which several apps (paperless, open-webui, n8n, firefly) still use and this
-component does not touch.
+which some apps (paperless, firefly) still use and this component does not
+touch. Current dedicated-cluster consumers: `forgejo`, `n8n`.
 
 ## Substitution variables
 
@@ -76,6 +76,17 @@ metadata:
 spec:
   components:
     - ../../../../components/postgres
+  # healthCheckExprs are only ever evaluated when `wait: true` or `healthChecks`
+  # is also set (see the CRD's own doc string on spec.wait) — without one of
+  # these, the Cluster check below is silently never run. `wait: true` would
+  # also ignore `healthChecks` and gate on every resource generically, so pair
+  # it with an explicit healthChecks entry for the app's own HelmRelease
+  # instead, not wait: true.
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: *app
+      namespace: myapp-namespace
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
@@ -97,6 +108,7 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
+  wait: false
 ```
 
 What the label does (via the patch in
@@ -153,7 +165,32 @@ CNPG generates a `${APP}-postgres-app` Secret (CNPG's default naming:
 `password`, `host`, `port`, `dbname`, `pgpass`. Confirm the exact name once
 deployed — `kubectl get secrets -n <namespace> | grep postgres`.
 
-Standard app-template pattern:
+Both current consumers read the individual keys rather than `uri`, since
+neither chart accepts a single connection string — this is the pattern to
+default to unless the chart specifically wants a URI:
+
+```yaml
+DB_HOST: "${APP}-postgres-rw" # or hardcode e.g. "myapp-postgres-rw" if easier to read
+DB_USER:
+  valueFrom:
+    secretKeyRef:
+      name: myapp-postgres-app
+      key: username
+DB_PASSWORD:
+  valueFrom:
+    secretKeyRef:
+      name: myapp-postgres-app
+      key: password
+DB_NAME:
+  valueFrom:
+    secretKeyRef:
+      name: myapp-postgres-app
+      key: dbname
+```
+
+(see `forgejo/app/helmrelease.yaml`'s `additionalConfigFromEnvs` and
+`n8n/app/helmrelease.yaml`'s `env` for the two worked examples.) For a chart
+that does accept one connection string:
 
 ```yaml
 DATABASE_URL:
@@ -163,7 +200,7 @@ DATABASE_URL:
       key: uri
 ```
 
-The `uri` points at the cluster's read-write primary service
+Either way, the value points at the cluster's read-write primary service
 `${APP}-postgres-rw`. There is no `Pooler` / PgBouncer in this component —
 apps connect directly. Add a `Pooler` CRD per cluster as a follow-up if
 transaction-mode pooling is ever needed.
@@ -177,6 +214,11 @@ healthCheckExprs:
     failed: status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'False')
     current: status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True')
 ```
+
+This alone does nothing — see the caveat on `healthChecks`/`wait: false` in
+the "Adding a net-new DB" example above. Forgejo's `ks.yaml` originally
+shipped with only this block and no `healthChecks`/`wait`, so the Cluster
+check was silently never evaluated; fixed alongside n8n's migration.
 
 ## Known gaps versus bykaj's original
 
@@ -195,7 +237,8 @@ healthCheckExprs:
   the plugin's own exporter metric, not the legacy
   `cnpg_collector_last_available_backup_timestamp`/`Cluster.status`
   fields, which are permanently stuck at zero for any CNPG-plugin-interface
-  backup (confirmed live on both `postgres-v17` and `forgejo-postgres`; see
+  backup (confirmed live on `postgres-v17`, `forgejo-postgres`, and
+  `n8n-postgres`; see
   [cloudnative-pg/plugin-barman-cloud#380](https://github.com/cloudnative-pg/plugin-barman-cloud/issues/380)).
   This component has no equivalent — right now, if a dedicated cluster's
   backups silently stopped working, nothing would surface it. Future

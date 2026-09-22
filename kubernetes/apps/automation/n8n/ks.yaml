@@ -3,41 +3,22 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &db-app n8n-db
-  namespace: flux-system
-spec:
-  targetNamespace: database
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *db-app
-  interval: 1h
-  path: ./kubernetes/apps/automation/n8n/db
-  prune: true
-  wait: true
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
-  dependsOn:
-    - name: cloudnative-pg-cluster
-    - name: onepassword-store
----
-# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
   name: &app n8n
-  namespace: flux-system
+  labels:
+    decryption.flux.home.arpa/disabled: "true"
+    # components.postgres/cnpg: init # <-- remove once the first backup lands
 spec:
-  targetNamespace: automation
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
+  components:
+    - ../../../../components/postgres
   interval: 1h
   path: ./kubernetes/apps/automation/n8n/app
   postBuild:
     substitute:
       APP: *app
+      POSTGRES_BACKUP_SCHEDULE: "0 50 * * * *"
   prune: true
   wait: false
   sourceRef:
@@ -45,9 +26,6 @@ spec:
     name: flux-system
     namespace: flux-system
   dependsOn:
-    - name: cloudnative-pg-cluster
-    - name: n8n-db
-    - name: onepassword-store
     - name: rook-ceph-cluster
       namespace: rook-ceph
   healthChecks:
@@ -55,3 +33,8 @@ spec:
       kind: HelmRelease
       name: *app
       namespace: automation
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      failed: status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'False')
+      current: status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True')

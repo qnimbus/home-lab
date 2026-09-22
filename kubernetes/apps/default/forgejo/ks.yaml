@@ -18,6 +18,11 @@ spec:
       namespace: rook-ceph
     - name: envoy-gateway-config
       namespace: network
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: *app
+      namespace: default
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
       current: status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True')
@@ -38,3 +43,4 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
+  wait: false

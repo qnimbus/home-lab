@@ -7,6 +7,11 @@ metadata:
     reconcile.fluxcd.io/watch: "Enabled"
 data:
   CLUSTER_TIMEZONE: "Europe/Amsterdam"
+  # Verified SES sending identity (see kubernetes/apps/mail/smtp-relay, whose upstream is
+  # AWS SES) — SES hard-rejects any From address outside a verified domain/identity, so
+  # this must stay in sync with whatever's actually verified in the SES console, not with
+  # DOMAIN_CLUSTER or any other in-cluster-only domain.
+  MAIL_FROM_ADDRESS: "noreply@bvw.email"
   # Cluster domain names
   DOMAIN_APP: "vwn.app"
   DOMAIN_APPS: "apps.vwn.io"
