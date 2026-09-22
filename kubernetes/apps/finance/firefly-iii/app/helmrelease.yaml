@@ -6,14 +6,9 @@ metadata:
   name: firefly-iii
 spec:
   interval: 1h
-  # KEDA (scaledobject.yaml) scales this Deployment's replicas directly; without
-  # this, Flux's drift detection reverts it back to the chart's desired replica
-  # count on the next reconcile/drift check, undoing scale-to-zero within the hour.
-  driftDetection:
-    ignore:
-      - paths: ["/spec/replicas"]
-        target:
-          kind: Deployment
+  # Placeholder so components/postgres's JSON6902 patch has an existing array to append to.
+  # (appends to /spec/dependsOn/-) — see kubernetes/components/postgres/kustomization.yaml.
+  dependsOn: []
   chartRef:
     kind: OCIRepository
     name: firefly-iii
@@ -33,12 +28,25 @@ spec:
               APP_ENV: production
               APP_DEBUG: "false"
               DB_CONNECTION: pgsql
-              DB_HOST: ${PG_HOST}
+              # --- Database: dedicated CNPG cluster (components/postgres), same namespace
+              # as this Deployment — USERNAME/PASSWORD read from the generated
+              # firefly-iii-postgres-app Secret rather than duplicated via ExternalSecret.
+              DB_HOST: "${APP}-postgres-rw"
               DB_PORT: "5432"
               DB_DATABASE: firefly
               APP_URL: "https://firefly.${DOMAIN_CLUSTER}"
               TRUSTED_PROXIES: "**"
               TZ: ${CLUSTER_TIMEZONE}
+              DB_USERNAME:
+                valueFrom:
+                  secretKeyRef:
+                    name: firefly-iii-postgres-app
+                    key: username
+              DB_PASSWORD:
+                valueFrom:
+                  secretKeyRef:
+                    name: firefly-iii-postgres-app
+                    key: password
             envFrom:
               - secretRef:
                   name: firefly-iii-secret

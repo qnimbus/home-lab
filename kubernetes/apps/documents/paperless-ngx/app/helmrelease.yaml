@@ -14,6 +14,9 @@ spec:
       - paths: ["/spec/replicas"]
         target:
           kind: Deployment
+  # Placeholder so components/postgres's JSON6902 patch has an existing array to append to.
+  # (appends to /spec/dependsOn/-) — see kubernetes/components/postgres/kustomization.yaml.
+  dependsOn: []
   chartRef:
     kind: OCIRepository
     name: paperless-ngx
@@ -87,9 +90,22 @@ spec:
               # Configure database
               # v3 requires the engine explicitly - previously inferred from DBHOST (docs/migration-v3.md)
               PAPERLESS_DBENGINE: postgresql
-              PAPERLESS_DBHOST: ${PG_HOST}
+              # Dedicated CNPG cluster (components/postgres), same namespace as this
+              # Deployment — DBUSER/DBPASS below read from the generated
+              # paperless-ngx-postgres-app Secret rather than duplicated via ExternalSecret.
+              PAPERLESS_DBHOST: "${APP}-postgres-rw"
               PAPERLESS_DBPORT: "5432"
               PAPERLESS_DBNAME: paperless
+              PAPERLESS_DBUSER:
+                valueFrom:
+                  secretKeyRef:
+                    name: paperless-ngx-postgres-app
+                    key: username
+              PAPERLESS_DBPASS:
+                valueFrom:
+                  secretKeyRef:
+                    name: paperless-ngx-postgres-app
+                    key: password
               # Miscellaneous
               PAPERLESS_TIKA_ENABLED: "1"
               PAPERLESS_TIKA_ENDPOINT: http://localhost:9998
