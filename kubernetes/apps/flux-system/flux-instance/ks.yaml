@@ -19,7 +19,7 @@ spec:
     # serving before dry-run validation passes; without this the Kustomization
     # fails transiently on every bootstrap until ESO is ready.
     - name: external-secrets
-      namespace: flux-system
+      namespace: external-secrets
   wait: false
   prune: true
   interval: 1h

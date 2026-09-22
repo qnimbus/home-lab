@@ -23,7 +23,7 @@ spec:
     namespace: flux-system
   dependsOn:
     - name: onepassword-store
-      namespace: flux-system
+      namespace: external-secrets
     - name: rook-ceph-cluster
       namespace: rook-ceph
   healthChecks:

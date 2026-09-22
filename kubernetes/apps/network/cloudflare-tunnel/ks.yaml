@@ -56,7 +56,7 @@ spec:
     - name: cloudflare-tunnel-id
     - name: envoy-gateway-config
     - name: onepassword-store
-      namespace: flux-system
+      namespace: external-secrets
     - name: external-dns-cloudflare
     # GrafanaDashboard CRD + the external Grafana CR the dashboard's instanceSelector targets.
     - name: grafana-operator-instance

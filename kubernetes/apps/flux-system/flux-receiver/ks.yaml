@@ -14,7 +14,7 @@ spec:
     - name: flux-operator
       namespace: flux-system
     - name: onepassword-connect
-      namespace: flux-system
+      namespace: external-secrets
     - name: envoy-gateway-config
       namespace: network
   wait: true

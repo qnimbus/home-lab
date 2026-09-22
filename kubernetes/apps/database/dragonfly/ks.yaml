@@ -50,3 +50,4 @@ spec:
   dependsOn:
     - name: dragonfly-operator
     - name: onepassword-store
+      namespace: external-secrets

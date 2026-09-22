@@ -23,4 +23,4 @@ spec:
     # sonarr/radarr 1Password items those apps' own ExternalSecrets already consume (see
     # app/externalsecret.yaml) — no new item, no PVC, no volsync component needed.
     - name: onepassword-store
-      namespace: flux-system
+      namespace: external-secrets
