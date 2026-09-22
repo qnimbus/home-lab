@@ -8,7 +8,10 @@ namespace: default
 replacements:
   - path: ../../components/replacements/replacements.yaml
 resources:
+  - ./firefly-iii/ks.yaml
+  - ./firefly-iii-importer/ks.yaml
   - ./forgejo/ks.yaml
   - ./homepage/ks.yaml
+  - ./paperless-ngx/ks.yaml
   - ./unifi-voucher-site/ks.yaml
   # - ./whoami/ks.yaml # Uncomment to deploy whoami app
