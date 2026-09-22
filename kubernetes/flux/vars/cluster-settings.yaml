@@ -14,3 +14,5 @@ data:
   # this must stay in sync with whatever's actually verified in the SES console, not with
   # DOMAIN_CLUSTER or any other in-cluster-only domain.
   MAIL_FROM_ADDRESS: "noreply@bvw.email"
+  PG_HOST: "postgres-v17-rw.database.svc.cluster.local"
+  DRAGONFLY_HOST: "dragonfly.database.svc.cluster.local"
