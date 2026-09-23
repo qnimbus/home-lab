@@ -10,4 +10,3 @@ replacements:
 resources:
   - ./cloudnative-pg
   - ./dragonfly
-  - ./pgadmin

@@ -54,24 +54,6 @@ spec:
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
-  name: postgres
-spec:
-  # Not ${NAS_HOST}: this cluster's Postgres is CloudNativePG, in-cluster.
-  # PG_HOST points at the cluster's -rw Service,
-  # same DNS name already used by postgres-backup-local and pgadmin.
-  module: tcp_connect
-  interval: 30s
-  prober:
-    url: blackbox-exporter.observability.svc.cluster.local:9115
-  targets:
-    staticConfig:
-      static:
-        - "${PG_HOST}:5432"
----
-# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
-apiVersion: monitoring.coreos.com/v1
-kind: Probe
-metadata:
   name: dragonfly
 spec:
   # tcp_connect: Dragonfly is the cluster-wide shared Redis-compatible store
