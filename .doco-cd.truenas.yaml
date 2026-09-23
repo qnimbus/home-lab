@@ -1,6 +1,0 @@
----
-name: node-exporter
-working_dir: truenas/docker/node-exporter
----
-name: smartctl-exporter
-working_dir: truenas/docker/smartctl-exporter

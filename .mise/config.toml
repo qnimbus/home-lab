@@ -54,6 +54,5 @@ krew = "https://github.com/soupglasses/mise-krew#a1da38e9253d3714ebe1f3ca6c4a7a1
 [hooks]
 postinstall = [
   "lefthook install",
-  # "brew bundle --file {{config_root}}/bootstrap/workstation/Brewfile",
-  # "ansible-galaxy install -r {{config_root}}/ansible/requirements.yaml",
+  "ansible-galaxy install -r {{config_root}}/ansible/requirements.yaml",
 ]
