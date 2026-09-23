@@ -27,9 +27,6 @@ spec:
     name: flux-system
     namespace: flux-system
   dependsOn:
-    # kopiur CRDs (components/kopiur/backup); drop once bootstrap pre-installs them.
-    - name: kopiur
-      namespace: system
     - name: rook-ceph-cluster
       namespace: rook-ceph
   healthChecks:

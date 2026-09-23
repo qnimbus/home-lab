@@ -69,9 +69,6 @@ Do not add `commonMetadata` or `timeout` — both were dropped as boilerplate; t
 ```yaml
 components:
   - ../../../../components/kopiur/backup
-dependsOn:
-  - name: kopiur # kopiur CRDs for Flux's dry-run; drop once bootstrap pre-installs them
-    namespace: system
 postBuild:
   substitute:
     APP: <app>
@@ -82,6 +79,8 @@ postBuild:
     # KOPIUR_MOVER_UID: "65534"     # default: 1000 — must match the pod's runAsUser
     # KOPIUR_MOVER_GID: "65534"     # default: 1000 — must match the pod's runAsGroup
 ```
+
+Don't add a `dependsOn` on `kopiur`/`kopiur-repository` for the backup component: until the kopiur CRDs and the `nas` ClusterRepository exist (fresh cluster), the first apply fails and Flux's retry picks it up — the same trade-off bykaj/home-ops makes.
 
 Add user-specified dependencies to `dependsOn`. Include `postBuild.substitute.APP` whenever any component is used; omit `components`/`postBuild` entirely otherwise.
 
