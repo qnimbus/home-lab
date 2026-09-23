@@ -10,10 +10,15 @@ spec:
     kind: OCIRepository
     name: intel-gpu-resource-driver
   values:
-    # cdi.staticPath/dynamicPath left at chart defaults (/etc/cdi, /var/run/cdi)
-    # deliberately — talos/cluster.yaml.j2's CRICustomizationConfig watches
-    # exactly those two paths (the latter via the standard /var/run -> /run
-    # symlink to the already-default /run/cdi), so no override is needed here.
+    # Override the chart's upstream defaults (cdi.staticPath: /etc/cdi,
+    # dynamicPath: /var/run/cdi) — /etc is part of Talos's read-only OS layer,
+    # confirmed live: the driver pod crash-looped fleet-wide on
+    # `mkdir /etc/cdi: read-only file system` before this override was added.
+    # /var/cdi/{static,dynamic} match talos/cluster.yaml.j2's
+    # CRICustomizationConfig cdi_spec_dirs.
+    cdi:
+      staticPath: /var/cdi/static
+      dynamicPath: /var/cdi/dynamic
     kubeletPlugin:
       privileged: true
       healthMonitoring:

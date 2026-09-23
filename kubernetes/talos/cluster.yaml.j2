@@ -151,11 +151,14 @@ content: |
       # enable_cdi/cdi_spec_dirs=["/run/cdi"] are already containerd's own defaults on this
       # Talos version (confirmed live) — declared explicitly here so the intent survives a
       # version change, per this repo's convention (see machine-features.yaml's rbac: true).
-      # /etc/cdi is added because intel-gpu-resource-driver's chart default cdi.staticPath is
-      # /etc/cdi (not /run/cdi) — its dynamicPath default (/var/run/cdi) already resolves to
-      # /run/cdi via the standard /var/run -> /run symlink, so only the static path is new.
+      # /var/cdi/static and /var/cdi/dynamic are added for intel-gpu-resource-driver's
+      # cdi.staticPath/dynamicPath — NOT the chart's own upstream defaults (/etc/cdi,
+      # /var/run/cdi). /etc is part of Talos's read-only OS layer (confirmed live: the
+      # driver pod crash-looped fleet-wide on `mkdir /etc/cdi: read-only file system`
+      # when this used the chart defaults) — /var is the writable ephemeral partition
+      # every other stateful path on this cluster already uses.
       enable_cdi = true
-      cdi_spec_dirs = ["/run/cdi", "/etc/cdi"]
+      cdi_spec_dirs = ["/run/cdi", "/var/cdi/static", "/var/cdi/dynamic"]
       device_ownership_from_security_context = true
     [plugins."io.containerd.cri.v1.images"]
       discard_unpacked_layers = false
