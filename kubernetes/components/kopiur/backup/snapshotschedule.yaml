@@ -7,6 +7,5 @@ spec:
   policyRef:
     name: "${KOPIUR_CLAIM:-${APP}}"
   schedule:
-    # Daily; `H` hashes the schedule's identity into a stable minute so apps
-    # don't all fire at once.
-    cron: "${KOPIUR_SCHEDULE:=H 3 * * *}"
+    # Hourly; `H` hashes the schedule's identity into a stable minute so apps don't all fire at once.
+    cron: "${KOPIUR_SCHEDULE:=H * * * *}"
