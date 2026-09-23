@@ -10,6 +10,8 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
+  components:
+    - ../../../../components/gpu
   interval: 1h
   path: ./kubernetes/apps/media/plex/app
   postBuild:
@@ -25,10 +27,10 @@ spec:
   dependsOn:
     - name: rook-ceph-cluster
       namespace: rook-ceph
-    # Provides the intel.feature.node.kubernetes.io/gpu node label and the
-    # gpu.intel.com/i915 extended resource this HelmRelease relies on.
-    - name: intel-device-plugins-gpu
-      namespace: flux-system
+    # Provides the gpu.intel.com DeviceClass and the DRA kubelet plugin the
+    # components/gpu ResourceClaimTemplate above resolves against.
+    - name: intel-gpu-resource-driver
+      namespace: system
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease

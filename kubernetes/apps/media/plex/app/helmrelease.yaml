@@ -103,14 +103,13 @@ spec:
                   failureThreshold: 6
               readiness: *probes
             resources:
+              claims:
+                - name: gpu
               requests:
                 cpu: 100m
                 memory: 1Gi
-                gpu.intel.com/i915: 1
               limits:
                 memory: 4Gi
-                # Extended resources require request == limit.
-                gpu.intel.com/i915: 1
             securityContext:
               allowPrivilegeEscalation: false
               capabilities:
@@ -122,10 +121,12 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000
         fsGroupChangePolicy: "OnRootMismatch"
-      # Excludes cp-01 (AMD Ryzen, no Intel iGPU) — the other 4 nodes carry this label via
-      # the GPU device plugin's NodeFeatureRule.
-      nodeSelector:
-        intel.feature.node.kubernetes.io/gpu: "true"
+      # DRA resolves scheduling directly against real device inventory (no manual
+      # node label needed) — cp-01 (AMD Ryzen, no Intel iGPU) is naturally excluded
+      # since it advertises no gpu.intel.com device.
+      resourceClaims:
+        - name: gpu
+          resourceClaimTemplateName: "${APP}-gpu"
     # Tailscale Ingress — gives the user's own tailnet devices a stable HTTPS hostname
     # (${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}) without depending on the mgmt-LAN
     # subnet route at all. Complements, doesn't replace, the LoadBalancer IPs above:
