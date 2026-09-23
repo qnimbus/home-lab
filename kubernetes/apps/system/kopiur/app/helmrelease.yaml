@@ -1,0 +1,44 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kopiur
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: kopiur
+  interval: 1h
+  values:
+    # The controller runs short kopia ops (catalog scans, maintenance) in-process,
+    # so it needs the filesystem repository mounted at the same path the
+    # ClusterRepository declares.
+    extraVolumeMounts:
+      - mountPath: /repository
+        name: repository
+    extraVolumes:
+      - name: repository
+        nfs:
+          path: /mnt/tank/Cluster/kopiur
+          server: "${NAS_HOST}"
+    features:
+      # Lets the operator copy the repository password Secret from `system`
+      # into each app namespace a mover runs in, so no per-namespace
+      # ExternalSecret is needed.
+      credentialProjection:
+        enabled: true
+    monitoring:
+      # Includes a stale-backup alert (no successful snapshot in 48h).
+      prometheusRule:
+        enabled: true
+      serviceMonitor:
+        enabled: true
+    # Same UID/GID that owns the NAS repository directory.
+    podSecurityContext:
+      fsGroup: 4000
+      fsGroupChangePolicy: OnRootMismatch
+      runAsGroup: 4000
+      runAsNonRoot: true
+      runAsUser: 4000
+      seccompProfile:
+        type: RuntimeDefault

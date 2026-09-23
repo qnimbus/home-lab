@@ -16,6 +16,7 @@ resources:
   - ./csi-driver-smb/ks.yaml
   - ./intel-gpu-resource-driver/ks.yaml
   - ./keda/ks.yaml
+  - ./kopiur/ks.yaml
   - ./openebs/ks.yaml
   - ./reloader/ks.yaml
   - ./snapshot-controller/ks.yaml

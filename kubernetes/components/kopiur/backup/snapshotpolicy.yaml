@@ -1,0 +1,31 @@
+---
+apiVersion: kopiur.home-operations.com/v1alpha1
+kind: SnapshotPolicy
+metadata:
+  name: "${KOPIUR_CLAIM:=${APP}}"
+spec:
+  compression:
+    compressor: zstd
+  copyMethod: Snapshot
+  credentialProjection:
+    enabled: true
+  mover:
+    cache:
+      # Kopia's local metadata cache kept off replicated storage — local-disk only.
+      capacity: "${KOPIUR_CACHE_CAPACITY:=${KOPIUR_CAPACITY:=5Gi}}"
+      mode: Persistent
+      storageClassName: "${KOPIUR_CACHE_STORAGECLASS:=openebs-hostpath}"
+    securityContext:
+      runAsGroup: ${KOPIUR_MOVER_GID:=4000}
+      runAsUser: ${KOPIUR_MOVER_UID:=4000}
+  repository:
+    kind: ClusterRepository
+    name: nas
+  retention:
+    keepDaily: 7
+    keepMonthly: 3
+    keepWeekly: 4
+  sources:
+    - pvc:
+        name: "${KOPIUR_CLAIM:=${APP}}"
+  volumeSnapshotClassName: "${KOPIUR_SNAPSHOTCLASS:=ceph-block-snapshot}"

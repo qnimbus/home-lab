@@ -1,0 +1,31 @@
+---
+apiVersion: kopiur.home-operations.com/v1alpha1
+kind: ClusterRepository
+metadata:
+  name: nas
+spec:
+  allowedNamespaces:
+    all: true
+  backend:
+    filesystem:
+      path: /repository
+      volume:
+        nfs:
+          path: /mnt/tank/Cluster/kopiur
+          server: "${NAS_HOST}"
+  credentialProjection:
+    allowed: true
+  encryption:
+    passwordSecretRef:
+      key: KOPIA_PASSWORD
+      name: kopiur-repository-secret
+      namespace: system
+  moverDefaults:
+    # Movers run as each app's own UID/GID (set per app via KOPIUR_MOVER_UID/GID)
+    # so they can read the app's files and restore them with the right owner;
+    # group 4000 is what lets them write to the NAS repository directory.
+    podSecurityContext:
+      supplementalGroups: [4000]
+    ttlSecondsAfterFinished: 300
+  scheduleDefaults:
+    timezone: Europe/Amsterdam

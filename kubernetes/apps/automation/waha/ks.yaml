@@ -10,6 +10,8 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
+  components:
+    - ../../../../components/kopiur/backup
   wait: false
   prune: true
   interval: 1h
@@ -17,11 +19,15 @@ spec:
   postBuild:
     substitute:
       APP: *app
+      KOPIUR_MOVER_GID: "65534"
+      KOPIUR_MOVER_UID: "65534"
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
   dependsOn:
+    - name: kopiur
+      namespace: system
     - name: onepassword-store
       namespace: external-secrets
     - name: rook-ceph-cluster

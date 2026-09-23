@@ -12,12 +12,15 @@ spec:
     labels:
       app.kubernetes.io/name: *app
   components:
+    - ../../../../components/kopiur/backup
     - ../../../../components/postgres
   interval: 1h
   path: ./kubernetes/apps/automation/n8n/app
   postBuild:
     substitute:
       APP: *app
+      KOPIUR_MOVER_GID: "1000"
+      KOPIUR_MOVER_UID: "1000"
       POSTGRES_BACKUP_SCHEDULE: "0 50 * * * *"
   prune: true
   wait: false
@@ -26,6 +29,8 @@ spec:
     name: flux-system
     namespace: flux-system
   dependsOn:
+    - name: kopiur
+      namespace: system
     - name: rook-ceph-cluster
       namespace: rook-ceph
   healthChecks:

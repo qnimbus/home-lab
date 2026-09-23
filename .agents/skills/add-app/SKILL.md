@@ -69,12 +69,16 @@ Do not add `commonMetadata` or `timeout` — both were dropped as boilerplate; t
 ```yaml
 components:
   - ../../../../components/kopiur/backup
+dependsOn:
+  - name: kopiur # the kopiur CRDs come from its chart; needed for Flux's dry-run
+    namespace: system
 postBuild:
   substitute:
     APP: <app>
     # Optional overrides, only when defaults don't fit:
     # KOPIUR_CLAIM: <app>-data      # PVC name (default: <app>)
     # KOPIUR_CAPACITY: 15Gi         # default: 5Gi
+    # KOPIUR_SCHEDULE: "H */6 * * *" # default: daily, H 3 * * *
     # KOPIUR_MOVER_UID: "1000"      # default: 4000
     # KOPIUR_MOVER_GID: "1000"      # default: 4000
 ```
@@ -270,7 +274,7 @@ Convention: `metadata.name` is `<app>`, the generated Secret is `<app>-secret`, 
 
 Add `./<app>/ks.yaml` to `kubernetes/apps/<namespace>/kustomization.yaml` `resources`, in alphabetical position among the app entries (`namespace.yaml` stays first; leave existing entries where they are).
 
-**New namespace?** Create `kubernetes/apps/<namespace>/` with a `namespace.yaml` and `kustomization.yaml` copied from an existing namespace (e.g. `selfhosted`) — keep the `flux-alerts` and `kopiur/secret` components and the literal `name: _` in namespace.yaml (kustomize renames it) — and register the directory in `kubernetes/flux/cluster`'s apps kustomization if namespaces are listed there.
+**New namespace?** Create `kubernetes/apps/<namespace>/` with a `namespace.yaml` and `kustomization.yaml` copied from an existing namespace (e.g. `automation`) — keep the `components/namespace` component and the `replacements` entry (no per-namespace kopiur secret is needed: the operator projects the repository password into mover namespaces) — and register the directory in `kubernetes/flux/cluster`'s apps kustomization if namespaces are listed there.
 
 ## Step 4: Verify
 
