@@ -148,8 +148,14 @@ content: |
     [plugins."io.containerd.cri.v1.runtime"]
       enable_unprivileged_ports = true
       enable_unprivileged_icmp = true
+      # enable_cdi/cdi_spec_dirs=["/run/cdi"] are already containerd's own defaults on this
+      # Talos version (confirmed live) — declared explicitly here so the intent survives a
+      # version change, per this repo's convention (see machine-features.yaml's rbac: true).
+      # /etc/cdi is added because intel-gpu-resource-driver's chart default cdi.staticPath is
+      # /etc/cdi (not /run/cdi) — its dynamicPath default (/var/run/cdi) already resolves to
+      # /run/cdi via the standard /var/run -> /run symlink, so only the static path is new.
       enable_cdi = true
-      cdi_spec_dirs = ["/var/cdi/static", "/var/cdi/dynamic"]
+      cdi_spec_dirs = ["/run/cdi", "/etc/cdi"]
       device_ownership_from_security_context = true
     [plugins."io.containerd.cri.v1.images"]
       discard_unpacked_layers = false
