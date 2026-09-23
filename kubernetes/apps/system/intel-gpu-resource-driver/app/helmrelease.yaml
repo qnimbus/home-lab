@@ -10,9 +10,10 @@ spec:
     kind: OCIRepository
     name: intel-gpu-resource-driver
   values:
-    cdi:
-      staticPath: /var/cdi/static
-      dynamicPath: /var/cdi/dynamic
+    # cdi.staticPath/dynamicPath left at chart defaults (/etc/cdi, /var/run/cdi)
+    # deliberately — talos/cluster.yaml.j2's CRICustomizationConfig watches
+    # exactly those two paths (the latter via the standard /var/run -> /run
+    # symlink to the already-default /run/cdi), so no override is needed here.
     kubeletPlugin:
       privileged: true
       healthMonitoring:
