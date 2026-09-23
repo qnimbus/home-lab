@@ -7,6 +7,9 @@ set shell := ['bash', '-euo', 'pipefail', '-c']
 [group('database')]
 mod database "apps/database"
 
+[group('kopiur')]
+mod kopiur "apps/system/kopiur"
+
 [doc('Apply local Flux Kustomization')]
 apply-ks ns ks:
     just k8s render-local-ks "{{ ns }}" "{{ ks }}" | kubectl apply --server-side --force-conflicts --field-manager=kustomize-controller -f -
