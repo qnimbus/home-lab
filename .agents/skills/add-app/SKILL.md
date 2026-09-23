@@ -70,7 +70,7 @@ Do not add `commonMetadata` or `timeout` — both were dropped as boilerplate; t
 components:
   - ../../../../components/kopiur/backup
 dependsOn:
-  - name: kopiur # the kopiur CRDs come from its chart; needed for Flux's dry-run
+  - name: kopiur # kopiur CRDs for Flux's dry-run; drop once bootstrap pre-installs them
     namespace: system
 postBuild:
   substitute:
@@ -209,7 +209,7 @@ Persistence (pairs with the kopiur block in ks.yaml; also add `fsGroup: 4000` + 
 ```yaml
 persistence:
   data:
-    existingClaim: <app> # must match KOPIUR_CLAIM if overridden
+    existingClaim: "${KOPIUR_CLAIM:=${APP}}"
     globalMounts:
       - path: /data
   tmpfs: # writable /tmp for readOnlyRootFilesystem

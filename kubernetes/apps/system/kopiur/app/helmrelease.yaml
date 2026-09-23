@@ -40,5 +40,8 @@ spec:
       runAsGroup: 4000
       runAsNonRoot: true
       runAsUser: 4000
-      seccompProfile:
-        type: RuntimeDefault
+    resources:
+      requests:
+        cpu: 100m
+      limits:
+        memory: 2Gi

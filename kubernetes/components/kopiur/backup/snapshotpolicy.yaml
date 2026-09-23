@@ -2,7 +2,7 @@
 apiVersion: kopiur.home-operations.com/v1alpha1
 kind: SnapshotPolicy
 metadata:
-  name: "${KOPIUR_CLAIM:=${APP}}"
+  name: "${KOPIUR_CLAIM:-${APP}}"
 spec:
   compression:
     compressor: zstd
@@ -23,9 +23,12 @@ spec:
     name: nas
   retention:
     keepDaily: 7
-    keepMonthly: 3
+    keepHourly: 24
+    keepLatest: 3
     keepWeekly: 4
   sources:
     - pvc:
-        name: "${KOPIUR_CLAIM:=${APP}}"
+        name: "${KOPIUR_CLAIM:-${APP}}"
+  upload:
+    maxParallelFileReads: 2
   volumeSnapshotClassName: "${KOPIUR_SNAPSHOTCLASS:=ceph-block-snapshot}"

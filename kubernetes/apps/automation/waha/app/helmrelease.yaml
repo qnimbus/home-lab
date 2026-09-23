@@ -148,9 +148,9 @@ spec:
             readOnly: true
       sessions:
         type: persistentVolumeClaim
-        # The PVC is declared in pvc.yaml (Flux-managed), not by Helm. It is named after the
-        # release ("waha"), not after this "sessions" identifier.
-        existingClaim: waha
+        # The PVC comes from components/kopiur/backup (Flux-managed), not Helm. It is named
+        # after the app ("waha"), not after this "sessions" identifier.
+        existingClaim: "${KOPIUR_CLAIM:=${APP}}"
         globalMounts:
           - path: /app/.sessions
       media:

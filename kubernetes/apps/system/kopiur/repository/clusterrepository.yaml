@@ -13,6 +13,8 @@ spec:
         nfs:
           path: /mnt/tank/Cluster/kopiur
           server: "${NAS_HOST}"
+  catalog:
+    fallbackNamespace: system
   credentialProjection:
     allowed: true
   encryption:
@@ -20,12 +22,23 @@ spec:
       key: KOPIA_PASSWORD
       name: kopiur-repository-secret
       namespace: system
+  # Same as kopiur's defaults (policyName@namespace), pinned explicitly: identity
+  # can't be changed once snapshots exist without forking the backup history.
+  identityDefaults:
+    hostnameExpr: namespace
+    usernameExpr: policyName
   moverDefaults:
     # Movers run as each app's own UID/GID (set per app via KOPIUR_MOVER_UID/GID)
     # so they can read the app's files and restore them with the right owner;
     # group 4000 is what lets them write to the NAS repository directory.
     podSecurityContext:
       supplementalGroups: [4000]
+    # Requests only (no limit): mover memory scales with app data size, and a
+    # limit would fail large backups mid-run.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
     ttlSecondsAfterFinished: 300
   scheduleDefaults:
     timezone: Europe/Amsterdam

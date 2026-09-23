@@ -139,6 +139,6 @@ spec:
             port: *port
     persistence:
       config:
-        existingClaim: n8n
+        existingClaim: "${KOPIUR_CLAIM:=${APP}}"
         globalMounts:
           - path: /home/node/.n8n
