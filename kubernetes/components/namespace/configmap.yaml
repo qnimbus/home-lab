@@ -19,6 +19,7 @@ data:
   DOMAIN_CLUSTER: "cluster.vwn.io"
   DOMAIN_IO: "vwn.io"
   DOMAIN_PROXII: "proxii.nl"
+  DOMAIN_TAILSCALE: "buri-ray.ts.net"
   # Hosts
   NAS_HOST: "10.200.0.41"
   NAS_LAN_HOST: "10.10.0.41"
