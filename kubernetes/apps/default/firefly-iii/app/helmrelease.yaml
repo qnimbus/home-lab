@@ -96,9 +96,9 @@ spec:
             port: *port
     persistence:
       upload:
-        type: persistentVolumeClaim
-        storageClass: ceph-block
-        accessMode: ReadWriteOnce
-        size: 5Gi
+        # PVC comes from components/kopiur/backup. The live claim was created by
+        # this chart; it carries helm.sh/resource-policy: keep so Helm leaves it
+        # in place now that it's no longer rendered here.
+        existingClaim: "${KOPIUR_CLAIM:=${APP}}"
         globalMounts:
           - path: /var/www/html/storage/upload

@@ -191,7 +191,7 @@ spec:
             port: *port
     persistence:
       config:
-        existingClaim: plex
+        existingClaim: "${KOPIUR_CLAIM:=${APP}}"
         globalMounts:
           - path: /config
       # Native in-tree NFS volume (no PVC/StorageClass) — deliberately not the dynamic nfs

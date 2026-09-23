@@ -206,7 +206,7 @@ spec:
             port: *port
     persistence:
       config:
-        existingClaim: "paperless-ngx-config"
+        existingClaim: "${KOPIUR_CLAIM:=${APP}}"
         globalMounts:
           - path: *dataPath
       archive:

@@ -6,7 +6,10 @@ metadata:
 spec:
   compression:
     compressor: zstd
-  copyMethod: Snapshot
+  # Snapshot needs a CSI VolumeSnapshotClass for the PVC's driver (ceph-block has
+  # one). For storage without snapshot support (openebs-hostpath, nfs, static
+  # PVs) set KOPIUR_COPYMETHOD: Direct, which reads the live volume instead.
+  copyMethod: "${KOPIUR_COPYMETHOD:=Snapshot}"
   credentialProjection:
     enabled: true
   mover:

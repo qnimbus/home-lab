@@ -12,12 +12,15 @@ spec:
     labels:
       app.kubernetes.io/name: *app
   components:
+    - ../../../../components/kopiur/backup
     - ../../../../components/postgres
   interval: 1h
   path: ./kubernetes/apps/default/firefly-iii/app
   postBuild:
     substitute:
       APP: *app
+      KOPIUR_MOVER_GID: "33"
+      KOPIUR_MOVER_UID: "33"
       POSTGRES_DATABASE: firefly
       POSTGRES_USERNAME: firefly
       POSTGRES_BACKUP_SCHEDULE: "0 19 * * * *"
