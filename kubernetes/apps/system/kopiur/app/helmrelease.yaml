@@ -27,6 +27,9 @@ spec:
       # ExternalSecret is needed.
       credentialProjection:
         enabled: true
+      # Lets the operator run the Kopia web UI (ClusterRepository spec.server).
+      kopiaUi:
+        enabled: true
     monitoring:
       # Includes a stale-backup alert (no successful snapshot in 48h).
       prometheusRule:
