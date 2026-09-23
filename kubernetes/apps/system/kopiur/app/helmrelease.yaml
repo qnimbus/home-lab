@@ -33,7 +33,7 @@ spec:
         enabled: true
       serviceMonitor:
         enabled: true
-    # Same UID/GID that owns the NAS repository directory.
+    # Same UID/GID that owns the NAS repository directory (4000:4000).
     podSecurityContext:
       fsGroup: 4000
       fsGroupChangePolicy: OnRootMismatch

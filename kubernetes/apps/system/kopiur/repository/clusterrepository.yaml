@@ -29,8 +29,11 @@ spec:
     usernameExpr: policyName
   moverDefaults:
     # Movers run as each app's own UID/GID (set per app via KOPIUR_MOVER_UID/GID)
-    # so they can read the app's files and restore them with the right owner;
-    # group 4000 is what lets them write to the NAS repository directory.
+    # so they can read the app's files and restore them with the right owner.
+    # NAS-side access doesn't depend on it: the TrueNAS share maps all NFS
+    # clients to root (Mapall), so kopia's owner-only (0600) repository files
+    # stay readable across movers with different UIDs. Group 4000 matches the
+    # repository directory's owner (4000:4000) in case that mapping is tightened.
     podSecurityContext:
       supplementalGroups: [4000]
     # Requests only (no limit): mover memory scales with app data size, and a
