@@ -30,7 +30,7 @@ spec:
               # renovate: datasource=docker depName=fireflyiii/data-importer
               tag: "version-2.3.4"
             env:
-              FIREFLY_III_URL: "http://firefly-iii.finance.svc.cluster.local:8080"
+              FIREFLY_III_URL: "http://firefly-iii.default.svc.cluster.local:8080"
               # Server-to-server calls use the internal URL above; anything sent to the
               # user's browser (OAuth authorize redirect, generated links) must use a
               # browser-reachable URL instead — see Firefly III Data Importer docs.
