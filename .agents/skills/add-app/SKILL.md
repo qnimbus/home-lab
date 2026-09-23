@@ -79,8 +79,8 @@ postBuild:
     # KOPIUR_CLAIM: <app>-data      # PVC name (default: <app>)
     # KOPIUR_CAPACITY: 15Gi         # default: 5Gi
     # KOPIUR_SCHEDULE: "H */6 * * *" # default: daily, H 3 * * *
-    # KOPIUR_MOVER_UID: "1000"      # default: 4000
-    # KOPIUR_MOVER_GID: "1000"      # default: 4000
+    # KOPIUR_MOVER_UID: "65534"     # default: 1000 — must match the pod's runAsUser
+    # KOPIUR_MOVER_GID: "65534"     # default: 1000 — must match the pod's runAsGroup
 ```
 
 Add user-specified dependencies to `dependsOn`. Include `postBuild.substitute.APP` whenever any component is used; omit `components`/`postBuild` entirely otherwise.
@@ -157,9 +157,9 @@ spec:
           reloader.stakater.com/auto: "true"
         pod:
           securityContext:
-            runAsGroup: 4000
+            runAsGroup: 1000
             runAsNonRoot: true
-            runAsUser: 4000
+            runAsUser: 1000
         containers:
           app:
             image:
@@ -204,7 +204,7 @@ route:
         namespace: network
 ```
 
-Persistence (pairs with the kopiur block in ks.yaml; also add `fsGroup: 4000` + `fsGroupChangePolicy: OnRootMismatch` to the pod securityContext):
+Persistence (pairs with the kopiur block in ks.yaml; also add `fsGroup: 1000` + `fsGroupChangePolicy: OnRootMismatch` to the pod securityContext):
 
 ```yaml
 persistence:

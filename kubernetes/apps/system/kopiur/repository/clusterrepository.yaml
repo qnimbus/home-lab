@@ -28,14 +28,11 @@ spec:
     hostnameExpr: namespace
     usernameExpr: policyName
   moverDefaults:
-    # Movers run as each app's own UID/GID (set per app via KOPIUR_MOVER_UID/GID)
+    # Movers run as each app's own UID/GID (KOPIUR_MOVER_UID/GID, default 1000)
     # so they can read the app's files and restore them with the right owner.
-    # NAS-side access doesn't depend on it: the kopiur NFS share maps every
-    # client to the TrueNAS `kubernetes` user (Mapall 3001:3001), so kopia's
-    # owner-only (0600) repository files stay readable across movers with
-    # different UIDs. Group 3001 matches the repository directory's owner.
-    podSecurityContext:
-      supplementalGroups: [3001]
+    # No NAS-side UID/group is needed: the kopiur NFS share maps every client to
+    # the TrueNAS `kubernetes` user (Mapall 3001:3001), so kopia's owner-only
+    # (0600) repository files stay readable across movers with different UIDs.
     # Requests only (no limit): mover memory scales with app data size, and a
     # limit would fail large backups mid-run.
     resources:

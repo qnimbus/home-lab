@@ -33,14 +33,9 @@ spec:
         enabled: true
       serviceMonitor:
         enabled: true
-    # TrueNAS `kubernetes` user (3001:3001): owner of the NAS repository
-    # directory and the kopiur share's Mapall user.
-    podSecurityContext:
-      fsGroup: 3001
-      fsGroupChangePolicy: OnRootMismatch
-      runAsGroup: 3001
-      runAsNonRoot: true
-      runAsUser: 3001
+    # No podSecurityContext override (chart default 65534): the kopiur NFS share
+    # maps every client to the TrueNAS `kubernetes` user (Mapall 3001:3001), so
+    # the pod's own UID never reaches the NAS, and fsGroup doesn't apply to NFS.
     resources:
       requests:
         cpu: 100m
