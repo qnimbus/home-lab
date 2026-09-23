@@ -1,7 +1,6 @@
 ---
 name: git-commit
 description: Generate well-formatted git commit messages following conventional commit standards
-context: fork
 ---
 
 # Git Commit Message Skill
