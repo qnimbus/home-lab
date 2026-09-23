@@ -33,13 +33,14 @@ spec:
         enabled: true
       serviceMonitor:
         enabled: true
-    # Same UID/GID that owns the NAS repository directory (4000:4000).
+    # TrueNAS `kubernetes` user (3001:3001): owner of the NAS repository
+    # directory and the kopiur share's Mapall user.
     podSecurityContext:
-      fsGroup: 4000
+      fsGroup: 3001
       fsGroupChangePolicy: OnRootMismatch
-      runAsGroup: 4000
+      runAsGroup: 3001
       runAsNonRoot: true
-      runAsUser: 4000
+      runAsUser: 3001
     resources:
       requests:
         cpu: 100m
