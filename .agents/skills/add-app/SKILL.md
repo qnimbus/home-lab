@@ -75,7 +75,8 @@ postBuild:
     # Optional overrides, only when defaults don't fit:
     # KOPIUR_CLAIM: <app>-data      # PVC name (default: <app>)
     # KOPIUR_CAPACITY: 15Gi         # default: 5Gi
-    # KOPIUR_SCHEDULE: "H */6 * * *" # default: daily, H 3 * * *
+    # KOPIUR_SCHEDULE: "H 3 * * *"  # default: hourly, H * * * *
+    # KOPIUR_COPYMETHOD: Direct     # default: Snapshot — Direct for PVCs without CSI snapshots (openebs-hostpath, nfs, static PVs)
     # KOPIUR_MOVER_UID: "65534"     # default: 1000 — must match the pod's runAsUser
     # KOPIUR_MOVER_GID: "65534"     # default: 1000 — must match the pod's runAsGroup
 ```

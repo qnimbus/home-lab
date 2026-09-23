@@ -12,12 +12,14 @@ spec:
       app.kubernetes.io/name: *app
   components:
     - ../../../../components/gpu
+    - ../../../../components/kopiur/backup
   interval: 1h
   path: ./kubernetes/apps/media/plex/app
   postBuild:
     substitute:
       APP: *app
       APP_SUBDOMAIN: *app
+      KOPIUR_CAPACITY: 20Gi
   prune: true
   wait: false
   sourceRef:

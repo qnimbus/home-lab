@@ -18,12 +18,14 @@ spec:
   # app/pv.yaml), so it needs all three folded into ONE ScaledObject's single
   # trigger instead — see app/scaledobject.yaml.
   components:
+    - ../../../../components/kopiur/backup
     - ../../../../components/postgres
   interval: 1h
   path: ./kubernetes/apps/default/paperless-ngx/app
   postBuild:
     substitute:
       APP: *app
+      KOPIUR_CLAIM: paperless-ngx-config
       POSTGRES_DATABASE: paperless
       POSTGRES_USERNAME: paperless
       POSTGRES_BACKUP_SCHEDULE: "0 7 * * * *"
