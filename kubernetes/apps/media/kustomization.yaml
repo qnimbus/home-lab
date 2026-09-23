@@ -5,6 +5,18 @@ kind: Kustomization
 namespace: media
 components:
   - ../../components/namespace
+patches:
+  - patch: |-
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: not-used
+        labels:
+          # Required for the components/gpu ResourceClaimTemplate's adminAccess:
+          # true (plex's DRA GPU claim) to be admitted in this namespace. Mirrors
+          # observability's/rook-ceph's own kustomization.yaml patch pattern for
+          # a group-specific namespace label on top of the shared component.
+          resource.kubernetes.io/admin-access: "true"
 replacements:
   - path: ../../components/replacements/replacements.yaml
 resources:
