@@ -33,7 +33,7 @@ spec:
             image:
               repository: docker.io/glenndehaan/unifi-voucher-site
               # renovate: datasource=docker depName=docker.io/glenndehaan/unifi-voucher-site
-              tag: 8.13.0@sha256:07a9ca6fe9dbb358f6f3d45d41654d882d03d8770672e47bc0d4734f8857d4f2
+              tag: 8.13.1@sha256:3d6a371292a50922b7920ea632eaddd16f438d822e5258d6c4e5a2ea9be9558e
             env:
               # No portal login — acceptable only because this app is internal-only
               # (envoy-internal, LAN/VPN); revisit if exposure is ever widened.
