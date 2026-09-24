@@ -1,0 +1,23 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/gateway.networking.k8s.io/httproute_v1.json
+# The only public surface: GitHub's webhook deliveries (POST /hooks), same shape as
+# flux-receiver's flux-webhook route. The UI and /mcp stay internal (helmrelease.yaml) —
+# konflate's UI has no auth and this repo is private.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: konflate-webhook
+spec:
+  hostnames: ["${APP}-webhook.${DOMAIN_IO}"]
+  parentRefs:
+    - name: envoy-external
+      namespace: network
+      sectionName: https
+  rules:
+    - backendRefs:
+        - name: konflate
+          port: 8080
+      matches:
+        - path:
+            type: Exact
+            value: /hooks

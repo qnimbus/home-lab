@@ -3,8 +3,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ./flux-operator/ks.yaml
-  - ./flux-instance/ks.yaml
-  - ./flux-receiver/ks.yaml
-  - ./flux-alerts/ks.yaml
-  - ./konflate/ks.yaml
+  - ./externalsecret.yaml
+  - ./helmrelease.yaml
+  - ./httproute.yaml
+  - ./ocirepository.yaml
+  - ./secretstore.yaml
