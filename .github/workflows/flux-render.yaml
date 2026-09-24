@@ -22,8 +22,7 @@ on:
     branches: [main]
     paths:
       - kubernetes/**
-      - .mise.toml
-      - scripts/validate-rendered.sh
+      - .mise/config.toml
       - .github/workflows/flux-render.yaml
 
 # One run per PR; a new push supersedes the previous render.
@@ -68,12 +67,12 @@ jobs:
             --output-file /github/workspace/rendered.yaml
             /github/workspace/kubernetes/flux/cluster
 
-      # Tool versions come from .mise.toml (validate.yaml still hardcodes its own — known drift);
+      # Tool versions come from .mise/config.toml (validate.yaml installs the same way);
       # install_args limits the install to what the next step needs instead of the whole toolchain.
-      - name: Install kubeconform + yq
+      - name: Install flux-schema + yq
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install_args: kubeconform yq
+          install_args: github:fluxcd/flux-schema yq
           # The action pin above covers the action, not the mise binary it downloads: with no
           # `version`, it asks mise.jdx.dev/VERSION for "latest" and then fetches that tag from
           # GitHub releases (fetch_from_github defaults true). Those two update out of order, so
@@ -86,8 +85,32 @@ jobs:
           # watching it. Same reasoning as minimumReleaseAge in .renovate/groups.json5.
           minimum_release_age: "24h"
 
-      - name: kubeconform on rendered output
-        run: bash scripts/validate-rendered.sh rendered.yaml
+      # Same validator and online catalog as validate.yaml, applied to what Flux would actually
+      # apply. The yq pass removes render artifacts that are not real errors:
+      # - documents without a kind (flux-local emits empty ones between Kustomizations);
+      # - the two resources whose only substituted value comes from the SOPS cluster-secrets:
+      #   flux-local cannot decrypt it and substitutes an invalid placeholder / null instead;
+      # - numeric resource quantities (`cpu: 1` in the keda, cilium and spegel charts) — the API
+      #   server accepts them, but flux-schema's Quantity schema only takes strings.
+      # ConfigMapList is skipped: the dragonfly-operator chart emits one with
+      # metadata.annotations, which the strict ListMeta schema rejects, but kustomize flattens
+      # List kinds before Flux applies them.
+      - name: Validate rendered manifests
+        run: |-
+          yq '
+            select(.kind != null)
+            | select(([.kind, .metadata.name] | join("/")) as $id
+                | ["HTTPRoute/github-webhook", "ClusterRoleBinding/tailscale-user-cluster-admin"]
+                | contains([$id]) | not)
+            | (.. | select(tag == "!!int" or tag == "!!float")
+                | select(path | .[-1] | tag == "!!str")
+                | select(path | .[-1] | test("^(cpu|memory|ephemeral-storage|divisor)$"))) |= tostring
+          ' rendered.yaml > rendered-filtered.yaml
+          flux-schema validate rendered-filtered.yaml \
+            --schema-location=ecosystem \
+            --skip-json-path=/sops \
+            --skip-missing-schemas \
+            --skip-kind=ConfigMapList
 
   diff:
     name: Diff

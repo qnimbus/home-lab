@@ -6,7 +6,7 @@ name: Renovate
 # repo's own bot App via the same 1Password → App-token flow as labeler.yaml, so PRs, commits
 # and the dependency dashboard are authored by qnimbus-homelab-assistant[bot]. Everything set
 # under `env:` below is Renovate *global* config (self-hosted only); repository config stays
-# in renovate.json5 and is unchanged by this move.
+# in .renovaterc.json5 and is unchanged by this move.
 #
 # Runs on GitHub-hosted runners for now. An in-cluster runner was investigated and parked — ARC's
 # kubernetes container hook runs job containers as the image's own uid (Renovate: 12021) on a
@@ -18,7 +18,7 @@ name: Renovate
 # 2000 min/month plan (hourly would be ~1500-2200 — the whole plan). Check Settings → Billing
 # after the first days before tightening the cron; add actions/cache on /tmp/renovate (mounted
 # by the action's default docker-volumes) if lookups dominate the run time. Note
-# renovate.json5's prHourlyLimit is really a per-run cap, so a backlog drains 2 PRs per run.
+# .renovaterc.json5's prHourlyLimit is really a per-run cap, so a backlog drains 2 PRs per run.
 
 on:
   push:
@@ -26,8 +26,7 @@ on:
       - main
     paths:
       # config change → immediate run (replaces the webhook the hosted app reacted to)
-      - renovate.json5
-      - .renovate/**
+      - .renovaterc.json5
       - .github/workflows/renovate.yaml
   schedule:
     - cron: 0 */6 * * * # every 6 h — see budget note above; dashboard checkbox actions wait for the next run

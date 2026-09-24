@@ -12,11 +12,6 @@ name: Image Pull
 # Flux's reconcile after merge fetches the layer from the node that already holds it over LAN
 # rather than from the upstream registry — the cold pull is paid once, here. Fail-open: a 200ms
 # dial_timeout means containerd drops straight through to the registry if Spegel is unavailable.
-#
-# `pull` runs on `home-lab` — the same cluster-admin runner renovate-pr-review.yml uses — which
-# also carries a Talos ServiceAccount cert (os:admin; see runners/home-lab/talos-serviceaccount.yaml)
-# for talosctl. A dedicated zero-RBAC scale set for this job was tried and consolidated back into
-# home-lab on 2026-09-06 in favor of a single-runner setup; see docs/CLUSTER.md.
 
 on:
   pull_request:
@@ -85,12 +80,17 @@ jobs:
     outputs:
       images: ${{ steps.diff.outputs.images }}
     steps:
+      # Via env, not inlined ${{ }}: the image lists come from the PR head's manifests, so an
+      # image string containing a `'` would otherwise break out of the quoting and run as shell.
       - name: Diff Images
         id: diff
+        env:
+          DEFAULT_IMAGES: ${{ needs.extract.outputs.default }}
+          PULL_IMAGES: ${{ needs.extract.outputs.pull }}
         run: |-
           images=$(jq --compact-output --null-input \
-              --argjson f1 '${{ needs.extract.outputs.default }}' \
-              --argjson f2 '${{ needs.extract.outputs.pull }}' \
+              --argjson f1 "$DEFAULT_IMAGES" \
+              --argjson f2 "$PULL_IMAGES" \
               '$f2 - $f1' \
           )
           echo "images=${images}" >> "$GITHUB_OUTPUT"
@@ -117,15 +117,15 @@ jobs:
     env:
       MATRIX_IMAGE: ${{ matrix.image }}
     steps:
-      # mise-action reads .mise.toml for the pinned version — without a checkout here it finds no
-      # config, so it installs mise's own latest instead of .mise.toml's 1.13.0 pin, and (worse)
+      # mise-action reads .mise/config.toml for the pinned version — without a checkout here it
+      # finds no config, so it installs mise's own latest instead of the pin, and (worse)
       # leaves the shim unactivated: "No version is set for shim: talosctl" on the next step.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # mise-pinned, not a curl-latest install — matches .mise.toml's talosctl version.
+      # mise-pinned, not a curl-latest install — matches .mise/config.toml's talos version.
       #
       # Bounded because a mise cache restore can hang this step indefinitely. Observed 2026-09-07
       # (run 34029723091 → PR #115): every matrix leg got a cache hit, but two of three then sat
@@ -150,7 +150,8 @@ jobs:
           # step timeout above is the actual guarantee — this only shortens the wasted window.
           SEGMENT_DOWNLOAD_TIMEOUT_MINS: "1"
         with:
-          install_args: talosctl
+          # `talos` (not the `talosctl` alias) so it resolves to the .mise/config.toml pin.
+          install_args: talos
           # Soak window on mise's own version, not on the tools it installs — see the same knob in
           # flux-render.yaml for the incident. Orthogonal to continue-on-error above: that handles
           # a cache-restore stall (mise already installed, node process never exits), this handles
@@ -158,14 +159,14 @@ jobs:
           # other, so both stay.
           minimum_release_age: "24h"
 
-      # .mise.toml stays the single source of truth for the version — parsed here, never duplicated.
+      # .mise/config.toml stays the single source of truth for the version — parsed here, never duplicated.
       # $GITHUB_PATH entries are prepended, so this wins over any half-initialised mise shim left
       # behind by a cancelled step ("No version is set for shim: talosctl").
       - name: Install talosctl (fallback)
         if: ${{ steps.mise.outcome != 'success' }}
         run: |-
-          version="$(sed -n 's/^talosctl[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' .mise.toml)"
-          [ -n "$version" ] || { echo "could not parse talosctl version from .mise.toml"; exit 1; }
+          version="$(sed -n 's/^"\{0,1\}talos"\{0,1\}[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' .mise/config.toml)"
+          [ -n "$version" ] || { echo "could not parse talos version from .mise/config.toml"; exit 1; }
           echo "mise step did not complete (${{ steps.mise.outcome }}) — installing talosctl ${version} directly"
           mkdir -p "$HOME/.local/bin"
           curl -fsSL -o "$HOME/.local/bin/talosctl" \
