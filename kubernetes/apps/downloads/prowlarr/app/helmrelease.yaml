@@ -12,8 +12,6 @@ spec:
   values:
     controllers:
       prowlarr:
-        # Required: /config is an RWO PVC (nfs StorageClass since the ceph-block ->
-        # NFS migration — see docs/ROADMAP.md).
         strategy: Recreate
         containers:
           app:

@@ -10,12 +10,6 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
-  # PHASE 2 of the ceph-block -> NFS /config migration (docs/ROADMAP.md, e1000e
-  # packet-drops entry, follow-up #3) complete: volsync (ceph-block PVC + hourly backup)
-  # and nfs-config-migrate (one-off copy Job, already run) are both gone — /config now
-  # lives permanently on the nfs-config component's PVC, with no automated backup (this
-  # data is small/recreatable: sqlite db, logs — see ROADMAP.md for why that trade-off
-  # was made).
   components:
     - ../../../../components/nfs-config
   interval: 1h
@@ -27,8 +21,6 @@ spec:
       # the UID/GID the /mnt/media NFS mount is expected to be writable by.
       APP_UID: "1000"
       APP_GID: "1000"
-      # /config only (sqlite db, logs) — the TV library itself is the same raw NFS mount
-      # media/plex already uses, not part of this PVC.
       NFS_CONFIG_CAPACITY: 5Gi
   prune: true
   wait: false
@@ -39,7 +31,6 @@ spec:
   dependsOn:
     - name: onepassword-store
       namespace: external-secrets
-    # nfs StorageClass source — required for the nfs-config PVC.
     - name: csi-driver-nfs
       namespace: system
   healthChecks:

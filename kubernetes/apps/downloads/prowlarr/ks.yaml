@@ -10,12 +10,6 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
-  # PHASE 2 of the ceph-block -> NFS /config migration (docs/ROADMAP.md, e1000e
-  # packet-drops entry, follow-up #3) complete: volsync (ceph-block PVC + hourly backup)
-  # and nfs-config-migrate (one-off copy Job, already run) are both gone — /config now
-  # lives permanently on the nfs-config component's PVC, with no automated backup (this
-  # data is small/recreatable: indexer defs, sqlite db, logs — see ROADMAP.md for why
-  # that trade-off was made).
   components:
     - ../../../../components/nfs-config
   interval: 1h
@@ -23,12 +17,8 @@ spec:
   postBuild:
     substitute:
       APP: *app
-      # 1000:1000 matches media/plex and n8n's precedent — see that ks.yaml's comment. Kept
-      # here even though Prowlarr itself has no NFS mount, so the nfs-config PVC's contents
-      # are owned by the same UID/GID as every other app in this stack, for consistency.
       APP_UID: "1000"
       APP_GID: "1000"
-      # /config only (indexer defs, sqlite db, logs) — small, no media library involved.
       NFS_CONFIG_CAPACITY: 2Gi
   prune: true
   wait: false
@@ -39,7 +29,6 @@ spec:
   dependsOn:
     - name: onepassword-store
       namespace: external-secrets
-    # nfs StorageClass source — required for the nfs-config PVC.
     - name: csi-driver-nfs
       namespace: system
   healthChecks:
