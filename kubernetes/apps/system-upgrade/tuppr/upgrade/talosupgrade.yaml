@@ -35,6 +35,21 @@ spec:
     # policy.debug is deliberately left at the upstream default (true). The validating webhook
     # warns about it on every apply, but a node upgrade is rare and hard to re-run — the verbose
     # job log is worth more than the noise. Do not "fix" the warning by turning it off.
+  # Backup gate: tuppr re-checks these every 10s before each node and only proceeds once
+  # all pass. Empty namespace = every namespace. No kopiur backup may be mid-run (a
+  # Snapshot without a status yet counts as not passed, so a just-started one blocks
+  # too) and no Restore may be filling a volume. The run gives up after the longest
+  # check timeout (default 10m); 30m leaves room for a large first backup.
+  healthChecks:
+    - apiVersion: kopiur.home-operations.com/v1alpha1
+      kind: Snapshot
+      description: no kopiur backup is running
+      expr: status.phase != 'Running'
+      timeout: 30m
+    - apiVersion: kopiur.home-operations.com/v1alpha1
+      kind: Restore
+      description: no kopiur restore is running
+      expr: "!(status.phase in ['Resolving', 'Restoring'])"
   # Upgrade one node at a time — this is a 5-node cluster (3 CP + 2 workers) and taking two
   # control-plane nodes down together would break etcd quorum
   parallelism: 1
