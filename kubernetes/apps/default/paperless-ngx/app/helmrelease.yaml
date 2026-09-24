@@ -106,6 +106,9 @@ spec:
                   secretKeyRef:
                     name: paperless-ngx-postgres-app
                     key: password
+              # Dedicated Dragonfly (components/dragonfly), same namespace; no auth — its
+              # NetworkPolicy only admits pods from this namespace.
+              PAPERLESS_REDIS: "redis://${APP}-dragonfly:6379"
               # Miscellaneous
               PAPERLESS_TIKA_ENABLED: "1"
               PAPERLESS_TIKA_ENDPOINT: http://localhost:9998

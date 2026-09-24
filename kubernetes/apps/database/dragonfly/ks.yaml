@@ -1,52 +1,20 @@
 ---
-# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app dragonfly-operator
   labels:
     decryption.flux.home.arpa/disabled: "true"
-    substitution.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   interval: 1h
-  path: ./kubernetes/apps/database/dragonfly/operator/app
+  path: ./kubernetes/apps/database/dragonfly/app
+  postBuild:
+    substitute:
+      APP: *app
   prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
   wait: true
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
-  # No cert-manager dependency: dragonfly-operator's chart ships no
-  # webhook/cert templates, unlike CNPG's operator.
-  healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: dragonfly-operator
-      namespace: database
----
-# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: &app dragonfly
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
-spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
-  interval: 1h
-  path: ./kubernetes/apps/database/dragonfly/cluster/app
-  prune: true
-  wait: false
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
-  dependsOn:
-    - name: dragonfly-operator
-    - name: onepassword-store
-      namespace: external-secrets

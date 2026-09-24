@@ -28,7 +28,6 @@ data:
   ANNA_IOT_HOST: "10.30.0.72"
   PRINTER_IOT_HOST: "10.30.0.51"
   WAN_FAILOVER_HOST: "192.168.8.1"
-  DRAGONFLY_HOST: "dragonfly.database.svc.cluster.local"
   # Network CIDRs
   LAN_CIDR: 10.10.0.0/24
   IOT_CIDR: 10.30.0.0/24

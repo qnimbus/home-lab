@@ -50,24 +50,6 @@ spec:
       static:
         - "${NAS_HOST}:445"
 ---
-# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
-apiVersion: monitoring.coreos.com/v1
-kind: Probe
-metadata:
-  name: dragonfly
-spec:
-  # tcp_connect: Dragonfly is the cluster-wide shared Redis-compatible store
-  # (kubernetes/apps/database/dragonfly); this is also the exact metric the
-  # KEDA redis-scaler ScaledObject polls (probe_success{instance="${DRAGONFLY_HOST}:6379"}).
-  module: tcp_connect
-  interval: 30s
-  prober:
-    url: blackbox-exporter.observability.svc.cluster.local:9115
-  targets:
-    staticConfig:
-      static:
-        - "${DRAGONFLY_HOST}:6379"
----
 # # yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
 # apiVersion: monitoring.coreos.com/v1
 # kind: Probe
@@ -78,7 +60,7 @@ spec:
 #   # one its own Docker healthcheck uses) — this catches a wedged-but-listening
 #   # process that a bare TCP handshake would miss.
 #   # ${NAS_LAN_HOST}, not ${NAS_HOST}: doco-cd's listener is bound to the
-#   # management LAN interface only (see truenas/docker/doco-cd/docker-compose.yaml),
+#   # management LAN interface only (see docker/nas/.doco-cd/docker-compose.app.yaml),
 #   # not published on the storage VLAN.
 #   module: http_2xx
 #   interval: 30s

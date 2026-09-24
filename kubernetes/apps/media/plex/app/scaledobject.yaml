@@ -11,7 +11,7 @@ spec:
   maxReplicaCount: 1
   advanced:
     restoreToOriginalReplicaCount: true
-  # 30s, matching postgres-scaler/redis-scaler/smb-scaler's rationale: one extra
+  # 30s, matching postgres-scaler/smb-scaler's rationale: one extra
   # confirmation window beyond the blackbox probe's own 30s scrape interval
   # (observability/blackbox-exporter/app/probes.yaml, name: nas-nfs) before committing
   # to scale-down, so a single transient failed scrape doesn't tear down a healthy Plex.

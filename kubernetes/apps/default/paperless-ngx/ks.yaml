@@ -11,13 +11,10 @@ spec:
   commonMetadata:
     labels:
       app.kubernetes.io/name: *app
-  # No keda/postgres-scaler or keda/redis-scaler Component here: KEDA's admission
-  # webhook (vscaledobject.kb.io) forbids more than one ScaledObject managing the
-  # same workload ("already managed by the hpa ...") — hit this live when both were
-  # wired in at once. paperless-ngx depends on Postgres, Dragonfly, AND SMB (see
-  # app/pv.yaml), so it needs all three folded into ONE ScaledObject's single
-  # trigger instead — see app/scaledobject.yaml.
+  # No keda/postgres-scaler Component: KEDA allows one ScaledObject per workload, so
+  # app/scaledobject.yaml carries paperless-ngx's own trigger (the SMB share).
   components:
+    - ../../../../components/dragonfly
     - ../../../../components/kopiur/backup
     - ../../../../components/postgres
   interval: 1h
@@ -40,8 +37,6 @@ spec:
       namespace: external-secrets
     - name: rook-ceph-cluster
       namespace: rook-ceph
-    - name: dragonfly
-      namespace: database
     # pv.yaml's nodeStageSecretRef points at the smb-credentials Secret ESO creates
     # asynchronously in the system namespace — wait: true there guarantees it's
     # Ready before this Kustomization's Pod tries to mount the SMB PVCs.
@@ -53,6 +48,10 @@ spec:
       name: *app
       namespace: default
   healthCheckExprs:
+    # Operator v1.6.1 reports `Ready` (the lowercase `ready` is its deprecated legacy value).
+    - apiVersion: dragonflydb.io/v1alpha1
+      kind: Dragonfly
+      current: status.phase == 'Ready'
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
       failed: status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'False')

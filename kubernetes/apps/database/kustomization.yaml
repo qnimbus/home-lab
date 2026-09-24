@@ -9,4 +9,4 @@ replacements:
   - path: ../../components/replacements/replacements.yaml
 resources:
   - ./cloudnative-pg
-  - ./dragonfly
+  - ./dragonfly/ks.yaml
