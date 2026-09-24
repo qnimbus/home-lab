@@ -1,0 +1,232 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  // To test renovate:
+  //
+  // LOG_LEVEL=debug LOG_FORMAT=json timeout 580 npx -y renovate@44.65.5 --platform=local --dry-run=extract
+  extends: [
+    "github>home-operations/renovate-presets#8.1.0",
+    "github>home-operations/renovate-presets//apps/cnpg.json5#8.1.0",
+    "github>home-operations/renovate-presets//apps/grafanaDashboards.json5#8.1.0",
+    "github>home-operations/renovate-presets//apps/talosFactory.json5#8.1.0",
+    ":timezone(Europe/Amsterdam)",
+  ],
+  dependencyDashboard: true,
+  dependencyDashboardTitle: "Renovate Dashboard for my home-lab 🤖",
+  lockFileMaintenance: {
+    enabled: true,
+    schedule: ["before 3am on the first day of the month"],
+    commitMessageExtra: "({{manager}})",
+    additionalBranchPrefix: "{{manager}}-",
+  },
+  // Renovate runs every ~6hrs
+  prHourlyLimit: 2, // This setting - if enabled - limits Renovate to a maximum of x PRs opened per hour (or run, in our case)
+  prConcurrentLimit: 10, // This setting - if enabled - limits Renovate to a maximum of x concurrent PRs open at any time
+  // Only scan on weekends — avoids noise during the week; change to "at any time" to run continuously
+  schedule: ["at any time"],
+  // Never touch SOPS-encrypted files — contents are ciphertext, not real versions
+  // Devcontainer features use OCI artifact format; Renovate's docker datasource can't query them
+  ignorePaths: ["**/*.sops.*", ".devcontainer/**"],
+  // Dependencies managed outside Renovate — do not open PRs for these.
+  // talosctl: CLI tool in .mise.toml — must match the running Talos server version; bump manually alongside Talos PRs.
+  // etcd: CLI tool in .mise.toml — must match the etcd version bundled with the running Talos release.
+  ignoreDeps: ["talos", "etcd"],
+  // ── Manager file-pattern overrides ──────────────────────────────────────────
+  // Renovate's built-in managers each have a default set of filename globs they
+  // scan. These overrides extend those defaults to cover this repo's structure.
+  flux: {
+    // To test: git ls-files | grep -P '(^|/)kubernetes/.+\.ya?ml(?:\.j2)?$'
+    // Pick up HelmRelease, GitRepository, OCIRepository in kubernetes/
+    managerFilePatterns: ["/(^|/)kubernetes/.+\\.ya?ml(?:\\.j2)?$/"],
+  },
+  "helm-values": {
+    // Pick up image tags inside helm/values.yaml files
+    managerFilePatterns: ["/(^|/)kubernetes/.+\\.ya?ml$/"],
+  },
+  "helm-values": {
+    // To test: git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?values\.ya?ml(?:\.j2)?$'
+    //          git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?helmrelease\.ya?ml(?:\.j2)?$'
+    //          git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?helm-release\.ya?ml(?:\.j2)?$'
+    //          git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?hr\.ya?ml(?:\.j2)?$'
+    managerFilePatterns: [
+      "/(^|/)kubernetes/(?:.+/)?values\\.ya?ml(?:\\.j2)?$/",
+      "/(^|/)kubernetes/(?:.+/)?helmrelease\\.ya?ml(?:\\.j2)?$/",
+      "/(^|/)kubernetes/(?:.+/)?helm-release\\.ya?ml(?:\\.j2)?$/",
+      "/(^|/)kubernetes/(?:.+/)?hr\\.ya?ml(?:\\.j2)?$/",
+    ],
+  },
+  helmfile: {
+    // To test: git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?helmfile\.ya?ml(?:\.gotmpl)?(?:\.j2)?$'
+    //          git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?helmfile\\.d/.+\.ya?ml(?:\.gotmpl)?(?:\.j2)?$'
+    managerFilePatterns: [
+      "/(^|/)kubernetes/(?:.+/)?helmfile\\.ya?ml(?:\\.gotmpl)?(?:\\.j2)?$/",
+      "/(^|/)kubernetes/(?:.+/)?helmfile\\.d/.+\\.ya?ml(?:\\.gotmpl)?(?:\\.j2)?$/",
+    ],
+  },
+  kubernetes: {
+    // Raw Kubernetes manifests (image: fields, etc.)
+    // To test: git ls-files | grep -P '(^|/)kubernetes/(?:apps|components|flux)/.+\.ya?ml(?:\.j2)?$'
+    managerFilePatterns: ["/(^|/)kubernetes/(?:apps|components|flux)/.+\\.ya?ml(?:\\.j2)?$/"],
+  },
+  kustomize: {
+    // To test: git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?kustomization\.ya?ml(?:\.j2)?$'
+    managerFilePatterns: ["/(^|/)kubernetes/(?:.+/)?kustomization\\.ya?ml(?:\\.j2)?$/"],
+  },
+  // ── Package rule overrides ──────────────────────────────────────────
+  packageRules: [
+    //
+    // Allowed versions rules
+    //
+    {
+      description: "Keep PostgreSQL on version 18.x",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["/postgresql/"],
+      allowedVersions: "<19",
+    },
+    //
+    // Auto-merge rules
+    //
+    {
+      description: "Auto-merge trusted OCI digests",
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["digest"],
+      automerge: true,
+      automergeType: "pr",
+      ignoreTests: false,
+      matchPackageNames: [
+        "/bjw-s/{/,}**",
+        "/bjw-s-labs/{/,}**",
+        "/qnimbus/{/,}**",
+        "/home-operations/{/,}**",
+        "/onedr0p/{/,}**",
+      ],
+    },
+    {
+      description: "Auto-merge high-cadence OCI packages weekly",
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["minor", "patch"],
+      matchPackageNames: ["/kube-prometheus-stack/"],
+      automerge: true,
+      automergeType: "pr",
+      ignoreTests: false,
+      schedule: ["before 6am on Monday"],
+    },
+    {
+      description: "Auto-merge GitHub Actions",
+      matchManagers: ["github-actions"],
+      matchUpdateTypes: ["minor", "patch", "digest"],
+      automerge: true,
+      automergeType: "branch",
+      minimumReleaseAge: "3 days",
+      ignoreTests: true,
+    },
+    {
+      description: "Auto-merge trusted GitHub Actions",
+      matchManagers: ["github-actions"],
+      matchPackageNames: ["/^actions\\//", "/^renovatebot\\//"],
+      matchUpdateTypes: ["minor", "patch", "digest"],
+      automerge: true,
+      automergeType: "branch",
+      minimumReleaseAge: "1 minute",
+      ignoreTests: true,
+    },
+    {
+      description: "Auto-merge Renovate Presets",
+      matchManagers: ["renovate-config"],
+      matchUpdateTypes: ["minor", "patch"],
+      automerge: true,
+      automergeType: "branch",
+      ignoreTests: true,
+    },
+    //
+    // Grouping rules
+    //
+    {
+      description: "Actions Runner Controller Group",
+      groupName: "actions-runner-controller",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["/gha-runner-scale-set-controller/", "/gha-runner-scale-set/"],
+      group: {
+        commitMessageTopic: "{{{groupName}}} group",
+      },
+      minimumGroupSize: 2,
+    },
+    {
+      description: "Flux Operator Group",
+      groupName: "flux-operator",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["/flux-operator/", "/flux-instance/"],
+      group: {
+        commitMessageTopic: "{{{groupName}}} group",
+      },
+      minimumGroupSize: 2,
+    },
+    {
+      description: "Kubernetes Group",
+      groupName: "kubernetes",
+      matchDatasources: ["docker"],
+      matchPackageNames: [
+        "/kube-apiserver/",
+        "/kube-controller-manager/",
+        "/kube-proxy/",
+        "/kube-scheduler/",
+        "/kubelet/",
+      ],
+      group: {
+        commitMessageTopic: "{{{groupName}}} group",
+      },
+      minimumGroupSize: 5,
+    },
+    {
+      description: "Mise Tools Group",
+      matchManagers: ["mise"],
+      groupName: "mise tools",
+      groupSlug: "mise-tools",
+    },
+    {
+      description: "Rook-Ceph Group",
+      groupName: "rook-ceph",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["/rook-ceph/", "/rook-ceph-cluster/"],
+      group: {
+        commitMessageTopic: "{{{groupName}}} group",
+      },
+      minimumGroupSize: 2,
+    },
+    {
+      // After the mise tools catch-all so talos wins its own group; unites the
+      // mise pin, the factory installer image, and the tuppr upgrade version
+      description: "Talos Group",
+      groupName: "talos",
+      matchPackageNames: ["siderolabs/talos"],
+      group: {
+        commitMessageTopic: "{{{groupName}}} group",
+      },
+      minimumGroupSize: 2,
+    },
+    {
+      description: "1Password CLI is not resolvable on GitHub, bump manually",
+      matchManagers: ["mise"],
+      matchDepNames: ["1password-cli"],
+      enabled: false,
+    },
+    //
+    // Labeling rules
+    //
+    {
+      matchUpdateTypes: ["major"],
+      addLabels: ["type/major"],
+    },
+    {
+      matchUpdateTypes: ["minor"],
+      addLabels: ["type/minor"],
+    },
+    {
+      matchUpdateTypes: ["patch"],
+      addLabels: ["type/patch"],
+    },
+    {
+      matchUpdateTypes: ["digest"],
+      addLabels: ["type/digest"],
+    },
+  ],
+}

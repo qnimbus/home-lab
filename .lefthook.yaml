@@ -76,8 +76,16 @@ pre-commit:
         - ".github/actions/**/action.yaml"
       run: zizmor --offline {staged_files}
 
+    # Renovate's own config-validator: catches JSON5 syntax errors, unknown
+    # options and wrong value types before they reach a live run. CI runs this
+    # same command (validate.yaml), so the pin below is the only one to bump.
     validate-renovate:
       glob:
-        - "renovate.json5"
-        - ".renovate/*.json5"
-      run: bash scripts/validate-renovate.sh
+        - ".renovaterc.json5"
+      env:
+        # Keep in step with .github/workflows/renovate.yaml's renovate-version.
+        # renovate: datasource=npm depName=renovate
+        RENOVATE_VERSION: "44.65.5"
+      run: >-
+        npx --yes --package "renovate@${RENOVATE_VERSION}"
+        renovate-config-validator {staged_files}
