@@ -126,6 +126,12 @@ params:
   net.ipv4.tcp_no_metrics_save: "1"
   net.core.default_qdisc: "fq"
   net.ipv4.tcp_congestion_control: "bbr"
+  # ARP: reply to and announce an address only on the interface that owns it. With the
+  # kernel defaults a multi-NIC node answers for every local IP (VIP included) on every
+  # cabled port — on 2026-09-24 cp-01's unconfigured enp3s0 did exactly that, and the
+  # router intermittently sent VIP traffic (10.60.0.2:6443) to the wrong NIC.
+  net.ipv4.conf.all.arp_ignore: "1"
+  net.ipv4.conf.all.arp_announce: "2"
 ---
 apiVersion: v1alpha1
 kind: EtcFileConfig
