@@ -44,10 +44,10 @@ metadata:
 spec:
   staticConfigs:
     - targets:
-        # doco-cd is the GitOps agent for the truenas/ compose stacks — it is the thing
+        # doco-cd is the GitOps agent for the docker/nas/ compose stacks — it is the thing
         # that keeps the two exporters above deployed, so its own reconcile health is a
         # prerequisite for theirs, not a nice-to-have. Requires the 9120 port publish in
-        # truenas/docker/doco-cd/docker-compose.yaml.
+        # docker/nas/.doco-cd/docker-compose.app.yaml.
         - "${NAS_LAN_HOST}:9120"
       labels:
         job: truenas-doco-cd

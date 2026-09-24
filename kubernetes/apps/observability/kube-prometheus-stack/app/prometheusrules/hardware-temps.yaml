@@ -112,7 +112,7 @@ spec:
 
         # ── Textfile-collector staleness (sensors-textfile sidecar) ────────────
         # Moving hwmon collection out of node-exporter's own process (it panics
-        # there — see truenas/docker/node-exporter/docker-compose.yaml's
+        # there — see docker/nas/00-exporters/docker-compose.yaml's
         # --no-collector.hwmon comment) traded a LOUD failure mode for a SILENT
         # one: if the sensors-textfile sidecar dies, crash-loops, or hangs,
         # node-exporter stays `up` and keeps serving hwmon.prom's last-written

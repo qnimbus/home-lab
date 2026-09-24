@@ -78,7 +78,7 @@ spec:
 #   # one its own Docker healthcheck uses) — this catches a wedged-but-listening
 #   # process that a bare TCP handshake would miss.
 #   # ${NAS_LAN_HOST}, not ${NAS_HOST}: doco-cd's listener is bound to the
-#   # management LAN interface only (see truenas/docker/doco-cd/docker-compose.yaml),
+#   # management LAN interface only (see docker/nas/.doco-cd/docker-compose.app.yaml),
 #   # not published on the storage VLAN.
 #   module: http_2xx
 #   interval: 30s

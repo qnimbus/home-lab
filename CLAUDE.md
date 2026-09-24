@@ -1,1 +1,100 @@
-AGENTS.md
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+@AGENTS.md
+
+## Repository overview
+
+This is a personal home infrastructure monorepo, not an application. It manages a bare-metal Talos/Kubernetes cluster (GitOps via Flux), Docker Compose stacks on a TrueNAS host (GitOps via doco-cd), and the Ansible/Talos/just tooling used to bootstrap and operate all of it. There is no app to build or test in the traditional sense — "correctness" means manifests render and lint cleanly; validation happens via `kustomize build`, `yamllint`, `flux-schema` (the `gitops-repo-audit` skill's vendored `scripts/validate.sh`), `kubeconform`, `flux-local`, `actionlint`, `zizmor`, and `shellcheck`, split between lefthook pre-commit hooks and GitHub Actions (`.github/workflows/validate.yaml`, `flux-render.yaml`).
+
+Tool versions are pinned via mise (`.mise/config.toml`); `mise install` provisions `just`, `flux2`, `flux-operator`, `kubectl`, `kustomize`, `helm`, `helmfile`, `talos`, `1password-cli`, `sops`/`age`, `flate`, `minijinja`, `ansible`, `yq`, etc. mise also sets `KUBECONFIG`, `TALOSCONFIG`, and `FLATE_PATH` to repo-local paths. `mise`'s `postinstall` hook runs `lefthook install` and installs the Ansible collections from `ansible/requirements.yaml`.
+
+## Commands
+
+`just` (from `.justfile`) is the command runner; it imports modules as `mod`s, so most recipes are namespaced:
+
+```bash
+just                             # list all recipes/groups
+just k8s <recipe>                # kubernetes/mod.just — day-2 cluster operations
+just k8s database <recipe>       # kubernetes/apps/database/mod.just — CNPG dump/restore
+just talos <recipe>              # kubernetes/talos/mod.just — Talos node operations
+just bootstrap <recipe>          # bootstrap/mod.just — end-to-end bring-up
+just docker <recipe>             # docker/mod.just — NAS doco-cd operations
+```
+
+Frequently used `just k8s` recipes: `sync hr|ks|gitrepo|ocirepo|es` (force Flux/ExternalSecrets reconciliation), `sync-hr`/`sync-ks`/`sync-es <ns> <name>` (single resource), `apply-ks`/`delete-ks <ns> <ks>` (render+apply/delete a Flux Kustomization locally via `flate`), `toolbox` (shell into rook-ceph-tools), `view-secret <ns> [secret]`, `browse-pvc <ns> <claim>`, `debug-node <node>`, `db-backup <ns> <app>` (manual CNPG backup of a dedicated `<app>-postgres` cluster), `prune-pods`, `cron-minute <name>` (stable pseudo-random cron minute). `just k8s database dump|restore` wraps `pg_dump`/`pg_restore` against a CNPG cluster.
+
+Frequently used `just talos` recipes: `apply-node`, `render-config`, `upgrade-node`, `upgrade-k8s`, `reboot-node`, `health`, `nodes`, `disks`, `gen-talosconfig` (disaster recovery from 1Password).
+
+`just bootstrap cluster` runs the full sequence: apply Talos config to nodes → bootstrap Kubernetes → fetch kubeconfig → apply base manifests/CRDs (kustomize + helmfile) → sync apps helmfile → fetch kubeconfig again. `just bootstrap nas` runs the Ansible playbook that (re)deploys doco-cd on TrueNAS. `just docker reconcile-nas` restarts doco-cd on the NAS via Ansible.
+
+### Validating a single Kubernetes app
+
+```bash
+kustomize build kubernetes/apps/<namespace>/<app>/app     # must render (${APP}-style vars staying literal is expected)
+yamllint --config-file .yamllint.yaml kubernetes/apps/<namespace>/<app>
+```
+
+### Validating a single Docker Compose stack
+
+```bash
+docker compose -f docker/nas/NN-<app>/docker-compose.yaml config --quiet   # unset ${VAR} warnings are expected
+```
+
+### Pre-commit hooks (lefthook, `.lefthook.yaml`)
+
+Run automatically on `git commit`, staged-file-scoped: `mise fmt`, `mise lock` (regenerates `.mise/mise.lock` for `linux-x64,linux-arm64,macos-arm64`), `oxfmt` for JSON/Markdown/YAML (`*.sops.yaml` excluded), `shellcheck` for `*.sh`, `actionlint` and `zizmor` for GitHub Actions workflows/actions, and Renovate's `renovate-config-validator` for `renovate.json5` (also run in CI via `lefthook run`).
+
+## Architecture
+
+### `kubernetes/` — Flux-managed cluster state
+
+`kubernetes/flux/cluster/ks.yaml` defines three top-level Flux `Kustomization`s: `cluster-meta` (`kubernetes/flux/meta` — centralized `HelmRepository` sources), `cluster-vars` (`kubernetes/flux/vars` — the `cluster-settings` ConfigMap and SOPS-encrypted `cluster-secrets` Secret), and `cluster-apps`, which points at `./kubernetes/apps` and recurses: it finds the top-most `kustomization.yaml` in each app directory and applies everything it references.
+
+`cluster-apps` injects cluster-wide defaults via Kustomize patches onto _every_ Kustomization/HelmRelease it manages, so individual apps don't repeat that boilerplate:
+
+- SOPS `decryption` (`sops-age`) — opt out with label `decryption.flux.home.arpa/disabled: "true"` (required for Kustomizations outside `flux-system` with no SOPS content, since a missing `sops-age` Secret fails reconciliation).
+- `postBuild.substituteFrom` `cluster-settings`/`cluster-secrets` — opt out with `substitution.flux.home.arpa/disabled: "true"`.
+- default `retryInterval: 2m`/`timeout: 15m`.
+- HelmRelease install/upgrade `CreateReplace`/`RetryOnFailure`/`RemediateOnFailure` strategy, and `driftDetection: enabled` (opt out with `drift-detection.flux.home.arpa/disabled: "true"`).
+- a label-driven patch: a Flux Kustomization tagged `components.postgres/cnpg=init` gets its CNPG `Cluster` rewritten to a plain `initdb` bootstrap instead of Barman recovery, for brand-new databases with no prior backup.
+
+Each namespace directory (`kubernetes/apps/<namespace>/kustomization.yaml`) pulls in the `components/namespace` component and `components/replacements/replacements.yaml`, which stamps the namespace onto every child Flux Kustomization's `metadata.namespace` and `spec.targetNamespace` — so `ks.yaml` files don't set those themselves.
+
+Each app lives at `kubernetes/apps/<namespace>/<app>/`:
+
+```text
+<app>/
+├── ks.yaml                # Flux Kustomization — path, dependsOn, postBuild.substitute (APP etc.), optional components
+└── app/
+    ├── kustomization.yaml
+    ├── ocirepository.yaml     # pins the chart version (app-template: oci://ghcr.io/bjw-s-labs/helm/app-template)
+    ├── helmrelease.yaml       # values: controllers/service/route/persistence, built on bjw-s-labs/app-template
+    ├── httproute.yaml         # optional — Gateway API route
+    ├── externalsecret.yaml    # optional — pulls 1Password fields via the `onepassword` ClusterSecretStore
+    └── resources/             # optional — files wired in via configMapGenerator
+```
+
+`kubernetes/components/` holds reusable kustomize components: `namespace` and `replacements` (per-namespace wiring above), `postgres` (a dedicated CNPG cluster per app, parameterized via the consuming `ks.yaml`'s `postBuild.substitute` — see its README), `keda/*` (`http-scaler`, `redis-scaler`, `smb-scaler`), and `nfs-config`. `kubernetes/talos/` holds Talos machine-config Jinja templates (rendered with `minijinja-cli` + 1Password `op inject`, see `.justfile`'s `template` recipe) and `version.yaml` (pinned Talos/Kubernetes versions used by `kubernetes/talos/mod.just`).
+Scaffolding a new cluster app should follow the `add-app` skill (`.agents/skills/add-app/SKILL.md`) — mirror a recent real app in this repo rather than inventing structure.
+
+### `docker/` — Compose stacks on the TrueNAS host
+
+Deployed GitOps-style by [doco-cd](https://github.com/kimdre/doco-cd), which runs on TrueNAS itself, polls this repo's `main` over a read-only SSH deploy key, and auto-discovers one-directory-deep stacks under `docker/nas/` (config: `docker/nas/.doco-cd.yaml`). Each stack is `docker/nas/NN-<app>/docker-compose.yaml` with image tags inline (Renovate's native `docker-compose` manager tracks them); the `NN-` prefix is ordering only — renaming/renumbering a directory deletes and recreates the stack (including anonymous volumes), so keep it stable. Currently deployed: `00-exporters` (node-exporter + its `sensors-textfile` sidecar, smartctl-exporter; scraped by kube-prometheus-stack). doco-cd itself (`docker/nas/.doco-cd/docker-compose.app.yaml`) is **not** self-managed: `just bootstrap nas` places it, and a doco-cd version bump needs that re-run after merging. Compose-level secrets go under `external_secrets` in `docker/nas/.doco-cd.yaml` as `op://homelab/<item>/<field>` references, resolved by doco-cd's 1Password service account and consumed as `${VAR_NAME}`.
+
+### `bootstrap/` and `ansible/` — initial provisioning
+
+`bootstrap/mod.just` orchestrates cluster bring-up end to end (Talos config → K8s bootstrap → kubeconfig → base Secrets/CRDs via `bootstrap/kubernetes/{kustomize,helmfile}` → apps via helmfile) and NAS bootstrap (`bootstrap/docker/nas/bootstrap.yaml`, using `ansible/inventory.yaml`). The helmfiles carry no versions or values of their own: they read each release's chart, version and values from its `kubernetes/apps/<ns>/<app>/app/` manifests, so bootstrap installs exactly what Flux later reconciles. `bootstrap/README.md` and its per-area READMEs document the process.
+
+### `.agents/` — shared agent conventions
+
+`AGENTS.md` imports the files in `.agents/instructions/`: YAML key ordering (`sorting`), Flux Kustomization `dependsOn`/`commonMetadata` rules (`flux-kustomization`), OCI vs. classic Helm source placement (`helm-sources`), ExternalSecret patterns (`external-secrets`), and when to use `# renovate:` comments (`renovate`). These apply whenever YAML in this repo is written or reordered. `.agents/skills/` holds task skills (`add-app`, `check-cluster-health`, `review-gitops-practices`, `scope-namespace`, …); they're exposed to Claude Code through the `.claude/skills` symlink.
+
+### GitOps flow
+
+Renovate watches the repository for dependency updates (chart versions, image tags, Talos/K8s versions, tool versions in `.mise/config.toml`, GitHub Actions, compose `.env` tags, etc.) and opens PRs (`renovate.json5` + `.renovate/*.json5`, extends `config:recommended`). On PRs, `flux-render.yaml` runs `flux-local` test/build, kubeconform on the rendered output, and posts a HelmRelease/Kustomization diff comment. Merging to `main` is what actually changes cluster/NAS state: Flux reconciles `kubernetes/apps` on its own interval, and doco-cd polls and redeploys the `docker/nas` stacks. There is no separate "deploy" step — pushing to `main` is the deploy.
+
+### Secrets
+
+Runtime secrets are never committed in plaintext. In Kubernetes, External Secrets Operator + 1Password Connect (`ClusterSecretStore: onepassword`) inject them as Kubernetes Secrets from `ExternalSecret` resources — the default for app secrets. The one exception is `kubernetes/flux/vars/cluster-secrets.sops.yaml`, SOPS/age-encrypted and decrypted by Flux (`sops-age` Secret) for `${VAR}` substitution. In Docker Compose land, doco-cd resolves `op://` references declared in `docker/nas/.doco-cd.yaml` at deploy time; its own service-account token and deploy key are placed on the host by `just bootstrap nas`. `op` (1Password CLI) is also used locally for `just template`/bootstrap/Talos flows via `op inject`.
