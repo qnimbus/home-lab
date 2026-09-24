@@ -10,18 +10,17 @@ touch. Current dedicated-cluster consumers: `forgejo`, `n8n`.
 
 ## Substitution variables
 
-| Variable                   | Default                                          | Notes                                                                                                                  |
-| -------------------------- | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `APP`                      | _(required)_                                     | Name of the consuming app — used for cluster, secret, and backup paths.                                                |
-| `POSTGRES_USERNAME`        | `${APP}`                                         | Username created on initial bootstrap.                                                                                 |
-| `POSTGRES_DATABASE`        | `${APP}`                                         | Database name created on initial bootstrap.                                                                            |
-| `POSTGRES_IMAGE`           | `cloudnative-pg/postgresql:18.6-standard-trixie` | Deliberately ahead of the shared cluster (still on 17.6) — see note below.                                             |
-| `POSTGRES_INSTANCES`       | `1`                                              | No replicas by default. Bump to 3 for automatic failover once an app needs it — CNPG scales live, no rebuild required. |
-| `POSTGRES_SYNC_REPLICAS`   | `0`                                              | Set to `1` when `POSTGRES_INSTANCES` is `2` or greater to enable synchronous replication.                              |
-| `POSTGRES_STORAGE`         | `5Gi`                                            | Per-instance PVC size.                                                                                                 |
-| `POSTGRES_BACKUP_SCHEDULE` | `0 40 4 * * *`                                   | Cron schedule for the S3 `ScheduledBackup`.                                                                            |
+| Variable                   | Default        | Notes                                                                                                                  |
+| -------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `APP`                      | _(required)_   | Name of the consuming app — used for cluster, secret, and backup paths.                                                |
+| `POSTGRES_USERNAME`        | `${APP}`       | Username created on initial bootstrap.                                                                                 |
+| `POSTGRES_DATABASE`        | `${APP}`       | Database name created on initial bootstrap.                                                                            |
+| `POSTGRES_INSTANCES`       | `1`            | No replicas by default. Bump to 3 for automatic failover once an app needs it — CNPG scales live, no rebuild required. |
+| `POSTGRES_SYNC_REPLICAS`   | `0`            | Set to `1` when `POSTGRES_INSTANCES` is `2` or greater to enable synchronous replication.                              |
+| `POSTGRES_STORAGE`         | `5Gi`          | Per-instance PVC size.                                                                                                 |
+| `POSTGRES_BACKUP_SCHEDULE` | `0 40 4 * * *` | Cron schedule for the S3 `ScheduledBackup`.                                                                            |
 
-`POSTGRES_INSTANCES`, `POSTGRES_SYNC_REPLICAS`, `POSTGRES_IMAGE`, and
+`POSTGRES_INSTANCES`, `POSTGRES_SYNC_REPLICAS`, and
 `POSTGRES_STORAGE` don't exist in bykaj's original (he hardcodes
 `instances: 3` plus `minSyncReplicas`/`maxSyncReplicas: 1` and a fixed
 image/size for every consumer, uniformly, with no per-app override anywhere
@@ -33,14 +32,12 @@ with zero replicas blocks every write indefinitely** — there's no replica
 to ever satisfy the requirement — so bump `POSTGRES_INSTANCES` and
 `POSTGRES_SYNC_REPLICAS` together, never one without the other.
 
-No `# renovate: datasource=...` comment precedes `imageName` — deliberately,
-matching bykaj's own component. Renovate's regex manager (the same one used
-elsewhere in this repo) captures the entire last whitespace-delimited token
-on the line, and here that's the whole `${POSTGRES_IMAGE:=...}` expression,
-not a valid image reference — the comment doesn't work once the value is
-wrapped in a Flux default-substitution. Every other place this comment is
-used in this repo (and bykaj's) targets a bare, unwrapped `repo:tag@digest`
-value. Bumping this component's default image is a manual edit.
+The PostgreSQL image is fixed for every consumer (no `POSTGRES_IMAGE`
+override, like bykaj's component) and written as a plain `repo:tag@digest`,
+so Renovate's `cnpg` preset tracks `imageName` natively, digest included.
+`.renovaterc.json5` keeps it on PostgreSQL 18.x. A Flux
+`${VAR:=default}` wrapper around the value would break that: the preset
+would read the `${VAR:=` prefix as part of the image name.
 
 ## Bootstrap behavior
 
@@ -102,7 +99,6 @@ spec:
       # POSTGRES_USERNAME: myapp-user
       # POSTGRES_INSTANCES: "3"
       # POSTGRES_SYNC_REPLICAS: "1"
-      # POSTGRES_IMAGE: ghcr.io/cloudnative-pg/postgresql:18.6
   prune: true
   sourceRef:
     kind: GitRepository

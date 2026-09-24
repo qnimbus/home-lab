@@ -13,7 +13,6 @@ spec:
       grafana.internal/instance: grafana
   grafanaCom:
     id: 2842
-    # renovate: datasource=custom.grafana-dashboard depName=2842
     revision: 18
   datasources:
     - inputName: DS_PROMETHEUS
@@ -31,7 +30,6 @@ spec:
       grafana.internal/instance: grafana
   grafanaCom:
     id: 5336
-    # renovate: datasource=custom.grafana-dashboard depName=5336
     revision: 9
   datasources:
     - inputName: DS_PROMETHEUS
@@ -49,7 +47,6 @@ spec:
       grafana.internal/instance: grafana
   grafanaCom:
     id: 5342
-    # renovate: datasource=custom.grafana-dashboard depName=5342
     revision: 9
   datasources:
     - inputName: DS_PROMETHEUS
