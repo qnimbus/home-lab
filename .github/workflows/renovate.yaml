@@ -42,7 +42,7 @@ permissions:
 jobs:
   renovate:
     name: Renovate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20 # App token lives 60 min; a normal run takes a few
     steps:
       - name: Load Secrets

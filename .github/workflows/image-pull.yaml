@@ -2,7 +2,7 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Image Pull
 
-# Pre-pulls the images a PR adds (main vs PR head) onto one node with talosctl. After merge,
+# Pre-pulls the images a PR adds (vs its base branch) onto one node with talosctl. After merge,
 # Spegel serves them to the other nodes over LAN, so the registry pull is paid once, here.
 
 on:
@@ -22,67 +22,35 @@ permissions:
 jobs:
   extract:
     name: Image Pull - Extract Images
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
-    strategy:
-      matrix:
-        branch:
-          - default
-          - pull
-      fail-fast: false
     outputs:
-      default: ${{ steps.extract.outputs.default }}
-      pull: ${{ steps.extract.outputs.pull }}
+      images: ${{ steps.extract.outputs.images }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0 # flate renders the base branch from history
           persist-credentials: false
-          ref: ${{ matrix.branch == 'default' && github.event.repository.default_branch || '' }}
 
-      - name: Gather Images
-        uses: docker://ghcr.io/allenporter/flux-local:v8.4.0@sha256:c0be852e30f299ce6a220cc992b0c21a2a0b0684cc17713b9d718e18d9c8beff
+      - name: Install flate
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          args: >-
-            get cluster
-            --all-namespaces
-            --path /github/workspace/kubernetes/flux/cluster
-            --enable-images
-            --only-images
-            --output json
-            --output-file images.json
+          install_args: github:home-operations/flate
+          minimum_release_age: "24h" # see validate.yaml
 
+      # flate renders the base branch and the PR and emits only the images the PR adds.
       - name: Extract Images
         id: extract
-        run: |-
-          echo "${{ matrix.branch }}=$(jq --compact-output '.' images.json)" >> "$GITHUB_OUTPUT"
-
-          echo "## Branch ${{ matrix.branch }} images" >> "$GITHUB_STEP_SUMMARY"
-          echo '```json' >> "$GITHUB_STEP_SUMMARY"
-          jq '.' images.json >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-
-  diff:
-    if: ${{ needs.extract.outputs.default != needs.extract.outputs.pull }}
-    needs: extract
-    name: Image Pull - Diff Images
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      images: ${{ steps.diff.outputs.images }}
-    steps:
-      # Via env, not inlined ${{ }}: image strings come from the PR and could inject shell.
-      - name: Diff Images
-        id: diff
         env:
-          DEFAULT_IMAGES: ${{ needs.extract.outputs.default }}
-          PULL_IMAGES: ${{ needs.extract.outputs.pull }}
+          BASE_REF: ${{ github.base_ref }}
         run: |-
-          images=$(jq --compact-output --null-input \
-              --argjson f1 "$DEFAULT_IMAGES" \
-              --argjson f2 "$PULL_IMAGES" \
-              '$f2 - $f1' \
-          )
+          images=$(flate diff images \
+              --path kubernetes/flux/cluster \
+              --base "origin/${BASE_REF}" \
+              --output json \
+              --no-progress \
+            | jq --compact-output '.')
           echo "images=${images}" >> "$GITHUB_OUTPUT"
 
           echo '## New images to pull' >> "$GITHUB_STEP_SUMMARY"
@@ -91,14 +59,14 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
   pull:
-    if: ${{ needs.diff.outputs.images != '[]' && github.event.pull_request.head.repo.full_name == github.repository }}
-    needs: diff
+    if: ${{ needs.extract.outputs.images != '[]' && github.event.pull_request.head.repo.full_name == github.repository }}
+    needs: extract
     name: Image Pull - Pull Images
     runs-on: home-lab
     timeout-minutes: 15
     strategy:
       matrix:
-        image: ${{ fromJSON(needs.diff.outputs.images) }}
+        image: ${{ fromJSON(needs.extract.outputs.images) }}
       max-parallel: 3 # = home-lab runner maxRunners; extra legs idle on the job timeout
       fail-fast: false
     env:
@@ -142,9 +110,9 @@ jobs:
 
   success:
     if: ${{ !cancelled() }}
-    needs: pull
+    needs: [extract, pull] # a failed extract skips pull, so check it directly
     name: Image Pull - Success
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Any jobs failed?
         if: ${{ contains(needs.*.result, 'failure') }}
