@@ -31,10 +31,10 @@ bash scripts/validate.sh -d kubernetes
 uv run --with pyyaml python3 scripts/depgraph.py --check
 ```
 
-`scripts/validate-rendered.sh` (post-Helm-render validation, catches broken values/wiring that
-source-level validation can't see) needs `flux-local`, which also isn't in the mise toolchain —
-skip it locally unless the user has it installed; CI (`flux-render.yaml`) already covers this on
-every PR.
+Post-Helm-render checks (broken values/wiring that source-level validation can't see) run
+in-cluster: konflate (`kubernetes/apps/flux-system/konflate/`) renders every PR with flate and
+posts a "Konflate" check plus a diff comment. Locally, `flate test all` (flate is in the mise
+toolchain) runs the same render.
 
 **A nonzero `validate.sh` exit is not automatically a real finding.** It validates _source_
 manifests, before Flux resolves `postBuild.substitute` — any `${APP}`, `${APP_SUBDOMAIN}`,

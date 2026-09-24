@@ -2,24 +2,15 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Image Pull
 
-# Pre-warms new/changed container images onto a node before a PR merges, modelled on bykaj's
-# image-pull.yaml. `extract` runs `flux-local get cluster --enable-images` against both `main`
-# and the PR head, `diff` computes the set of images only the PR introduces, and `pull` runs
-# `talosctl image pull` for each on a dedicated self-hosted runner. That warms exactly one node —
-# Spegel (DaemonSet, all 5 nodes — kubernetes/apps/kube-system/spegel/) copies nothing. It is a
-# peer-to-peer pull-through mirror: containerd on every node is pointed at its local Spegel
-# (/etc/cri/conf.d/hosts/_default/hosts.toml), which resolves a digest by asking its peers. So
-# Flux's reconcile after merge fetches the layer from the node that already holds it over LAN
-# rather than from the upstream registry — the cold pull is paid once, here. Fail-open: a 200ms
-# dial_timeout means containerd drops straight through to the registry if Spegel is unavailable.
+# Pre-pulls the images a PR adds (main vs PR head) onto one node with talosctl. After merge,
+# Spegel serves them to the other nodes over LAN, so the registry pull is paid once, here.
 
 on:
   pull_request:
     branches:
       - main
     paths:
-      # trigger-level filter instead of a separate billed "filter" job (flux-render.yaml convention)
-      - kubernetes/**
+      - kubernetes/** # trigger filter; a filter job would bill a minute per run
 
 concurrency:
   group: image-pull-${{ github.event.pull_request.number || github.ref }}
@@ -80,8 +71,7 @@ jobs:
     outputs:
       images: ${{ steps.diff.outputs.images }}
     steps:
-      # Via env, not inlined ${{ }}: the image lists come from the PR head's manifests, so an
-      # image string containing a `'` would otherwise break out of the quoting and run as shell.
+      # Via env, not inlined ${{ }}: image strings come from the PR and could inject shell.
       - name: Diff Images
         id: diff
         env:
@@ -109,59 +99,32 @@ jobs:
     strategy:
       matrix:
         image: ${{ fromJSON(needs.diff.outputs.images) }}
-      # Must not exceed the home-lab scale set's maxRunners (3, see
-      # runners/home-lab/helmrelease.yaml) — a 4th matrix leg would sit unassigned while still
-      # burning this job's 15-minute clock, which is exactly where the mise cache stall bites.
-      max-parallel: 3
+      max-parallel: 3 # = home-lab runner maxRunners; extra legs idle on the job timeout
       fail-fast: false
     env:
       MATRIX_IMAGE: ${{ matrix.image }}
     steps:
-      # mise-action reads .mise/config.toml for the pinned version — without a checkout here it
-      # finds no config, so it installs mise's own latest instead of the pin, and (worse)
-      # leaves the shim unactivated: "No version is set for shim: talosctl" on the next step.
+      # mise-action needs .mise/config.toml for the talos pin (and an activated shim).
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # mise-pinned, not a curl-latest install — matches .mise/config.toml's talos version.
-      #
-      # Bounded because a mise cache restore can hang this step indefinitely. Observed 2026-09-07
-      # (run 34029723091 → PR #115): every matrix leg got a cache hit, but two of three then sat
-      # at zero bytes for 101s before `Failed to restore: The operation cannot be completed in
-      # timeout`. mise-action recovered fine — fresh-installed talosctl in 20s and exported PATH —
-      # and then its node process simply never exited, leaving the step silent until the job's
-      # 15-minute clock killed it. GitHub closed actions/setup-go#645 (same signature) saying an
-      # aborted cache download that "appears to hang" is expected, so the bound has to live here.
-      #
-      # continue-on-error + a 2-minute budget converts that 15-minute hang into a ~2-minute detour
-      # into the fallback below. The cache is left enabled: on the happy path it restores 61 MB in
-      # ~3s and makes this step 9s instead of ~20s. cache_save stays on so the entry keeps getting
-      # refreshed — parallel legs share one key, so all but the winner log a harmless
-      # "Unable to reserve cache ... another job may be creating this cache" and move on.
+      # A stalled cache restore can hang mise-action until the job timeout (2026-09-07, PR #115),
+      # so it gets 2 minutes and falls through to the curl install below. Cache stays on (~9s vs ~20s).
       - name: Install talosctl
         id: mise
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         continue-on-error: true
         timeout-minutes: 2
         env:
-          # Best-effort: abort a stalled segment after 1 min rather than the 10-min default. The
-          # step timeout above is the actual guarantee — this only shortens the wasted window.
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: "1"
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: "1" # default 10; the step timeout is the real bound
         with:
-          # `talos` (not the `talosctl` alias) so it resolves to the .mise/config.toml pin.
-          install_args: talos
-          # Soak window on mise's own version, not on the tools it installs — see the same knob in
-          # flux-render.yaml for the incident. Orthogonal to continue-on-error above: that handles
-          # a cache-restore stall (mise already installed, node process never exits), this handles
-          # resolving a version whose release assets are not published yet. Neither covers the
-          # other, so both stay.
-          minimum_release_age: "24h"
+          install_args: talos # not the `talosctl` alias, so the .mise/config.toml pin applies
+          minimum_release_age: "24h" # see validate.yaml
 
-      # .mise/config.toml stays the single source of truth for the version — parsed here, never duplicated.
-      # $GITHUB_PATH entries are prepended, so this wins over any half-initialised mise shim left
-      # behind by a cancelled step ("No version is set for shim: talosctl").
+      # Version parsed from .mise/config.toml; $GITHUB_PATH is prepended, so this beats a
+      # half-initialised mise shim from the cancelled step.
       - name: Install talosctl (fallback)
         if: ${{ steps.mise.outcome != 'success' }}
         run: |-

@@ -21,20 +21,18 @@ jobs:
         with:
           persist-credentials: false
 
-      # Tool versions come from .mise/config.toml; see flux-render.yaml for why
-      # minimum_release_age is set instead of pinning the mise version.
+      # Tool versions come from .mise/config.toml.
       - name: Install flux, flux-schema, kustomize + lefthook
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
           install_args: flux2 github:fluxcd/flux-schema kustomize lefthook
+          # Soak window on the mise binary itself: mise.jdx.dev/VERSION can advertise a release
+          # before its GitHub assets exist (2026-09-08: every run failed on `curl: (22)`).
+          # Preferred over a hard `version` pin that nothing would keep up to date.
           minimum_release_age: "24h"
 
-      # validate.sh is vendored by the gitops-repo-audit skill (fluxcd/flux-schema
-      # upstream) and validates against the online schema catalog — no local
-      # schemas. -E renders Flux ${VAR} substitutions with placeholder values so
-      # hostname/IP fields pass their schema patterns. Excluded dirs aren't
-      # Kubernetes manifests (Talos config, a
-      # kustomize replacements list).
+      # Vendored flux-schema script (online catalog). -E fills Flux ${VAR}s with placeholders so
+      # pattern-checked fields pass; the excluded dirs aren't Kubernetes manifests.
       - name: Validate Kubernetes manifests
         run: |
           bash .agents/skills/gitops-repo-audit/scripts/validate.sh \
@@ -48,7 +46,6 @@ jobs:
         with:
           node-version: "24"
 
-      # Runs the pre-commit hook's command so the validator and its version pin
-      # live in one place (.lefthook.yaml); --all-files feeds it .renovaterc.json5.
+      # Same command as the pre-commit hook, so the version pin lives only in .lefthook.yaml.
       - name: Validate Renovate config
         run: lefthook run pre-commit --all-files --command validate-renovate

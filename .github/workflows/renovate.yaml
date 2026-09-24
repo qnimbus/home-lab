@@ -2,34 +2,20 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: Renovate
 
-# Self-hosted Renovate, replacing the Mend-hosted GitHub App (2026-09-05). Runs under the
-# repo's own bot App via the same 1Password → App-token flow as labeler.yaml, so PRs, commits
-# and the dependency dashboard are authored by qnimbus-homelab-assistant[bot]. Everything set
-# under `env:` below is Renovate *global* config (self-hosted only); repository config stays
-# in .renovaterc.json5 and is unchanged by this move.
-#
-# Runs on GitHub-hosted runners for now. An in-cluster runner was investigated and parked — ARC's
-# kubernetes container hook runs job containers as the image's own uid (Renovate: 12021) on a
-# fsGroup-1001 volume, a known failure mode, and the only scale set now available (home-lab) is
-# cluster-admin + Talos os:admin — a bigger blast radius for an hourly job than this. See
-# docs/ROADMAP.md "Renovate on an in-cluster runner".
-#
-# Budget: every 6 h × ~2-3 rounded-up billed minutes ≈ 250-360 min/month of the private-repo
-# 2000 min/month plan (hourly would be ~1500-2200 — the whole plan). Check Settings → Billing
-# after the first days before tightening the cron; add actions/cache on /tmp/renovate (mounted
-# by the action's default docker-volumes) if lookups dominate the run time. Note
-# .renovaterc.json5's prHourlyLimit is really a per-run cap, so a backlog drains 2 PRs per run.
+# Self-hosted Renovate running as the github-bot App (1Password → App token, as in labeler.yaml).
+# `env:` below is Renovate global config; repository config lives in .renovaterc.json5.
+# Every 6 h ≈ 300 of the 2000 private-repo min/month (hourly would use them all).
+# With runs 6 h apart, prHourlyLimit is effectively a per-run cap.
 
 on:
   push:
     branches:
       - main
-    paths:
-      # config change → immediate run (replaces the webhook the hosted app reacted to)
+    paths: # config change → immediate run
       - .renovaterc.json5
       - .github/workflows/renovate.yaml
   schedule:
-    - cron: 0 */6 * * * # every 6 h — see budget note above; dashboard checkbox actions wait for the next run
+    - cron: 0 */6 * * * # see budget note above; dashboard checkboxes wait for the next run
   workflow_dispatch:
     inputs:
       dryRun:
@@ -57,8 +43,7 @@ jobs:
   renovate:
     name: Renovate
     runs-on: ubuntu-latest
-    # The App token lives 60 min; a healthy run is a few minutes — ceiling, not budget.
-    timeout-minutes: 20
+    timeout-minutes: 20 # App token lives 60 min; a normal run takes a few
     steps:
       - name: Load Secrets
         id: load-secrets
@@ -68,8 +53,7 @@ jobs:
           GITHUB_BOT_APP_CLIENT_ID: op://GitHub/github-bot/GITHUB_BOT_APP_CLIENT_ID
           GITHUB_BOT_APP_PRIVATE_KEY: op://GitHub/github-bot/GITHUB_BOT_APP_PRIVATE_KEY
 
-      # Scoped down from the App's installed permission set. `workflows: write` is required —
-      # without it GitHub rejects every branch touching .github/workflows/ (all actions/* bumps).
+      # Scoped down from the App's installed permissions.
       - name: Generate Token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: app-token
@@ -79,30 +63,19 @@ jobs:
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write # dependency dashboard
-          permission-workflows: write
+          permission-workflows: write # else branches touching .github/workflows/ are rejected
           permission-checks: read # branch status for internalChecksFilter / dashboard
-          # Separate GitHub App scope from checks. write (not read) is required: Renovate
-          # both GETs .../commits/{sha}/statuses before opening a PR AND POSTs a
-          # renovate/stability-days status to the branch (config uses stabilityDays);
-          # a 403 on either aborts the whole repo run before it reaches the PR or
-          # dashboard-issue step. Confirmed via debug log, 2026-09-05 (two rounds:
-          # read alone got past the GET but 403'd on the POST, x-accepted-github-
-          # permissions: statuses=write).
-          permission-statuses: write
+          permission-statuses: write # posts renovate/stability-days; read alone 403s the whole run
 
       # No actions/checkout: Renovate clones the repository itself with the token.
       - name: Run Renovate
         uses: renovatebot/github-action@e26264186543fd355dc60776e21f7fbb67ce6f85 # v46.3.2
         env:
           LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
-          # Explicit repository instead of autodiscover + filter — one repo, no listing call
           RENOVATE_REPOSITORIES: ${{ github.repository }}
-          # Empty on schedule/push (inputs unset) → normal run; `true` from dispatch → full dry run
-          RENOVATE_DRY_RUN: ${{ inputs.dryRun }}
+          RENOVATE_DRY_RUN: ${{ inputs.dryRun }} # empty unless dispatched with dryRun
           RENOVATE_PLATFORM: github
-          # Commit through the GitHub API instead of `git push` — commits are signed and show as
-          # verified from the App with no GPG key to manage in CI
-          RENOVATE_PLATFORM_COMMIT: true
+          RENOVATE_PLATFORM_COMMIT: true # commits via the API, signed as the App
           RENOVATE_INTERNAL_CHECKS_FILTER: strict
         with:
           token: ${{ steps.app-token.outputs.token }}
