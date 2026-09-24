@@ -9,7 +9,7 @@ metadata:
 spec:
   kubernetes:
     # renovate: datasource=docker depName=ghcr.io/siderolabs/kubelet
-    version: v1.36.4
+    version: v1.37.1
   # Backup gate: tuppr re-checks these every 10s before the upgrade and only proceeds once
   # all pass. Empty namespace = every namespace. No kopiur backup may be mid-run (a
   # Snapshot without a status yet counts as not passed, so a just-started one blocks
