@@ -2,11 +2,23 @@
 
 CloudNative-PG backed PostgreSQL component, adapted from
 [bykaj/home-ops](https://github.com/bykaj/home-ops)'s `components/postgres`:
-a dedicated `Cluster` per consuming app. It's the only way apps get a
-database here: the old shared `postgres-v17` cluster is gone
-(`kubernetes/apps/database/cloudnative-pg/` now holds just the operator and
-the Barman plugin). Current consumers: `firefly-iii`, `forgejo`, `n8n`,
-`paperless-ngx`.
+a dedicated CNPG `Cluster` per consuming app, backed up to S3. Every app
+database in this cluster comes from this component. List the current
+consumers with:
+
+```sh
+grep -rl components/postgres kubernetes/apps --include=ks.yaml
+```
+
+## What it creates
+
+| Resource          | Name                     | Purpose                                                                      |
+| ----------------- | ------------------------ | ---------------------------------------------------------------------------- |
+| `Cluster`         | `${APP}-postgres`        | The database itself, on node-local `openebs-hostpath` storage                |
+| `ObjectStore`     | `${APP}-postgres-backup` | Barman Cloud S3 target for base backups and WAL archiving                    |
+| `ScheduledBackup` | `${APP}-daily`           | Daily base backup                                                            |
+| `ExternalSecret`  | `${APP}-postgres`        | S3 credentials from 1Password                                                |
+| _(patch)_         | every `HelmRelease`      | Adds `dependsOn: database/cloudnative-pg`, so the app waits for the operator |
 
 ## Substitution variables
 
@@ -174,19 +186,26 @@ archiving to the same `s3://vwn-io-cluster-cnpg/dedicated/${APP}/` prefix.
 `retentionPolicy: 14d`.
 
 Unlike bykaj's original, there is **no** local NFS backup sidecar
-(`postgres-backup-local`-style) in this component yet — the shared cluster
-has one, this doesn't. Add one later if a dedicated cluster needs the extra
-redundancy.
+(`postgres-backup-local`-style). S3 is the only backup copy. Add one if a
+database ever needs the extra redundancy.
 
 ## S3 backend
 
-Reuses the same Backblaze B2 bucket and the same `cloudnative-pg` 1Password
-item (S3 credentials fields only — not the superuser fields) as the shared
-cluster in `kubernetes/apps/database/cloudnative-pg/`, just under a
-`dedicated/${APP}/` prefix instead of a separate bucket or a new 1Password
-item. `enableSuperuserAccess: true` with no explicit `superuserSecret` means
-CNPG auto-generates its own per-cluster superuser credentials — no 1Password
-wiring needed for that part at all.
+Every consumer shares one Backblaze B2 bucket (`vwn-io-cluster-cnpg`), each under
+its own `dedicated/${APP}/` prefix. The S3 credentials come from the
+`cloudnative-pg` 1Password item; only its S3 fields are used. Backups and WAL
+are bzip2-compressed and AES256-encrypted, and kept for 14 days.
+
+The `ObjectStore` sets `AWS_REQUEST_CHECKSUM_CALCULATION` and
+`AWS_RESPONSE_CHECKSUM_VALIDATION` to `when_required` on the Barman sidecar.
+Newer botocore sends chunked-trailer checksums without a `Content-Length`
+header, and B2 (like several other non-AWS S3 providers) rejects those uploads
+with `MissingContentLength`. These variables restore the older header-based
+behaviour. Don't remove them.
+
+`enableSuperuserAccess: true` with no explicit `superuserSecret` means CNPG
+generates its own per-cluster superuser credentials, so that part needs no
+1Password wiring.
 
 ## Connecting from an app
 
@@ -195,9 +214,8 @@ CNPG generates a `${APP}-postgres-app` Secret (CNPG's default naming:
 `password`, `host`, `port`, `dbname`, `pgpass`. Confirm the exact name once
 deployed — `kubectl get secrets -n <namespace> | grep postgres`.
 
-Both current consumers read the individual keys rather than `uri`, since
-neither chart accepts a single connection string — this is the pattern to
-default to unless the chart specifically wants a URI:
+Default to reading the individual keys rather than `uri`, which most charts
+don't accept as a single connection string:
 
 ```yaml
 DB_HOST: "${APP}-postgres-rw" # or hardcode e.g. "myapp-postgres-rw" if easier to read
@@ -218,8 +236,8 @@ DB_NAME:
       key: dbname
 ```
 
-(see `forgejo/app/helmrelease.yaml`'s `additionalConfigFromEnvs` and
-`n8n/app/helmrelease.yaml`'s `env` for the two worked examples.) For a chart
+(For worked examples, see `forgejo/app/helmrelease.yaml`'s
+`additionalConfigFromEnvs` or `n8n/app/helmrelease.yaml`'s `env`.) For a chart
 that does accept one connection string:
 
 ```yaml
@@ -245,35 +263,19 @@ healthCheckExprs:
     current: status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True')
 ```
 
-This alone does nothing — see the caveat on `healthChecks`/`wait: false` in
-the "Adding a net-new DB" example above. Forgejo's `ks.yaml` originally
-shipped with only this block and no `healthChecks`/`wait`, so the Cluster
-check was silently never evaluated; fixed alongside n8n's migration.
+This alone does nothing. Flux only evaluates `healthCheckExprs` when the
+Kustomization also has `wait: true` or `healthChecks`, so pair it with a
+`healthChecks` entry for the app's HelmRelease, as in the "Adding a net-new
+DB" example above. Without one, the Cluster check is silently skipped.
 
 ## Known gaps versus bykaj's original
 
-- No local NFS backup sidecar (see Backups above).
-- `components/keda/postgres-scaler` (scale-to-zero) is not wired up for any
-  app using this component yet — its `ScaledObject` gates on the _shared_
-  cluster's `${PG_HOST}` blackbox probe, which has nothing to do with a
-  dedicated cluster's own health. An app switching to a dedicated cluster
-  needs its own `Probe` against `${APP}-postgres-rw` before that scaler
-  would be meaningful again.
-- **No backup-failure alerting.** The shared `postgres-v17` cluster has a
-  dead-man's-switch `PrometheusRule` pair
-  (`kubernetes/apps/database/cloudnative-pg/cluster/app/prometheusrule.yaml`:
-  `PostgresScheduledBackupMissed`/`PostgresScheduledBackupFailed`) watching
-  `barman_cloud_cloudnative_pg_io_last_{available,failed}_backup_timestamp` —
-  the plugin's own exporter metric, not the legacy
-  `cnpg_collector_last_available_backup_timestamp`/`Cluster.status`
-  fields, which are permanently stuck at zero for any CNPG-plugin-interface
-  backup (confirmed live on `postgres-v17`, `forgejo-postgres`, and
-  `n8n-postgres`; see
+- No local NFS backup sidecar (see [Backups](#backups)).
+- **No backup-failure alerting.** If a cluster's backups silently stopped,
+  nothing would surface it. A rule for this has to watch the Barman plugin's
+  own metric, `barman_cloud_cloudnative_pg_io_last_{available,failed}_backup_timestamp`.
+  The legacy `cnpg_collector_last_available_backup_timestamp` metric and the
+  `Cluster.status` backup fields stay at zero for plugin-based backups (see
   [cloudnative-pg/plugin-barman-cloud#380](https://github.com/cloudnative-pg/plugin-barman-cloud/issues/380)).
-  This component has no equivalent — right now, if a dedicated cluster's
-  backups silently stopped working, nothing would surface it. Future
-  improvement: a parameterized version of that same rule pair (swap the
-  hardcoded `postgres-v17`/`database` labels for `${APP}-postgres`/the
-  consuming namespace) added to this component, so every future adopter
-  gets the alerting for free instead of each one needing to remember to
-  add it by hand.
+  The natural fix is a `PrometheusRule` in this component, parameterized on
+  `${APP}-postgres`, so every consumer gets the alert automatically.

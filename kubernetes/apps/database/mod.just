@@ -4,14 +4,14 @@ set quiet
 set script-interpreter := ['bash', '-euo', 'pipefail']
 set shell := ['bash', '-euo', 'pipefail', '-c']
 
-[doc('Dump a single database from a CNPG cluster to a local pg_dump custom-format file — e.g. `just k8s database dump firefly` (shared postgres-v17), or `just k8s database dump forgejo "" forgejo-postgres development` for a dedicated per-app cluster. Defaults to ~/cnpg-backups/<db>-<timestamp>.dump if FILE is omitted.')]
-dump db cluster="postgres-v17" ns="database" file="":
+[doc('Dump an app database from its <app>-postgres CNPG cluster to a local pg_dump custom-format file — e.g. `just k8s database dump default forgejo`. FILE defaults to ~/cnpg-backups/<db>-<timestamp>.dump; DB defaults to the app name.')]
+dump ns app file="" db="":
     #!/usr/bin/env bash
     set -euo pipefail
 
-    DB="{{ db }}"
+    DB="{{ if db == '' { app } else { db } }}"
     FILE="{{ file }}"
-    CLUSTER="{{ cluster }}"
+    CLUSTER="{{ app }}-postgres"
     NS="{{ ns }}"
     if [ -z "${FILE}" ]; then
         FILE="${HOME}/cnpg-backups/${DB}-$(date +%Y%m%d-%H%M%S).dump"
@@ -47,14 +47,14 @@ dump db cluster="postgres-v17" ns="database" file="":
     SIZE=$(du -h "${FILE}" | cut -f1)
     gum log -t rfc3339 -s -l info "Dump complete: ${FILE} (${SIZE})" stage done
 
-[doc('DESTRUCTIVE: restore a local pg_dump custom-format file into an existing database on a CNPG cluster, dropping/recreating its objects — e.g. `just k8s database restore firefly ~/cnpg-backups/firefly-20260712-153000.dump` (shared postgres-v17), or `just k8s database restore forgejo ~/cnpg-backups/forgejo-20260915-103441.dump forgejo-postgres development` for a dedicated per-app cluster. The target database must already exist; other databases on the same cluster are untouched.')]
-restore db file cluster="postgres-v17" ns="database":
+[doc('DESTRUCTIVE: restore a local pg_dump custom-format file into an app database on its <app>-postgres CNPG cluster, dropping/recreating its objects — e.g. `just k8s database restore default forgejo ~/cnpg-backups/forgejo-20260915-103441.dump`. DB defaults to the app name and must already exist.')]
+restore ns app file db="":
     #!/usr/bin/env bash
     set -euo pipefail
 
-    DB="{{ db }}"
+    DB="{{ if db == '' { app } else { db } }}"
     FILE="{{ file }}"
-    CLUSTER="{{ cluster }}"
+    CLUSTER="{{ app }}-postgres"
     NS="{{ ns }}"
 
     # just runs module recipes with cwd set to the module's own directory
@@ -80,7 +80,7 @@ restore db file cluster="postgres-v17" ns="database":
     if ! kubectl exec "${POD}" -n "${NS}" -c postgres -- psql -U postgres -At -c \
         "select 1 from pg_database where datname = '${DB}';" | grep -q 1; then
         gum log -t rfc3339 -s -l error \
-            "Database '${DB}' does not exist on ${CLUSTER} in namespace ${NS} — create it first (a CNPG Database CRD for the shared postgres-v17 cluster, or the Cluster's own bootstrap for a dedicated one), then re-run."
+            "Database '${DB}' does not exist on ${CLUSTER} in namespace ${NS} — the Cluster's bootstrap creates it (POSTGRES_DATABASE), so check the app's ks.yaml, then re-run."
         exit 1
     fi
 
