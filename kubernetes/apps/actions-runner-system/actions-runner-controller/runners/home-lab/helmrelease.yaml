@@ -24,7 +24,7 @@ spec:
       namespace: actions-runner-system
     githubConfigSecret: home-lab-runner-secret
     githubConfigUrl: "https://github.com/qnimbus/home-lab"
-    maxRunners: 3
+    maxRunners: 6
     minRunners: 0
     template:
       spec:

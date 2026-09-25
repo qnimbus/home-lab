@@ -22,7 +22,7 @@ permissions:
 jobs:
   extract:
     name: Image Pull - Extract Images
-    runs-on: ubuntu-24.04
+    runs-on: home-lab
     timeout-minutes: 10
     outputs:
       images: ${{ steps.extract.outputs.images }}
@@ -38,6 +38,7 @@ jobs:
         with:
           install_args: github:home-operations/flate
           minimum_release_age: "24h" # see validate.yaml
+          cache: false # GitHub cache restores can stall off-GitHub (see pull); one small binary isn't worth it
 
       # flate renders the base branch and the PR and emits only the images the PR adds.
       - name: Extract Images
@@ -67,7 +68,7 @@ jobs:
     strategy:
       matrix:
         image: ${{ fromJSON(needs.extract.outputs.images) }}
-      max-parallel: 3 # = home-lab runner maxRunners; extra legs idle on the job timeout
+      max-parallel: 3 # half the home-lab runner's maxRunners, leaving slots for other jobs
       fail-fast: false
     env:
       MATRIX_IMAGE: ${{ matrix.image }}
@@ -112,7 +113,7 @@ jobs:
     if: ${{ !cancelled() }}
     needs: [extract, pull] # a failed extract skips pull, so check it directly
     name: Image Pull - Success
-    runs-on: ubuntu-24.04
+    runs-on: home-lab
     steps:
       - name: Any jobs failed?
         if: ${{ contains(needs.*.result, 'failure') }}
