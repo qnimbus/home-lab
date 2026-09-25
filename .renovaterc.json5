@@ -2,7 +2,7 @@
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   // To test renovate:
   //
-  // LOG_LEVEL=debug LOG_FORMAT=json timeout 580 npx -y renovate@44.65.5 --platform=local --dry-run=extract
+  // LOG_LEVEL=debug LOG_FORMAT=json timeout 580 npx -y renovate@ --platform=local --dry-run=extract
   extends: [
     "github>home-operations/renovate-presets#8.1.0",
     "github>home-operations/renovate-presets//apps/cnpg.json5#8.1.0",
@@ -37,10 +37,6 @@
     // To test: git ls-files | grep -P '(^|/)kubernetes/.+\.ya?ml(?:\.j2)?$'
     // Pick up HelmRelease, GitRepository, OCIRepository in kubernetes/
     managerFilePatterns: ["/(^|/)kubernetes/.+\\.ya?ml(?:\\.j2)?$/"],
-  },
-  "helm-values": {
-    // Pick up image tags inside helm/values.yaml files
-    managerFilePatterns: ["/(^|/)kubernetes/.+\\.ya?ml$/"],
   },
   "helm-values": {
     // To test: git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?values\.ya?ml(?:\.j2)?$'
