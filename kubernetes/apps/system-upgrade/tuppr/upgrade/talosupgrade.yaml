@@ -9,7 +9,7 @@ spec:
     # renovate: datasource=custom.talos-factory depName=siderolabs/talos
     version: v1.14.1
   policy:
-    rebootMode: powercycle
+    rebootMode: default
     placement: hard
     waitForVolumeDetach: true
   healthChecks:
@@ -22,10 +22,12 @@ spec:
       kind: Restore
       description: no kopiur restore is running
       expr: "!(status.phase in ['Resolving', 'Restoring'])"
+      timeout: 30m
     - apiVersion: ceph.rook.io/v1
       kind: CephCluster
       expr: |-
         status.ceph.health in ['HEALTH_OK']
+      timeout: 30m
   parallelism: 1
   silences:
     - matchers:
