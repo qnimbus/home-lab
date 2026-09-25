@@ -98,3 +98,12 @@ Renovate watches the repository for dependency updates (chart versions, image ta
 ### Secrets
 
 Runtime secrets are never committed in plaintext. In Kubernetes, External Secrets Operator + 1Password Connect (`ClusterSecretStore: onepassword`) inject them as Kubernetes Secrets from `ExternalSecret` resources — the default for app secrets. The one exception is `kubernetes/flux/vars/cluster-secrets.sops.yaml`, SOPS/age-encrypted and decrypted by Flux (`sops-age` Secret) for `${VAR}` substitution. In Docker Compose land, doco-cd resolves `op://` references declared in `docker/nas/.doco-cd.yaml` at deploy time; its own service-account token and deploy key are placed on the host by `just bootstrap nas`. `op` (1Password CLI) is also used locally for `just template`/bootstrap/Talos flows via `op inject`.
+
+### Network policies
+
+The cluster runs **without NetworkPolicies by default**. The CNI is Cilium, but nothing sets a default-deny, and apps don't ship their own policies. Don't add one to a new app unless the user asks.
+
+- **Flux:** `flux-system` follows the same rule. flux-operator's built-in policies are switched off (`instance.cluster.networkPolicy: false` in `flux-instance`, `web.networkPolicy.create: false` in `flux-operator`), as in bykaj/home-ops. They allowed cross-namespace ingress only on port 8080, which silently blocked Prometheus from scraping konflate on 8081. konflate's GitHub webhooks only worked because they also happen to arrive on 8080.
+- **Dragonfly (the one exception):** the Dragonfly operator generates a restrictive policy for every instance (`${APP}-dragonfly`, owned by the `Dragonfly` CR). `components/dragonfly` adds `${APP}-dragonfly-allow-metrics` so Prometheus can still scrape port 9999. Any new port that needs to reach those pods needs a similar allow rule next to it.
+
+Why: this is a single-user homelab running trusted workloads, so the main thing policies would protect against (a compromised pod moving to other services) is a small risk. The cost is real, though. Once any policy selects a pod, all other traffic to it in that direction is dropped. Traffic nobody anticipated then times out silently instead of erroring, and operator-generated policies don't appear in Git, so reviewing the repo won't reveal them. Partial coverage gives the costs of NetworkPolicies without the protection. If that trade-off changes, enforce it deliberately: a namespace-wide default-deny plus explicit allow rules for DNS, Prometheus, the gateway and the Kubernetes API, rather than one-off policies.
