@@ -17,7 +17,7 @@ spec:
             image:
               repository: ghcr.io/unpoller/unpoller
               # renovate: datasource=docker depName=ghcr.io/unpoller/unpoller
-              tag: v5.2.2@sha256:368126bce83af861109e1889d19786071cbf43fc39ef42026910b9717c20a107
+              tag: v5.2.8@sha256:ca82e584b9bb3c8d2f9998adb429ab9f9bbb8840388ba10f2c62f07bd31ea0e9
             env:
               TZ: "${CLUSTER_TIMEZONE}"
               UP_UNIFI_DEFAULT_ROLE: home-lab
