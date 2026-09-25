@@ -6,3 +6,6 @@
 # not the operator pod itself.
 serviceMonitor:
   create: true
+web:
+  networkPolicy:
+    create: false
