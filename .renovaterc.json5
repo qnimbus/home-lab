@@ -183,6 +183,18 @@
       groupSlug: "mise-tools",
     },
     {
+      // Same release published twice: the container image the workflow runs
+      // and the npm package the lefthook config-validator runs — bump together
+      description: "Renovate Group",
+      groupName: "renovate",
+      matchDatasources: ["docker", "npm"],
+      matchPackageNames: ["ghcr.io/renovatebot/renovate", "renovate"],
+      group: {
+        commitMessageTopic: "{{{groupName}}} group",
+      },
+      minimumGroupSize: 2,
+    },
+    {
       description: "Rook-Ceph Group",
       groupName: "rook-ceph",
       matchDatasources: ["docker"],
