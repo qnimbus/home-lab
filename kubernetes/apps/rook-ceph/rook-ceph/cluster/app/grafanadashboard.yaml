@@ -10,7 +10,7 @@ spec:
   allowCrossNamespaceImport: true
   instanceSelector:
     matchLabels:
-      grafana.internal/instance: grafana
+      dashboards: grafana
   grafanaCom:
     id: 2842
     revision: 18
@@ -27,7 +27,7 @@ spec:
   allowCrossNamespaceImport: true
   instanceSelector:
     matchLabels:
-      grafana.internal/instance: grafana
+      dashboards: grafana
   grafanaCom:
     id: 5336
     revision: 9
@@ -44,7 +44,7 @@ spec:
   allowCrossNamespaceImport: true
   instanceSelector:
     matchLabels:
-      grafana.internal/instance: grafana
+      dashboards: grafana
   grafanaCom:
     id: 5342
     revision: 9

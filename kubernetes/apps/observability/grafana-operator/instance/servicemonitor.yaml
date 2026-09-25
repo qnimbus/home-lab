@@ -16,4 +16,4 @@ spec:
   # The operator copies the Grafana CR's labels onto grafana-service.
   selector:
     matchLabels:
-      grafana.internal/instance: grafana
+      dashboards: grafana

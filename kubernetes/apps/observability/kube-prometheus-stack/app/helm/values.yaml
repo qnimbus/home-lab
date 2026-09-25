@@ -45,7 +45,7 @@ grafana:
     dashboardsConfigMapRefEnabled: true
     folder: observability
     matchLabels:
-      grafana.internal/instance: grafana
+      dashboards: grafana
 
 # Talos runs without kube-proxy (Cilium replaces it with eBPF)
 kubeProxy:

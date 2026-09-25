@@ -5,8 +5,9 @@ kind: Grafana
 metadata:
   name: grafana
   labels:
-    # Every GrafanaDashboard/GrafanaDatasource selects this (instanceSelector is immutable).
-    grafana.internal/instance: grafana
+    # The label charts' grafana-operator integrations select by default; every
+    # GrafanaDashboard/GrafanaDatasource matches on it (instanceSelector is immutable).
+    dashboards: grafana
 spec:
   config:
     analytics:

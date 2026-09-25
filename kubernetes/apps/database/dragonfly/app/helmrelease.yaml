@@ -17,7 +17,4 @@ spec:
       enabled: true
       grafanaOperator:
         enabled: true
-        # Chart default selects `dashboards: grafana` (bykaj's Grafana label), not ours.
-        matchLabels:
-          grafana.internal/instance: grafana
       folder: database

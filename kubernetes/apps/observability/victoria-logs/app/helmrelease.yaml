@@ -41,7 +41,3 @@ spec:
       enabled: true
       grafanaOperator:
         enabled: true
-        spec:
-          instanceSelector:
-            matchLabels:
-              grafana.internal/instance: grafana
