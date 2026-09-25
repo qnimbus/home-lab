@@ -9,36 +9,6 @@ metadata:
     substitution.flux.home.arpa/disabled: "true"
 spec:
   dependsOn:
-    # ServiceMonitor + PrometheusRule CRDs, needed twice over: the chart renders both now
-    # that monitoring.* is enabled, and app/prometheusrule.yaml is a PrometheusRule in this
-    # Kustomization's own path, so the CRD must exist for Flux's dry-run too — not just for
-    # the Helm install. Without this a from-scratch bootstrap races: both Kustomizations
-    # start together, the Helm install fails on "no matches for kind", and remediation
-    # uninstalls the release — taking tuppr-upgrade down with it.
-    #
-    # Cost, understood and accepted: this inherits kube-prometheus-stack's own chain
-    # (onepassword-store, rook-ceph-cluster) plus its HelmRelease health check. tuppr-upgrade
-    # dependsOn tuppr with wait: true, so a break anywhere up that chain freezes delivery of
-    # TalosUpgrade spec changes — the file you would edit to roll a Talos version back.
-    #
-    # The window is narrower than it looks. rook-ceph-cluster's healthCheckExprs fail only on
-    # `status.ceph.health == 'HEALTH_ERR'` and treat HEALTH_WARN as current, so routine
-    # degradation does not cascade: the whole 2026-09-09 five-node run sat in HEALTH_WARN
-    # (2 OSDs down, 24% degraded) with this chain intact throughout. Only genuine
-    # data-unavailability — below min_size, PGs inactive — breaks it.
-    #
-    # If you ever do hit that: a frozen tuppr-upgrade shows `DependencyNotReady` and stays on
-    # its last applied revision (seen for real when tuppr went NotReady over a namespace-less
-    # ExternalSecret). Do not fight Flux for it — recover the node with `talosctl upgrade`
-    # directly, which is the normal out-of-band path and how four of these nodes reached
-    # their current schematic in the first place.
-    #
-    # Removing this line is not a one-line change: app/prometheusrule.yaml would have to move
-    # somewhere the CRD is guaranteed, or the Kustomization fails its dry-run on every fresh
-    # bootstrap until kube-prometheus-stack lands. Other apps here (blackbox-exporter,
-    # flux-instance, cloudnative-pg) do ship PrometheusRules without this dependency and
-    # simply tolerate that transient failure — a valid alternative, deliberately not taken
-    # here because a failed tuppr install gets uninstalled by remediation rather than retried.
     - name: kube-prometheus-stack
       namespace: observability
   wait: false
@@ -65,9 +35,6 @@ metadata:
     decryption.flux.home.arpa/disabled: "true"
     substitution.flux.home.arpa/disabled: "true"
 spec:
-  # TalosUpgrade and KubernetesUpgrade CRDs don't exist until tuppr's HelmRelease
-  # installs the chart. dependsOn blocks this Kustomization's dry-run until the
-  # operator is healthy and the CRD types are registered in the API server.
   dependsOn:
     - name: tuppr
       namespace: system-upgrade

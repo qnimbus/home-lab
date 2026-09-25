@@ -8,38 +8,10 @@ spec:
   talos:
     # renovate: datasource=custom.talos-factory depName=siderolabs/talos
     version: v1.14.0
-    # talos.prePull defaults to true (chart 0.4.3+) — the installer image is pulled on every node
-    # before the first cordon, so a bad tag/schematic parks the run before any disruption
   policy:
     rebootMode: powercycle
-    # Pinned rather than left to the CRD default. tuppr changed this default soft -> hard in
-    # v0.2.6, but defaulting only fills fields that are *absent*: placement already existed in the
-    # 0.1.36 CRD (default soft), so it was materialised as soft on this object and no later default
-    # change could touch it. Contrast prePull above, which did not exist in 0.1.36 — being absent,
-    # it picked up its new default on its own.
-    # soft is only *preferred* anti-affinity: the upgrade job can land on the very node it is
-    # rebooting and get killed mid-upgrade. hard forbids that (degrades to preferred if single-node).
     placement: hard
-    # Non-default (upstream false). ceph-block is the default StorageClass, so most workloads hold
-    # RWO RBD volumes; without this a fast reboot orphans the mount and the pod lands in
-    # Multi-Attach on the next node. Makes tuppr drain and wait for CSI detach before rebooting.
-    # Cost: policy.timeout (30m) bounds the per-node talosctl command, NOT this drain. Rook's
-    # OSD/mon/mgr PDBs block eviction while Ceph is still recovering from the previous node, so a
-    # full 5-node run serialises on Ceph recovery and can run long. The drain itself uses a
-    # hard-coded 10m DrainOptions.Timeout, and the volume-detach wait is 2m and best-effort — it
-    # proceeds anyway on timeout. Neither of those is policy.timeout either.
-    # If a drain fails, tuppr does NOT leave the node cordoned: upgrade.go rolls the whole batch
-    # back, uncordoning every node including the failing one, then requeues after 1m and retries
-    # in Draining. See spec.healthChecks to gate the run on Ceph health before it starts instead.
     waitForVolumeDetach: true
-    # policy.debug is deliberately left at the upstream default (true). The validating webhook
-    # warns about it on every apply, but a node upgrade is rare and hard to re-run — the verbose
-    # job log is worth more than the noise. Do not "fix" the warning by turning it off.
-  # Backup gate: tuppr re-checks these every 10s before each node and only proceeds once
-  # all pass. Empty namespace = every namespace. No kopiur backup may be mid-run (a
-  # Snapshot without a status yet counts as not passed, so a just-started one blocks
-  # too) and no Restore may be filling a volume. The run gives up after the longest
-  # check timeout (default 10m); 30m leaves room for a large first backup.
   healthChecks:
     - apiVersion: kopiur.home-operations.com/v1alpha1
       kind: Snapshot
@@ -54,60 +26,23 @@ spec:
       kind: CephCluster
       expr: |-
         status.ceph.health in ['HEALTH_OK']
-  # Upgrade one node at a time — this is a 5-node cluster (3 CP + 2 workers) and taking two
-  # control-plane nodes down together would break etcd quorum
   parallelism: 1
-  # Alertmanager silences held only while a run is active and released as each node finishes, so
-  # these are not standing silences. Observed on the 2026-09-09 run: tuppr creates a fresh batch
-  # per node sized to that node's expected work (7-17m in practice) and expires it on completion
-  # — maxDuration below is the *cap* on that per-node figure, not the duration itself, so a wedged
-  # upgrade cannot stay quiet longer than the cap.
-  #
-  # Scope is deliberately "expected consequences of a planned drain + reboot", never the detectors
-  # that would tell you *this upgrade* went wrong. Still paging throughout: CephHealthError,
-  # CephPGsInactive, CephPGUnavailableBlockingIO, CephFilesystem*, KubeAPIDown, and tuppr's own
-  # TalosUpgradeFailed / TalosUpgradeNodeFailed / TalosUpgradeStuck. Those key on data actually
-  # being unavailable rather than on redundancy being temporarily reduced, which is the line that
-  # matters during a rolling reboot — see the Ceph group below for why the two alerts that used to
-  # be on this list had to move.
-  # Every alertname below was checked to exist in this cluster's rule set — a typo would silently
-  # match nothing and page anyway.
   silences:
-    # A node deliberately leaving and rejoining the cluster.
     - matchers:
         - name: alertname
           matchType: "=~"
           value: KubeNodeNotReady|KubeNodeUnreachable|KubeNodeReadinessFlapping|KubeNodeEviction|KubeletDown
       maxDuration: 4h
-    # Workload churn caused by draining that node — replicas move, DaemonSet pods go missing,
-    # PDBs sit at their floor while pods reschedule.
     - matchers:
         - name: alertname
           matchType: "=~"
           value: KubeDeploymentReplicasMismatch|KubeDaemonSetNotScheduled|KubeDaemonSetRolloutStuck|KubeContainerWaiting|KubePodNotReady|KubePdbNotEnoughHealthyPods
       maxDuration: 4h
-    # Ceph reacting to one host going away. size=3/min_size=2 tolerates a single host by design,
-    # and CephNodeNetworkPacketDrops is the known recurring e1000e false positive (see QA.md).
-    #
-    # CephMonDownQuorumAtRisk and CephOSDDownHigh were deliberately excluded on the first pass,
-    # as "escalation" alerts that should still page. The 2026-09-09 v1.13.10 run proved that
-    # wrong: both are pure functions of "one host is down" at this cluster's size, so they fire
-    # on every node, every run, carrying no information the two alerts above don't already give.
-    #   CephOSDDownHigh:         count(osd_up==0)/count(osd_up)*100 >= 10, and no `for:` clause.
-    #                            10 OSDs at 2/host — one host is 20%, and even ONE OSD is 10%.
-    #   CephMonDownQuorumAtRisk: fires when MON_DOWN and mons-in-quorum == floor(n/2)+1.
-    #                            With 3 mons the minimum is 2, so downing any mon host trips it.
-    # Both would need topology-aware thresholds to mean anything here, and the chart exposes no
-    # knob. The real detectors are left unsilenced below.
     - matchers:
         - name: alertname
           matchType: "=~"
           value: CephOSDDown|CephOSDHostDown|CephMonDown|CephHealthWarning|CephOSDFlapping|CephDaemonSlowOps|CephNodeNetworkPacketDrops|CephMonDownQuorumAtRisk|CephOSDDownHigh
       maxDuration: 4h
-    # tuppr's own false positive: UpgradeJobRunningTooLong is a hard-coded 1h on a cluster-wide
-    # gauge with no chart knob, and a healthy 5-node run at parallelism 1 plus the
-    # waitForVolumeDetach drain can exceed that. Silencing it during runs is the intended fix —
-    # outside a run it still works, which is when a stuck job actually matters.
     - matchers:
         - name: alertname
           value: UpgradeJobRunningTooLong

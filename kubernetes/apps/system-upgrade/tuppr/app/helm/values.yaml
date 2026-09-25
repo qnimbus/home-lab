@@ -1,52 +1,26 @@
 ---
 controller:
-  logLevel: info # switch to debug temporarily when diagnosing upgrade failures
+  logLevel: info
   leaderElection:
-    enabled: true # safe even for single-replica; prevents split-brain if scale-out ever occurs
-  # chart 0.3.0 removed controller.metrics.enabled/.secure and controller.health.port: /metrics,
-  # /healthz and /readyz now always share port 8081 over plain HTTP. Exposure is meant to be
-  # limited with a NetworkPolicy, not a chart toggle — there is nothing to switch on here.
+    enabled: true
 
-# Progress notifications, sent by tuppr itself — not via Prometheus. These are the "node 3 of 5
-# started / finished" pings; Alertmanager only ever tells you when something has gone *wrong*, so
-# without these a healthy 1-3h rolling upgrade is completely invisible until it ends.
-# The URL is an apprise target built by the tuppr-notification ExternalSecret; see the comment
-# there for why it reuses Alertmanager's Pushover credentials.
 notification:
   enabled: true
-  secretName: tuppr-notification-secret # ExternalSecret target; key defaults to "url"
+  secretName: tuppr-notification-secret
 
-# The chart injects the apprise URL as NOTIFICATION_URL via secretKeyRef, and env vars sourced from
-# a Secret are not live-updated. Without this, rotating the Pushover credentials in 1Password
-# re-renders the Secret but the running pod keeps the stale URL until it happens to restart —
-# notifications then go nowhere silently, which is the exact blind spot enabling them was meant to
-# close. Matches how every other ExternalSecret consumer here is wired (pgadmin, waha, open-webui,
-# cloudflared, …); the chart's own values comment suggests this key for reloader.
 deploymentAnnotations:
   reloader.stakater.com/auto: "true"
 
-# Lets tuppr hold Alertmanager silences for the duration of a run. This only configures how it
-# reaches Alertmanager — *what* gets silenced is per-resource, in spec.silences on the TalosUpgrade.
-# The chart hard-fails the render if enabled is set without an address.
 silences:
   enabled: true
   alertmanager:
     address: http://kube-prometheus-stack-alertmanager.observability.svc:9093
-    # No secretName: the Alertmanager v2 API is unauthenticated inside the cluster and there is no
-    # NetworkPolicy in observability, so no auth headers are needed.
 
-# All three default to false upstream. Enabled because this cluster runs kube-prometheus-stack,
-# and until now tuppr's metrics were served but never scraped by anything.
 monitoring:
   serviceMonitor:
-    enabled: true # Prometheus' serviceMonitor(Namespace)Selector are both {} — matches without extra labels
+    enabled: true
   prometheusRule:
-    enabled: true # upgrade Failed/Stuck/Blocked alerts + TupprOperatorAbsent (absent(tuppr_build_info))
-    # Caveat: UpgradeJobRunningTooLong is `tuppr_upgrade_jobs_active > 0` for a hard-coded 1h on one
-    # cluster-wide gauge with no per-job identity, and the chart exposes no knob for it. With
-    # parallelism 1 over 5 nodes plus the waitForVolumeDetach drain, a *healthy* full-cluster run
-    # can exceed that and page. Handled by a run-scoped silence in talosupgrade.yaml rather than by
-    # turning the rule set off, so it still fires outside a run.
+    enabled: true
   dashboards:
     enabled: true
     grafanaOperator:

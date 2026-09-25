@@ -4,43 +4,15 @@ apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: tuppr-pending-rules
-  # Explicit because tuppr's ks.yaml sets no targetNamespace — every namespaced resource
-  # under app/ carries its own. See the comment on externalsecret.yaml.
   namespace: system-upgrade
 spec:
-  # Supplements the chart's own PrometheusRule (monitoring.prometheusRule.enabled), which
-  # has no rule covering the Pending phase. That gap is not theoretical: on 2026-09-09 the
-  # v1.13.10 run sat in Pending for ~19 minutes, retrying every 60s, because tuppr refused
-  # to rebuild talos-cp-01 across a schematic mismatch. Nothing fired and nothing notified —
-  # tuppr's apprise notifications only cover upgrade *progress* events, so a run that never
-  # starts is silent on both channels. Verified against the live metrics at the time:
-  #   tuppr_talos_upgrade_phase{phase="Pending"} == 1   -> TalosUpgradeFailed watches
-  #     phase="Failed"; TalosUpgradeStuck watches Upgrading|Rebooting|Draining|HealthChecking.
-  #     Pending is in neither.
-  #   tuppr_upgrade_progressing{reason="BuildTargetImage"} == 0  -> TupprUpgradeBlocked
-  #     matches reason=~"Waiting.*|Suspended", so it does not match this either.
-  # Keyed on the phase metric rather than tuppr_upgrade_progressing: that gauge reads 0 even
-  # when a run has finished cleanly (reason="Completed"), so 0 on its own means nothing.
-  #
-  # Deliberately NOT added to spec.silences on the TalosUpgrade — a wedged run is exactly
-  # what this exists to surface, so silencing it during a run would restore the blind spot.
   groups:
     - name: tuppr-pending.rules
       rules:
-        # The `unless` clauses exclude tuppr's own coordination wait, which is a healthy state.
-        # internal/controller/coordination/coordinator.go blocks a Kubernetes upgrade while ANY
-        # TalosUpgrade IsActive() or is Pending, and symmetrically parks Talos behind an active
-        # Kubernetes run. Without these, merging the Talos and Kubernetes Renovate PRs in one
-        # sitting would page within 15m on a run behaving exactly as designed — and a 5-node
-        # Talos run takes 1-3h, so the queued CR would sit Pending for all of it.
         - alert: TalosUpgradePending
           expr: |-
             tuppr_talos_upgrade_phase{phase="Pending"} == 1
               unless on() (tuppr_kubernetes_upgrade_phase{phase=~"Upgrading|HealthChecking"} == 1)
-          # Pending is also the normal pre-pull window at the start of every run, so this has
-          # to outlast a healthy one. The 2026-09-09 five-node pre-pull cleared in under two
-          # minutes (Spegel serves the installer peer-to-peer, and image-pull CI warms it), so
-          # 15m is wide headroom while still beating the 19m that block ran unnoticed.
           for: 15m
           annotations:
             summary: >-
