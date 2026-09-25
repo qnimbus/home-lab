@@ -5,11 +5,6 @@ kind: Cluster
 metadata:
   name: ${APP}-postgres
   annotations:
-    # Required for same-path/same-serverName rebuilds via bootstrap.recovery.
-    # The default check blocks recovery when the destination archive is non-empty,
-    # which is exactly the case when the rebuilt cluster reuses the same Barman
-    # path. Safe here because the recovered cluster inherits the source's
-    # system_identifier and writes new WAL on a new timeline (no name collisions).
     cnpg.io/skipEmptyWalArchiveCheck: enabled
 spec:
   bootstrap:

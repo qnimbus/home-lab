@@ -23,10 +23,6 @@ spec:
         name: *secret
         key: S3_SECRET_KEY
   instanceSidecarConfiguration:
-    # Several non-AWS S3-compatible providers reject PutObject requests using
-    # botocore's newer chunked-trailer checksum encoding (no Content-Length
-    # header) with "MissingContentLength" - revert to the legacy header-based
-    # behaviour (see kubernetes/apps/database/cloudnative-pg/cluster/app/objectstore.yaml).
     env:
       - name: AWS_REQUEST_CHECKSUM_CALCULATION
         value: when_required
