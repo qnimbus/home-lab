@@ -2,25 +2,24 @@
 
 CloudNative-PG backed PostgreSQL component, adapted from
 [bykaj/home-ops](https://github.com/bykaj/home-ops)'s `components/postgres`:
-a dedicated `Cluster` per consuming app. Use for a new app that needs its
-own isolated database — **not** a drop-in replacement for the existing
-shared `postgres-v17` cluster in `kubernetes/apps/database/cloudnative-pg/`,
-which some apps (paperless, firefly) still use and this component does not
-touch. Current dedicated-cluster consumers: `firefly-iii`, `forgejo`,
-`n8n`, `paperless-ngx`.
+a dedicated `Cluster` per consuming app. It's the only way apps get a
+database here: the old shared `postgres-v17` cluster is gone
+(`kubernetes/apps/database/cloudnative-pg/` now holds just the operator and
+the Barman plugin). Current consumers: `firefly-iii`, `forgejo`, `n8n`,
+`paperless-ngx`.
 
 ## Substitution variables
 
-| Variable                   | Default        | Notes                                                                                                                  |
-| -------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `APP`                      | _(required)_   | Name of the consuming app — used for cluster, secret, and backup paths.                                                |
-| `POSTGRES_USERNAME`        | `${APP}`       | Username created on initial bootstrap.                                                                                 |
-| `POSTGRES_DATABASE`        | `${APP}`       | Database name created on initial bootstrap.                                                                            |
-| `POSTGRES_INSTANCES`       | `1`            | No replicas by default. Bump to 3 for automatic failover once an app needs it — CNPG scales live, no rebuild required. |
-| `POSTGRES_SYNC_REPLICAS`   | `0`            | Set to `1` when `POSTGRES_INSTANCES` is `2` or greater to enable synchronous replication.                              |
-| `POSTGRES_STORAGE`         | `5Gi`          | Per-instance PVC size.                                                                                                 |
-| `POSTGRES_ENABLE_PDB`      | `false`        | CNPG's PodDisruptionBudgets. Set to `"true"` together with `POSTGRES_INSTANCES` ≥ 2 — see [Node drains](#node-drains). |
-| `POSTGRES_BACKUP_SCHEDULE` | `0 40 4 * * *` | Cron schedule for the S3 `ScheduledBackup`.                                                                            |
+| Variable                   | Default        | Notes                                                                                                                                        |
+| -------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP`                      | _(required)_   | Name of the consuming app — used for cluster, secret, and backup paths.                                                                      |
+| `POSTGRES_USERNAME`        | `${APP}`       | Username created on initial bootstrap.                                                                                                       |
+| `POSTGRES_DATABASE`        | `${APP}`       | Database name created on initial bootstrap.                                                                                                  |
+| `POSTGRES_INSTANCES`       | `1`            | No replicas by default. Bump to 3 for automatic failover once an app needs it — CNPG scales live, no rebuild required.                       |
+| `POSTGRES_SYNC_REPLICAS`   | `0`            | Set to `1` when `POSTGRES_INSTANCES` is `2` or greater to enable synchronous replication.                                                    |
+| `POSTGRES_STORAGE`         | `5Gi`          | Per-instance PVC size.                                                                                                                       |
+| `POSTGRES_ENABLE_PDB`      | `false`        | CNPG PodDisruptionBudgets. **Must stay `false` while `POSTGRES_INSTANCES` is `1`**; `"true"` only with ≥ 2. See [Node drains](#node-drains). |
+| `POSTGRES_BACKUP_SCHEDULE` | `0 40 4 * * *` | Cron schedule for the S3 `ScheduledBackup`.                                                                                                  |
 
 `POSTGRES_INSTANCES`, `POSTGRES_SYNC_REPLICAS`, and
 `POSTGRES_STORAGE` don't exist in bykaj's original (he hardcodes
@@ -51,9 +50,20 @@ pod stays `Pending` until that node is back, and the database is down for the
 node's whole maintenance window (roughly 10-20 minutes for a Talos upgrade).
 With one instance, that's unavoidable.
 
-To keep a database up through drains, run replicas. Set `POSTGRES_INSTANCES`
-≥ 2, and set `POSTGRES_ENABLE_PDB: "true"` so CNPG switches over to a replica
-before evicting the primary.
+**Never set `POSTGRES_ENABLE_PDB: "true"` with `POSTGRES_INSTANCES: 1`.** It
+brings back the undrainable node. The 2026-09-25 Talos v1.14.1 run looped on
+talos-cp-01 for exactly this reason until the default was flipped. Treat the
+two as a pair, like `POSTGRES_INSTANCES`/`POSTGRES_SYNC_REPLICAS`:
+
+| `POSTGRES_INSTANCES` | `POSTGRES_ENABLE_PDB` | During a node drain                                            |
+| -------------------- | --------------------- | -------------------------------------------------------------- |
+| `1` (default)        | `false` (default)     | Database down until its node is back                           |
+| `1`                  | `"true"`              | **Drain blocked forever**                                      |
+| ≥ 2                  | `"true"`              | CNPG switches over to a replica; database stays up             |
+| ≥ 2                  | `false`               | Primary evicted without a switchover; brief unplanned failover |
+
+To keep a database up through drains, run replicas and enable the PDB
+together.
 
 The PostgreSQL image is fixed for every consumer (no `POSTGRES_IMAGE`
 override, like bykaj's component) and written as a plain `repo:tag@digest`,
@@ -122,6 +132,7 @@ spec:
       # POSTGRES_USERNAME: myapp-user
       # POSTGRES_INSTANCES: "3"
       # POSTGRES_SYNC_REPLICAS: "1"
+      # POSTGRES_ENABLE_PDB: "true" # only with POSTGRES_INSTANCES >= 2
   prune: true
   sourceRef:
     kind: GitRepository
