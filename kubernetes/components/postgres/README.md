@@ -6,7 +6,8 @@ a dedicated `Cluster` per consuming app. Use for a new app that needs its
 own isolated database — **not** a drop-in replacement for the existing
 shared `postgres-v17` cluster in `kubernetes/apps/database/cloudnative-pg/`,
 which some apps (paperless, firefly) still use and this component does not
-touch. Current dedicated-cluster consumers: `forgejo`, `n8n`.
+touch. Current dedicated-cluster consumers: `firefly-iii`, `forgejo`,
+`n8n`, `paperless-ngx`.
 
 ## Substitution variables
 
@@ -18,6 +19,7 @@ touch. Current dedicated-cluster consumers: `forgejo`, `n8n`.
 | `POSTGRES_INSTANCES`       | `1`            | No replicas by default. Bump to 3 for automatic failover once an app needs it — CNPG scales live, no rebuild required. |
 | `POSTGRES_SYNC_REPLICAS`   | `0`            | Set to `1` when `POSTGRES_INSTANCES` is `2` or greater to enable synchronous replication.                              |
 | `POSTGRES_STORAGE`         | `5Gi`          | Per-instance PVC size.                                                                                                 |
+| `POSTGRES_ENABLE_PDB`      | `false`        | CNPG's PodDisruptionBudgets. Set to `"true"` together with `POSTGRES_INSTANCES` ≥ 2 — see [Node drains](#node-drains). |
 | `POSTGRES_BACKUP_SCHEDULE` | `0 40 4 * * *` | Cron schedule for the S3 `ScheduledBackup`.                                                                            |
 
 `POSTGRES_INSTANCES`, `POSTGRES_SYNC_REPLICAS`, and
@@ -31,6 +33,27 @@ cost per app by default on a homelab-sized cluster. **`minSyncReplicas: 1`
 with zero replicas blocks every write indefinitely** — there's no replica
 to ever satisfy the requirement — so bump `POSTGRES_INSTANCES` and
 `POSTGRES_SYNC_REPLICAS` together, never one without the other.
+
+## Node drains
+
+CNPG creates a `${APP}-postgres-primary` PodDisruptionBudget with
+`minAvailable: 1` by default. With a single instance that allows **zero**
+disruptions: the pod can never be evicted, so every node drain that reaches it
+fails. That includes tuppr's Talos upgrades (see
+`kubernetes/apps/system-upgrade/README.md`), which retry the drain in a loop and
+bounce other pods on the node, Ceph OSDs included, on every attempt. The
+component therefore sets `enablePDB: false` by default, as CNPG recommends for
+single-instance clusters.
+
+What a drain does instead: the pod is evicted and CNPG recreates it against
+the same PVC. Storage is `openebs-hostpath`, which is **node-local**, so the new
+pod stays `Pending` until that node is back, and the database is down for the
+node's whole maintenance window (roughly 10-20 minutes for a Talos upgrade).
+With one instance, that's unavoidable.
+
+To keep a database up through drains, run replicas. Set `POSTGRES_INSTANCES`
+≥ 2, and set `POSTGRES_ENABLE_PDB: "true"` so CNPG switches over to a replica
+before evicting the primary.
 
 The PostgreSQL image is fixed for every consumer (no `POSTGRES_IMAGE`
 override, like bykaj's component) and written as a plain `repo:tag@digest`,

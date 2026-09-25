@@ -17,6 +17,7 @@ spec:
       source: &archive ${APP}-backup-archive
       database: ${POSTGRES_DATABASE:=${APP}}
       owner: ${POSTGRES_USERNAME:=${APP}}
+  enablePDB: ${POSTGRES_ENABLE_PDB:=false}
   enableSuperuserAccess: true
   externalClusters:
     - name: *archive
