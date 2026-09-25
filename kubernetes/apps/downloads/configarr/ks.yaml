@@ -7,9 +7,6 @@ metadata:
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   interval: 1h
   path: ./kubernetes/apps/downloads/configarr/app
   prune: true
@@ -18,9 +15,3 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    # Only ESO/1Password Connect is required: configarr's ExternalSecret reads the same
-    # sonarr/radarr 1Password items those apps' own ExternalSecrets already consume (see
-    # app/externalsecret.yaml) — no new item, no PVC, no volsync component needed.
-    - name: onepassword-store
-      namespace: external-secrets

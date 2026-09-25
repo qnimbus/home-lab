@@ -7,9 +7,6 @@ metadata:
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: grafana-operator
   wait: true
   prune: true
   interval: 1h
@@ -32,9 +29,6 @@ metadata:
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: grafana-operator
   # Grafana CRD (grafana.integreatly.org/v1beta1) doesn't exist until the operator's
   # HelmRelease installs it -- dependsOn blocks this Kustomization's dry-run until then.
   # kube-prometheus-stack is also a hard dependency: this Grafana CR is external-mode,

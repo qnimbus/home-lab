@@ -7,9 +7,6 @@ metadata:
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: kube-prometheus-stack
   wait: false
   prune: true
   interval: 1h
@@ -19,8 +16,6 @@ spec:
     name: flux-system
     namespace: flux-system
   dependsOn:
-    - name: onepassword-store
-      namespace: external-secrets
     - name: rook-ceph-cluster
       namespace: rook-ceph
   healthChecks:

@@ -8,9 +8,6 @@ metadata:
     decryption.flux.home.arpa/disabled: "true"
     substitution.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -33,9 +30,6 @@ metadata:
     decryption.flux.home.arpa/disabled: "true"
     substitution.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: actions-runner-home-lab
   # RunnerScaleSet CRDs don't exist until the controller HelmRelease is healthy.
   # dependsOn blocks the dry-run until ARC registers its CRD types.
   dependsOn:

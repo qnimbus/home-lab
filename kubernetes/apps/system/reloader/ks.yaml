@@ -9,9 +9,6 @@ metadata:
     replacements.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: reloader
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   wait: true
   prune: true
   interval: 1h

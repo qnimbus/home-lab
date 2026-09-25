@@ -11,7 +11,6 @@ spec:
     operation: copy
   url: oci://ghcr.io/home-operations/charts-mirror/external-dns
   ref:
-    # renovate: datasource=docker depName=ghcr.io/home-operations/charts-mirror/external-dns
     tag: "1.21.1"
   verify:
     provider: cosign

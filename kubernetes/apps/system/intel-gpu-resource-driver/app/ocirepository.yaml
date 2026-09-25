@@ -11,5 +11,4 @@ spec:
     operation: copy
   url: oci://ghcr.io/intel/intel-resource-drivers-for-kubernetes/intel-gpu-resource-driver-chart
   ref:
-    # renovate: datasource=docker depName=ghcr.io/intel/intel-resource-drivers-for-kubernetes/intel-gpu-resource-driver-chart
     tag: "0.12.0"

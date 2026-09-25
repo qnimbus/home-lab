@@ -9,9 +9,6 @@ metadata:
     replacements.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: snapshot-controller
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   # rook-ceph-cluster depends on this Kustomization being Ready (CRDs + pod
   # healthy) before its own VolumeSnapshotClass can be created.
   wait: true

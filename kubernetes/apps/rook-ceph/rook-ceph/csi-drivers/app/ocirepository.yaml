@@ -13,7 +13,6 @@ spec:
     # Tracks the ceph-csi-operator release line, not Rook's — keep it at (or
     # below) the `ceph-csi-operator` subchart version bundled in the rook-ceph
     # chart in use (v1.20.x bundles 1.0.4), since the operator owns the CRDs.
-    # renovate: datasource=docker depName=ghcr.io/home-operations/charts-mirror/ceph-csi-drivers
     tag: 1.0.4
   # Upstream only publishes this chart to a classic Helm repo
   # (https://ceph.github.io/ceph-csi-operator); the home-operations mirror

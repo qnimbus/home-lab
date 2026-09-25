@@ -8,9 +8,6 @@ metadata:
     decryption.flux.home.arpa/disabled: "true"
     # components.postgres/cnpg: init # <-- remove once the first backup lands
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   components:
     - ../../../../components/kopiur/backup
     - ../../../../components/postgres
@@ -31,8 +28,6 @@ spec:
     name: flux-system
     namespace: flux-system
   dependsOn:
-    - name: onepassword-store
-      namespace: external-secrets
     - name: rook-ceph-cluster
       namespace: rook-ceph
   healthChecks:

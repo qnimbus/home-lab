@@ -11,5 +11,4 @@ spec:
     operation: copy
   url: oci://docker.io/envoyproxy/gateway-helm
   ref:
-    # renovate: datasource=docker depName=docker.io/envoyproxy/gateway-helm extractVersion=^v(?<version>.*)$
     tag: "1.9.1"

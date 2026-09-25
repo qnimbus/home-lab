@@ -9,9 +9,6 @@ metadata:
     substitution.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: flux-system
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   wait: false
   prune: true
   interval: 1h

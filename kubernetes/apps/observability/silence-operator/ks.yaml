@@ -7,9 +7,6 @@ metadata:
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: silence-operator
   wait: false
   prune: true
   interval: 1h
@@ -32,9 +29,6 @@ metadata:
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: silence-operator
   # Silence CRD (observability.giantswarm.io/v1alpha2) doesn't exist until the operator's
   # HelmRelease installs it -- dependsOn blocks this Kustomization's dry-run until then.
   dependsOn:

@@ -7,9 +7,6 @@ metadata:
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   # ExternalSecret here creates a Secret asynchronously (ESO); wait: true + placing
   # it in this earlier Kustomization guarantees it's Ready before any future
   # consumer's static PV (which references smb-credentials via nodeStageSecretRef)

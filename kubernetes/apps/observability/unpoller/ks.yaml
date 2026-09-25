@@ -7,9 +7,6 @@ metadata:
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   wait: false
   prune: true
   interval: 1h
@@ -21,9 +18,6 @@ spec:
   dependsOn:
     # ServiceMonitor CRD this HelmRelease relies on.
     - name: kube-prometheus-stack
-      namespace: observability
-    # GrafanaDashboard CRD + the external Grafana CR the dashboards' instanceSelector targets.
-    - name: grafana-operator-instance
       namespace: observability
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2

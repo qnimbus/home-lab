@@ -35,9 +35,6 @@ metadata:
     # bootstrap isn't wired up yet, so a regular ExternalSecret substitutes).
     substitution.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   wait: true
   prune: true
   interval: 1h
@@ -57,8 +54,6 @@ spec:
     - name: tailscale-user
     - name: cilium-config
       namespace: kube-system
-    - name: onepassword-store
-      namespace: external-secrets
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -74,9 +69,6 @@ metadata:
     decryption.flux.home.arpa/disabled: "true"
     substitution.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: tailscale-operator
   wait: false
   prune: true
   interval: 1h

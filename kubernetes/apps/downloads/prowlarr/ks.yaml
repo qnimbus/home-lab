@@ -7,9 +7,6 @@ metadata:
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   components:
     - ../../../../components/nfs-config
   interval: 1h
@@ -27,8 +24,6 @@ spec:
     name: flux-system
     namespace: flux-system
   dependsOn:
-    - name: onepassword-store
-      namespace: external-secrets
     - name: csi-driver-nfs
       namespace: system
   healthChecks:

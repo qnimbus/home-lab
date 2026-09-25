@@ -8,9 +8,6 @@ metadata:
     decryption.flux.home.arpa/disabled: "true"
     substitution.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
   wait: false
   prune: true
   interval: 1h

@@ -9,13 +9,6 @@ metadata:
     replacements.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: keda
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app
-  dependsOn:
-    # GrafanaDashboard CRD + the external Grafana CR the dashboard's instanceSelector targets.
-    - name: grafana-operator-instance
-      namespace: observability
   wait: true
   prune: true
   interval: 1h
@@ -40,9 +33,6 @@ metadata:
     replacements.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: keda
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: *app2
   # The add-on's InterceptorRoute CRD is a dry-run dependency for any app that
   # wires an app into it (e.g. pgadmin) — keep this Kustomization ahead of consumers.
   dependsOn:

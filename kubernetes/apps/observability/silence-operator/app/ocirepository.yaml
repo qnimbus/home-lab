@@ -11,5 +11,4 @@ spec:
     operation: copy
   url: oci://gsoci.azurecr.io/charts/giantswarm/silence-operator
   ref:
-    # renovate: datasource=docker depName=gsoci.azurecr.io/charts/giantswarm/silence-operator
     tag: "0.20.1"

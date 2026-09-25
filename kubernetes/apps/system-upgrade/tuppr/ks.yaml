@@ -8,9 +8,6 @@ metadata:
     decryption.flux.home.arpa/disabled: "true"
     substitution.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: tuppr
   dependsOn:
     # ServiceMonitor + PrometheusRule CRDs, needed twice over: the chart renders both now
     # that monitoring.* is enabled, and app/prometheusrule.yaml is a PrometheusRule in this
@@ -68,9 +65,6 @@ metadata:
     decryption.flux.home.arpa/disabled: "true"
     substitution.flux.home.arpa/disabled: "true"
 spec:
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: tuppr
   # TalosUpgrade and KubernetesUpgrade CRDs don't exist until tuppr's HelmRelease
   # installs the chart. dependsOn blocks this Kustomization's dry-run until the
   # operator is healthy and the CRD types are registered in the API server.
