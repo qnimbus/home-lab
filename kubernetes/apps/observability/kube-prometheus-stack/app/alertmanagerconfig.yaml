@@ -31,6 +31,18 @@ spec:
           - name: severity
             value: "warning|error"
             matchType: "=~"
+  # A firing critical alert mutes the warning-level alert of the same name in the same namespace
+  # (e.g. KubePersistentVolumeFillingUp critical + warning), so only the more severe one pages.
+  inhibitRules:
+    - sourceMatch:
+        - name: severity
+          value: critical
+          matchType: "="
+      targetMatch:
+        - name: severity
+          value: warning
+          matchType: "="
+      equal: ["alertname", "namespace"]
   receivers:
     - name: "null"
     - name: pushover

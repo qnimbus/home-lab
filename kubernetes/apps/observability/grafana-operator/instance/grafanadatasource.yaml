@@ -1,0 +1,37 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/grafana.integreatly.org/grafanadatasource_v1beta1.json
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: prometheus
+spec:
+  instanceSelector:
+    matchLabels:
+      grafana.internal/instance: grafana
+  # Name/uid match the old kube-prometheus-stack sidecar datasource, which the dashboards'
+  # datasourceName: Prometheus mappings and hardcoded uid references expect.
+  uid: prometheus
+  datasource:
+    name: Prometheus
+    type: prometheus
+    access: proxy
+    isDefault: true
+    url: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/grafana.integreatly.org/grafanadatasource_v1beta1.json
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: alertmanager
+spec:
+  instanceSelector:
+    matchLabels:
+      grafana.internal/instance: grafana
+  uid: alertmanager
+  datasource:
+    name: Alertmanager
+    type: alertmanager
+    access: proxy
+    jsonData:
+      implementation: prometheus
+    url: http://kube-prometheus-stack-alertmanager.observability.svc.cluster.local:9093

@@ -5,3 +5,4 @@ kind: Kustomization
 resources:
   - ./doco-cd.yaml
   - ./hardware-temps.yaml
+  - ./oom.yaml

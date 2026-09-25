@@ -10,6 +10,8 @@ spec:
     kind: OCIRepository
     name: grafana-operator
   values:
+    dashboard:
+      enabled: true
     serviceMonitor:
       enabled: true
     resources:

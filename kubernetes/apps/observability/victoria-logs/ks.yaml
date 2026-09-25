@@ -19,7 +19,7 @@ spec:
     # PVC for the server StatefulSet.
     - name: rook-ceph-cluster
       namespace: rook-ceph
-    # ServiceMonitor/dashboard-sidecar CRDs and labels this HelmRelease relies on.
+    # ServiceMonitor CRD this HelmRelease relies on.
     - name: kube-prometheus-stack
       namespace: observability
   healthChecks:

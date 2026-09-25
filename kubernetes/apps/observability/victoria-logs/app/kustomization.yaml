@@ -5,6 +5,6 @@ kind: Kustomization
 resources:
   - ./ocirepository.yaml
   - ./helmrelease.yaml
-  - ./datasource.yaml
+  - ./grafanadatasource.yaml
   - ./httproute.yaml
   - ./syslog-service.yaml

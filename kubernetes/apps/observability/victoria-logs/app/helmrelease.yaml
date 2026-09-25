@@ -37,9 +37,11 @@ spec:
             useRemoteIP: true
             streamFields: '["hostname","app_name","log_source"]'
             extraFields: '{"log_source":"syslog"}'
-    # Picked up by the kube-prometheus-stack Grafana sidecar once labelled —
-    # chart leaves the label unset by default even with dashboards.enabled.
     dashboards:
       enabled: true
-      labels:
-        grafana_dashboard: "1"
+      grafanaOperator:
+        enabled: true
+        spec:
+          instanceSelector:
+            matchLabels:
+              grafana.internal/instance: grafana

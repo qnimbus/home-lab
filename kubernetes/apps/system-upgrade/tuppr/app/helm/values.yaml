@@ -1,8 +1,8 @@
 ---
 controller:
-  logLevel: info  # switch to debug temporarily when diagnosing upgrade failures
+  logLevel: info # switch to debug temporarily when diagnosing upgrade failures
   leaderElection:
-    enabled: true  # safe even for single-replica; prevents split-brain if scale-out ever occurs
+    enabled: true # safe even for single-replica; prevents split-brain if scale-out ever occurs
   # chart 0.3.0 removed controller.metrics.enabled/.secure and controller.health.port: /metrics,
   # /healthz and /readyz now always share port 8081 over plain HTTP. Exposure is meant to be
   # limited with a NetworkPolicy, not a chart toggle — there is nothing to switch on here.
@@ -14,7 +14,7 @@ controller:
 # there for why it reuses Alertmanager's Pushover credentials.
 notification:
   enabled: true
-  secretName: tuppr-notification-secret  # ExternalSecret target; key defaults to "url"
+  secretName: tuppr-notification-secret # ExternalSecret target; key defaults to "url"
 
 # The chart injects the apprise URL as NOTIFICATION_URL via secretKeyRef, and env vars sourced from
 # a Secret are not live-updated. Without this, rotating the Pushover credentials in 1Password
@@ -39,13 +39,17 @@ silences:
 # and until now tuppr's metrics were served but never scraped by anything.
 monitoring:
   serviceMonitor:
-    enabled: true  # Prometheus' serviceMonitor(Namespace)Selector are both {} — matches without extra labels
+    enabled: true # Prometheus' serviceMonitor(Namespace)Selector are both {} — matches without extra labels
   prometheusRule:
-    enabled: true  # upgrade Failed/Stuck/Blocked alerts + TupprOperatorAbsent (absent(tuppr_build_info))
+    enabled: true # upgrade Failed/Stuck/Blocked alerts + TupprOperatorAbsent (absent(tuppr_build_info))
     # Caveat: UpgradeJobRunningTooLong is `tuppr_upgrade_jobs_active > 0` for a hard-coded 1h on one
     # cluster-wide gauge with no per-job identity, and the chart exposes no knob for it. With
     # parallelism 1 over 5 nodes plus the waitForVolumeDetach drain, a *healthy* full-cluster run
     # can exceed that and page. Handled by a run-scoped silence in talosupgrade.yaml rather than by
     # turning the rule set off, so it still fires outside a run.
   dashboards:
-    enabled: true  # ConfigMap ships grafana_dashboard="1"; the Grafana sidecar searches ALL namespaces
+    enabled: true
+    grafanaOperator:
+      enabled: true
+      matchLabels:
+        grafana.internal/instance: grafana

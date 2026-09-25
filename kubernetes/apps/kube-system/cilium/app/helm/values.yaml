@@ -41,17 +41,9 @@ cgroup:
   automount:
     enabled: false
   hostRoot: /sys/fs/cgroup
-# Renders cilium-dashboard/cilium-operator-dashboard ConfigMaps, labeled
-# grafana_dashboard: "1" by the chart itself — kube-prometheus-stack's own
-# Grafana sidecar (sidecar.dashboards.searchNamespace: ALL) auto-imports
-# these cluster-wide with no GrafanaDashboard CR needed. Originally paired
-# this with a GrafanaDashboard CR (grafanadashboard.yaml, since removed) on
-# the assumption the ConfigMaps alone wouldn't get picked up — wrong: the
-# CR was redundant and actively conflicted with the sidecar's own copy
-# (same dashboard title, different uid; grafana-operator's own DELETE of
-# the sidecar-provisioned one 400'd, since provisioned dashboards can't be
-# removed via the API). Confirmed live. Not enabling hubble.metrics.dashboards
-# yet: it's nested under hubble.metrics, deliberately still unconfigured.
+# Renders the cilium-dashboard/cilium-operator-dashboard ConfigMaps that app/grafanadashboard.yaml
+# loads into Grafana. hubble.metrics.dashboards stays off: hubble.metrics is deliberately
+# still unconfigured.
 dashboards:
   enabled: true
 # Bond/mgmt-NIC layout, confirmed live via `talosctl get links` (2026-09-03):

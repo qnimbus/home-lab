@@ -10,12 +10,12 @@ crds:
 
 alertmanager:
   alertmanagerSpec:
-    # 3 replicas so a single control-plane node loss doesn't drop alert delivery. Alertmanager's
+    # 3 replicas so a single node loss doesn't drop alert delivery. Alertmanager's
     # gossip protocol (port 9094) syncs silences/notification state and dedupes across replicas.
     replicas: 3
     # "soft" (preferredDuringScheduling) spreads replicas across nodes by hostname without
-    # blocking scheduling if a CP node is down/cordoned — "hard" would guarantee spread but could
-    # leave a replica Pending during single-node maintenance on this 3-node, no-worker cluster.
+    # blocking scheduling if a node is down/cordoned — "hard" would guarantee spread but could
+    # leave a replica Pending during node maintenance.
     podAntiAffinity: soft
     # Replaces the chart's inline `config:` (which only has a 'null' receiver) with our own
     # AlertmanagerConfig as the literal root config — not a discovered sub-route. This sidesteps
@@ -24,11 +24,6 @@ alertmanager:
     # cross-namespace routing for e.g. rook-ceph alerts). See app/alertmanagerconfig.yaml.
     alertmanagerConfiguration:
       name: alertmanager
-    # All nodes are control-plane only — no workers. Every pod needs this toleration or it won't schedule.
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        operator: Exists
-        effect: NoSchedule
     storage:
       volumeClaimTemplate:
         spec:
@@ -41,58 +36,27 @@ alertmanager:
               # Alertmanager stores only silences + notification state — 1 Gi is ample.
               storage: 1Gi
 
+# Grafana itself is owned by grafana-operator (observability/grafana-operator/instance). The
+# chart still renders its bundled dashboards, as GrafanaDashboard CRs pointing at ConfigMaps.
 grafana:
-  enabled: true
-  # Deploy pre-built dashboards for kube-prometheus-stack and node-exporter
-  # even if Grafana were deployed separately; with Grafana enabled these are picked up automatically.
+  enabled: false
   forceDeployDashboards: true
-  admin:
-    existingSecret: grafana-admin-secret
-    userKey: admin-user
-    passwordKey: admin-password
-  # Recreate required: the PVC is RWO (ceph-block) — the old pod must fully unmount
-  # before the new one starts, or the RBD volume can't attach to the new pod.
-  deploymentStrategy:
-    type: Recreate
-  tolerations:
-    - key: node-role.kubernetes.io/control-plane
-      operator: Exists
-      effect: NoSchedule
-  persistence:
-    enabled: true
-    storageClassName: ceph-block
-    accessModes: [ReadWriteOnce]
-    size: 5Gi
-  sidecar:
-    dashboards:
-      enabled: true
-      # Search all namespaces for ConfigMaps labelled grafana_dashboard: "1"
-      searchNamespace: ALL
-    datasources:
-      enabled: true
-  # Required for the victoria-logs ConfigMap-provisioned datasource (sidecar.datasources)
-  # to load — signed plugin, not bundled with Grafana by default.
-  plugins:
-    - victoriametrics-logs-datasource
-  grafana.ini:
-    server:
-      root_url: "https://grafana.${DOMAIN_CLUSTER}"
+  operator:
+    dashboardsConfigMapRefEnabled: true
+    folder: observability
+    matchLabels:
+      grafana.internal/instance: grafana
 
 # Talos runs without kube-proxy (Cilium replaces it with eBPF)
 kubeProxy:
   enabled: false
 
-# Talos etcd binds to the management subnet (10.60.0.0/24) only and requires
-# client certificates — additional auth configuration needed before this can be scraped.
+# etcd serves plain-HTTP metrics on :2381 (Talos listen-metrics-urls, controlplane.yaml.j2) on
+# the control-plane nodes; select them via the kube-apiserver static pods that run alongside it.
 kubeEtcd:
-  enabled: false
-
-kube-state-metrics:
-  # All nodes are control-plane only — no workers.
-  tolerations:
-    - key: node-role.kubernetes.io/control-plane
-      operator: Exists
-      effect: NoSchedule
+  service:
+    selector:
+      component: kube-apiserver
 
 prometheus:
   prometheusSpec:
@@ -115,11 +79,6 @@ prometheus:
     # Previously 18GB on a 20 Gi PVC, which sat at ~85% full and kept
     # KubePersistentVolumeFillingUp firing as a permanent config artifact.
     retentionSize: 40GB
-    # All nodes are control-plane only — no workers.
-    tolerations:
-      - key: node-role.kubernetes.io/control-plane
-        operator: Exists
-        effect: NoSchedule
     resources:
       requests:
         cpu: 100m
@@ -144,13 +103,6 @@ prometheus:
               # StatefulSet-backed PVC's size in Git, Flux reconciled -- but the volume
               # didn't grow". Irreversible: volumes can grow but never shrink.
               storage: 60Gi
-
-prometheusOperator:
-  # All nodes are control-plane only — no workers.
-  tolerations:
-    - key: node-role.kubernetes.io/control-plane
-      operator: Exists
-      effect: NoSchedule
 
 prometheus-node-exporter:
   prometheus:

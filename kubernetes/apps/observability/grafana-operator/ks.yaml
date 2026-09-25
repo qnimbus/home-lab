@@ -10,7 +10,7 @@ spec:
   wait: true
   prune: true
   interval: 1h
-  path: ./kubernetes/apps/observability/grafana-operator/operator
+  path: ./kubernetes/apps/observability/grafana-operator/app
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -29,28 +29,13 @@ metadata:
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  # Grafana CRD (grafana.integreatly.org/v1beta1) doesn't exist until the operator's
-  # HelmRelease installs it -- dependsOn blocks this Kustomization's dry-run until then.
-  # kube-prometheus-stack is also a hard dependency: this Grafana CR is external-mode,
-  # pointing at kube-prometheus-stack-grafana and reusing its grafana-admin-secret.
+  # grafana-operator (wait: true) creates the grafana-secret admin credentials this
+  # Grafana's Deployment reads; rook-ceph-cluster provides the ceph-block PVC.
   dependsOn:
     - name: grafana-operator
       namespace: observability
-    - name: kube-prometheus-stack
-      namespace: observability
-  # kube-prometheus-stack's own ks.yaml has wait: false, so it does not itself guarantee
-  # grafana-admin-secret (ExternalSecret-created) is synced before dependents proceed --
-  # healthCheck it explicitly here so a fresh bootstrap can't race the external Grafana CR
-  # against a Secret that doesn't exist yet.
-  healthChecks:
-    - apiVersion: grafana.integreatly.org/v1beta1
-      kind: Grafana
-      name: grafana
-      namespace: observability
-    - apiVersion: external-secrets.io/v1
-      kind: ExternalSecret
-      name: grafana-admin
-      namespace: observability
+    - name: rook-ceph-cluster
+      namespace: rook-ceph
   wait: true
   prune: true
   interval: 1h

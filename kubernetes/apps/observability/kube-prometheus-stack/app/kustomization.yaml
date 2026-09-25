@@ -7,39 +7,15 @@ configMapGenerator:
     namespace: observability
     files:
       - values.yaml=./helm/values.yaml
-  # Ceph-mixin dashboards (upstream: github.com/ceph/ceph monitoring/ceph-mixin).
-  # grafana_dashboard:"1" is picked up by the Grafana sidecar (sidecar.dashboards
-  # in helm/values.yaml), which watches ALL namespaces — no Helm values change
-  # needed to add or update these. Limited to RBD/block-only dashboards since
-  # this cluster has no CephFS or RGW (cephFileSystems/cephObjectStores: []).
-  - name: ceph-grafana-dashboards
+  # kube-state-metrics customResourceState config exposing gotk_resource_info for every Flux
+  # object (used by the Flux cluster dashboard in flux-system/flux-instance).
+  - name: flux-metrics-values
     namespace: observability
-    options:
-      labels:
-        grafana_dashboard: "1"
     files:
-      - ceph-cluster.json=./dashboards/ceph-cluster.json
-      - hosts-overview.json=./dashboards/hosts-overview.json
-      - host-details.json=./dashboards/host-details.json
-      - osds-overview.json=./dashboards/osds-overview.json
-      - osd-device-details.json=./dashboards/osd-device-details.json
-      - pool-overview.json=./dashboards/pool-overview.json
-      - pool-detail.json=./dashboards/pool-detail.json
-      - rbd-overview.json=./dashboards/rbd-overview.json
-      - rbd-details.json=./dashboards/rbd-details.json
-  # Full hardware dashboard: CPU/mem/disk/network + hwmon temperatures (node_hwmon_temp_celsius).
-  # Static JSON (not Helm's dashboards.gnetId/revision fetch-by-ID) for the same reason as the
-  # ceph-mixin dashboards above: no runtime dependency on grafana.com at Grafana pod startup, and
-  # content changes are visible in the git diff instead of hidden behind a bumped revision number.
-  # Source: https://grafana.com/grafana/dashboards/1860 revision 37 — no Renovate tracking (the
-  # whole file needs re-downloading on update, not a version string bump); refresh manually.
-  - name: node-exporter-grafana-dashboard
-    namespace: observability
+      - flux-metrics.yaml=./resources/flux-metrics.yaml
     options:
-      labels:
-        grafana_dashboard: "1"
-    files:
-      - node-exporter-full.json=./dashboards/node-exporter-full.json
+      annotations:
+        kustomize.toolkit.fluxcd.io/substitute: disabled
 generatorOptions:
   labels:
     reconcile.fluxcd.io/watch: "Enabled"
@@ -51,5 +27,6 @@ resources:
   - ./httproute.yaml
   - ./externalsecret.yaml
   - ./alertmanagerconfig.yaml
+  - ./grafanadashboard.yaml
   - ./prometheusrules
   - ./scrapeconfig-truenas.yaml

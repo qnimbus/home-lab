@@ -205,6 +205,8 @@ portSelector:
   protocol: tcp
 ingress:
   - subnet: 10.60.0.0/24
+  # Pod CIDR: Prometheus scraping the etcd on its own node arrives from its pod IP (not SNATed).
+  - subnet: 10.42.0.0/16
 ---
 apiVersion: v1alpha1
 kind: NetworkRuleConfig

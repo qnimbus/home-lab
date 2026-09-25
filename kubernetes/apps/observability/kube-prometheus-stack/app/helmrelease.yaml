@@ -13,3 +13,6 @@ spec:
   valuesFrom:
     - kind: ConfigMap
       name: kube-prometheus-stack-values
+    - kind: ConfigMap
+      name: flux-metrics-values
+      valuesKey: flux-metrics.yaml
