@@ -4,14 +4,14 @@ Automated, GitOps-driven Talos and Kubernetes upgrades, run by [tuppr](https://t
 
 ## Layout
 
-| Path                                   | What it is                                                                                |
-| -------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `tuppr/ks.yaml`                        | Two Flux Kustomizations: `tuppr` (operator) → `tuppr-upgrade` (upgrade resources)         |
-| `tuppr/app/helm/values.yaml`           | Chart values: notifications, Alertmanager silences, monitoring, Reloader                  |
-| `tuppr/app/externalsecret.yaml`        | `tuppr-notification-secret`: the Pushover URL for progress notifications                  |
-| `tuppr/app/prometheusrule.yaml`        | `TalosUpgradePending` / `KubernetesUpgradePending`, which fill a gap in the chart's rules |
-| `tuppr/upgrade/talosupgrade.yaml`      | `TalosUpgrade/cluster`: target Talos version, rollout policy, backup gate, silences       |
-| `tuppr/upgrade/kubernetesupgrade.yaml` | `KubernetesUpgrade/kubernetes`: target Kubernetes version and backup gate                 |
+| Path                                   | What it is                                                                                           |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `tuppr/ks.yaml`                        | Two Flux Kustomizations: `tuppr` (operator) → `tuppr-upgrade` (upgrade resources)                    |
+| `tuppr/app/helm/values.yaml`           | Chart values: notifications, Alertmanager silences, monitoring, Reloader                             |
+| `tuppr/app/externalsecret.yaml`        | `tuppr-notification-secret`: the Pushover URL for progress notifications                             |
+| `tuppr/app/prometheusrule.yaml`        | `TalosUpgradePending` / `KubernetesUpgradePending`, which fill a gap in the chart's rules            |
+| `tuppr/upgrade/talosupgrade.yaml`      | `TalosUpgrade/cluster`: target Talos version, rollout policy, health gate (backups + Ceph), silences |
+| `tuppr/upgrade/kubernetesupgrade.yaml` | `KubernetesUpgrade/kubernetes`: target Kubernetes version and backup checks                          |
 
 ## How an upgrade happens
 
@@ -37,21 +37,27 @@ Talos and Kubernetes upgrades never run concurrently: whichever starts first run
 Per run:
 
 1. **Pre-pull** (on by default): the installer image is pulled onto every node before anything is cordoned. A bad tag or schematic parks the run in `Pending` before any disruption. Spegel serves the image peer-to-peer, so this normally clears in under two minutes.
-2. **Backup gate**, re-checked every 10s before each node: no kopiur `Snapshot` may be `Running` (a just-created one without a status also blocks) and no `Restore` may be `Resolving`/`Restoring`. The run gives up after 30m.
+2. **Health gate**, re-checked every 10s before each node; the node waits until every check passes:
+   - **Backups:** no kopiur `Snapshot` may be `Running` (a just-created one without a status also blocks) and no `Restore` may be `Resolving`/`Restoring`. Timeout 30m, which leaves room for a large first backup.
+   - **Ceph:** the `CephCluster` must report `HEALTH_OK`. Because this runs before _every_ node, each reboot waits until Ceph has fully recovered from the previous one, instead of stacking a second outage on a degraded cluster. It sets no `timeout`, so tuppr's 10m default applies.
+
+   The flip side: any _lingering_ `HEALTH_WARN` blocks the whole run, not just a recovering one. The usual suspect after reboots is `RECENT_CRASH`, which stays for about two weeks unless archived (`ceph crash archive-all` from `just k8s toolbox`). Muted warnings (e.g. the insecure-key-type auth warnings) leave the cluster at `HEALTH_OK` and don't block.
+
 3. **Per node**: drain, wait for CSI volumes to detach, upgrade, reboot, and wait for the node to come back `Ready` on the new version.
 
 Policy choices that differ from upstream defaults:
 
-| Setting                      | Value     | Why                                                                                                                                                                                                    |
-| ---------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `policy.waitForVolumeDetach` | `true`    | `ceph-block` is the default StorageClass, so most pods hold RWO RBD volumes. Without it, a fast reboot orphans the mount and the pod hits `Multi-Attach` on its next node.                             |
-| `policy.placement`           | `hard`    | The upgrade Job must never land on the node it's rebooting. Pinned explicitly: this object was created when the default was `soft`, and later default changes never touch a field that already exists. |
-| `policy.debug`               | (default) | Left on. The webhook warns about it on every apply, but a verbose Job log is worth more on a rare, hard-to-rerun upgrade. Don't "fix" the warning.                                                     |
+| Setting                      | Value        | Why                                                                                                                                                                                                                  |
+| ---------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `policy.waitForVolumeDetach` | `true`       | `ceph-block` is the default StorageClass, so most pods hold RWO RBD volumes. Without it, a fast reboot orphans the mount and the pod hits `Multi-Attach` on its next node.                                           |
+| `policy.placement`           | `hard`       | The upgrade Job must never land on the node it's rebooting. Pinned explicitly: this object was created when the default was `soft`, and later default changes never touch a field that already exists.               |
+| `policy.rebootMode`          | `powercycle` | A full power cycle instead of Talos's default (kexec) reboot, which upstream recommends for nodes that don't reboot cleanly. Matches `just talos upgrade-node` and `reboot-node`, which already use `-m powercycle`. |
+| `policy.debug`               | (default)    | Left on. The webhook warns about it on every apply, but a verbose Job log is worth more on a rare, hard-to-rerun upgrade. Don't "fix" the warning.                                                                   |
 
 Things to know about timing:
 
 - `policy.timeout` (30m) bounds each node's `talosctl` command, **not** the drain. The drain has its own hard-coded 10m timeout, and the volume-detach wait is a best-effort 2m.
-- Rook's OSD/mon/mgr PDBs block eviction while Ceph recovers from the previous node, so a full run is serialised on Ceph recovery and can take hours.
+- Rook's OSD/mon/mgr PDBs block eviction while Ceph recovers from the previous node, so a full run is serialised on Ceph recovery and can take hours. The Ceph health gate adds the full wait for `HEALTH_OK` on top of that.
 - If a drain fails, tuppr rolls the batch back and uncordons every node, including the failing one, then retries after 1m. Nodes are not left cordoned.
 
 ### How the upgrade image is chosen
@@ -62,7 +68,7 @@ tuppr doesn't read `schematic.yaml.j2`. It takes each node's **current** install
 
 ## What a Kubernetes run does
 
-`KubernetesUpgrade/kubernetes` upgrades the control plane and kubelets cluster-wide, with no node reboots. It uses the same backup gate as Talos. tuppr's webhook allows **only one** `KubernetesUpgrade` per cluster: edit its version, never add a second resource.
+`KubernetesUpgrade/kubernetes` upgrades the control plane and kubelets cluster-wide, with no node reboots. It uses the same backup checks as Talos, but no Ceph check: nothing reboots, so Ceph isn't disturbed. tuppr's webhook allows **only one** `KubernetesUpgrade` per cluster: edit its version, never add a second resource.
 
 ## Alerting and notifications
 
