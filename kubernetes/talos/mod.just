@@ -198,4 +198,8 @@ schematic-id node="":
 
 [private]
 machine-image node="":
-    just template "{{ source_directory() }}/cluster.yaml.j2" -D "schematic=$(just talos schematic-id "{{ node }}")" | yq -r -e 'select(.kind == "UnattendedInstallConfig") | .installer.image'
+    just template "{{ source_directory() }}/cluster.yaml.j2" \
+        -D "schematic=$(just talos schematic-id "{{ node }}")" \
+        -D "talos_version=$(just talos talos-version)" \
+        -D "k8s_version=$(just talos k8s-version)" \
+        | yq -r -e 'select(.kind == "UnattendedInstallConfig") | .installer.image'
