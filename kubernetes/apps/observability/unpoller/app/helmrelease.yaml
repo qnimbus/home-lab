@@ -5,62 +5,65 @@ kind: HelmRelease
 metadata:
   name: unpoller
 spec:
-  interval: 1h
   chartRef:
     kind: OCIRepository
     name: unpoller
+  interval: 1h
   values:
+    defaultPodOptions:
+      securityContext:
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
     controllers:
       unpoller:
+        annotations:
+          reloader.stakater.com/auto: "true"
         containers:
           app:
             image:
               repository: ghcr.io/unpoller/unpoller
-              # renovate: datasource=docker depName=ghcr.io/unpoller/unpoller
               tag: v5.2.8@sha256:ca82e584b9bb3c8d2f9998adb429ab9f9bbb8840388ba10f2c62f07bd31ea0e9
             env:
               TZ: "${CLUSTER_TIMEZONE}"
-              UP_UNIFI_DEFAULT_ROLE: home-lab
-              UP_PROMETHEUS_HTTP_LISTEN: 0.0.0.0:80
               UP_INFLUXDB_DISABLE: true
-              UP_UNIFI_DEFAULT_URL:
-                valueFrom:
-                  secretKeyRef:
-                    name: &secret unpoller-secret
-                    key: UNIFI_HOST
+              UP_PROMETHEUS_HTTP_LISTEN: 0.0.0.0:80
               UP_UNIFI_DEFAULT_API_KEY:
                 valueFrom:
                   secretKeyRef:
-                    name: *secret
                     key: UNIFI_API_KEY
+                    name: &secret unpoller-secret
+              UP_UNIFI_DEFAULT_ROLE: home-lab
+              UP_UNIFI_DEFAULT_URL:
+                valueFrom:
+                  secretKeyRef:
+                    key: UNIFI_HOST
+                    name: *secret
             probes:
               liveness: &probes
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 3
                   httpGet:
                     path: /health
                     port: &port 80
                   initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 1
-                  failureThreshold: 3
               readiness: *probes
-            securityContext:
-              allowPrivilegeEscalation: false
-              readOnlyRootFilesystem: true
-              capabilities: { drop: ["ALL"] }
             resources:
               requests:
                 cpu: 1m
                 memory: 32Mi
               limits:
                 memory: 64Mi
-    defaultPodOptions:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
     service:
       app:
         ports:
@@ -69,7 +72,6 @@ spec:
     serviceMonitor:
       app:
         endpoints:
-          - port: http
-            # UniFi controller API is only polled every 2m internally by unpoller itself
-            interval: 2m
+          - interval: 2m
+            port: http
             scrapeTimeout: 10s

@@ -4,12 +4,11 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: kube-prometheus-stack
-  namespace: observability
 spec:
-  interval: 1h
   chartRef:
     kind: OCIRepository
     name: kube-prometheus-stack
+  interval: 1h
   valuesFrom:
     - kind: ConfigMap
       name: kube-prometheus-stack-values

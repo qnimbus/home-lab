@@ -5,39 +5,27 @@ kind: HelmRelease
 metadata:
   name: victoria-logs
 spec:
-  interval: 1h
   chartRef:
     kind: OCIRepository
     name: victoria-logs
+  interval: 1h
   values:
-    # Avoids the double "victoria-logs-victoria-logs-single" name; server Service
-    # ends up named victoria-logs-server (referenced by fluent-bit's output config).
-    fullnameOverride: victoria-logs
-    server:
-      retentionPeriod: "14d"
-      persistentVolume:
-        storageClassName: ceph-block
-        size: 20Gi
-      serviceMonitor:
-        enabled: true
-      # External (non-k8s) syslog ingestion, e.g. TrueNAS. Server runs as uid 1000,
-      # so it can't bind the privileged :514 port itself — listens on :1514 instead;
-      # syslog-service.yaml's Service maps the conventional 514 -> 1514 externally.
-      # useRemoteIP tags each record with the real sender IP, since syslog payloads
-      # (esp. RFC3164) don't reliably carry a trustworthy hostname field.
-      # streamFields drops the default proc_id: PIDs churn on every service restart,
-      # so indexing on them creates a new stream each time for zero query value.
-      # log_source (also set on fluent-bit's output, see its helmrelease.yaml) lets
-      # every future syslog sender — not just TrueNAS — be filtered/grouped
-      # separately from Kubernetes pod logs by a single low-cardinality field.
-      syslog:
-        tcp:
-          - name: syslog-tcp
-            value: :1514
-            useRemoteIP: true
-            streamFields: '["hostname","app_name","log_source"]'
-            extraFields: '{"log_source":"syslog"}'
     dashboards:
       enabled: true
       grafanaOperator:
         enabled: true
+    fullnameOverride: victoria-logs
+    server:
+      persistentVolume:
+        size: 20Gi
+        storageClassName: ceph-block
+      retentionPeriod: "14d"
+      serviceMonitor:
+        enabled: true
+      syslog:
+        tcp:
+          - extraFields: '{"log_source":"syslog"}'
+            name: syslog-tcp
+            streamFields: '["hostname","app_name","log_source"]'
+            useRemoteIP: true
+            value: :1514

@@ -5,19 +5,17 @@ kind: GrafanaDatasource
 metadata:
   name: victoria-logs
 spec:
+  datasource:
+    access: proxy
+    jsonData:
+      maxLines: 1000
+    name: VictoriaLogs
+    type: victoriametrics-logs-datasource
+    url: http://victoria-logs-server.observability.svc.cluster.local:9428
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  uid: victoria-logs
-  datasource:
-    name: VictoriaLogs
-    type: victoriametrics-logs-datasource
-    access: proxy
-    url: http://victoria-logs-server.observability.svc.cluster.local:9428
-    jsonData:
-      maxLines: 1000
-  # Installed into Grafana by the operator. Bump manually: releases are v-prefixed
-  # (VictoriaMetrics/victorialogs-datasource), this field must not be.
   plugins:
     - name: victoriametrics-logs-datasource
       version: 0.32.0
+  uid: victoria-logs

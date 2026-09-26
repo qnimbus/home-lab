@@ -9,9 +9,9 @@ spec:
     - name: blackbox-exporter.rules
       rules:
         - alert: BlackboxProbeFailed
+          annotations:
+            summary: "Blackbox probe against {{ $labels.instance }} has failed for 5 minutes."
           expr: probe_success == 0
           for: 5m
           labels:
             severity: warning
-          annotations:
-            summary: "Blackbox probe against {{ $labels.instance }} has failed for 5 minutes."

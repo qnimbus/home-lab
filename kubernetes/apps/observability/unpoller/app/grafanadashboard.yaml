@@ -5,15 +5,15 @@ kind: GrafanaDashboard
 metadata:
   name: unifi-insights
 spec:
-  instanceSelector:
-    matchLabels:
-      dashboards: grafana
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   grafanaCom:
     id: 11315
     revision: 9
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
 apiVersion: grafana.integreatly.org/v1beta1
@@ -21,15 +21,15 @@ kind: GrafanaDashboard
 metadata:
   name: unifi-network-sites
 spec:
-  instanceSelector:
-    matchLabels:
-      dashboards: grafana
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   grafanaCom:
     id: 11311
     revision: 5
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
 apiVersion: grafana.integreatly.org/v1beta1
@@ -37,19 +37,17 @@ kind: GrafanaDashboard
 metadata:
   name: unifi-uap
 spec:
-  instanceSelector:
-    matchLabels:
-      dashboards: grafana
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
+    - datasourceName: Prometheus
+      inputName: DS_UNIFI_POLLER
   grafanaCom:
     id: 11314
     revision: 10
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
-    # Original dashboard has two panels referencing this second, differently-named input
-    # (copy/paste artifact from its own author) -- same Prometheus datasource either way.
-    - inputName: DS_UNIFI_POLLER
-      datasourceName: Prometheus
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
 apiVersion: grafana.integreatly.org/v1beta1
@@ -57,14 +55,14 @@ kind: GrafanaDashboard
 metadata:
   name: unifi-usw
 spec:
-  instanceSelector:
-    matchLabels:
-      dashboards: grafana
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
+    - datasourceName: Prometheus
+      inputName: DS_UNIFI_POLLER
   grafanaCom:
     id: 11312
     revision: 9
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
-    - inputName: DS_UNIFI_POLLER
-      datasourceName: Prometheus
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana

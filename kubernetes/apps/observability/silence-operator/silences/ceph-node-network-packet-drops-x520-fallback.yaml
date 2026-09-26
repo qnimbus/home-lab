@@ -5,18 +5,6 @@ kind: Silence
 metadata:
   name: ceph-node-network-packet-drops-x520-fallback
 spec:
-  # INACTIVE (2026-07-07) -- not referenced by kustomization.yaml, so this Silence is not
-  # applied. Kept for reference: the X520 replacement landed and bond-storage was restored
-  # fleet-wide, so this is no longer needed. Re-add to kustomization.yaml's resources list
-  # if the same VLAN-200 fallback (talos/talconfig.yaml) is ever re-enabled.
-  # Full incident/revert history:
-  # .claude/agent-memory/cluster-doctor/project_cp02_storage_bond_ixgbe_failure.md
-  #
-  # Why it fires: with the X520 cards absent/failed, Ceph storage traffic (10.200.0.0/24) is
-  # carried over each node's onboard 1 GbE management NIC via a VLAN 200 sub-interface.
-  # The resulting congestion causes periodic packet drops on that interface, triggering
-  # CephNodeNetworkPacketDrops roughly once per hour. This is a known, intentional
-  # fallback with no data-loss risk; Ceph remains HEALTH_OK throughout.
   matchers:
     - name: alertname
       value: CephNodeNetworkPacketDrops

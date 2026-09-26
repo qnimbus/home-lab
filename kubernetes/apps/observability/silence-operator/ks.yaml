@@ -3,40 +3,37 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: silence-operator
+  name: &app silence-operator
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  prune: true
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: *app
+      namespace: observability
   interval: 1h
   path: ./kubernetes/apps/observability/silence-operator/app
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  healthChecks:
-    - apiVersion: helm.toolkit.fluxcd.io/v2
-      kind: HelmRelease
-      name: silence-operator
-      namespace: observability
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: silence-operator-silences
+  name: &app silence-operator-silences
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  # Silence CRD (observability.giantswarm.io/v1alpha2) doesn't exist until the operator's
-  # HelmRelease installs it -- dependsOn blocks this Kustomization's dry-run until then.
   dependsOn:
     - name: silence-operator
       namespace: observability
-  wait: true
-  prune: true
   interval: 1h
   path: ./kubernetes/apps/observability/silence-operator/silences
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system

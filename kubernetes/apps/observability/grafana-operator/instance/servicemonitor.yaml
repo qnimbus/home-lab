@@ -6,14 +6,13 @@ metadata:
   name: grafana
 spec:
   endpoints:
-    - port: grafana
+    - honorLabels: true
       path: /metrics
-      honorLabels: true
+      port: grafana
   jobLabel: grafana
   namespaceSelector:
     matchNames:
       - observability
-  # The operator copies the Grafana CR's labels onto grafana-service.
   selector:
     matchLabels:
       dashboards: grafana

@@ -5,9 +5,9 @@ kind: GrafanaDashboard
 metadata:
   name: grafana-operator
 spec:
+  configMapRef:
+    key: grafana-operator.json
+    name: grafana-operator-dashboard
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  configMapRef:
-    name: grafana-operator-dashboard
-    key: grafana-operator.json

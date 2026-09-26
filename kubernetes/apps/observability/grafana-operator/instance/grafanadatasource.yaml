@@ -5,18 +5,16 @@ kind: GrafanaDatasource
 metadata:
   name: prometheus
 spec:
+  datasource:
+    access: proxy
+    isDefault: true
+    name: Prometheus
+    type: prometheus
+    url: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  # Name/uid match the old kube-prometheus-stack sidecar datasource, which the dashboards'
-  # datasourceName: Prometheus mappings and hardcoded uid references expect.
   uid: prometheus
-  datasource:
-    name: Prometheus
-    type: prometheus
-    access: proxy
-    isDefault: true
-    url: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadatasource_v1beta1.json
 apiVersion: grafana.integreatly.org/v1beta1
@@ -24,14 +22,14 @@ kind: GrafanaDatasource
 metadata:
   name: alertmanager
 spec:
+  datasource:
+    access: proxy
+    jsonData:
+      implementation: prometheus
+    name: Alertmanager
+    type: alertmanager
+    url: http://kube-prometheus-stack-alertmanager.observability.svc.cluster.local:9093
   instanceSelector:
     matchLabels:
       dashboards: grafana
   uid: alertmanager
-  datasource:
-    name: Alertmanager
-    type: alertmanager
-    access: proxy
-    jsonData:
-      implementation: prometheus
-    url: http://kube-prometheus-stack-alertmanager.observability.svc.cluster.local:9093

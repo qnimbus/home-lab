@@ -4,54 +4,40 @@ apiVersion: monitoring.coreos.com/v1alpha1
 kind: ScrapeConfig
 metadata:
   name: truenas-node-exporter
-  namespace: observability
 spec:
-  # No selector/label wiring needed: prometheus.prometheusSpec.scrapeConfigSelectorNilUsesHelmValues
-  # is already false (helm/values.yaml) — Prometheus watches every ScrapeConfig cluster-wide.
-  staticConfigs:
-    - targets:
-        - "${NAS_LAN_HOST}:9100"
-      labels:
-        # Distinct from the in-cluster smartctl/node-exporter DaemonSets' own job
-        # names — this target is the standalone TrueNAS host, not a Talos node.
-        job: truenas-node-exporter
-        instance: truenas
   scrapeInterval: 30s
+  staticConfigs:
+    - labels:
+        instance: truenas
+        job: truenas-node-exporter
+      targets:
+        - "${NAS_LAN_HOST}:9100"
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/scrapeconfig_v1alpha1.json
 apiVersion: monitoring.coreos.com/v1alpha1
 kind: ScrapeConfig
 metadata:
   name: truenas-smartctl-exporter
-  namespace: observability
 spec:
-  staticConfigs:
-    - targets:
-        - "${NAS_LAN_HOST}:9633"
-      labels:
-        job: truenas-smartctl-exporter
-        instance: truenas
-  # SMART scans are slow — matches the in-cluster smartctl-exporter's own scrape timeout.
   scrapeInterval: 60s
   scrapeTimeout: 30s
+  staticConfigs:
+    - labels:
+        instance: truenas
+        job: truenas-smartctl-exporter
+      targets:
+        - "${NAS_LAN_HOST}:9633"
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/scrapeconfig_v1alpha1.json
 apiVersion: monitoring.coreos.com/v1alpha1
 kind: ScrapeConfig
 metadata:
   name: truenas-doco-cd
-  namespace: observability
 spec:
-  staticConfigs:
-    - targets:
-        # doco-cd is the GitOps agent for the docker/nas/ compose stacks — it is the thing
-        # that keeps the two exporters above deployed, so its own reconcile health is a
-        # prerequisite for theirs, not a nice-to-have. Requires the 9120 port publish in
-        # docker/nas/.doco-cd/docker-compose.app.yaml.
-        - "${NAS_LAN_HOST}:9120"
-      labels:
-        job: truenas-doco-cd
-        instance: truenas
-  # Polls run every 8m20s (POLL_CONFIG interval), so counters move slowly — a 60s
-  # scrape is already far finer than the signal being measured.
   scrapeInterval: 60s
+  staticConfigs:
+    - labels:
+        instance: truenas
+        job: truenas-doco-cd
+      targets:
+        - "${NAS_LAN_HOST}:9120"

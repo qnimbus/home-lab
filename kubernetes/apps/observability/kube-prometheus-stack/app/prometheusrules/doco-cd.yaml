@@ -4,76 +4,47 @@ apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: doco-cd
-  namespace: observability
 spec:
   groups:
     - name: doco-cd.reconciliation
       rules:
-        # ── Why this group exists ─────────────────────────────────────────────
-        # doco-cd is the GitOps agent for the docker/nas/ compose stacks; Flux cannot
-        # reach a bare-metal Docker host, so nothing else reconciles them. On
-        # 2026-09-02 it crashed with a Go heap corruption fault
-        # ("found bad pointer in Go heap") mid-git-fetch, truncating
-        # .git/refs/remotes/origin/renovate/cilium-1.x to zero bytes. go-git then
-        # failed every subsequent poll with "ref file is empty" — permanently, since
-        # the damaged clone was reused each time. Nothing reconciled for hours, and
-        # the only visible symptom was an unrelated TargetDown on node-exporter once
-        # its container happened to stop with no agent left to restore it.
-        #
-        # Crucially, /v1/health kept answering "healthy" throughout: it reports
-        # process liveness, not reconcile success. The blackbox Probe and the
-        # container healthcheck both read that endpoint, so both stayed green. These
-        # rules watch the poll counters instead, which is where the failure actually
-        # showed. See docs/QA.md.
-
-        # Errors are per-poll (interval 8m20s), so a 30m window spans ~3 attempts —
-        # long enough that one transient GitHub blip does not page, short enough to
-        # catch a wedged clone well before the next stack change is due.
         - alert: DocoCdPollFailing
+          annotations:
+            description: >-
+              doco-cd has recorded {{ $value | printf "%.0f" }} failed poll(s) in the last
+              30m for {{ $labels.repository }}. The docker/nas/ compose stacks are not being
+              reconciled from Git. A recurring cause is a corrupted cached clone
+              ("ref file is empty"): stop doco-cd, delete the cached clone under /data in the
+              doco-cd_data volume, and start it again; the next poll re-clones.
+
+            summary: doco-cd polling is failing for {{ $labels.repository }}
           expr: |
             increase(doco_cd_poll_errors_total[30m]) > 0
           for: 15m
           labels:
             severity: warning
-          annotations:
-            summary: doco-cd polling is failing for {{ $labels.repository }}
-            description: >-
-              doco-cd has recorded {{ $value | printf "%.0f" }} failed poll(s) in the last
-              30m for {{ $labels.repository }}. The docker/nas/ compose stacks are not being
-              reconciled from Git. A recurring cause is a corrupted cached clone
-              ("ref file is empty") — see docs/QA.md for the cache-clearing fix.
-
-        # Complements the error counter above: a wedged agent that stops attempting
-        # polls entirely stops incrementing BOTH counters, so only the absence of
-        # successes catches it. 1h spans ~7 poll intervals — a stall, not a blip.
-        # Deliberately not `absent()`: if the target is fully down the series goes
-        # stale and this cannot fire, which is exactly what the chart's default
-        # TargetDown rule already covers.
         - alert: DocoCdNotReconciling
-          expr: |
-            increase(doco_cd_polls_total[1h]) == 0
-          for: 15m
-          labels:
-            severity: warning
           annotations:
-            summary: doco-cd has not completed a successful poll in an hour
             description: >-
               No successful doco-cd poll for {{ $labels.repository }} in the last hour
               (expected roughly every 8m20s). Compose stacks on TrueNAS are drifting from
               Git with no agent applying changes.
 
-        # The 2026-09-02 crash loop ran for weeks at 5-19 restarts/day without any
-        # alert, because each crash was short enough that TargetDown's sustained-outage
-        # window never elapsed. Restart rate is the signal that was missing.
+            summary: doco-cd has not completed a successful poll in an hour
+          expr: |
+            increase(doco_cd_polls_total[1h]) == 0
+          for: 15m
+          labels:
+            severity: warning
         - alert: DocoCdRestartLoop
+          annotations:
+            description: >-
+              doco-cd restarted {{ $value | printf "%.0f" }} times in the last hour.
+              Check `docker logs doco-cd` for a Go runtime fault — a crash landing
+              mid-git-fetch is what corrupts its clone cache and wedges reconciliation.
+            summary: doco-cd is restarting repeatedly
           expr: |
             changes(process_start_time_seconds{job="truenas-doco-cd"}[1h]) > 3
           for: 10m
           labels:
             severity: warning
-          annotations:
-            summary: doco-cd is restarting repeatedly
-            description: >-
-              doco-cd restarted {{ $value | printf "%.0f" }} times in the last hour.
-              Check `docker logs doco-cd` for a Go runtime fault — a crash landing
-              mid-git-fetch is what corrupts its clone cache and wedges reconciliation.

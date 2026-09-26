@@ -5,22 +5,20 @@ kind: HTTPRoute
 metadata:
   name: victoria-logs
   annotations:
-    gethomepage.dev/enabled: "true"
-    gethomepage.dev/name: "VictoriaLogs"
     gethomepage.dev/description: "Cluster & syslog log storage"
+    gethomepage.dev/enabled: "true"
     gethomepage.dev/group: "Observability"
-    gethomepage.dev/icon: "mdi-text-box-search"
-    # Chart names the pod app.kubernetes.io/name=victoria-logs-single, not victoria-logs
-    # (this route's own name) — override the default guess.
-    gethomepage.dev/pod-selector: "app.kubernetes.io/name=victoria-logs-single"
     gethomepage.dev/href: "https://victorialogs.${DOMAIN_CLUSTER}/select/vmui/"
+    gethomepage.dev/icon: "mdi-text-box-search"
+    gethomepage.dev/name: "VictoriaLogs"
+    gethomepage.dev/pod-selector: "app.kubernetes.io/name=victoria-logs-single"
 spec:
+  hostnames:
+    - "victorialogs.${DOMAIN_CLUSTER}"
   parentRefs:
     - name: envoy-internal
       namespace: network
       sectionName: https
-  hostnames:
-    - "victorialogs.${DOMAIN_CLUSTER}"
   rules:
     - backendRefs:
         - name: victoria-logs-server

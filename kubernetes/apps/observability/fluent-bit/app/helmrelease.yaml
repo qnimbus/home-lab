@@ -5,33 +5,19 @@ kind: HelmRelease
 metadata:
   name: fluent-bit
 spec:
-  interval: 1h
   chartRef:
     kind: OCIRepository
     name: fluent-bit
+  interval: 1h
   values:
     config:
-      service: |-
-        [SERVICE]
-          daemon off
-          flush {{ .Values.flush }}
-          log_level {{ .Values.logLevel }}
-          parsers_file /fluent-bit/etc/parsers.conf
-          parsers_file /fluent-bit/etc/conf/custom_parsers.conf
-          http_server on
-          http_listen 0.0.0.0
-          http_port {{ .Values.metricsPort }}
-          health_check on
-
-      inputs: |-
-        [INPUT]
-          name tail
-          alias kubernetes
-          path /var/log/containers/*.log
-          parser containerd
-          tag kubernetes.*
-          skip_empty_lines on
-          skip_long_lines on
+      customParsers: |-
+        [PARSER]
+          name containerd
+          format regex
+          regex ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$
+          time_key time
+          time_format %Y-%m-%dT%H:%M:%S.%L%z
 
       filters: |-
         [FILTER]
@@ -100,21 +86,16 @@ spec:
           match kubernetes.*
           exclude log localapi: \[(POST|PATCH|DELETE|PUT)\] /localapi/v0/debug
 
-      # Talos nodes run containerd only — no Docker, so the default cri/docker
-      # multiline parser format doesn't match; this is containerd's raw log line format.
-      customParsers: |-
-        [PARSER]
-          name containerd
-          format regex
-          regex ^(?<time>[^ ]+) (?<stream>stdout|stderr) (?<logtag>[^ ]*) (?<log>.*)$
-          time_key time
-          time_format %Y-%m-%dT%H:%M:%S.%L%z
+      inputs: |-
+        [INPUT]
+          name tail
+          alias kubernetes
+          path /var/log/containers/*.log
+          parser containerd
+          tag kubernetes.*
+          skip_empty_lines on
+          skip_long_lines on
 
-      # _stream_fields become VictoriaLogs' indexed/groupable fields (its equivalent
-      # of Loki labels); _msg_field/_time_field point at the fields this pipeline produces.
-      # extra_fields=log_source=kubernetes mirrors the log_source tag the victoria-logs
-      # syslog listener stamps on external senders, so the two pipelines can be told
-      # apart by one field instead of by the accidental absence of k_* fields.
       outputs: |-
         [OUTPUT]
           name http
@@ -126,6 +107,18 @@ spec:
           json_date_format iso8601
           compress gzip
           log_response_payload false
+      service: |-
+        [SERVICE]
+          daemon off
+          flush {{ .Values.flush }}
+          log_level {{ .Values.logLevel }}
+          parsers_file /fluent-bit/etc/parsers.conf
+          parsers_file /fluent-bit/etc/conf/custom_parsers.conf
+          http_server on
+          http_listen 0.0.0.0
+          http_port {{ .Values.metricsPort }}
+          health_check on
+
     dashboards:
       enabled: true
     logLevel: warn

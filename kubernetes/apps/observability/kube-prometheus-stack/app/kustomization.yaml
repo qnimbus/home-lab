@@ -7,8 +7,6 @@ configMapGenerator:
     namespace: observability
     files:
       - values.yaml=./helm/values.yaml
-  # kube-state-metrics customResourceState config exposing gotk_resource_info for every Flux
-  # object (used by the Flux cluster dashboard in flux-system/flux-instance).
   - name: flux-metrics-values
     namespace: observability
     files:

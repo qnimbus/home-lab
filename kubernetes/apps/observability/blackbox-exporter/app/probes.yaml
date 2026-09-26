@@ -1,33 +1,12 @@
 ---
-# # yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
-# apiVersion: monitoring.coreos.com/v1
-# kind: Probe
-# metadata:
-#   name: devices
-# spec:
-#   module: icmp
-#   prober:
-#     url: blackbox-exporter.observability.svc.cluster.local:9115
-#   targets:
-#     staticConfig:
-#       static:
-#         - gw-adam.iot.${DOMAIN_IO}
-#         - gw-anna.iot.${DOMAIN_IO}
-#         - homeassistant.lan.home.${DOMAIN_IO}
----
 # yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
   name: nas-nfs
 spec:
-  # tcp_connect, not icmp: a host can answer ping while nfsd itself is wedged or
-  # the export is unmounted. A TCP handshake on 2049 reflects the service, not
-  # just the box. This is also the exact metric a future KEDA nfs-scaler
-  # ScaledObject would poll (probe_success{instance="${NAS_HOST}:2049"}) — see
-  # docs/keda-nfs-scaler-plan.md.
-  module: tcp_connect
   interval: 30s
+  module: tcp_connect
   prober:
     url: blackbox-exporter.observability.svc.cluster.local:9115
   targets:
@@ -41,8 +20,8 @@ kind: Probe
 metadata:
   name: nas-smb
 spec:
-  module: tcp_connect
   interval: 30s
+  module: tcp_connect
   prober:
     url: blackbox-exporter.observability.svc.cluster.local:9115
   targets:
@@ -50,41 +29,14 @@ spec:
       static:
         - "${NAS_HOST}:445"
 ---
-# # yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
-# apiVersion: monitoring.coreos.com/v1
-# kind: Probe
-# metadata:
-#   name: doco-cd
-# spec:
-#   # http_2xx, not tcp_connect: doco-cd exposes a real health endpoint (the same
-#   # one its own Docker healthcheck uses) — this catches a wedged-but-listening
-#   # process that a bare TCP handshake would miss.
-#   # ${NAS_LAN_HOST}, not ${NAS_HOST}: doco-cd's listener is bound to the
-#   # management LAN interface only (see docker/nas/.doco-cd/docker-compose.app.yaml),
-#   # not published on the storage VLAN.
-#   module: http_2xx
-#   interval: 30s
-#   prober:
-#     url: blackbox-exporter.observability.svc.cluster.local:9115
-#   targets:
-#     staticConfig:
-#       static:
-#         - "http://${NAS_LAN_HOST}:18080/v1/health"
----
 # yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
   name: smtp-relay
 spec:
-  # In-cluster Service DNS, not the external smtp-relay.${DOMAIN_CLUSTER} hostname:
-  # that LoadBalancer IP is locked to the printer's IP via loadBalancerSourceRanges
-  # (kubernetes/apps/mail/smtp-relay/app/helmrelease.yaml), so a probe from
-  # blackbox-exporter's pod IP would always be filtered out and alert falsely.
-  # This still catches the failure class that matters most (maddy itself down/
-  # OOM/crashlooping) without racing that ACL.
-  module: tcp_connect
   interval: 30s
+  module: tcp_connect
   prober:
     url: blackbox-exporter.observability.svc.cluster.local:9115
   targets:

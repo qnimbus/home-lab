@@ -5,14 +5,12 @@ kind: HelmRelease
 metadata:
   name: grafana-operator
 spec:
-  interval: 1h
   chartRef:
     kind: OCIRepository
     name: grafana-operator
+  interval: 1h
   values:
     dashboard:
-      enabled: true
-    serviceMonitor:
       enabled: true
     resources:
       requests:
@@ -20,3 +18,5 @@ spec:
         memory: 64Mi
       limits:
         memory: 128Mi
+    serviceMonitor:
+      enabled: true

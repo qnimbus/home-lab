@@ -1,43 +1,22 @@
 ---
-# see: https://github.com/prometheus-community/helm-charts/blob/main/charts/kube-prometheus-stack/values.yaml
-
-crds:
-  enabled: true
-  upgradeJob:
-    # Runs kubectl apply --server-side on all CRDs before the operator pod rolls out.
-    # Required for multi-version jumps where CRD schemas change between each prometheus-operator minor release.
-    enabled: true
-
 alertmanager:
   alertmanagerSpec:
-    # 3 replicas so a single node loss doesn't drop alert delivery. Alertmanager's
-    # gossip protocol (port 9094) syncs silences/notification state and dedupes across replicas.
-    replicas: 3
-    # "soft" (preferredDuringScheduling) spreads replicas across nodes by hostname without
-    # blocking scheduling if a node is down/cordoned — "hard" would guarantee spread but could
-    # leave a replica Pending during node maintenance.
-    podAntiAffinity: soft
-    # Replaces the chart's inline `config:` (which only has a 'null' receiver) with our own
-    # AlertmanagerConfig as the literal root config — not a discovered sub-route. This sidesteps
-    # alertmanagerConfigSelector's default OnNamespace matcher strategy entirely (which would
-    # otherwise require every alert's `namespace` label to equal this object's namespace, breaking
-    # cross-namespace routing for e.g. rook-ceph alerts). See app/alertmanagerconfig.yaml.
     alertmanagerConfiguration:
       name: alertmanager
+    podAntiAffinity: soft
+    replicas: 3
     storage:
       volumeClaimTemplate:
         spec:
-          # ceph-block (replicated, size=3): survives a node loss, unlike the
-          # phase-1 emptyDir/openebs-hostpath this replaced.
-          storageClassName: ceph-block
           accessModes: [ReadWriteOnce]
           resources:
             requests:
-              # Alertmanager stores only silences + notification state — 1 Gi is ample.
               storage: 1Gi
-
-# Grafana itself is owned by grafana-operator (observability/grafana-operator/instance). The
-# chart still renders its bundled dashboards, as GrafanaDashboard CRs pointing at ConfigMaps.
+          storageClassName: ceph-block
+crds:
+  enabled: true
+  upgradeJob:
+    enabled: true
 grafana:
   enabled: false
   forceDeployDashboards: true
@@ -46,81 +25,32 @@ grafana:
     folder: observability
     matchLabels:
       dashboards: grafana
-
-# Talos runs without kube-proxy (Cilium replaces it with eBPF)
-kubeProxy:
-  enabled: false
-
-# etcd serves plain-HTTP metrics on :2381 (Talos listen-metrics-urls, controlplane.yaml.j2) on
-# the control-plane nodes; select them via the kube-apiserver static pods that run alongside it.
 kubeEtcd:
   service:
     selector:
       component: kube-apiserver
-
+kubeProxy:
+  enabled: false
 prometheus:
   prometheusSpec:
-    # When nil (unset), Prometheus falls back to filtering by Helm release labels — meaning it
-    # would only scrape ServiceMonitors/PodMonitors/etc. deployed by this same Helm release.
-    # Setting these to false makes the selector match everything (cluster-wide scraping).
     podMonitorSelectorNilUsesHelmValues: false
     probeSelectorNilUsesHelmValues: false
-    ruleSelectorNilUsesHelmValues: false
-    scrapeConfigSelectorNilUsesHelmValues: false
-    serviceMonitorSelectorNilUsesHelmValues: false
-    # 30d chosen over the previous 14d so multi-week investigations can still compare against
-    # their own baseline -- the 4-week Ceph packet-drop checkpoint outlived 14d retention and
-    # lost its pre-fix baseline before the comparison window closed.
-    retention: 30d
-    # Hard cap below the 60 Gi PVC size so Prometheus deletes old blocks before the disk fills,
-    # rather than running out of space and crashing. At the current ~1.26 GB/day ingest rate,
-    # 30d lands near 38 GB, so this cap is the backstop rather than the usual binding limit --
-    # deliberately left with headroom for compaction and WAL (~62% steady-state disk use).
-    # Previously 18GB on a 20 Gi PVC, which sat at ~85% full and kept
-    # KubePersistentVolumeFillingUp firing as a permanent config artifact.
-    retentionSize: 40GB
     resources:
       requests:
         cpu: 100m
         memory: 512Mi
       limits:
-        # No CPU limit intentionally — avoids throttling during scrape fan-out bursts.
         memory: 2Gi
+    retention: 30d
+    retentionSize: 40GB
+    ruleSelectorNilUsesHelmValues: false
+    scrapeConfigSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
     storageSpec:
       volumeClaimTemplate:
         spec:
-          # ceph-block (replicated, size=3): survives a node loss, unlike the
-          # phase-1 emptyDir/openebs-hostpath this replaced.
-          storageClassName: ceph-block
           accessModes: [ReadWriteOnce]
           resources:
             requests:
-              # Changing this number alone does NOT grow the existing volume. Kubernetes cannot
-              # expand a PVC through a StatefulSet, so the operator updates volumeClaimTemplates
-              # (which only governs PVCs for new replicas) and recreates the StatefulSet with
-              # --cascade=orphan, leaving the live PVC untouched at its old size. Growing it
-              # needs a one-time `kubectl patch pvc` -- see docs/QA.md, "I increased a
-              # StatefulSet-backed PVC's size in Git, Flux reconciled -- but the volume
-              # didn't grow". Irreversible: volumes can grow but never shrink.
               storage: 60Gi
-
-prometheus-node-exporter:
-  prometheus:
-    monitor:
-      # (Reverted 2026-07-09) The 10s diagnostic scrape override for M920Q pre-crash
-      # forensics is gone now that the underlying hard-down mystery was root-caused
-      # (2026-06-22, failing external power brick, since replaced and stable — see
-      # ROADMAP.md's "cp-02 Thermal Stability" entry) and confirmed stable for 2+
-      # weeks. Back to the chart's 30s default. This also removes a footgun for any
-      # future alert tuned against sample density/count assumptions.
-      metricRelabelings:
-        # Drop the super-I/O chip's unconnected thermistor input on the M920Q nodes.
-        # "Thermistor 7" (sensor temp5) reads ~127-128°C when the thermistor pin is
-        # floating — a hardware artefact, not a real temperature. Dropped at scrape
-        # time so the phantom never enters the TSDB. NOTE: node-exporter labels this
-        # chip "platform_nct6683_2592" (from the device path), NOT "nct6686" (the
-        # kernel name file) — the earlier "nct6686.*" regex matched nothing and the
-        # phantom was never actually dropped; corrected 2026-06-10.
-        - sourceLabels: [chip, sensor]
-          regex: "platform_nct6683.*;temp5"
-          action: drop
+          storageClassName: ceph-block

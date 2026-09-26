@@ -9,6 +9,6 @@ spec:
   layerSelector:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy
-  url: oci://ghcr.io/home-operations/charts-mirror/fluent-bit
   ref:
     tag: "0.55.0"
+  url: oci://ghcr.io/home-operations/charts-mirror/fluent-bit

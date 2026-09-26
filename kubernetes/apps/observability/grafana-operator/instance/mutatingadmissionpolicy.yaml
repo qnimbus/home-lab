@@ -1,7 +1,5 @@
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/admissionregistration.k8s.io/mutatingadmissionpolicybinding_v1.json
-# The operator defaults to docker.io/grafana/* images; rewrite them to mirror.gcr.io to stay clear
-# of Docker Hub pull rate limits.
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingAdmissionPolicyBinding
 metadata:
@@ -15,6 +13,16 @@ kind: MutatingAdmissionPolicy
 metadata:
   name: grafana-image-mirror
 spec:
+  failurePolicy: Fail
+  matchConditions:
+    - expression: >-
+        object.metadata.name == "grafana-deployment"
+      name: is-grafana-deployment
+    - expression: >-
+        object.spec.template.spec.containers.exists(c,
+          c.image.startsWith("docker.io/grafana/")
+        )
+      name: has-docker-io-grafana-image
   matchConstraints:
     resourceRules:
       - apiGroups:
@@ -26,20 +34,8 @@ spec:
           - UPDATE
         resources:
           - deployments
-  matchConditions:
-    - name: is-grafana-deployment
-      expression: >-
-        object.metadata.name == "grafana-deployment"
-    - name: has-docker-io-grafana-image
-      expression: >-
-        object.spec.template.spec.containers.exists(c,
-          c.image.startsWith("docker.io/grafana/")
-        )
-  failurePolicy: Fail
-  reinvocationPolicy: IfNeeded
   mutations:
-    - patchType: JSONPatch
-      jsonPatch:
+    - jsonPatch:
         expression: >-
           [
             JSONPatch{
@@ -48,3 +44,5 @@ spec:
               value: "mirror.gcr.io/grafana/" + object.spec.template.spec.containers[0].image.replace("docker.io/grafana/", "")
             }
           ]
+      patchType: JSONPatch
+  reinvocationPolicy: IfNeeded

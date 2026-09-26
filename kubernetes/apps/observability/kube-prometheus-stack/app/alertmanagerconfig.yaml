@@ -4,77 +4,22 @@ apiVersion: monitoring.coreos.com/v1alpha1
 kind: AlertmanagerConfig
 metadata:
   name: alertmanager
-  namespace: observability
 spec:
-  route:
-    receiver: "null"
-    groupBy: ["alertname", "namespace"]
-    groupWait: 30s
-    groupInterval: 5m
-    repeatInterval: 12h
-    routes:
-      # Ceph HEALTH_ERR, board/VRM near thermal-shutdown, etc. — anything tagged critical
-      # by any PrometheusRule in the cluster (hardware-temps.yaml, Rook's bundled Ceph
-      # alerts, kube-prometheus-stack's own default rules all use this severity vocabulary).
-      - receiver: pushover-critical
-        repeatInterval: 1h
-        matchers:
-          - name: severity
-            value: critical
-            matchType: "="
-      # "warning" covers the rest of the Prometheus severity vocabulary; "error" is what
-      # Flux's notification-controller uses for its own events (see flux-system/flux-alerts,
-      # which already forwards Kustomization/HelmRelease failures here as native Alertmanager
-      # alerts via the "alertmanager" Provider type — no separate PrometheusRule needed).
-      - receiver: pushover
-        matchers:
-          - name: severity
-            value: "warning|error"
-            matchType: "=~"
-  # A firing critical alert mutes the warning-level alert of the same name in the same namespace
-  # (e.g. KubePersistentVolumeFillingUp critical + warning), so only the more severe one pages.
   inhibitRules:
-    - sourceMatch:
-        - name: severity
+    - equal: ["alertname", "namespace"]
+      sourceMatch:
+        - matchType: "="
+          name: severity
           value: critical
-          matchType: "="
       targetMatch:
-        - name: severity
+        - matchType: "="
+          name: severity
           value: warning
-          matchType: "="
-      equal: ["alertname", "namespace"]
   receivers:
     - name: "null"
     - name: pushover
       pushoverConfigs:
-        - sendResolved: true
-          userKey:
-            name: alertmanager-secret
-            key: PUSHOVER_USER_KEY
-          token:
-            name: alertmanager-secret
-            key: PUSHOVER_TOKEN
-          title: >-
-            [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}]
-            {{ .CommonLabels.alertname }}
-          # Pushover caps messages at 1024 runes. The old per-alert label dump multiplied
-          # across grouped alerts and blew past that (logged as "Truncated message" by
-          # Alertmanager) -- dropped it in favor of just the description/summary/message,
-          # and capped the loop to 5 alerts as defense-in-depth for large groups. Only
-          # range/len/if (core Go template builtins) are used here -- deliberately avoiding
-          # any assumption about which extra funcs Alertmanager's template funcmap exposes.
-          #
-          # Content-emitting lines ({{ $alert.Annotations.X }}, "Showing 5 of...", "Alert
-          # description not available") are deliberately un-indented to this block's base
-          # column. Go templates only trim whitespace adjacent to a `{{-`/`-}}` tag, not the
-          # YAML indentation itself -- any extra leading spaces on these lines become literal
-          # text in the rendered message. With >1 alert in a group, that literal indentation
-          # shows up before every alert after the first (the very first line's leading
-          # whitespace gets silently trimmed by Pushover since it's leading for the whole
-          # message, masking the bug for single-alert groups). Control-only lines (if/else/
-          # end/range) can stay nested for readability -- their surrounding whitespace is
-          # trimmed away by their own `{{-`.
-          message: |-
+        - message: |-
             {{- if gt (len .Alerts) 5 }}
             Showing 5 of {{ len .Alerts }} alerts in this group:
             {{- end }}
@@ -92,37 +37,21 @@ spec:
               {{- end }}
             {{- end }}
           priority: '{{ if eq .Status "firing" }}1{{ else }}0{{ end }}'
-          urlTitle: View in Alertmanager
-          url: "https://alertmanager.${DOMAIN_CLUSTER}"
-    - name: pushover-critical
-      pushoverConfigs:
-        - sendResolved: true
-          userKey:
-            name: alertmanager-secret
-            key: PUSHOVER_USER_KEY
-          token:
-            name: alertmanager-secret
-            key: PUSHOVER_TOKEN
+          sendResolved: true
           title: >-
             [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}]
             {{ .CommonLabels.alertname }}
-          # Pushover caps messages at 1024 runes. The old per-alert label dump multiplied
-          # across grouped alerts and blew past that (logged as "Truncated message" by
-          # Alertmanager) -- dropped it in favor of just the description/summary/message,
-          # and capped the loop to 5 alerts as defense-in-depth for large groups. Only
-          # range/len/if (core Go template builtins) are used here -- deliberately avoiding
-          # any assumption about which extra funcs Alertmanager's template funcmap exposes.
-          #
-          # Content-emitting lines ({{ $alert.Annotations.X }}, "Showing 5 of...", "Alert
-          # description not available") are deliberately un-indented to this block's base
-          # column. Go templates only trim whitespace adjacent to a `{{-`/`-}}` tag, not the
-          # YAML indentation itself -- any extra leading spaces on these lines become literal
-          # text in the rendered message. With >1 alert in a group, that literal indentation
-          # shows up before every alert after the first (the very first line's leading
-          # whitespace gets silently trimmed by Pushover since it's leading for the whole
-          # message, masking the bug for single-alert groups). Control-only lines (if/else/
-          # end/range) can stay nested for readability -- their surrounding whitespace is
-          # trimmed away by their own `{{-`.
+          token:
+            key: PUSHOVER_TOKEN
+            name: alertmanager-secret
+          url: "https://alertmanager.${DOMAIN_CLUSTER}"
+          urlTitle: View in Alertmanager
+          userKey:
+            key: PUSHOVER_USER_KEY
+            name: alertmanager-secret
+    - name: pushover-critical
+      pushoverConfigs:
+        - expire: 1h
           message: |-
             {{- if gt (len .Alerts) 5 }}
             Showing 5 of {{ len .Alerts }} alerts in this group:
@@ -140,12 +69,36 @@ spec:
                 {{- end }}
               {{- end }}
             {{- end }}
-          # Emergency priority: Pushover repeats the push every `retry` seconds (min 30s) for
-          # up to `expire`, until acknowledged in the app. Dropped to 0 (silent) on resolve —
-          # there's no reason to emergency-page that something is now fine.
           priority: '{{ if eq .Status "firing" }}2{{ else }}0{{ end }}'
           retry: 60s
-          expire: 1h
+          sendResolved: true
           sound: persistent
-          urlTitle: View in Alertmanager
+          title: >-
+            [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}]
+            {{ .CommonLabels.alertname }}
+          token:
+            key: PUSHOVER_TOKEN
+            name: alertmanager-secret
           url: "https://alertmanager.${DOMAIN_CLUSTER}"
+          urlTitle: View in Alertmanager
+          userKey:
+            key: PUSHOVER_USER_KEY
+            name: alertmanager-secret
+  route:
+    groupBy: ["alertname", "namespace"]
+    groupInterval: 5m
+    groupWait: 30s
+    receiver: "null"
+    repeatInterval: 12h
+    routes:
+      - matchers:
+          - matchType: "="
+            name: severity
+            value: critical
+        receiver: pushover-critical
+        repeatInterval: 1h
+      - matchers:
+          - matchType: "=~"
+            name: severity
+            value: "warning|error"
+        receiver: pushover

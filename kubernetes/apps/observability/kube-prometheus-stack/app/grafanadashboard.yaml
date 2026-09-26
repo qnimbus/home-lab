@@ -5,12 +5,12 @@ kind: GrafanaDashboard
 metadata:
   name: kubernetes-api-server
 spec:
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
   url: https://grafana.com/api/dashboards/15761/revisions/21/download
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
@@ -19,12 +19,12 @@ kind: GrafanaDashboard
 metadata:
   name: kubernetes-coredns
 spec:
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
   url: https://grafana.com/api/dashboards/15762/revisions/22/download
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
@@ -33,12 +33,12 @@ kind: GrafanaDashboard
 metadata:
   name: kubernetes-global
 spec:
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
   url: https://grafana.com/api/dashboards/15757/revisions/43/download
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
@@ -47,12 +47,12 @@ kind: GrafanaDashboard
 metadata:
   name: kubernetes-namespaces
 spec:
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
   url: https://grafana.com/api/dashboards/15758/revisions/46/download
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
@@ -61,12 +61,12 @@ kind: GrafanaDashboard
 metadata:
   name: kubernetes-nodes
 spec:
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
   url: https://grafana.com/api/dashboards/15759/revisions/40/download
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
@@ -75,12 +75,12 @@ kind: GrafanaDashboard
 metadata:
   name: kubernetes-pods
 spec:
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
   url: https://grafana.com/api/dashboards/15760/revisions/41/download
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
@@ -89,12 +89,12 @@ kind: GrafanaDashboard
 metadata:
   name: kubernetes-volumes
 spec:
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
   url: https://grafana.com/api/dashboards/11454/revisions/14/download
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
@@ -103,12 +103,12 @@ kind: GrafanaDashboard
 metadata:
   name: node-exporter-full
 spec:
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
   url: https://grafana.com/api/dashboards/1860/revisions/45/download
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
@@ -117,10 +117,10 @@ kind: GrafanaDashboard
 metadata:
   name: prometheus
 spec:
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
   url: https://grafana.com/api/dashboards/19105/revisions/9/download
