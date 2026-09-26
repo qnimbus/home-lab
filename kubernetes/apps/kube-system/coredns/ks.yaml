@@ -5,7 +5,6 @@ kind: Kustomization
 metadata:
   name: &app coredns
   labels:
-    decryption.flux.home.arpa/disabled: "true"
     substitution.flux.home.arpa/disabled: "true"
 spec:
   prune: true

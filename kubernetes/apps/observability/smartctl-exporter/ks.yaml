@@ -4,8 +4,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app smartctl-exporter
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
   path: ./kubernetes/apps/observability/smartctl-exporter/app

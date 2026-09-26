@@ -5,7 +5,6 @@ kind: Kustomization
 metadata:
   name: &app actions-runner-controller
   labels:
-    decryption.flux.home.arpa/disabled: "true"
     substitution.flux.home.arpa/disabled: "true"
 spec:
   healthChecks:
@@ -27,7 +26,6 @@ kind: Kustomization
 metadata:
   name: actions-runner-home-lab
   labels:
-    decryption.flux.home.arpa/disabled: "true"
     substitution.flux.home.arpa/disabled: "true"
 spec:
   # RunnerScaleSet CRDs don't exist until the controller HelmRelease is healthy.

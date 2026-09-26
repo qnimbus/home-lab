@@ -4,8 +4,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app rook-ceph-operator
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
   path: ./kubernetes/apps/rook-ceph/rook-ceph/operator/app
@@ -29,8 +27,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app rook-ceph-csi-drivers
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
   path: ./kubernetes/apps/rook-ceph/rook-ceph/csi-drivers/app
@@ -66,8 +62,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app rook-ceph-cluster
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
   timeout: 15m

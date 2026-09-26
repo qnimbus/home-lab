@@ -4,8 +4,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app truenas
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
   path: ./kubernetes/apps/network/external-services/truenas
@@ -22,8 +20,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app home-assistant
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
   path: ./kubernetes/apps/network/external-services/home-assistant
@@ -40,8 +36,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app canon
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
   path: ./kubernetes/apps/network/external-services/canon
@@ -56,8 +50,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app wan-failover
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
   path: ./kubernetes/apps/network/external-services/wan-failover
@@ -72,8 +64,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app adam
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
   path: ./kubernetes/apps/network/external-services/adam
@@ -88,8 +78,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app anna
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
   path: ./kubernetes/apps/network/external-services/anna

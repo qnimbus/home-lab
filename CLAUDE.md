@@ -51,12 +51,11 @@ Run automatically on `git commit`, staged-file-scoped: `mise fmt`, `mise lock` (
 
 ### `kubernetes/` — Flux-managed cluster state
 
-`kubernetes/flux/cluster/ks.yaml` defines three top-level Flux `Kustomization`s: `cluster-meta` (`kubernetes/flux/meta` — centralized `HelmRepository` sources), `cluster-vars` (`kubernetes/flux/vars` — the SOPS-encrypted `cluster-secrets` Secret, which `flux-system`'s Kustomizations substitute from), and `cluster-apps`, which points at `./kubernetes/apps` and recurses: it finds the top-most `kustomization.yaml` in each app directory and applies everything it references.
+`kubernetes/flux/cluster/ks.yaml` defines three top-level Flux `Kustomization`s: `cluster-meta` (`kubernetes/flux/meta` — centralized `HelmRepository` sources), `cluster-vars` (`kubernetes/flux/vars` — renders `components/cluster-settings` into `flux-system` for that namespace's own Kustomizations), and `cluster-apps`, which points at `./kubernetes/apps` and recurses: it finds the top-most `kustomization.yaml` in each app directory and applies everything it references.
 
 `cluster-apps` injects cluster-wide defaults via Kustomize patches onto _every_ Kustomization/HelmRelease it manages, so individual apps don't repeat that boilerplate:
 
-- SOPS `decryption` (`sops-age`) — opt out with label `decryption.flux.home.arpa/disabled: "true"` (required for Kustomizations outside `flux-system` with no SOPS content, since a missing `sops-age` Secret fails reconciliation).
-- `postBuild.substituteFrom` `cluster-settings`/`cluster-secrets`, both looked up in the Kustomization's own namespace (the per-namespace `cluster-settings` ConfigMap from `components/cluster-settings`, which `components/namespace` nests and `cluster-vars` renders into `flux-system`; `cluster-secrets` exists only in `flux-system`) — opt out with `substitution.flux.home.arpa/disabled: "true"`.
+- `postBuild.substituteFrom` the `cluster-settings` ConfigMap, looked up in the Kustomization's own namespace (it comes from `components/cluster-settings`, which `components/namespace` nests and `cluster-vars` renders into `flux-system`) — opt out with `substitution.flux.home.arpa/disabled: "true"`.
 - default `retryInterval: 2m`/`timeout: 15m`.
 - HelmRelease install/upgrade `CreateReplace`/`RetryOnFailure`/`RemediateOnFailure` strategy, and `driftDetection: enabled` (opt out with `drift-detection.flux.home.arpa/disabled: "true"`).
 - a label-driven patch: a Flux Kustomization tagged `components.postgres/cnpg=init` gets its CNPG `Cluster` rewritten to a plain `initdb` bootstrap instead of Barman recovery, for brand-new databases with no prior backup.
@@ -98,7 +97,7 @@ Renovate watches the repository for dependency updates (chart versions, image ta
 
 ### Secrets
 
-Runtime secrets are never committed in plaintext. In Kubernetes, External Secrets Operator + 1Password Connect (`ClusterSecretStore: onepassword`) inject them as Kubernetes Secrets from `ExternalSecret` resources — the default for app secrets. The one exception is `kubernetes/flux/vars/cluster-secrets.sops.yaml`, SOPS/age-encrypted and decrypted by Flux (`sops-age` Secret) for `${VAR}` substitution. In Docker Compose land, doco-cd resolves `op://` references declared in `docker/nas/.doco-cd.yaml` at deploy time; its own service-account token and deploy key are placed on the host by `just bootstrap nas`. `op` (1Password CLI) is also used locally for `just template`/bootstrap/Talos flows via `op inject`.
+Runtime secrets are never committed in plaintext. In Kubernetes, External Secrets Operator + 1Password Connect (`ClusterSecretStore: onepassword`) inject them as Kubernetes Secrets from `ExternalSecret` resources. A value that must reach `${VAR}` substitution without going into the plaintext `cluster-settings` ConfigMap comes from an ExternalSecret too, via that app's own `substituteFrom` (see `network/cloudflare-tunnel`). In Docker Compose land, doco-cd resolves `op://` references declared in `docker/nas/.doco-cd.yaml` at deploy time; its own service-account token and deploy key are placed on the host by `just bootstrap nas`. `op` (1Password CLI) is also used locally for `just template`/bootstrap/Talos flows via `op inject`.
 
 ### Network policies
 

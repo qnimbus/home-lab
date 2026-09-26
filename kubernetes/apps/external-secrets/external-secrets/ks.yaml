@@ -6,7 +6,6 @@ metadata:
   name: &app external-secrets
   labels:
     substitution.flux.home.arpa/disabled: "true"
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
   wait: true
@@ -29,7 +28,6 @@ metadata:
   name: &app onepassword-store
   labels:
     substitution.flux.home.arpa/disabled: "true"
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
   wait: true

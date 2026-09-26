@@ -33,7 +33,6 @@ graph LR
    - `kustomize/` - bootstrap Secrets rendered through `op inject`, plus
      their namespaces. These exist before their controllers so nothing
      deadlocks on a missing Secret:
-     - `flux-system/sops-age` - decrypts `kubernetes/flux/vars/cluster-secrets.sops.yaml`.
      - `flux-system/flux-github-app` - GitRepository credentials for the
        private repo (later owned by flux-instance's `ExternalSecret`).
      - `external-secrets/onepassword-connect-secrets` - 1Password Connect

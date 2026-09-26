@@ -4,8 +4,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app external-dns-cloudflare
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   prune: true
   interval: 1h
@@ -27,8 +25,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: &app external-dns-unifi
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   prune: true
   interval: 1h

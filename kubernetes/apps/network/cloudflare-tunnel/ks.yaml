@@ -4,8 +4,6 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: cloudflare-tunnel-id
-  labels:
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   prune: true
   interval: 1h
@@ -26,7 +24,6 @@ kind: Kustomization
 metadata:
   name: &app cloudflare-tunnel
   labels:
-    decryption.flux.home.arpa/disabled: "true"
     # CLOUDFLARE_TUNNEL_ID must stay out of the fleet-wide plaintext
     # cluster-settings ConfigMap (unlike the domain/host vars) — sourced
     # instead from the dedicated cloudflare-tunnel-id-secret above, per

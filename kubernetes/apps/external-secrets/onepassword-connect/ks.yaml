@@ -6,7 +6,6 @@ metadata:
   name: &app onepassword-connect
   labels:
     substitution.flux.home.arpa/disabled: "true"
-    decryption.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
   wait: true

@@ -43,13 +43,6 @@ conflict") if both exist.
 - Remove `metadata.namespace: flux-system` and `spec.targetNamespace:
 <group>`. Both are now injected automatically by `replacements/replacements.yaml`,
   sourced from the rendered `Namespace` object's name.
-- Add `labels: {decryption.flux.home.arpa/disabled: "true"}` **unless** this
-  app ships its own `*.sops.yaml` (check:
-  `find kubernetes/apps/<group>/<app> -iname "*.sops.yaml"`). The cluster-wide
-  patch that injects `decryption.secretRef: sops-age` is not optional (unlike
-  `substituteFrom`) — `sops-age` only exists in `flux-system`, so a
-  Kustomization that moves out of it without this label fails reconciliation
-  outright with `secret 'sops-age' not found`.
 - For every `dependsOn` entry, add explicit `namespace: flux-system` if the
   target lives there — true for virtually all shared infra
   (`onepassword-store`, `rook-ceph-cluster`, `cloudnative-pg-cluster`,
@@ -182,8 +175,7 @@ Every var used must resolve from either:
 
 - `kubernetes/components/cluster-settings/configmap.yaml` — the already-duplicated,
   fleet-wide plaintext values. Add a new key here **only** if the value is
-  safe to declassify to plaintext, and confirm with the user first if it's
-  currently only in `kubernetes/flux/vars/cluster-secrets.sops.yaml`. This
+  safe to declassify to plaintext, and confirm with the user first. This
   file is committed in cleartext and duplicated into every namespace that
   includes the component — never add a genuinely sensitive value to it
   without explicit sign-off.
@@ -324,14 +316,11 @@ kubectl get kustomization -A | grep -i "not found\|False"
   ever set from `spec.targetNamespace`). Without it, the app's actual
   HelmRelease/ExternalSecret/etc. end up with no namespace at all.
 - **Trusting a clean `kustomize build kubernetes/apps` as proof `spec.patches`
-  works.** The CLI has zero visibility into Flux's own `spec.patches` /
-  `spec.decryption` reconcile-time behavior — it only catches structural
+  works.** The CLI has zero visibility into Flux's own `spec.patches`
+  reconcile-time behavior — it only catches structural
   errors, never this class of bug.
 - **Assuming a label can gate the wrapper's own `namespace:` field.** It
   can't — see Step 3.
-- **Forgetting `decryption.flux.home.arpa/disabled`.** Not optional, unlike
-  `substituteFrom` — a missing `sops-age` fails the whole Kustomization,
-  not just one substitution.
 - **Declassifying a value into `components/cluster-settings/configmap.yaml`
   without asking first.**
 - **Pushing a namespace relocation for a stateful app without orphaning the

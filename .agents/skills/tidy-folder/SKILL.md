@@ -65,7 +65,7 @@ The sources of truth are `.agents/instructions/*.md`, `CLAUDE.md`, and `add-app`
 **Namespace**
 
 - `kustomization.yaml` lists every `*/ks.yaml` in the folder, with no dangling entries. The `components/namespace` component and the `replacements` entry are present.
-- Each `ks.yaml` has a `spec.path` that matches its own directory. It has no `wait: false`, `commonMetadata` or `timeout`, and has `wait: true` only when something depends on it and it has no `healthChecks`. `dependsOn` is structural only (`flux-kustomization.instructions.md`) and every target exists. `postBuild.substitute.APP` is set when `components` is used, and `healthCheckExprs` is paired with `healthChecks`. The `decryption.flux.home.arpa/disabled` label is set when nothing it renders is SOPS-encrypted.
+- Each `ks.yaml` has a `spec.path` that matches its own directory. It has no `wait: false`, `commonMetadata` or `timeout`, and has `wait: true` only when something depends on it and it has no `healthChecks`. `dependsOn` is structural only (`flux-kustomization.instructions.md`) and every target exists. `postBuild.substitute.APP` is set when `components` is used, and `healthCheckExprs` is paired with `healthChecks`.
 - Every `app/kustomization.yaml` references files that exist, and every manifest in `app/` is referenced. Report orphans: they're often dormant resources.
 - Sources, secrets and Renovate comments follow `helm-sources`, `external-secrets` and `renovate` instructions. There's no NetworkPolicy, apart from what the dragonfly component adds.
 
