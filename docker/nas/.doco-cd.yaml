@@ -1,0 +1,14 @@
+---
+# Every NN-<app>/ directory next to this file is a stack. The NN- prefix is
+# ordering only; renaming a directory deletes and recreates its stack.
+working_dir: ./docker/nas
+auto_discovery:
+  enabled: true
+  depth: 1
+  delete: true
+# Compose-level secrets, once a stack needs one: add an `external_secrets:` map of
+# `VAR: op://homelab/<item>/<field>` and consume it as ${VAR} in the compose file.
+force_recreate: false
+reconciliation:
+  enabled: true
+  interval: 3600

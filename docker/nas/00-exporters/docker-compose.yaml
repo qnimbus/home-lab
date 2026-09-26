@@ -1,7 +1,10 @@
 ---
+# Host metrics for the TrueNAS box, scraped by kube-prometheus-stack
+# (kubernetes/apps/observability/kube-prometheus-stack/app/scrapeconfig-truenas.yaml).
+name: exporters
 services:
   node-exporter:
-    image: quay.io/prometheus/node-exporter:${NODE_EXPORTER_VERSION}
+    image: quay.io/prometheus/node-exporter:v1.11.1
     restart: always
     network_mode: host
     command:
@@ -51,6 +54,19 @@ services:
     volumes:
       - /sys:/sys:ro
       - textfile:/textfile
+
+  # Monitors the TrueNAS host's own disks — unrelated to the in-cluster
+  # smartctl-exporter DaemonSet (kubernetes/apps/observability/smartctl-exporter/),
+  # which covers the Talos nodes. Distinct Prometheus job labels keep them apart.
+  smartctl-exporter:
+    image: quay.io/prometheuscommunity/smartctl-exporter:v0.14.0
+    restart: always
+    # Needs raw SMART ioctl access across all block devices (runs `smartctl --scan`
+    # itself) — privileged+root is upstream's documented requirement.
+    privileged: true
+    user: root
+    ports:
+      - "9633:9633"
 
 volumes:
   textfile: {}

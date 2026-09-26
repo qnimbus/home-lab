@@ -17,7 +17,7 @@
 # collector stays disabled on this host — see --no-collector.hwmon.
 #
 # Version coupling: chip_id() below was verified against node_exporter
-# v1.11.1's hwmonName()/cleanMetricName() (../.env NODE_EXPORTER_VERSION).
+# v1.11.1's hwmonName()/cleanMetricName() (node-exporter image tag in ../docker-compose.yaml).
 # If that version is bumped and node_exporter's own chip-naming algorithm
 # ever changes upstream, this script's output would drift out of sync with
 # it silently — hardware-temps.yaml's chip=~"..." regexes just stop matching,
@@ -33,7 +33,9 @@ INTERVAL="${INTERVAL:-15}"
 trap 'exit 0' TERM INT
 
 # Mirrors node_exporter's cleanMetricName(): lowercase, replace anything
-# outside [a-z0-9:_] with '_', trim leading/trailing '_'.
+# outside [a-z0-9:_] with '_', trim leading/trailing '_'. ASCII-only on
+# purpose, like upstream — hence A-Z/a-z rather than [:upper:]/[:lower:].
+# shellcheck disable=SC2018,SC2019
 clean() {
   printf '%s' "$1" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9:_' '_' | sed 's/^_*//; s/_*$//'
 }

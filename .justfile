@@ -9,9 +9,13 @@ set quiet
 set script-interpreter := ['bash', '-euo', 'pipefail']
 set shell := ['bash', '-euo', 'pipefail', '-c']
 
-# Bootstrap Recipes
+# Bootstrap workstation, cluster and NAS recipes
 [group('bootstrap')]
 mod bootstrap "bootstrap"
+
+# Specific Docker recipes
+[group('docker')]
+mod docker "docker"
 
 # Kubernetes Recipes
 [group('k8s')]

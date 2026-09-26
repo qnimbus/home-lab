@@ -12,6 +12,11 @@ nodes := `talosctl config info -o yaml | yq -r -e '.nodes | join (" ")'`
 [doc('Bootstrap a Talos & Kubernetes cluster end-to-end')]
 cluster: nodes k8s (kubeconfig "node") base apps kubeconfig
 
+[confirm('Bootstrap TrueNAS? [y|N]')]
+[doc('Bootstrap TrueNAS applications')]
+nas:
+    ansible-playbook -i "{{ source_directory() }}/../ansible/inventory.yaml" "{{ source_directory() }}/docker/nas/bootstrap.yaml" --become-password-file <(op read 'op://homelab/truenas/password')
+
 [private]
 nodes:
     just log info "Running stage..." "stage" "{{ recipe_name() }}"

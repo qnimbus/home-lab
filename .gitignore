@@ -27,9 +27,6 @@ github-push-token.txt
 1password-credentials.json
 onepassword.env
 
-# Exception: these hold only Renovate-tracked image version pins, no secrets —
-# doco-cd needs them present on TrueNAS after cloning (see truenas/README.md).
-!truenas/docker/*/.env
 known_hosts
 flux-deploy-key*
 flux-deploy-key
