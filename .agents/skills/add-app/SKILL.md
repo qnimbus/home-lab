@@ -23,6 +23,8 @@ Scaffolds `kubernetes/apps/<namespace>/<app>/` with a Flux Kustomization (`ks.ya
 
 Everything the templates don't cover follows `sorting.instructions.md`.
 
+Files beyond these templates (`Service`, `PersistentVolumeClaim`, `ScaledObject`, …) still get a `# yaml-language-server` line, built per `.agents/instructions/yaml-schemas.instructions.md`.
+
 ## Step 1: Gather details
 
 Ask the user (AskUserQuestion) for anything not already given:

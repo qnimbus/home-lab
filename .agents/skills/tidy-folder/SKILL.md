@@ -58,7 +58,7 @@ The sources of truth are `.agents/instructions/*.md`, `CLAUDE.md`, and `add-app`
 
 **Every file**
 
-- Starts with `---`. Every manifest document carries a `# yaml-language-server: $schema=` line whose host matches what the rest of the repo uses for that kind (`grep -rh 'schema=' kubernetes/apps | sort | uniq -c`). Report mixed hosts, don't mass-rewrite them.
+- Starts with `---`. Every manifest document carries a `# yaml-language-server: $schema=` line built as `yaml-schemas.instructions.md` describes. Fix a missing or third-party one in the folder you're tidying, and confirm the URL returns `application/json`.
 - Key order follows `add-app`'s templates first (its table lists where they differ from alphabetical), then `sorting.instructions.md`, including the app-template HelmRelease rules (only when the sidecar `ocirepository.yaml` points at `app-template`). Never sort a file away from the template order.
 - `yamllint --config-file .yamllint.yaml $D` is clean.
 
