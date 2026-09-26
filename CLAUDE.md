@@ -60,7 +60,7 @@ Run automatically on `git commit`, staged-file-scoped: `mise fmt`, `mise lock` (
 - HelmRelease install/upgrade `CreateReplace`/`RetryOnFailure`/`RemediateOnFailure` strategy, and `driftDetection: enabled` (opt out with `drift-detection.flux.home.arpa/disabled: "true"`).
 - a label-driven patch: a Flux Kustomization tagged `components.postgres/cnpg=init` gets its CNPG `Cluster` rewritten to a plain `initdb` bootstrap instead of Barman recovery, for brand-new databases with no prior backup.
 
-Each namespace directory (`kubernetes/apps/<namespace>/kustomization.yaml`) pulls in the `components/namespace` component and `components/replacements/replacements.yaml`, which stamps the namespace onto every child Flux Kustomization's `metadata.namespace` and `spec.targetNamespace` — so `ks.yaml` files don't set those themselves.
+Each namespace directory (`kubernetes/apps/<namespace>/kustomization.yaml`) pulls in the `components/namespace` component and `components/replacements/replacements.yaml`, which stamps the namespace onto every child Flux Kustomization's `metadata.namespace` and `spec.targetNamespace` — so `ks.yaml` files don't set those themselves. **Exception: `flux-system`** uses neither (its `ks.yaml` files set both fields explicitly). The component's `cluster-settings` ConfigMap would collide with the one `cluster-vars` owns there, and the namespace itself comes from bootstrap. Don't "fix" this by adding the component.
 
 Each app lives at `kubernetes/apps/<namespace>/<app>/`:
 

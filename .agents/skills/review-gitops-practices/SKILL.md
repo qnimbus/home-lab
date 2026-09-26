@@ -10,25 +10,36 @@ A static, read-only review of files in this repo — not a live cluster check (t
 `check-cluster-health`) and not a chart/app scaffold (that's `add-app`). Each run re-derives
 findings from scratch by reading the tree; it doesn't persist state between runs.
 
-**Note on the "real" audit skill.** Flux itself publishes an official `gitops-repo-audit` skill
-(OCI artifact `ghcr.io/fluxcd/agent-skills`, installed via `flux-operator skills install --agent
-claude-code`) that regenerates the living `docs/REPO-AUDIT.md` — this repo used it for at least
-eight prior audit passes (see `docs/SESSIONS-ARCHIVE.md` and `docs/REPO-AUDIT.md`'s own header).
-It isn't currently installed (`flux-operator` isn't in `.mise/config.toml`), and `scripts/validate.sh`
-
-- `scripts/schemas/` in this repo are vendored leftovers from it. This skill is a **lighter,
-  complementary alternative** — it reports findings in chat and never touches `docs/REPO-AUDIT.md`.
-  If the user wants the full regenerate-the-living-doc workflow back, point them at reinstalling the
-  real one instead of asking this skill to fake it.
+**Relation to `gitops-repo-audit`.** Flux's official `gitops-repo-audit` skill is installed
+alongside this one (from `ghcr.io/fluxcd/agent-skills`, see `.agents/skills/catalog.yaml`). Use
+it for a full generic audit. This skill is the lighter, repo-specific pass: it checks this repo's
+own conventions, reuses that skill's vendored scripts for validation, and reports in chat only.
 
 ## Step 1: Structural validation (reuse existing scripts, don't reinvent)
 
 ```bash
-# Source-manifest schema validation against Flux OpenAPI schemas (kubeconform-based)
-bash scripts/validate.sh -d kubernetes
+# Schema validation, same invocation as CI (.github/workflows/validate.yaml)
+bash .agents/skills/gitops-repo-audit/scripts/validate.sh \
+  -d kubernetes \
+  -E .github/validate.env \
+  -e kubernetes/components/replacements \
+  -e kubernetes/talos
 
-# dependsOn graph health: cycles, dangling refs, duplicate edges
-uv run --with pyyaml python3 scripts/depgraph.py --check
+# Deprecated Flux API versions
+bash .agents/skills/gitops-repo-audit/scripts/check-deprecated.sh -d kubernetes
+
+# Dangling dependsOn references (namespace defaults to the app's namespace dir)
+names=$(mktemp)
+for f in kubernetes/apps/*/*/ks.yaml; do
+  ns=$(cut -d/ -f3 <<<"$f")
+  yq -N "(.metadata.namespace // \"$ns\") + \"/\" + .metadata.name" "$f"
+done | sort -u >"$names"
+for f in kubernetes/apps/*/*/ks.yaml; do
+  ns=$(cut -d/ -f3 <<<"$f")
+  yq -N "(.metadata.namespace // \"$ns\") as \$own | .spec.dependsOn[]? | (.namespace // \$own) + \"/\" + .name" "$f" |
+    while read -r d; do grep -qx "$d" "$names" || echo "DANGLING: $f -> $d"; done
+done
+rm "$names"
 ```
 
 Post-Helm-render checks (broken values/wiring that source-level validation can't see) run
@@ -36,13 +47,12 @@ in-cluster: konflate (`kubernetes/apps/flux-system/konflate/`) renders every PR 
 posts a "Konflate" check plus a diff comment. Locally, `flate test all` (flate is in the mise
 toolchain) runs the same render.
 
-**A nonzero `validate.sh` exit is not automatically a real finding.** It validates _source_
-manifests, before Flux resolves `postBuild.substitute` — any `${APP}`, `${APP_SUBDOMAIN}`,
-`${DOMAIN_*}` placeholder still literal in a `metadata.name` or `hostnames` field fails
-kubeconform's schema/DNS-label check even though Flux would apply it correctly post-substitution.
-This is a known, standing false-positive category (see `docs/REPO-AUDIT.md` § Validation
-Results) — read each reported error before treating it as a gap; only an error unrelated to an
-unresolved `${...}` placeholder is a real one.
+**A `validate.sh` error on a `${VAR}` is usually a missing placeholder, not a manifest bug.**
+`-E .github/validate.env` fills Flux substitution variables with schema-valid placeholders before
+validation. A new variable in a pattern-checked field (hostname, IP, CIDR, resource name) that
+isn't in that file fails validation even though Flux would apply it fine. The fix is a new line
+in `.github/validate.env`, not a manifest change. Variables with a `${VAR:=default}` don't need
+an entry.
 
 ## Step 2: Flux/Kustomize hygiene
 
@@ -50,12 +60,8 @@ unresolved `${...}` placeholder is a real one.
 # prune should be true (default) on every Kustomization — flag explicit opt-outs
 grep -rn "prune: false" kubernetes/apps kubernetes/flux --include=ks.yaml
 
-# Deprecated Flux API versions (current stable: kustomize.toolkit.fluxcd.io/v1,
-# source.toolkit.fluxcd.io/v1, helm.toolkit.fluxcd.io/v2)
-grep -rn "toolkit\.fluxcd\.io/v1beta\|toolkit\.fluxcd\.io/v2beta" kubernetes --include="*.yaml"
-
 # Drift-detection opt-outs — cluster-apps injects driftDetection.mode: enabled globally;
-# this label is the only way to fully disable it (see docs/CONVENTIONS.md § Drift Detection)
+# this label is the only way to fully disable it (see CLAUDE.md's cluster-apps defaults)
 grep -rl "drift-detection.flux.home.arpa/disabled" kubernetes/apps --include="*.yaml" \
   || echo "No opt-outs — all HelmReleases inherit the global default"
 
@@ -84,7 +90,7 @@ for f in $apps; do grep -q "probes:" "$f" || echo "NO-PROBES: $f"; done
 grep -rn 'tag: *"\?latest"\?' kubernetes/apps --include="*.yaml"
 ```
 
-Cross-check any hit against `docs/CONVENTIONS.md` § app-template v5 before flagging — a missing
+Cross-check any hit against the `add-app` skill's HelmRelease template before flagging — a missing
 `readOnlyRootFilesystem`/`runAsNonRoot` on an image that genuinely can't run non-root is a known,
 accepted exception (`.agents/skills/add-app/SKILL.md` documents dropping the pod
 `securityContext` only when the image requires it).
@@ -97,8 +103,8 @@ grep -rl "kind: Secret" kubernetes/ --include="*.yaml" | \
   xargs -I{} sh -c 'grep -q "sops:\|ENC\[" "$1" || echo "CHECK: $1"' _ {}
 
 # ExternalSecrets not using the dataFrom.extract + rewrite.regexp convention
-# (docs/CONVENTIONS.md § ExternalSecret conventions — bare `data:` is the documented exception
-# only when every field is already unique and unambiguous)
+# (.agents/instructions/external-secrets.instructions.md — bare `data:` is the documented
+# exception only when every field is already unique and unambiguous)
 for f in $(grep -rl "kind: ExternalSecret" kubernetes/apps --include="*.yaml"); do
   grep -q "dataFrom:" "$f" || echo "NO-DATAFROM: $f"
 done
@@ -109,36 +115,36 @@ total=$(find kubernetes -iname "ocirepository.yaml" | wc -l)
 cosign=$(grep -rl "provider: cosign" kubernetes --include=ocirepository.yaml | wc -l)
 echo "cosign verify: $cosign / $total OCIRepositories"
 
-# NetworkPolicy / CiliumNetworkPolicy coverage (Cilium is the CNI — either kind counts)
-grep -rl "kind: NetworkPolicy" kubernetes --include="*.yaml" | wc -l
-grep -rl "kind: CiliumNetworkPolicy" kubernetes --include="*.yaml" | wc -l
+# NetworkPolicies: none by design, except the dragonfly component's metrics allow rule
+# (CLAUDE.md § Network policies). Anything else listed here is a deviation.
+grep -rl "kind: NetworkPolicy\|kind: CiliumNetworkPolicy" kubernetes --include="*.yaml"
 ```
 
 ## Step 5: Don't re-report known/accepted findings
 
-Before writing up anything as a new gap, check whether it's already tracked:
+Before writing up anything as a new gap, check whether it's already a documented decision:
 
-```bash
-grep -n "^| I\|^| W\|^### " docs/REPO-AUDIT.md | head -40
-grep -n "^-\|^### " docs/ROADMAP.md | head -40
-```
+- `CLAUDE.md`: e.g. no NetworkPolicies by design, the `flux-system` replacements exception,
+  the cluster-apps defaults and their opt-out labels.
+- `.agents/instructions/*.md` and the sibling skills' **Common mistakes** lists (`add-app`,
+  `tidy-folder`).
+- Folder READMEs, which record per-area trade-offs (`find kubernetes -name README.md`), e.g.
+  `components/postgres` (single instance, PDB off) and `apps/system-upgrade` (tuppr's
+  `dependsOn` on kube-prometheus-stack).
+- Open issues: `gh issue list --state open`.
 
-`docs/REPO-AUDIT.md`'s Recommendations table and `docs/ROADMAP.md` are where this repo's owner
-already decided which gaps are deliberate/low-priority (e.g. zero application-level
-`NetworkPolicy`s is a known, accepted posture for this single-tenant homelab behind
-Tailscale/internal ingress — not a new finding). Cite the existing entry instead of re-litigating
-it; only report something as new if it isn't already there.
+Cite the existing decision instead of re-litigating it; only report something as new if it isn't
+already there.
 
 ## Step 6: Report
 
 Structure findings in three buckets, most important first:
 
 - **🔴 Worth fixing** — deviates from _both_ this repo's own documented convention (`AGENTS.md`,
-  `docs/CONVENTIONS.md`, the sibling skills) _and_ general Kubernetes/Flux/GitOps practice, with no
+  `.agents/instructions/`, `CLAUDE.md`, the sibling skills) _and_ general Kubernetes/Flux/GitOps practice, with no
   accepted-exception match in Step 5. Include the file path and a concrete suggested change.
-- **🟡 Known/accepted or intentional pattern** — matches an existing `docs/REPO-AUDIT.md`/
-  `docs/ROADMAP.md` entry, or one of the repo-specific deliberate tradeoffs below. Say which, don't
-  re-argue it.
+- **🟡 Known/accepted or intentional pattern** — matches a documented decision from Step 5, or
+  one of the repo-specific deliberate tradeoffs below. Say which, don't re-argue it.
 - **🟢 Already solid** — name what's working well (e.g. universal `dataFrom`/SOPS secrets handling,
   zero `dependsOn` cycles, no `latest` tags) so the user knows it's a deliberate baseline, not an
   oversight you missed checking.
@@ -155,14 +161,13 @@ cosmetic labeling gap).
   `.agents/skills/add-app/SKILL.md`. Intentional, not an oversight.
 - **Flagging missing `wait`/`commonMetadata`/`timeout` in `ks.yaml`.** All three were deliberately
   dropped as boilerplate (see `add-app`'s Common mistakes) — their _absence_ is the convention.
-- **Treating zero `NetworkPolicy`/low cosign coverage as urgent.** Both are existing, explicitly
-  accepted low-priority gaps for this cluster (see Step 5) — report them as known, not new.
+- **Treating zero `NetworkPolicy`s as a gap.** It's a documented decision (CLAUDE.md § Network
+  policies). Low cosign coverage is informational too, since not every upstream signs charts.
 - **Grading `grep -rl "controllers:"` results as exhaustive.** It only catches app-template
   HelmReleases; a HelmRelease with a different values schema (`cilium`, CRD operators, etc.)
   missing the same field is not comparable and shouldn't be silently folded into the same count.
 - **Treating this as a live-cluster check.** Nothing here touches the cluster — `kubectl`,
   `kubeconform`, and `grep` against files on disk only. Use `check-cluster-health` for runtime
   state (Ready conditions, pod health, actual Ceph status).
-- **Writing findings into `docs/REPO-AUDIT.md`.** That document is owned by the (currently
-  uninstalled) official `gitops-repo-audit` skill — this skill reports in chat only, so the two
-  don't drift out of sync or fight over the same file.
+- **Writing findings into files.** This skill reports in chat only. `docs/` and `ops/` are
+  retired; don't recreate an audit document there.
