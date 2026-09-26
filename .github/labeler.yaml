@@ -27,6 +27,12 @@ area/docs:
 area/kubernetes:
   - changed-files:
       - any-glob-to-any-file: "kubernetes/**/*"
+namespace/media:
+  - changed-files:
+      - any-glob-to-any-file: "kubernetes/media/**/*"
+namespace/downloads:
+  - changed-files:
+      - any-glob-to-any-file: "kubernetes/downloads/**/*"
 area/scripts:
   - changed-files:
       - any-glob-to-any-file: "scripts/**/*"

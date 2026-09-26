@@ -36,6 +36,11 @@
   color: "ff9800"
 - name: type/major
   color: "f6412d"
+# Namespaces
+- name: namespace/downloads
+  color: "1551c0"
+- name: namespace/media
+  color: "1551c0"
 # Uncategorized
 - name: community
   color: "370fb2"
