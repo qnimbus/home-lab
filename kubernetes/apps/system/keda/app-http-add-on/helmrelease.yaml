@@ -12,9 +12,9 @@ spec:
   postRenderers:
     - kustomize:
         patches:
-          - target:
-              kind: CustomResourceDefinition
-            patch: |
+          - patch: |
               - op: add
                 path: /metadata/annotations/helm.sh~1resource-policy
                 value: keep
+            target:
+              kind: CustomResourceDefinition
