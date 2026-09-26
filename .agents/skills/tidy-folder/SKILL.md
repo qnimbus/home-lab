@@ -82,7 +82,7 @@ When the folder's majority disagrees with a documented convention, or two conven
 
 ## Step 4: Write the README
 
-**Models to follow.** `kubernetes/components/nfs-config/README.md` is the target style: purpose first, short sections, tables for inventories, caveats at the end. `kubernetes/apps/system-upgrade/README.md` shows how to lay out a namespace with a real workflow (layout table → how it happens → operating). `kubernetes/components/postgres/README.md` has the right substance but is too long. Don't copy its repetition (the health-check block appears twice), its narrative about comparing against bykaj, or example YAML that has drifted from convention.
+**Models to follow.** `kubernetes/components/nfs-config/README.md` is the target style: purpose first, short sections, tables for inventories, caveats at the end. `kubernetes/apps/system-upgrade/README.md` shows how to lay out a namespace with a real workflow (layout table → how it happens → operating). `kubernetes/components/postgres/README.md` is the component with more to explain: usage caveats, paired variables with a table of their combinations, and a bootstrap flow, still under 100 lines.
 
 **Namespace skeleton** (drop sections that would be empty):
 
