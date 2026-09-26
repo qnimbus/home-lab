@@ -118,7 +118,7 @@
     {
       description: "Auto-merge trusted GitHub Actions",
       matchManagers: ["github-actions"],
-      matchPackageNames: ["/^actions\\//", "/^renovatebot\\//"],
+      matchPackageNames: ["/^actions\\//", "ghcr.io/renovatebot/renovate"],
       matchUpdateTypes: ["minor", "patch", "digest"],
       automerge: true,
       automergeType: "branch",
@@ -188,7 +188,11 @@
       group: {
         commitMessageTopic: "{{{groupName}}} group",
       },
+      // One age for both members: the image otherwise inherits the GitHub Actions
+      // rules' age and the npm package none, so one lags and the group falls below
+      // minimumGroupSize
       minimumGroupSize: 2,
+      minimumReleaseAge: "6 hours",
     },
     {
       description: "Rook-Ceph Group",
