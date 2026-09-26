@@ -42,11 +42,15 @@ pre-commit:
       exclude: []
       stage_fixed: true
 
+    # yamllint runs in the same command, after oxfmt, so it lints the formatted
+    # files instead of racing the formatter under `parallel: true`.
     format-yaml:
       glob:
         - "*.yaml"
         - "*.yml"
-      run: oxfmt oxfmt --config=.oxfmtrc.json  {staged_files}
+      run: >-
+        oxfmt oxfmt --config=.oxfmtrc.json {staged_files} &&
+        yamllint --config-file .yamllint.yaml {staged_files}
       exclude:
         - "*.sops.yaml"
         - "*.sops.yml"

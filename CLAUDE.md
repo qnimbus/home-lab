@@ -45,7 +45,7 @@ docker compose -f docker/nas/NN-<app>/docker-compose.yaml config --quiet   # uns
 
 ### Pre-commit hooks (lefthook, `.lefthook.yaml`)
 
-Run automatically on `git commit`, staged-file-scoped: `mise fmt`, `mise lock` (regenerates `.mise/mise.lock` for `linux-x64,linux-arm64,macos-arm64`), `oxfmt` for JSON/Markdown/YAML (`*.sops.yaml` excluded), `shellcheck` for `*.sh`, `actionlint` and `zizmor` for GitHub Actions workflows/actions, and Renovate's `renovate-config-validator` for `renovate.json5` (also run in CI via `lefthook run`).
+Run automatically on `git commit`, staged-file-scoped: `mise fmt`, `mise lock` (regenerates `.mise/mise.lock` for `linux-x64,linux-arm64,macos-arm64`), `oxfmt` for JSON/Markdown/YAML (`*.sops.yaml` excluded) followed by `yamllint` on the formatted YAML (`.yamllint.yaml`; its `braces`/`quoted-strings` rules are set to agree with oxfmt), `shellcheck` for `*.sh`, `actionlint` and `zizmor` for GitHub Actions workflows/actions, and Renovate's `renovate-config-validator` for `renovate.json5` (also run in CI via `lefthook run`).
 
 ## Architecture
 
