@@ -42,8 +42,16 @@ debug-node node:
 delete-ks ns ks:
     just k8s render-local-ks "{{ ns }}" "{{ ks }}" | kubectl delete -f -
 
-[doc('Prune pods in Failed, Pending, or Succeeded state')]
-prune-pods:
+[arg('jobs', long='jobs', value='true')]
+[doc('Prune pods in Failed, Pending, or Succeeded state (--jobs: also finished Jobs)')]
+prune-pods jobs='false':
+    if [[ "{{ jobs }}" == "true" ]]; then
+        kubectl get jobs -A -o jsonpath='{range .items[*]}{.metadata.namespace} {.metadata.name} {.status.conditions[?(@.status=="True")].type}{"\n"}{end}' \
+            | awk '{ for (i = 3; i <= NF; i++) if ($i == "Complete" || $i == "Failed") { print $1, $2; next } }' \
+            | while read -r ns name; do
+                kubectl delete job -n "$ns" "$name" --ignore-not-found=true
+            done
+    fi
     for phase in Failed Pending Succeeded; do
         kubectl delete pods -A --field-selector status.phase="$phase" --ignore-not-found=true
     done
