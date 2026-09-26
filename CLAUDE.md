@@ -21,6 +21,7 @@ just k8s database <recipe>       # kubernetes/apps/database/mod.just — CNPG du
 just talos <recipe>              # kubernetes/talos/mod.just — Talos node operations
 just bootstrap <recipe>          # bootstrap/mod.just — end-to-end bring-up
 just docker <recipe>             # docker/mod.just — NAS doco-cd operations
+just github <recipe>             # .github/mod.just — `RUNNER` repo variable: runner | runner-cluster | runner-hosted
 ```
 
 Frequently used `just k8s` recipes: `sync hr|ks|gitrepo|ocirepo|es` (force Flux/ExternalSecrets reconciliation), `sync-hr`/`sync-ks`/`sync-es <ns> <name>` (single resource), `apply-ks`/`delete-ks <ns> <ks>` (render+apply/delete a Flux Kustomization locally via `flate`), `toolbox` (shell into rook-ceph-tools), `view-secret <ns> [secret]`, `browse-pvc <ns> <claim>`, `debug-node <node>`, `db-backup <ns> <app>` (manual CNPG backup of a dedicated `<app>-postgres` cluster), `prune-pods`, `cron-minute <name>` (stable pseudo-random cron minute). `just k8s database dump|restore` wraps `pg_dump`/`pg_restore` against a CNPG cluster.

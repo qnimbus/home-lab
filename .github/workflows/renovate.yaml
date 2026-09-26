@@ -80,9 +80,9 @@ jobs:
           # image's (uid 12021); restore the image's own home, where containerbase keeps tools.
           HOME: /home/ubuntu
           LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
-          RENOVATE_DRY_RUN: ${{ inputs.dryRun }} # empty unless dispatched with dryRun
+          RENOVATE_DRY_RUN: ${{ inputs.dryRun && 'full' || '' }} # empty unless dispatched with dryRun
           RENOVATE_INTERNAL_CHECKS_FILTER: strict
           RENOVATE_PLATFORM: github
-          RENOVATE_PLATFORM_COMMIT: true # commits via the API, signed as the App
+          RENOVATE_PLATFORM_COMMIT: enabled # commits via the API, signed as the App
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           RENOVATE_TOKEN: ${{ steps.app-token.outputs.token }}

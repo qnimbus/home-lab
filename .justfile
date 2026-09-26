@@ -17,6 +17,10 @@ mod bootstrap "bootstrap"
 [group('docker')]
 mod docker "docker"
 
+# GitHub Actions Recipes
+[group('github')]
+mod github ".github"
+
 # Kubernetes Recipes
 [group('k8s')]
 mod k8s "kubernetes"
