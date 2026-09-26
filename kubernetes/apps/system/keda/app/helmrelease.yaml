@@ -8,6 +8,8 @@ spec:
   chartRef:
     kind: OCIRepository
     name: keda
+  install:
+    disableTakeOwnership: true
   interval: 1h
   values:
     crds:

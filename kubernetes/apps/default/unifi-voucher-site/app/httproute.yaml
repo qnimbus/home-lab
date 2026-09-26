@@ -23,5 +23,5 @@ spec:
     # — see interceptorroute.yaml/scaledobject.yaml in this directory.
     - backendRefs:
         - name: keda-add-ons-http-interceptor-proxy
-          namespace: keda
+          namespace: system
           port: 8080

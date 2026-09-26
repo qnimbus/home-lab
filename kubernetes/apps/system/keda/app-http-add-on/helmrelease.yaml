@@ -8,6 +8,8 @@ spec:
   chartRef:
     kind: OCIRepository
     name: keda-add-ons-http
+  install:
+    disableTakeOwnership: true
   interval: 1h
   postRenderers:
     - kustomize:

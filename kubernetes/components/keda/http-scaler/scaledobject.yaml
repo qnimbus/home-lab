@@ -17,5 +17,5 @@ spec:
   triggers:
     - type: external-push
       metadata:
-        scalerAddress: keda-add-ons-http-external-scaler.keda:9090
+        scalerAddress: keda-add-ons-http-external-scaler.system:9090
         interceptorRoute: ${APP}

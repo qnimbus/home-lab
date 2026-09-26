@@ -10,15 +10,15 @@ Cluster-wide plumbing that apps rely on but don't talk to directly: storage driv
 | `csi-driver-nfs`              | `nfs` StorageClass: one NAS subdirectory per PVC under `/mnt/tank/Cluster/k8s-nfs-csi`         | Used by [`components/nfs-config`](../../components/nfs-config/README.md)                                           |
 | `csi-driver-smb`              | SMB CSI driver only, plus the `smb-credentials` Secret                                         | No StorageClass; consumers hand-write static PVs                                                                   |
 | `intel-gpu-resource-driver`   | DRA driver exposing the nodes' Intel iGPUs for transcoding                                     | Installed without NFD                                                                                              |
-| `keda`, `keda-add-ons-http`   | Event-driven and HTTP scale-to-zero autoscaling                                                | Own namespace `keda`; consumed via `components/keda/*`                                                             |
+| `keda`, `keda-add-ons-http`   | Event-driven and HTTP scale-to-zero autoscaling                                                | Consumed via `components/keda/*`; CRDs kept on uninstall                                                           |
 | `kopiur`, `kopiur-repository` | Kopia backup operator and the `nas` ClusterRepository on the NAS                               | Consumed via `components/kopiur/backup`; read-only UI at `kopia.${DOMAIN_CLUSTER}`                                 |
 | `openebs`                     | `openebs-hostpath` local-PV StorageClass under `/var/mnt/openebs/local`                        | Everything but the local hostpath engine is switched off                                                           |
 | `reloader`                    | Restarts workloads annotated `reloader.stakater.com/auto` when their Secrets/ConfigMaps change | Watches every namespace                                                                                            |
 | `snapshot-controller`         | CSI VolumeSnapshot controller                                                                  | Own namespace; CRDs come from bootstrap, so nothing needs to `dependsOn` it                                        |
 
-`keda` and `snapshot-controller` carry `replacements.flux.home.arpa/disabled` so they keep their own `targetNamespace`. Everything else deploys into `system`.
+`snapshot-controller` carries `replacements.flux.home.arpa/disabled` so it keeps its own `targetNamespace`. Everything else deploys into `system`.
 
-That split is deliberate. Both charts template their CRDs without `helm.sh/resource-policy: keep`, and moving a release to another namespace means uninstalling the old one, which deletes those CRDs and every ScaledObject, InterceptorRoute or VolumeSnapshot(Class) with them. snapshot-controller's CRDs also carry a conversion webhook that points at the release namespace. CRD-free operators go in `system`. An operator that ships CRDs only moves once its CRDs are protected from the uninstall.
+That exception is deliberate. The chart templates its CRDs without `helm.sh/resource-policy: keep`, and moving a release to another namespace means uninstalling the old one, which deletes those CRDs and every VolumeSnapshot(Class) with them. Its CRDs also carry a conversion webhook that points at the release namespace. CRD-free operators go in `system`. An operator that ships CRDs only moves once its CRDs are protected from the uninstall: KEDA's carry `helm.sh/resource-policy: keep` (the chart's `crds.additionalAnnotations` for `keda`, a post-renderer for `keda-add-ons-http`, which has no such value), which is what let both move. The flip side is that uninstalling KEDA leaves its CRDs behind; a real removal needs `kubectl delete crd`.
 
 ## Storage choices
 
@@ -36,6 +36,7 @@ kubectl -n system get secret nas-kopia-ui-auth -o yaml # Kopia UI login (user `k
 ## Gotchas
 
 - **Every namespace with an HTTPRoute pointing at `keda-add-ons-http-interceptor-proxy` must be listed in [referencegrant.yaml](./keda/app-http-add-on/referencegrant.yaml).** A missing one is silent at apply time: the route is Accepted, `ResolvedRefs` goes False with `RefNotPermitted`, the browser gets a plain 500 and KEDA never scales up. List the consumers with `grep -rl components/keda/http-scaler kubernetes --include=ks.yaml`.
+- [`components/keda/http-scaler`](../../components/keda/http-scaler/scaledobject.yaml) hardcodes the add-on's namespace in `scalerAddress` (`keda-add-ons-http-external-scaler.system:9090`), and consumers' HTTPRoutes name it in their `backendRefs`. Moving the add-on means updating both.
 - `keda-add-ons-http` must reconcile before any app with an `InterceptorRoute`, since that CRD comes from its chart. Consumers `dependsOn` it.
 - The KEDA `GrafanaDashboard` sets `allowCrossNamespaceImport: true`. Grafana lives in `observability`, and without the flag the dashboard is skipped silently.
 - `smb-credentials` is created asynchronously by External Secrets. `csi-driver-smb` runs with `wait: true` so a consumer that `dependsOn` it only mounts once the Secret exists.
