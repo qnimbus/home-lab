@@ -51,16 +51,16 @@ Run automatically on `git commit`, staged-file-scoped: `mise fmt`, `mise lock` (
 
 ### `kubernetes/` — Flux-managed cluster state
 
-`kubernetes/flux/cluster/ks.yaml` defines three top-level Flux `Kustomization`s: `cluster-meta` (`kubernetes/flux/meta` — centralized `HelmRepository` sources), `cluster-vars` (`kubernetes/flux/vars` — renders `components/cluster-settings` into `flux-system` for that namespace's own Kustomizations), and `cluster-apps`, which points at `./kubernetes/apps` and recurses: it finds the top-most `kustomization.yaml` in each app directory and applies everything it references.
+`kubernetes/flux/cluster/ks.yaml` defines two top-level Flux `Kustomization`s: `cluster-meta` (`kubernetes/flux/meta` — centralized `HelmRepository` sources) and `cluster-apps`, which points at `./kubernetes/apps` and recurses: it finds the top-most `kustomization.yaml` in each app directory and applies everything it references.
 
 `cluster-apps` injects cluster-wide defaults via Kustomize patches onto _every_ Kustomization/HelmRelease it manages, so individual apps don't repeat that boilerplate:
 
-- `postBuild.substituteFrom` the `cluster-settings` ConfigMap, looked up in the Kustomization's own namespace (it comes from `components/cluster-settings`, which `components/namespace` nests and `cluster-vars` renders into `flux-system`) — opt out with `substitution.flux.home.arpa/disabled: "true"`.
+- `postBuild.substituteFrom` the `cluster-settings` ConfigMap, looked up in the Kustomization's own namespace (it comes from `components/cluster-settings`, which `components/namespace` nests and `flux-system` pulls in on its own) — opt out with `substitution.flux.home.arpa/disabled: "true"`.
 - default `retryInterval: 2m`/`timeout: 15m`.
 - HelmRelease install/upgrade `CreateReplace`/`RetryOnFailure`/`RemediateOnFailure` strategy, and `driftDetection: enabled` (opt out with `drift-detection.flux.home.arpa/disabled: "true"`).
 - a label-driven patch: a Flux Kustomization tagged `components.postgres/cnpg=init` gets its CNPG `Cluster` rewritten to a plain `initdb` bootstrap instead of Barman recovery, for brand-new databases with no prior backup.
 
-Each namespace directory (`kubernetes/apps/<namespace>/kustomization.yaml`) pulls in the `components/namespace` component and `components/replacements/replacements.yaml`, which stamps the namespace onto every child Flux Kustomization's `metadata.namespace` and `spec.targetNamespace` — so `ks.yaml` files don't set those themselves. **Exception: `flux-system`** uses neither (its `ks.yaml` files set both fields explicitly). The namespace comes from bootstrap, and the component would make Flux manage (and potentially prune) the `flux-system` Namespace itself. Don't "fix" this by adding the component.
+Each namespace directory (`kubernetes/apps/<namespace>/kustomization.yaml`) pulls in the `components/namespace` component and `components/replacements/replacements.yaml`, which stamps the namespace onto every child Flux Kustomization's `metadata.namespace` and `spec.targetNamespace` — so `ks.yaml` files don't set those themselves. **Exception: `flux-system`** uses neither (its `ks.yaml` files set both fields explicitly); it pulls in only `components/cluster-settings` for its Kustomizations' substitution. The namespace comes from bootstrap, and `components/namespace` would make Flux manage (and potentially prune) the `flux-system` Namespace itself. Don't "fix" this by adding that component.
 
 Each app lives at `kubernetes/apps/<namespace>/<app>/`:
 
