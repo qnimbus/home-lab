@@ -30,6 +30,7 @@ metadata:
 spec:
   dependsOn:
     - name: kopiur
+      namespace: system
   interval: 1h
   path: ./kubernetes/apps/system/kopiur/repository
   prune: true
