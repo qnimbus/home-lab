@@ -9,9 +9,9 @@ metadata:
 spec:
   bootstrap:
     recovery:
-      source: &archive ${APP}-backup-archive
       database: ${POSTGRES_DATABASE:=${APP}}
       owner: ${POSTGRES_USERNAME:=${APP}}
+      source: &archive ${APP}-backup-archive
   enablePDB: ${POSTGRES_ENABLE_PDB:=false}
   enableSuperuserAccess: true
   externalClusters:

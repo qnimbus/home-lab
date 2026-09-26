@@ -6,22 +6,22 @@ metadata:
   name: ${APP}-postgres-backup
 spec:
   configuration:
-    destinationPath: "s3://vwn-io-cluster-cnpg/dedicated/${APP}"
-    endpointURL: "https://s3.us-west-001.backblazeb2.com"
     data:
       compression: bzip2
       encryption: AES256
-    wal:
-      compression: bzip2
-      maxParallel: 8
-      encryption: AES256
+    destinationPath: "s3://vwn-io-cluster-cnpg/dedicated/${APP}"
+    endpointURL: "https://s3.us-west-001.backblazeb2.com"
     s3Credentials:
       accessKeyId:
-        name: &secret ${APP}-postgres
         key: S3_ACCESS_KEY
+        name: &secret ${APP}-postgres
       secretAccessKey:
-        name: *secret
         key: S3_SECRET_KEY
+        name: *secret
+    wal:
+      compression: bzip2
+      encryption: AES256
+      maxParallel: 8
   instanceSidecarConfiguration:
     env:
       - name: AWS_REQUEST_CHECKSUM_CALCULATION
