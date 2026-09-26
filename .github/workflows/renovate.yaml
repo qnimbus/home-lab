@@ -16,7 +16,7 @@ on:
       - .renovaterc.json5
       - .github/workflows/renovate.yaml
   schedule:
-    - cron: 0 */6 * * * # see budget note above; dashboard checkboxes wait for the next run
+    - cron: 0 */1 * * * # see budget note above; dashboard checkboxes wait for the next run
   workflow_dispatch:
     inputs:
       dryRun:
