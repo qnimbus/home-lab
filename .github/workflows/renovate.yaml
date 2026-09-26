@@ -5,8 +5,7 @@ name: Renovate
 # Self-hosted Renovate running as the github-bot App (1Password → App token, as in labeler.yaml).
 # `env:` below is Renovate global config; repository config lives in .renovaterc.json5.
 # Runs on the in-cluster runner; set the repo variable RUNNER=ubuntu-24.04 to fall back to
-# GitHub-hosted (e.g. while the cluster is down). There, every 6 h ≈ 300 of the 2000
-# private-repo min/month. With runs 6 h apart, prHourlyLimit is effectively a per-run cap.
+# GitHub-hosted (e.g. while the cluster is down).
 
 on:
   push:
@@ -16,8 +15,8 @@ on:
       - .renovaterc.json5
       - .github/workflows/renovate.yaml
   schedule:
-    - cron: '20 * * * *'
-      timezone: 'Europe/Amsterdam'
+    - cron: "50 * * * *"
+      timezone: "Europe/Amsterdam"
   workflow_dispatch:
     inputs:
       dryRun:
