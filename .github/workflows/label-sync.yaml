@@ -18,7 +18,7 @@ permissions:
 jobs:
   main:
     name: Label Sync - Sync Labels
-    runs-on: home-lab
+    runs-on: ${{ vars.RUNNER || 'home-lab' }} # RUNNER=ubuntu-24.04 falls back to GitHub-hosted
     permissions:
       contents: read
       issues: write

@@ -14,7 +14,7 @@ permissions:
 jobs:
   main:
     name: Labeler
-    runs-on: home-lab
+    runs-on: ${{ vars.RUNNER || 'home-lab' }} # RUNNER=ubuntu-24.04 falls back to GitHub-hosted
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
     permissions:
       contents: read
