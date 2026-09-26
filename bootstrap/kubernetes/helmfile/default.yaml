@@ -1,13 +1,6 @@
 ---
 # yaml-language-server: $schema=https://json.schemastore.org/helmfile
 
-# Classic (non-OCI) chart repos used by bootstrap releases. Names must match the
-# HelmRepository names in kubernetes/flux/meta/repos/helm/, since
-# templates/release.yaml.gotmpl builds the chart as <sourceRef.name>/<chart>.
-repositories:
-  - name: onepassword-connect
-    url: https://1password.github.io/connect-helm-charts
-
 templates:
   default:
     chart: '{{ (fromYaml (tpl (readFile "./templates/release.yaml.gotmpl") .)).chart }}'

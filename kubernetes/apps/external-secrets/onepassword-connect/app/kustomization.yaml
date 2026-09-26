@@ -12,4 +12,5 @@ generatorOptions:
 configurations:
   - ./helm/kustomize-config.yaml
 resources:
+  - ./ocirepository.yaml
   - ./helmrelease.yaml

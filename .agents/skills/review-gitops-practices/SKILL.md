@@ -66,7 +66,7 @@ grep -rl "drift-detection.flux.home.arpa/disabled" kubernetes/apps --include="*.
   || echo "No opt-outs — all HelmReleases inherit the global default"
 
 # Legacy HelmRepository + chart.spec pattern vs OCIRepository/chartRef (the preferred pattern)
-grep -rl "kind: HelmRepository" kubernetes/flux/meta/repos/helm/*.yaml 2>/dev/null
+grep -rl "kind: HelmRepository" kubernetes 2>/dev/null
 
 # ks.yaml boilerplate this repo has deliberately dropped — see add-app skill's Common mistakes
 grep -rn "^  wait: false\|commonMetadata:\|^  timeout:" kubernetes/apps/*/*/ks.yaml

@@ -51,7 +51,7 @@ Run automatically on `git commit`, staged-file-scoped: `mise fmt`, `mise lock` (
 
 ### `kubernetes/` — Flux-managed cluster state
 
-`kubernetes/flux/cluster/ks.yaml` defines two top-level Flux `Kustomization`s: `cluster-meta` (`kubernetes/flux/meta` — centralized `HelmRepository` sources) and `cluster-apps`, which points at `./kubernetes/apps` and recurses: it finds the top-most `kustomization.yaml` in each app directory and applies everything it references.
+`kubernetes/flux/cluster/ks.yaml` defines one top-level Flux `Kustomization`, `cluster-apps`, which points at `./kubernetes/apps` and recurses: it finds the top-most `kustomization.yaml` in each app directory and applies everything it references.
 
 `cluster-apps` injects cluster-wide defaults via Kustomize patches onto _every_ Kustomization/HelmRelease it manages, so individual apps don't repeat that boilerplate:
 
@@ -89,7 +89,7 @@ Deployed GitOps-style by [doco-cd](https://github.com/kimdre/doco-cd), which run
 
 ### `.agents/` — shared agent conventions
 
-`AGENTS.md` imports the files in `.agents/instructions/`: YAML key ordering (`sorting`), Flux Kustomization `dependsOn`/`commonMetadata` rules (`flux-kustomization`), OCI vs. classic Helm source placement (`helm-sources`), ExternalSecret patterns (`external-secrets`), when to use `# renovate:` comments (`renovate`), and which `yaml-language-server` schema URL each manifest carries (`yaml-schemas`). These apply whenever YAML in this repo is written or reordered. `.agents/skills/` holds task skills (`add-app`, `check-cluster-health`, `review-gitops-practices`, `scope-namespace`, …); they're exposed to Claude Code through the `.claude/skills` symlink.
+`AGENTS.md` imports the files in `.agents/instructions/`: YAML key ordering (`sorting`), Flux Kustomization `dependsOn`/`commonMetadata` rules (`flux-kustomization`), Helm chart source placement, OCI only (`helm-sources`), ExternalSecret patterns (`external-secrets`), when to use `# renovate:` comments (`renovate`), and which `yaml-language-server` schema URL each manifest carries (`yaml-schemas`). These apply whenever YAML in this repo is written or reordered. `.agents/skills/` holds task skills (`add-app`, `check-cluster-health`, `review-gitops-practices`, `scope-namespace`, …); they're exposed to Claude Code through the `.claude/skills` symlink.
 
 ### GitOps flow
 

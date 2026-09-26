@@ -73,10 +73,8 @@ The helmfiles define no chart versions or values of their own. Each release's
 chart and version are read from the app's own Flux manifests under
 `kubernetes/apps/<namespace>/<name>/app/` (see [helmfile/templates/](./helmfile/templates/)):
 
-- `ocirepository.yaml` when the HelmRelease uses `chartRef`, otherwise the
-  HelmRelease's `chart.spec` plus the matching classic repo registered in
-  [helmfile/default.yaml](./helmfile/default.yaml) (mirroring
-  `kubernetes/flux/meta/repos/helm/`).
+- `ocirepository.yaml` for the chart URL and version. Every bootstrap
+  release must therefore use an OCI chart through `chartRef`.
 - Values from `helm/values.yaml` (the source of the `valuesFrom` ConfigMap),
   overlaid with any inline `spec.values`.
 

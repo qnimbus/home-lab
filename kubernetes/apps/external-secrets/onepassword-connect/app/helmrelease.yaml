@@ -5,16 +5,10 @@ kind: HelmRelease
 metadata:
   name: onepassword-connect
 spec:
+  chartRef:
+    kind: OCIRepository
+    name: onepassword-connect
   interval: 1h
-  chart:
-    spec:
-      chart: connect
-      # renovate: datasource=helm depName=connect repository=https://1password.github.io/connect-helm-charts
-      version: 2.4.1
-      sourceRef:
-        kind: HelmRepository
-        name: onepassword-connect
-        namespace: flux-system
   valuesFrom:
     - kind: ConfigMap
       name: onepassword-connect-helm-values
