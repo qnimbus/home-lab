@@ -30,7 +30,7 @@
             # widget:
             #   type: homeassistant
             #   url: "http://${HOME_ASSISTANT_LAN_HOST}:8123"
-            #   key: {{HOMEPAGE_VAR_HOMEASSISTANT_TOKEN}}
+            #   key: "{{HOMEPAGE_VAR_HOMEASSISTANT_TOKEN}}"
     - ColB:
         - Gateway:
             icon: "mdi-thermostat"
@@ -47,10 +47,10 @@
             icon: cloudflare-zero-trust.png
             description: Cloudflared Tunnel
             widget:
-                type: cloudflared
-                accountid: {{HOMEPAGE_VAR_CLOUDFLARE_ACCOUNT_ID}}
-                tunnelid: {{HOMEPAGE_VAR_CLOUDFLARE_TUNNEL_ID}}
-                key: {{HOMEPAGE_VAR_CLOUDFLARE_API_TOKEN}}
+              type: cloudflared
+              accountid: "{{HOMEPAGE_VAR_CLOUDFLARE_ACCOUNT_ID}}"
+              tunnelid: "{{HOMEPAGE_VAR_CLOUDFLARE_TUNNEL_ID}}"
+              key: "{{HOMEPAGE_VAR_CLOUDFLARE_API_TOKEN}}"
         - WAN Failover:
             icon: "mdi-router-network"
             # Plain http, not https: this hostname bypasses Envoy Gateway entirely (DNS points
