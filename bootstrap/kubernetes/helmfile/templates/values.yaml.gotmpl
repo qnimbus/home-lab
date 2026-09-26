@@ -1,0 +1,12 @@
+{{- /* Values from the app's helm/values.yaml (the valuesFrom ConfigMap source), overlaid with inline .spec.values. */ -}}
+{{- $app := printf "../../../../kubernetes/apps/%s/%s/app" .Release.Namespace .Release.Name -}}
+{{- $values := dict -}}
+{{- $file := printf "%s/helm/values.yaml" $app -}}
+{{- if isFile $file -}}
+{{- $values = readFile $file | fromYaml -}}
+{{- end -}}
+{{- $hr := readFile (printf "%s/helmrelease.yaml" $app) | fromYaml -}}
+{{- if hasKey $hr.spec "values" -}}
+{{- $values = mergeOverwrite $values $hr.spec.values -}}
+{{- end -}}
+{{ toYaml $values }}

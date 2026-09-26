@@ -1,0 +1,12 @@
+{{- /* Chart + version come from the app's own Flux manifests, so Renovate bumps one place. */ -}}
+{{- $app := printf "../../../kubernetes/apps/%s/%s/app" .Release.Namespace .Release.Name -}}
+{{- $hr := readFile (printf "%s/helmrelease.yaml" $app) | fromYaml -}}
+{{- if hasKey $hr.spec "chartRef" -}}
+{{- $oci := readFile (printf "%s/ocirepository.yaml" $app) | fromYaml -}}
+chart: {{ $oci.spec.url }}
+version: {{ $oci.spec.ref.tag }}
+{{- else -}}
+{{- /* Classic HelmRepository: <repo>/<chart>, repo registered in ../default.yaml */ -}}
+chart: {{ $hr.spec.chart.spec.sourceRef.name }}/{{ $hr.spec.chart.spec.chart }}
+version: {{ $hr.spec.chart.spec.version }}
+{{- end }}

@@ -9,17 +9,17 @@ set quiet
 set script-interpreter := ['bash', '-euo', 'pipefail']
 set shell := ['bash', '-euo', 'pipefail', '-c']
 
-# Talos Recipes
-[group('talos')]
-mod talos "kubernetes/talos"
-
 # Bootstrap Recipes
 [group('bootstrap')]
-mod bootstrap "kubernetes/bootstrap"
+mod bootstrap "bootstrap"
 
 # Kubernetes Recipes
 [group('k8s')]
 mod k8s "kubernetes"
+
+# Talos Recipes
+[group('talos')]
+mod talos "kubernetes/talos"
 
 [private]
 log lvl msg *args:
