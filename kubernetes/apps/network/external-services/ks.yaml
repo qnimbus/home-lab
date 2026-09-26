@@ -3,7 +3,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: truenas
+  name: &app truenas
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
@@ -21,7 +21,7 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: home-assistant
+  name: &app home-assistant
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
@@ -39,7 +39,7 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: canon
+  name: &app canon
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
@@ -55,7 +55,7 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: wan-failover
+  name: &app wan-failover
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
@@ -71,7 +71,7 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: adam
+  name: &app adam
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
@@ -87,7 +87,7 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: anna
+  name: &app anna
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:

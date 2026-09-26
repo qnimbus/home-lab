@@ -134,7 +134,7 @@ kind: OCIRepository
 metadata:
   name: <app>
 spec:
-  interval: 15m
+  interval: 1h
   layerSelector:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy
@@ -262,7 +262,7 @@ kind: ExternalSecret
 metadata:
   name: <app>
 spec:
-  refreshInterval: 12h
+  refreshInterval: 5m
   secretStoreRef:
     kind: ClusterSecretStore
     name: onepassword

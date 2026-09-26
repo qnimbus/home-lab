@@ -26,6 +26,13 @@ Cluster`, etc.) whose CRD is installed by another app's Helm chart, when
   (`dependsOn` the operator doc). Flux dry-runs every resource in a
   Kustomization before applying any of them, so the operator and its CRD
   instances can never share one Kustomization.
+- **The storage behind a PVC** (accepted exception): `rook-ceph-cluster`
+  for `ceph-block`, `csi-driver-nfs` for `nfs`. This is runtime ordering,
+  not structural (a PVC's dry-run doesn't need its StorageClass), but it's
+  kept deliberately: it keeps a fresh bootstrap from piling up `Pending`
+  PVCs and timed-out Helm installs while Ceph comes up. The cost is that a
+  not-Ready storage Kustomization also pauses reconciliation of its
+  dependents.
 
 ### Don't use it for
 
@@ -35,8 +42,9 @@ Cluster`, etc.) whose CRD is installed by another app's Helm chart, when
   to exist, not the referenced store to have synced yet.
 - If the race is real — a specific dependent genuinely can't tolerate the
   secret being briefly absent — prefer relocating the async-producing
-  resource into an already-`wait: true` upstream Kustomization the
-  dependent already depends on for other reasons, rather than adding a new
+  resource into an upstream Kustomization the dependent already depends on
+  for other reasons, and gate it there (`wait: true`, or listed in that
+  Kustomization's `healthChecks` as `grafana-operator` does for `grafana`), rather than adding a new
   dependency purely for secret timing. Example: `rook-ceph-dashboard-password`'s
   `ExternalSecret` lives in the Rook operator's Kustomization (`wait:
 true`), not the CephCluster one that actually reads it. Only fall back to
