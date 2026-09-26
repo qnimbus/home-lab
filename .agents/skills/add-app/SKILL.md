@@ -44,7 +44,7 @@ kubernetes/apps/<namespace>/<app>/
 
 ```yaml
 ---
-# yaml-language-server: $schema=https://schemas.bykaj.io/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -82,7 +82,7 @@ postBuild:
     # KOPIUR_MOVER_GID: "65534"     # default: 1000 — must match the pod's runAsGroup
 ```
 
-Don't add a `dependsOn` on `kopiur`/`kopiur-repository` for the backup component: until the kopiur CRDs and the `nas` ClusterRepository exist (fresh cluster), the first apply fails and Flux's retry picks it up — the same trade-off bykaj/home-ops makes.
+Don't add a `dependsOn` on `kopiur`/`kopiur-repository` for the backup component: until the kopiur CRDs and the `nas` ClusterRepository exist (fresh cluster), the first apply fails and Flux's retry picks it up. That one-off failure on bootstrap is accepted over carrying a dependency every backed-up app would need.
 
 Add user-specified dependencies to `dependsOn`. Include `postBuild.substitute.APP` whenever any component is used; omit `components`/`postBuild` entirely otherwise.
 
@@ -116,7 +116,7 @@ generatorOptions:
 
 ```yaml
 ---
-# yaml-language-server: $schema=https://schemas.bykaj.io/source.toolkit.fluxcd.io/ocirepository_v1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/source.toolkit.fluxcd.io/ocirepository_v1.json
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: OCIRepository
 metadata:
@@ -199,7 +199,7 @@ Route (web UI/API):
 route:
   app:
     hostnames:
-      - <app>.bykaj.app
+      - "<app>.${DOMAIN_CLUSTER}"
     parentRefs:
       - name: envoy-internal # envoy-external for public apps
         namespace: network
@@ -244,7 +244,7 @@ envFrom:
 
 ```yaml
 ---
-# yaml-language-server: $schema=https://schemas.bykaj.io/external-secrets.io/externalsecret_v1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/external-secrets.io/externalsecret_v1.json
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:

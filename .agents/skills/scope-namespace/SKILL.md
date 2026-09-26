@@ -1,13 +1,12 @@
 ---
 name: scope-namespace
-description: Use when moving a kubernetes/apps/<group> app-group's Flux Kustomization CRs out of flux-system into their own namespace (bykaj-style namespace scoping) — extending the pattern already applied to default and development to another namespace. Also covers migrating an app off the shared postgres-v17 CNPG cluster onto its own dedicated components/postgres cluster, which commonly comes up in the same move.
+description: Use when moving a kubernetes/apps/<group> app-group's Flux Kustomization CRs out of flux-system into their own namespace (namespace-scoped Kustomizations) — extending the pattern already applied to default and development to another namespace. Also covers migrating an app off the shared postgres-v17 CNPG cluster onto its own dedicated components/postgres cluster, which commonly comes up in the same move.
 ---
 
 # Scope a namespace to its own Kustomizations
 
 Moves an app-group's Flux `Kustomization` CRs out of the centralized
-`flux-system` namespace into their own namespace-scoped tree, mirroring
-bykaj's `home-ops` convention. Already applied to `kubernetes/apps/default`
+`flux-system` namespace into their own namespace-scoped tree. Already applied to `kubernetes/apps/default`
 and `kubernetes/apps/development` — use those two as reference
 implementations (`development` is now just the wrapper — forgejo moved to
 `default` — so per-app `ks.yaml` examples live in `default`). For Step 3,
@@ -140,13 +139,12 @@ This is exactly what happened for `forgejo` — use its current `ks.yaml` /
 6. Add `dependsOn: []` as a placeholder on the app's own `HelmRelease` if it
    doesn't already have one. The component's `kustomization.yaml` appends
    to `/spec/dependsOn/-` via a JSON6902 patch — that `add` fails outright
-   ("doc is missing path") if the array doesn't already exist. This is
-   exactly why bykaj's own consuming apps all carry the same empty
-   placeholder.
+   ("doc is missing path") if the array doesn't already exist, so every
+   consuming app needs the empty placeholder.
 7. Point the app's own config at the new cluster: `HOST` is
    `${APP}-postgres-rw` (bare — same namespace as the app itself, no
-   `.namespace` suffix needed, unlike bykaj's own examples which spell the
-   namespace out explicitly even when redundant). Prefer reading
+   `.namespace` suffix needed; spelling the namespace out works too but is
+   redundant). Prefer reading
    `NAME`/`USER`/`PASSWORD` from the generated `${APP}-postgres-app`
    Secret's `dbname`/`username`/`password` keys (however the chart supports
    secret-sourced config — Gitea's `additionalConfigFromEnvs` +

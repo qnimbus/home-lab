@@ -1,6 +1,6 @@
 # postgres
 
-A dedicated CloudNative-PG `Cluster` per consuming app, backed up to S3, adapted from [bykaj/home-ops](https://github.com/bykaj/home-ops)'s `components/postgres`. Every app database in the cluster comes from this component:
+A dedicated CloudNative-PG `Cluster` per consuming app, backed up to S3. Every app database in the cluster comes from this component:
 
 ```sh
 grep -rl components/postgres kubernetes/apps --include=ks.yaml
@@ -61,7 +61,7 @@ The app reads its connection from the CNPG-generated `${APP}-postgres-app` Secre
 | `POSTGRES_STORAGE`         | no       | `5Gi`          | Per-instance PVC size                                                          |
 | `POSTGRES_BACKUP_SCHEDULE` | no       | `0 40 4 * * *` | Base-backup cron. **Six fields, seconds first**: `0 40 4 * * *` is 04:40 daily |
 
-bykaj hardcodes three instances with one sync replica for every app. Here the default is one instance, to avoid tripling pods and storage per app. The replica settings come in pairs:
+The default is one instance rather than a fixed three instances with one sync replica for every app: that would give HA everywhere, but triple the pods and storage per app. The replica settings come in pairs:
 
 - **`POSTGRES_SYNC_REPLICAS: 1` with a single instance blocks every write forever**: no replica can ever confirm. Raise `POSTGRES_INSTANCES` first.
 - **`POSTGRES_ENABLE_PDB: "true"` with a single instance makes the node undrainable.** CNPG's primary PDB (`minAvailable: 1`) then allows zero evictions, and tuppr's Talos upgrades retry the drain in a loop, bouncing everything else on the node. The 2026-09-25 v1.14.1 run looped on talos-cp-01 until the default became `false`.
@@ -87,7 +87,7 @@ A **brand-new database** has nothing to recover from, and `recovery` fails with 
 
 ## Backups
 
-Base backups on the schedule above, plus continuous WAL archiving, go to one shared Backblaze B2 bucket (`vwn-io-cluster-cnpg`), each app under its own `dedicated/${APP}/` prefix. They're bzip2-compressed, AES256-encrypted and kept for 14 days. S3 is the only copy: unlike bykaj, there's no local NFS backup sidecar.
+Base backups on the schedule above, plus continuous WAL archiving, go to one shared Backblaze B2 bucket (`vwn-io-cluster-cnpg`), each app under its own `dedicated/${APP}/` prefix. They're bzip2-compressed, AES256-encrypted and kept for 14 days. S3 is the only copy: there's no second, local backup (e.g. an NFS backup sidecar).
 
 - **Keep the `AWS_*_CHECKSUM_*: when_required` env on the `ObjectStore` sidecar.** Newer botocore sends chunked-trailer checksums without `Content-Length`, which B2 rejects with `MissingContentLength`.
 - The superuser needs no 1Password wiring: `enableSuperuserAccess` without a `superuserSecret` makes CNPG generate one per cluster.
