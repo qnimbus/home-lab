@@ -5,20 +5,19 @@ kind: HTTPRoute
 metadata:
   name: nas-kopia-ui
   annotations:
-    gethomepage.dev/enabled: "true"
-    gethomepage.dev/name: "Kopia"
     gethomepage.dev/description: "Backup repository browser (read-only)"
+    gethomepage.dev/enabled: "true"
     gethomepage.dev/group: "Storage"
     gethomepage.dev/icon: "kopia"
+    gethomepage.dev/name: "Kopia"
 spec:
+  hostnames:
+    - "kopia.${DOMAIN_CLUSTER}"
   parentRefs:
     - name: envoy-internal
       namespace: network
       sectionName: https
-  hostnames:
-    - "kopia.${DOMAIN_CLUSTER}"
   rules:
-    # Service created by kopiur from the ClusterRepository's spec.server.
     - backendRefs:
         - name: nas-kopia-ui
           port: 51515

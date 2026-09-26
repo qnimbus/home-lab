@@ -10,9 +10,6 @@ spec:
     name: kopiur
   interval: 1h
   values:
-    # The controller runs short kopia ops (catalog scans, maintenance) in-process,
-    # so it needs the filesystem repository mounted at the same path the
-    # ClusterRepository declares.
     extraVolumeMounts:
       - mountPath: /repository
         name: repository
@@ -22,23 +19,15 @@ spec:
           path: /mnt/tank/Cluster/kopiur
           server: "${NAS_HOST}"
     features:
-      # Lets the operator copy the repository password Secret from `system`
-      # into each app namespace a mover runs in, so no per-namespace
-      # ExternalSecret is needed.
       credentialProjection:
         enabled: true
-      # Lets the operator run the Kopia web UI (ClusterRepository spec.server).
       kopiaUi:
         enabled: true
     monitoring:
-      # Includes a stale-backup alert (no successful snapshot in 48h).
       prometheusRule:
         enabled: true
       serviceMonitor:
         enabled: true
-    # No podSecurityContext override (chart default 65534): the kopiur NFS share
-    # maps every client to the TrueNAS `kubernetes` user (Mapall 3001:3001), so
-    # the pod's own UID never reaches the NAS, and fsGroup doesn't apply to NFS.
     resources:
       requests:
         cpu: 100m

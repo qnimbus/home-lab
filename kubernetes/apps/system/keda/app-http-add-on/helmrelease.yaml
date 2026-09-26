@@ -5,7 +5,7 @@ kind: HelmRelease
 metadata:
   name: keda-add-ons-http
 spec:
-  interval: 1h
   chartRef:
     kind: OCIRepository
     name: keda-add-ons-http
+  interval: 1h

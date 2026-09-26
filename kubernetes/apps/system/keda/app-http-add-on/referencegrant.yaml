@@ -5,19 +5,7 @@ kind: ReferenceGrant
 metadata:
   name: httproute-to-keda-interceptor
 spec:
-  # Every namespace with an HTTPRoute that backends onto keda-add-ons-http-interceptor-proxy
-  # (i.e. every app using the components/keda/http-scaler component) MUST be listed here.
-  # Forgetting one is silent at apply time: the route Accepts, but ResolvedRefs goes False
-  # with reason RefNotPermitted — the browser sees a plain HTTP 500 and KEDA never scales
-  # up (the interceptor never receives the request to report demand for). Hit twice, most
-  # recently unifi-voucher-site/default — see docs/QA.md#autoscaling-keda for the diagnosis.
   from:
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      namespace: database
-    - group: gateway.networking.k8s.io
-      kind: HTTPRoute
-      namespace: finance
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       namespace: default

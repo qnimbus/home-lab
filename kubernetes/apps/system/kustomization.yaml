@@ -2,10 +2,6 @@
 # yaml-language-server: $schema=https://json.schemastore.org/kustomization
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# crd-schema-publisher, csi-driver-nfs, csi-driver-smb, openebs, and intel-gpu-resource-driver deploy into `system`
-# (spec.targetNamespace comes from the replacements). The other apps keep their own namespace:
-# they carry the replacements.flux.home.arpa/disabled label, which leaves their explicit
-# spec.targetNamespace alone.
 namespace: system
 components:
   - ../../components/namespace

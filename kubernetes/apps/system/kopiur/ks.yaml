@@ -3,14 +3,14 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: kopiur
+  name: &app kopiur
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
-      name: kopiur
+      name: *app
       namespace: system
   interval: 1h
   path: ./kubernetes/apps/system/kopiur/app
@@ -28,7 +28,6 @@ metadata:
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  # ClusterRepository CRD is installed by the kopiur chart above.
   dependsOn:
     - name: kopiur
   interval: 1h

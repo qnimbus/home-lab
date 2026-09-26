@@ -5,20 +5,10 @@ kind: HelmRelease
 metadata:
   name: csi-driver-smb
 spec:
-  interval: 1h
-  # TEMPORARY (namespace move; remove once the old release is uninstalled and this one is Ready):
-  # helm-controller adopts pre-existing objects on install by default, which would start a second
-  # node plugin next to the running one. Refuse to adopt until the old release is gone.
-  install:
-    disableTakeOwnership: true
   chartRef:
     kind: OCIRepository
     name: csi-driver-smb
-  # Deliberately driver-only — no storageClass block. There is no concrete SMB
-  # consumer app in this cluster yet, and unlike NFS, SMB shares each need their
-  # own explicit source path/credentials, so there's nothing generic to provision
-  # via a single dynamic StorageClass. When a real consumer appears, follow the
-  # hand-authored static PersistentVolume/PersistentVolumeClaim pattern
-  # (driver: smb.csi.k8s.io, nodeStageSecretRef -> smb-credentials in this
-  # namespace) documented in docs/ROADMAP.md "Future Storage Options".
+  install:
+    disableTakeOwnership: true
+  interval: 1h
   values: {}

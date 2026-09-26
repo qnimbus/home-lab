@@ -8,20 +8,19 @@ metadata:
     decryption.flux.home.arpa/disabled: "true"
     replacements.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: keda
-  wait: true
-  prune: true
-  interval: 1h
-  path: ./kubernetes/apps/system/keda/app
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: *app
       namespace: keda
+  interval: 1h
+  path: ./kubernetes/apps/system/keda/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: keda
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -32,22 +31,19 @@ metadata:
     decryption.flux.home.arpa/disabled: "true"
     replacements.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: keda
-  # The add-on's InterceptorRoute CRD is a dry-run dependency for any app that
-  # wires an app into it (e.g. pgadmin) — keep this Kustomization ahead of consumers.
   dependsOn:
     - name: keda
       namespace: system
-  wait: true
-  prune: true
-  interval: 1h
-  path: ./kubernetes/apps/system/keda/app-http-add-on
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: *app2
       namespace: keda
+  interval: 1h
+  path: ./kubernetes/apps/system/keda/app-http-add-on
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: keda

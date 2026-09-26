@@ -5,31 +5,17 @@ kind: HelmRelease
 metadata:
   name: intel-gpu-resource-driver
 spec:
-  interval: 1h
   chartRef:
     kind: OCIRepository
     name: intel-gpu-resource-driver
+  interval: 1h
   values:
-    # Override the chart's upstream defaults (cdi.staticPath: /etc/cdi,
-    # dynamicPath: /var/run/cdi) — /etc is part of Talos's read-only OS layer,
-    # confirmed live: the driver pod crash-looped fleet-wide on
-    # `mkdir /etc/cdi: read-only file system` before this override was added.
-    # /var/cdi/{static,dynamic} match talos/cluster.yaml.j2's
-    # CRICustomizationConfig cdi_spec_dirs.
     cdi:
-      staticPath: /var/cdi/static
       dynamicPath: /var/cdi/dynamic
+      staticPath: /var/cdi/static
     kubeletPlugin:
-      privileged: true
       healthMonitoring:
         enabled: false
-      # Chart default (0.11+) turns manageBinding on for VFIO/KubeVirt GPU
-      # passthrough. Only used for iGPU transcoding here, so keep the driver
-      # out of binding management.
       manageBinding:
         enabled: false
-    # nfd/nodeFeatureRules/xpumd subcharts all default to disabled already —
-    # left unset deliberately: this is what makes the install NFD-free (no
-    # bundled node-feature-discovery, no intel.feature.node.kubernetes.io/gpu
-    # label, no metrics/dashboard sidecar). Confirmed via `helm template`
-    # against chart 0.12.0 before writing this file.
+      privileged: true

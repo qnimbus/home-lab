@@ -8,19 +8,16 @@ metadata:
     decryption.flux.home.arpa/disabled: "true"
     replacements.flux.home.arpa/disabled: "true"
 spec:
-  targetNamespace: snapshot-controller
-  # rook-ceph-cluster depends on this Kustomization being Ready (CRDs + pod
-  # healthy) before its own VolumeSnapshotClass can be created.
-  wait: true
-  prune: true
-  interval: 1h
-  path: ./kubernetes/apps/system/snapshot-controller/app
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: *app
       namespace: snapshot-controller
+  interval: 1h
+  path: ./kubernetes/apps/system/snapshot-controller/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: snapshot-controller
