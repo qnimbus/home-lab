@@ -8,6 +8,8 @@ spec:
   chartRef:
     kind: OCIRepository
     name: reloader
+  install:
+    disableTakeOwnership: true
   interval: 1h
   values:
     fullnameOverride: reloader

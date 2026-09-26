@@ -13,10 +13,12 @@ Cluster-wide plumbing that apps rely on but don't talk to directly: storage driv
 | `keda`, `keda-add-ons-http`   | Event-driven and HTTP scale-to-zero autoscaling                                                | Own namespace `keda`; consumed via `components/keda/*`                                                             |
 | `kopiur`, `kopiur-repository` | Kopia backup operator and the `nas` ClusterRepository on the NAS                               | Consumed via `components/kopiur/backup`; read-only UI at `kopia.${DOMAIN_CLUSTER}`                                 |
 | `openebs`                     | `openebs-hostpath` local-PV StorageClass under `/var/mnt/openebs/local`                        | Everything but the local hostpath engine is switched off                                                           |
-| `reloader`                    | Restarts workloads annotated `reloader.stakater.com/auto` when their Secrets/ConfigMaps change | Own namespace `reloader`                                                                                           |
+| `reloader`                    | Restarts workloads annotated `reloader.stakater.com/auto` when their Secrets/ConfigMaps change | Watches every namespace                                                                                            |
 | `snapshot-controller`         | CSI VolumeSnapshot controller                                                                  | Own namespace; CRDs come from bootstrap, so nothing needs to `dependsOn` it                                        |
 
-`keda`, `reloader` and `snapshot-controller` carry `replacements.flux.home.arpa/disabled` so they keep their own `targetNamespace`. Everything else deploys into `system`.
+`keda` and `snapshot-controller` carry `replacements.flux.home.arpa/disabled` so they keep their own `targetNamespace`. Everything else deploys into `system`.
+
+That split is deliberate. Both charts template their CRDs without `helm.sh/resource-policy: keep`, and moving a release to another namespace means uninstalling the old one, which deletes those CRDs and every ScaledObject, InterceptorRoute or VolumeSnapshot(Class) with them. snapshot-controller's CRDs also carry a conversion webhook that points at the release namespace. CRD-free operators go in `system`. An operator that ships CRDs only moves once its CRDs are protected from the uninstall.
 
 ## Storage choices
 
