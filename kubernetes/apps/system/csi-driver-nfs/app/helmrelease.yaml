@@ -8,8 +8,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: csi-driver-nfs
-  install:
-    disableTakeOwnership: true
   interval: 1h
   values:
     storageClass:

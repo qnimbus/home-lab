@@ -8,7 +8,5 @@ spec:
   chartRef:
     kind: OCIRepository
     name: csi-driver-smb
-  install:
-    disableTakeOwnership: true
   interval: 1h
   values: {}
