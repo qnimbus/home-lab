@@ -1,6 +1,6 @@
 # postgres
 
-A dedicated CloudNative-PG `Cluster` per consuming app, backed up to S3. Every app database in the cluster comes from this component:
+A dedicated CloudNative-PG `Cluster` per consuming app, backed up to S3 and dumped nightly to the NAS. Every app database in the cluster comes from this component:
 
 ```sh
 grep -rl components/postgres kubernetes/apps --include=ks.yaml
@@ -8,13 +8,15 @@ grep -rl components/postgres kubernetes/apps --include=ks.yaml
 
 ## What it creates
 
-| Resource          | Name                     | Purpose                                                                         |
-| ----------------- | ------------------------ | ------------------------------------------------------------------------------- |
-| `Cluster`         | `${APP}-postgres`        | The database, on node-local `openebs-hostpath` storage                          |
-| `ObjectStore`     | `${APP}-postgres-backup` | Barman Cloud S3 target for base backups and WAL archiving                       |
-| `ScheduledBackup` | `${APP}-daily`           | Base backup on `POSTGRES_BACKUP_SCHEDULE`                                       |
-| `ExternalSecret`  | `${APP}-postgres`        | S3 credentials from the `cloudnative-pg` 1Password item                         |
-| _(patch)_         | every `HelmRelease`      | Appends `dependsOn: database/cloudnative-pg`, so the app waits for the operator |
+| Resource          | Name                           | Purpose                                                                           |
+| ----------------- | ------------------------------ | --------------------------------------------------------------------------------- |
+| `Cluster`         | `${APP}-postgres`              | The database, on node-local `openebs-hostpath` storage                            |
+| `ObjectStore`     | `${APP}-postgres-backup`       | Barman Cloud S3 target for base backups and WAL archiving                         |
+| `ScheduledBackup` | `${APP}-daily`                 | Base backup on `POSTGRES_BACKUP_SCHEDULE`                                         |
+| `ExternalSecret`  | `${APP}-postgres`              | S3 credentials from the `cloudnative-pg` 1Password item                           |
+| `HelmRelease`     | `${APP}-postgres-backup-local` | CronJob that `pg_dump`s the database to the NAS ([backup-local](./backup-local/)) |
+| `PrometheusRule`  | `${APP}-postgres-backup-local` | `PostgresDumpMissed`: no successful dump in 25 hours                              |
+| _(patch)_         | every `HelmRelease`            | Appends `dependsOn: database/cloudnative-pg`, so the app waits for the operator   |
 
 ## Usage
 
@@ -60,6 +62,7 @@ The app reads its connection from the CNPG-generated `${APP}-postgres-app` Secre
 | `POSTGRES_ENABLE_PDB`      | no       | `false`        | CNPG PodDisruptionBudgets; `"true"` only with `POSTGRES_INSTANCES` ≥ 2         |
 | `POSTGRES_STORAGE`         | no       | `5Gi`          | Per-instance PVC size                                                          |
 | `POSTGRES_BACKUP_SCHEDULE` | no       | `0 40 4 * * *` | Base-backup cron. **Six fields, seconds first**: `0 40 4 * * *` is 04:40 daily |
+| `POSTGRES_DUMP_SCHEDULE`   | no       | `0 2 * * *`    | NAS dump cron: a normal five-field Kubernetes CronJob, in `CLUSTER_TIMEZONE`   |
 
 The default is one instance rather than a fixed three instances with one sync replica for every app: that would give HA everywhere, but triple the pods and storage per app. The replica settings come in pairs:
 
@@ -87,11 +90,17 @@ A **brand-new database** has nothing to recover from, and `recovery` fails with 
 
 ## Backups
 
-Base backups on the schedule above, plus continuous WAL archiving, go to one shared Backblaze B2 bucket (`vwn-io-cluster-cnpg`), each app under its own `dedicated/${APP}/` prefix. They're bzip2-compressed, AES256-encrypted and kept for 14 days. S3 is the only copy: there's no second, local backup (e.g. an NFS backup sidecar).
+Base backups on the schedule above, plus continuous WAL archiving, go to one shared Backblaze B2 bucket (`vwn-io-cluster-cnpg`), each app under its own `dedicated/${APP}/` prefix. They're bzip2-compressed, AES256-encrypted and kept for 14 days.
 
 - **Keep the `AWS_*_CHECKSUM_*: when_required` env on the `ObjectStore` sidecar.** Newer botocore sends chunked-trailer checksums without `Content-Length`, which B2 rejects with `MissingContentLength`.
-- The superuser needs no 1Password wiring: `enableSuperuserAccess` without a `superuserSecret` makes CNPG generate one per cluster.
+- The superuser needs no 1Password wiring: `enableSuperuserAccess` without a `superuserSecret` makes CNPG generate one per cluster, and the NAS dump logs in with it.
+
+### NAS dumps
+
+A second, independent copy: the `${APP}-postgres-backup-local` CronJob ([postgres-backup-local](https://github.com/prodrigestivill/docker-postgres-backup-local), retention in [its HelmRelease](./backup-local/helmrelease.yaml)) writes a `pg_dump` custom-format file to `/mnt/tank/Cluster/backup/${APP}/` on the NAS, as `kubernetes` 3001:3001. Unlike the Barman backups, a dump survives losing the B2 bucket or its credentials, and restores into a newer PostgreSQL major. `just k8s database restore <namespace> <app> <file>` takes it directly; `kubectl create job -n <namespace> --from=cronjob/<app>-postgres-backup-local <app>-dump-test` runs one by hand.
+
+**Keep the dump image's major tag equal to the `cnpg` image's PostgreSQL major.** `pg_dump` can't dump a newer server.
 
 ## Caveats
 
-- **No backup-failure alerting.** A rule has to watch the Barman plugin's `barman_cloud_cloudnative_pg_io_last_{available,failed}_backup_timestamp`. `cnpg_collector_last_available_backup_timestamp` and the `Cluster.status` backup fields stay at zero for plugin-based backups ([plugin-barman-cloud#380](https://github.com/cloudnative-pg/plugin-barman-cloud/issues/380)). A `PrometheusRule` in this component, keyed on `${APP}-postgres`, would cover every consumer.
+- **No alerting on the S3 backups.** The NAS dumps are covered: `PostgresDumpMissed` fires after 25 hours without a success, and a failed run trips the stock `KubeJobFailed`. For S3, a rule has to watch the Barman plugin's `barman_cloud_cloudnative_pg_io_last_{available,failed}_backup_timestamp`. `cnpg_collector_last_available_backup_timestamp` and the `Cluster.status` backup fields stay at zero for plugin-based backups ([plugin-barman-cloud#380](https://github.com/cloudnative-pg/plugin-barman-cloud/issues/380)). A `PrometheusRule` in this component, keyed on `${APP}-postgres`, would cover every consumer.

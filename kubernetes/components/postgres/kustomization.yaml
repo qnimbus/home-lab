@@ -14,6 +14,7 @@ patches:
       kind: HelmRelease
       version: v2
 resources:
+  - ./backup-local
   - ./cluster.yaml
   - ./externalsecret.yaml
   - ./objectstore.yaml

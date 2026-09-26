@@ -1,0 +1,22 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/monitoring.coreos.com/prometheusrule_v1.json
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ${APP}-postgres-backup-local
+spec:
+  groups:
+    - name: ${APP}-postgres-backup-local
+      rules:
+        - alert: PostgresDumpMissed
+          annotations:
+            summary: No successful pg_dump of ${APP} to the NAS in over 25 hours.
+          expr: |
+            time() - kube_cronjob_status_last_successful_time{cronjob="${APP}-postgres-backup-local"} > 90000
+            or (
+              time() - kube_cronjob_created{cronjob="${APP}-postgres-backup-local"} > 90000
+              unless on (namespace, cronjob) kube_cronjob_status_last_successful_time{cronjob="${APP}-postgres-backup-local"}
+            )
+          for: 15m
+          labels:
+            severity: critical

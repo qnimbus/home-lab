@@ -1,0 +1,89 @@
+---
+# yaml-language-server: $schema=https://kubernetes-schemas.pages.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: &name ${APP}-postgres-backup-local
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: *name
+  interval: 1h
+  dependsOn: []
+  values:
+    defaultPodOptions:
+      enableServiceLinks: false
+      securityContext:
+        runAsGroup: 3001
+        runAsNonRoot: true
+        runAsUser: 3001
+    controllers:
+      *name :
+        type: cronjob
+        cronjob:
+          concurrencyPolicy: Forbid
+          failedJobsHistory: 1
+          schedule: "${POSTGRES_DUMP_SCHEDULE:=0 2 * * *}"
+          successfulJobsHistory: 1
+          timeZone: "${CLUSTER_TIMEZONE}"
+          ttlSecondsAfterFinished: 43200
+        containers:
+          app:
+            image:
+              repository: docker.io/prodrigestivill/postgres-backup-local
+              tag: "18"
+            command:
+              - /backup.sh
+            env:
+              BACKUP_DIR: /backups/${APP}
+              BACKUP_KEEP_DAYS: "7"
+              BACKUP_KEEP_MINS: "7200"
+              BACKUP_KEEP_MONTHS: "6"
+              BACKUP_KEEP_WEEKS: "4"
+              BACKUP_LATEST_TYPE: symlink
+              BACKUP_SUFFIX: .dump
+              POSTGRES_DB:
+                valueFrom:
+                  secretKeyRef:
+                    key: dbname
+                    name: ${APP}-postgres-app
+              POSTGRES_EXTRA_OPTS: "-Fc -Z6"
+              POSTGRES_HOST:
+                valueFrom:
+                  secretKeyRef:
+                    key: host
+                    name: ${APP}-postgres-superuser
+              POSTGRES_PASSWORD:
+                valueFrom:
+                  secretKeyRef:
+                    key: password
+                    name: ${APP}-postgres-superuser
+              POSTGRES_USER:
+                valueFrom:
+                  secretKeyRef:
+                    key: username
+                    name: ${APP}-postgres-superuser
+              TZ: "${CLUSTER_TIMEZONE}"
+            resources:
+              requests:
+                cpu: 50m
+                memory: 128Mi
+              limits:
+                memory: 512Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                  - ALL
+    persistence:
+      backups:
+        type: nfs
+        path: /mnt/tank/Cluster/backup
+        server: "${NAS_HOST}"
+        globalMounts:
+          - path: /backups
+      tmp:
+        type: emptyDir
+        globalMounts:
+          - path: /tmp
