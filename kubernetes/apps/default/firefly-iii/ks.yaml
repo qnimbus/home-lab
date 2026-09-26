@@ -20,7 +20,7 @@ spec:
       KOPIUR_MOVER_UID: "33"
       POSTGRES_DATABASE: firefly
       POSTGRES_USERNAME: firefly
-      POSTGRES_BACKUP_SCHEDULE: "0 19 * * * *"
+      POSTGRES_BACKUP_SCHEDULE: "0 19 3 * * *"
   prune: true
   sourceRef:
     kind: GitRepository

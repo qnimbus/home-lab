@@ -22,7 +22,7 @@ spec:
       KOPIUR_CLAIM: paperless-ngx-config
       POSTGRES_DATABASE: paperless
       POSTGRES_USERNAME: paperless
-      POSTGRES_BACKUP_SCHEDULE: "0 7 * * * *"
+      POSTGRES_BACKUP_SCHEDULE: "0 7 3 * * *"
   prune: true
   sourceRef:
     kind: GitRepository

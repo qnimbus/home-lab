@@ -34,7 +34,7 @@ spec:
       APP_NAME: "Forgejo"
       APP_SUBDOMAIN: forgejo
       APP_UID: "1000"
-      POSTGRES_BACKUP_SCHEDULE: "33 0 * * *"
+      POSTGRES_BACKUP_SCHEDULE: "0 33 0 * * *"
   prune: true
   sourceRef:
     kind: GitRepository

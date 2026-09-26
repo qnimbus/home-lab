@@ -16,7 +16,7 @@ spec:
   postBuild:
     substitute:
       APP: *app
-      POSTGRES_BACKUP_SCHEDULE: "0 50 * * * *"
+      POSTGRES_BACKUP_SCHEDULE: "0 50 3 * * *"
   prune: true
   sourceRef:
     kind: GitRepository
