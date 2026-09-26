@@ -4,6 +4,8 @@ Whenever asked to sort these files, follow these instructions:
 
 - **Default rule**: All fields and properties should be sorted alphabetically at every level of the YAML structure, regardless of how deeply nested they are, unless a specific override rule is provided below or in other applicable instructions files.
 
+- **The `add-app` skill's templates take precedence** (`.agents/skills/add-app/SKILL.md`). Where a template orders keys differently from these rules, as in a container `securityContext` or an ExternalSecret's `spec` and `spec.target`, the template's order is the convention. That skill lists every such case.
+
 ## Override rules for Kubernetes related file types
 
 - Whenever they are present on the same level of a YAML structure, these fields should be sorted as follows:

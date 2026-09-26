@@ -13,6 +13,16 @@ Scaffolds `kubernetes/apps/<namespace>/<app>/` with a Flux Kustomization (`ks.ya
 | `kubernetes/apps/security/authentik`  | Secrets, config file via configMapGenerator                    |
 | `kubernetes/apps/default/paperless`   | Custom probes, dragonfly dependency, kopiur-backed persistence |
 
+**The templates below are leading, key order included.** Where a template orders keys differently from the alphabetical default in `.agents/instructions/sorting.instructions.md`, follow the template. Keep its order when writing new files, and don't "sort" existing files away from it. The template-specific orders are:
+
+| Section                      | Order                                                                |
+| ---------------------------- | -------------------------------------------------------------------- |
+| container `securityContext`  | `allowPrivilegeEscalation`, `readOnlyRootFilesystem`, `capabilities` |
+| ExternalSecret `spec`        | `refreshInterval`, `secretStoreRef`, `target`, `dataFrom`            |
+| ExternalSecret `spec.target` | `name`, `creationPolicy`, `template`                                 |
+
+Everything the templates don't cover follows `sorting.instructions.md`.
+
 ## Step 1: Gather details
 
 Ask the user (AskUserQuestion) for anything not already given:
@@ -260,6 +270,7 @@ spec:
     template:
       data:
         SOME_ENV_VAR: "{{ .<app>_field_name }}"
+      engineVersion: v2
   dataFrom:
     - extract:
         key: <1password-item>
@@ -292,6 +303,7 @@ Show the user the created files and get confirmation before committing. Commit s
 - **Using volsync** — this repo migrated to kopiur; `components/volsync` no longer exists.
 - **Forgetting `reloader.stakater.com/auto`** — without it, secret/config changes don't restart pods.
 - **`readOnlyRootFilesystem: true` without a tmpfs** — apps that write to `/tmp` will crash; mount an emptyDir.
-- **Skipping the sorting conventions** — HelmRelease values follow `.agents/instructions/sorting.instructions.md`.
+- **Skipping the sorting conventions** — key order follows the templates above first, then `.agents/instructions/sorting.instructions.md` for anything they don't cover.
+- **Alphabetizing what the templates order differently** — e.g. moving `capabilities` before `readOnlyRootFilesystem`, or `dataFrom` to the top of an ExternalSecret. The template order is the convention, not a mistake to fix.
 - **Adding a NetworkPolicy/CiliumNetworkPolicy by default** — the cluster runs without them (see CLAUDE.md's "Network policies"); only add one if the user asks.
 - **Adding `wait`, `commonMetadata`, or `timeout` to `ks.yaml`** — all three are boilerplate now. Leave `wait` unset unless another Kustomization depends on this one and it has no `healthChecks` (then, and only then, `wait: true`).
