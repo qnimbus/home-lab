@@ -122,7 +122,7 @@
       automerge: true,
       automergeType: "pr",
       ignoreTests: false,
-      minimumReleaseAge: "1 day",
+      minimumReleaseAge: "1 minute",
     },
     {
       description: "Auto-merge GitHub Actions",
