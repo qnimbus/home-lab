@@ -5,10 +5,6 @@
 # HelmRepository names in kubernetes/flux/meta/repos/helm/, since
 # templates/release.yaml.gotmpl builds the chart as <sourceRef.name>/<chart>.
 repositories:
-  - name: cilium
-    url: https://helm.cilium.io
-  - name: external-secrets
-    url: https://charts.external-secrets.io
   - name: onepassword-connect
     url: https://1password.github.io/connect-helm-charts
 

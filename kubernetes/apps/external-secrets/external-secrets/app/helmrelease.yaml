@@ -5,16 +5,10 @@ kind: HelmRelease
 metadata:
   name: external-secrets
 spec:
+  chartRef:
+    kind: OCIRepository
+    name: external-secrets
   interval: 1h
-  chart:
-    spec:
-      chart: external-secrets
-      # renovate: datasource=helm depName=external-secrets repository=https://charts.external-secrets.io
-      version: 2.10.0
-      sourceRef:
-        kind: HelmRepository
-        name: external-secrets
-        namespace: flux-system
   valuesFrom:
     - kind: ConfigMap
       name: external-secrets-helm-values

@@ -6,8 +6,12 @@ the `HelmRelease` that consumes them (e.g.
 centralized. There is no shared `oci/` registry directory; every app on an
 OCI chart owns its own `ocirepository.yaml` next to its `helmrelease.yaml`.
 
-`HelmRepository` sources (classic, non-OCI chart repos — currently
-`cilium`, `external-secrets`, `intel`, `onepassword-connect`) remain
+Prefer an OCI chart whenever one carries the version you run: the
+upstream's own registry first, then `ghcr.io/home-operations/charts-mirror`
+(check its tags: the mirror can lag upstream, as it did for cilium).
+
+`HelmRepository` sources (classic, non-OCI chart repos, for charts with no
+usable OCI build — currently only `onepassword-connect`) remain
 centralized in `kubernetes/flux/meta/repos/helm/`. There's no per-app
 equivalent to migrate these to: a `HelmRepository` is an index, not a chart
 reference, so centralizing it avoids re-declaring the same repo URL in

@@ -13,4 +13,5 @@ configurations:
   - ./helm/kustomize-config.yaml
 resources:
   - ./namespace.yaml
+  - ./ocirepository.yaml
   - ./helmrelease.yaml
