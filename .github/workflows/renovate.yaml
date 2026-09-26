@@ -16,8 +16,8 @@ on:
       - .renovaterc.json5
       - .github/workflows/renovate.yaml
   schedule:
-    - cron: '10 * * * *'
-      timezone: 'UTC'
+    - cron: '20 * * * *'
+      timezone: 'Europe/Amsterdam'
   workflow_dispatch:
     inputs:
       dryRun:
