@@ -14,7 +14,7 @@ spec:
     digest: sha256:0d039f7760db66790168e9de13780327ad1adecca0a3b31621e32146d8be503c
   url: oci://ghcr.io/bjw-s-labs/helm/app-template
   verify:
+    provider: cosign
     matchOIDCIdentity:
       - issuer: https://token.actions.githubusercontent.com
         subject: ^https://github.com/bjw-s-labs/
-    provider: cosign

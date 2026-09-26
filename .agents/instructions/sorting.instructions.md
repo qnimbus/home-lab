@@ -20,6 +20,10 @@ Whenever asked to sort these files, follow these instructions:
   - `annotations`
   - `labels`
 
+- Any `resources` block (container resources in a manifest, chart values, a CRD's `resources` field such as kopiur's `moverDefaults`): `requests` before `limits`.
+
+- An `OCIRepository`'s `spec.verify`: `provider` before `matchOIDCIdentity`.
+
 ## HelmReleases based on app-template
 
 This section gives instructions specifically for HelmReleases that are based on the `app-template` chart. These can be identified by the presence of a sidecar `ocirepository.yaml` file that references `oci://ghcr.io/bjw-s-labs/helm/app-template` in the `url` field.
@@ -69,10 +73,6 @@ Unless a more specific rule applies, keys within any section should be ordered a
 - Items within `spec.values.controllers.*.containers.*` sections should be sorted as follows:
   - `image`
   - Any other fields should be added next in alphabetical order.
-
-- Items within `spec.values.controllers.*.containers.resources` and `spec.values.controllers.*.initContainers.resources` sections should be sorted as follows:
-  - `requests`
-  - `limits`
 
 - Items within `spec.values.service.*` sections should be sorted as follows:
   - `type` (if present)
