@@ -99,7 +99,7 @@ Base backups on the schedule above, plus continuous WAL archiving, go to one sha
 
 A second, independent copy: the `${APP}-postgres-backup-local` CronJob ([postgres-backup-local](https://github.com/prodrigestivill/docker-postgres-backup-local), retention in [its HelmRelease](./backup-local/helmrelease.yaml)) writes a `pg_dump` custom-format file to `/mnt/tank/Cluster/backup/${APP}/` on the NAS, as `kubernetes` 3001:3001. Unlike the Barman backups, a dump survives losing the B2 bucket or its credentials, and restores into a newer PostgreSQL major. `just k8s database restore <namespace> <app> <file>` takes it directly; `kubectl create job -n <namespace> --from=cronjob/<app>-postgres-backup-local <app>-dump-test` runs one by hand.
 
-**Keep the dump image's major tag equal to the `cnpg` image's PostgreSQL major.** `pg_dump` can't dump a newer server.
+**Keep the dump image's major tag equal to the `cnpg` image's PostgreSQL major.** `pg_dump` can't dump a newer server. The job creates `/backups/${APP}` itself before calling `/backup.sh`, because the image checks that `BACKUP_DIR` exists before its own `mkdir` runs, so a first run would otherwise always fail.
 
 ## Caveats
 

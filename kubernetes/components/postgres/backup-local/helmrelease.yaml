@@ -33,7 +33,9 @@ spec:
               repository: docker.io/prodrigestivill/postgres-backup-local
               tag: "18"
             command:
-              - /backup.sh
+              - /bin/sh
+              - -c
+              - mkdir -p /backups/${APP} && exec /backup.sh
             env:
               BACKUP_DIR: /backups/${APP}
               BACKUP_KEEP_DAYS: "7"
