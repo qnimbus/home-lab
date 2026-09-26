@@ -9,3 +9,12 @@ spec:
     kind: OCIRepository
     name: keda-add-ons-http
   interval: 1h
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: CustomResourceDefinition
+            patch: |
+              - op: add
+                path: /metadata/annotations/helm.sh~1resource-policy
+                value: keep

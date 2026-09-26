@@ -10,6 +10,9 @@ spec:
     name: keda
   interval: 1h
   values:
+    crds:
+      additionalAnnotations:
+        helm.sh/resource-policy: keep
     enableServiceLinks: false
     prometheus:
       metricServer:
