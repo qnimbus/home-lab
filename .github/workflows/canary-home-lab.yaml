@@ -7,7 +7,7 @@ name: Canary (home-lab)
 on:
   schedule:
     - cron: "*/5 * * * *"
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 permissions: {}
 

@@ -68,13 +68,12 @@ spec:
     namespace: flux-system
   timeout: 5m
   patches:
-    - 
-      # decryption.secretRef is not optional — unlike substituteFrom below, a
-      # missing Secret fails reconciliation outright, so this must stay gated
-      # separately for any Kustomization whose own namespace isn't flux-system
-      # (where sops-age lives) and that carries no SOPS-encrypted content of
-      # its own. Opt out with label: decryption.flux.home.arpa/disabled: "true"
-      patch: |-
+    # decryption.secretRef is not optional — unlike substituteFrom below, a
+    # missing Secret fails reconciliation outright, so this must stay gated
+    # separately for any Kustomization whose own namespace isn't flux-system
+    # (where sops-age lives) and that carries no SOPS-encrypted content of
+    # its own. Opt out with label: decryption.flux.home.arpa/disabled: "true"
+    - patch: |-
         apiVersion: kustomize.toolkit.fluxcd.io/v1
         kind: Kustomization
         metadata:
@@ -164,14 +163,13 @@ spec:
       target:
         group: kustomize.toolkit.fluxcd.io
         kind: Kustomization
-    - 
-      # Net-new dedicated CNPG cluster (components/postgres): plain initdb, no
-      # Barman recovery. Label an app's Kustomization with
-      # components.postgres/cnpg=init when it has no prior S3 backup to
-      # recover from yet. Remove the label once the first backup lands —
-      # leaving it on afterwards is harmless day-to-day, but would block a
-      # future rebuild from ever recovering data.
-      patch: |-
+    # Net-new dedicated CNPG cluster (components/postgres): plain initdb, no
+    # Barman recovery. Label an app's Kustomization with
+    # components.postgres/cnpg=init when it has no prior S3 backup to
+    # recover from yet. Remove the label once the first backup lands —
+    # leaving it on afterwards is harmless day-to-day, but would block a
+    # future rebuild from ever recovering data.
+    - patch: |-
         apiVersion: kustomize.toolkit.fluxcd.io/v1
         kind: Kustomization
         metadata:
