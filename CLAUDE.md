@@ -56,7 +56,7 @@ Run automatically on `git commit`, staged-file-scoped: `mise fmt`, `mise lock` (
 `cluster-apps` injects cluster-wide defaults via Kustomize patches onto _every_ Kustomization/HelmRelease it manages, so individual apps don't repeat that boilerplate:
 
 - SOPS `decryption` (`sops-age`) — opt out with label `decryption.flux.home.arpa/disabled: "true"` (required for Kustomizations outside `flux-system` with no SOPS content, since a missing `sops-age` Secret fails reconciliation).
-- `postBuild.substituteFrom` `cluster-settings`/`cluster-secrets`, both looked up in the Kustomization's own namespace (the per-namespace `cluster-settings` ConfigMap from `components/namespace`; `cluster-secrets` exists only in `flux-system`) — opt out with `substitution.flux.home.arpa/disabled: "true"`.
+- `postBuild.substituteFrom` `cluster-settings`/`cluster-secrets`, both looked up in the Kustomization's own namespace (the per-namespace `cluster-settings` ConfigMap from `components/cluster-settings`, which `components/namespace` nests and `cluster-vars` renders into `flux-system`; `cluster-secrets` exists only in `flux-system`) — opt out with `substitution.flux.home.arpa/disabled: "true"`.
 - default `retryInterval: 2m`/`timeout: 15m`.
 - HelmRelease install/upgrade `CreateReplace`/`RetryOnFailure`/`RemediateOnFailure` strategy, and `driftDetection: enabled` (opt out with `drift-detection.flux.home.arpa/disabled: "true"`).
 - a label-driven patch: a Flux Kustomization tagged `components.postgres/cnpg=init` gets its CNPG `Cluster` rewritten to a plain `initdb` bootstrap instead of Barman recovery, for brand-new databases with no prior backup.
@@ -77,7 +77,7 @@ Each app lives at `kubernetes/apps/<namespace>/<app>/`:
     └── resources/             # optional — files wired in via configMapGenerator
 ```
 
-`kubernetes/components/` holds reusable kustomize components: `namespace` and `replacements` (per-namespace wiring above), `postgres` (a dedicated CNPG cluster per app, parameterized via the consuming `ks.yaml`'s `postBuild.substitute` — see its README), `dragonfly` (a dedicated Dragonfly per app, `${APP}-dragonfly`, plus an optional `authentication` sub-component; the operator lives in `apps/database/dragonfly`), `keda/*` (`http-scaler`, `smb-scaler`), and `nfs-config`. `kubernetes/talos/` holds Talos machine-config Jinja templates (rendered with `minijinja-cli` + 1Password `op inject`, see `.justfile`'s `template` recipe) and `version.yaml` (pinned Talos/Kubernetes versions used by `kubernetes/talos/mod.just`).
+`kubernetes/components/` holds reusable kustomize components: `namespace`, `cluster-settings` and `replacements` (per-namespace wiring above), `postgres` (a dedicated CNPG cluster per app, parameterized via the consuming `ks.yaml`'s `postBuild.substitute` — see its README), `dragonfly` (a dedicated Dragonfly per app, `${APP}-dragonfly`, plus an optional `authentication` sub-component; the operator lives in `apps/database/dragonfly`), `keda/*` (`http-scaler`, `smb-scaler`), and `nfs-config`. `kubernetes/talos/` holds Talos machine-config Jinja templates (rendered with `minijinja-cli` + 1Password `op inject`, see `.justfile`'s `template` recipe) and `version.yaml` (pinned Talos/Kubernetes versions used by `kubernetes/talos/mod.just`).
 Scaffolding a new cluster app should follow the `add-app` skill (`.agents/skills/add-app/SKILL.md`) — mirror a recent real app in this repo rather than inventing structure.
 
 ### `docker/` — Compose stacks on the TrueNAS host

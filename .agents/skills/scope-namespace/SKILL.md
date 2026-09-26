@@ -15,8 +15,8 @@ relocate-and-keep-shared-cluster path (3a), and
 `kubernetes/apps/default/forgejo` (`ks.yaml` and `app/helmrelease.yaml`)
 is the reference for actually migrating an app off the shared cluster (3b).
 
-Read `kubernetes/components/namespace/` (Namespace placeholder +
-`cluster-settings` ConfigMap component) and
+Read `kubernetes/components/namespace/` (Namespace placeholder, nesting
+the `cluster-settings` ConfigMap component) and
 `kubernetes/components/replacements/replacements.yaml` (injects
 `metadata.namespace`/`spec.targetNamespace`) before starting — every step
 below depends on understanding what those two components actually do.
@@ -180,7 +180,7 @@ grep -rn '\${' kubernetes/apps/<group>/*/app 2>/dev/null
 
 Every var used must resolve from either:
 
-- `kubernetes/components/namespace/configmap.yaml` — the already-duplicated,
+- `kubernetes/components/cluster-settings/configmap.yaml` — the already-duplicated,
   fleet-wide plaintext values. Add a new key here **only** if the value is
   safe to declassify to plaintext, and confirm with the user first if it's
   currently only in `kubernetes/flux/vars/cluster-secrets.sops.yaml`. This
@@ -332,7 +332,7 @@ kubectl get kustomization -A | grep -i "not found\|False"
 - **Forgetting `decryption.flux.home.arpa/disabled`.** Not optional, unlike
   `substituteFrom` — a missing `sops-age` fails the whole Kustomization,
   not just one substitution.
-- **Declassifying a value into `components/namespace/configmap.yaml`
+- **Declassifying a value into `components/cluster-settings/configmap.yaml`
   without asking first.**
 - **Pushing a namespace relocation for a stateful app without orphaning the
   old CR first (Step 6).** The PVC/Cluster's own identity never changes —
