@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/grafana.integreatly.org/grafanadashboard_v1beta1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
 # Dashboard JSON ships in ConfigMaps rendered by the chart (dashboards / operator.dashboards).
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
@@ -17,7 +17,7 @@ spec:
     name: cilium-dashboard
     key: cilium-dashboard.json
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/grafana.integreatly.org/grafanadashboard_v1beta1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:

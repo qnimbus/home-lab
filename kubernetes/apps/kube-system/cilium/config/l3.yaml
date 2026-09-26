@@ -1,4 +1,5 @@
 ---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumbgpclusterconfig_v2.json
 # BGP peering to the UDM Pro Max — see bgp.conf (same directory) for the
 # router-side FRR config this must match: local ASN 64514 here pairs with
 # `neighbor k8s remote-as 64514` there, peerASN 64513/peerAddress 10.60.0.1
@@ -29,6 +30,7 @@ spec:
           peerConfigRef:
             name: bgp-peer-config
 ---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumbgppeerconfig_v2.json
 # Fast timers (default is 180s hold / 60s keepalive) for quick failure
 # detection on VIP failover — matches bgp.conf's expectations, no equivalent
 # timer config needed on the FRR side (it accepts whatever the peer offers).
@@ -50,6 +52,7 @@ spec:
         matchLabels:
           advertise: bgp
 ---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumbgpadvertisement_v2.json
 # Advertises every LoadBalancer Service's IP over BGP EXCEPT mail/media
 # (smtp-relay, plex) — the two IOT-facing VIPs that must stay L2-only
 # forever (see l2-policy in networks.yaml and the pool-iot-* comments in

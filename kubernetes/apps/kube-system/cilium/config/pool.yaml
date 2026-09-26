@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/cilium.io/ciliumloadbalancerippool_v2.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumloadbalancerippool_v2.json
 apiVersion: cilium.io/v2
 kind: CiliumLoadBalancerIPPool
 metadata:
@@ -9,7 +9,7 @@ spec:
     - start: "10.60.0.230"
       stop: "10.60.0.249"
 ---
-# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/cilium.io/ciliumloadbalancerippool_v2.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumloadbalancerippool_v2.json
 # Single-IP pool reserved for kube-api only (serviceSelector below), so it can
 # never be auto-picked by an unpinned Service and can't collide with the
 # envoy-external/envoy-internal block in `pool`.
@@ -34,7 +34,7 @@ spec:
       "io.kubernetes.service.namespace": kube-system
       "io.kubernetes.service.name": kube-api
 ---
-# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/cilium.io/ciliumloadbalancerippool_v2.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumloadbalancerippool_v2.json
 # Single-IP pool reserved for smtp-relay's IOT-facing VIP only (serviceSelector below).
 # Announced via the tagged VLAN 30 sub-interface each node carries on its mgmt trunk NIC
 # (talos/talconfig.yaml) — gives the IOT-VLAN printer an in-segment path to smtp-relay
@@ -51,7 +51,7 @@ spec:
       "io.kubernetes.service.namespace": mail
       "io.kubernetes.service.name": smtp-relay
 ---
-# yaml-language-server: $schema=https://datreeio.github.io/CRDs-catalog/cilium.io/ciliumloadbalancerippool_v2.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumloadbalancerippool_v2.json
 # Single-IP pool reserved for Plex's IOT-facing VIP only (serviceSelector below). Same
 # rationale as pool-iot-smtp-relay above: a Google TV streamer on 10.30.0.0/24 can't route to
 # 10.60.0.0/24 at all (UniFi gateway blocks IOT-initiated cross-VLAN traffic by design),

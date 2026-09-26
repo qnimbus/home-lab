@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/yannh/kubernetes-json-schema/refs/heads/master/v1.36.0/mutatingadmissionpolicybinding-admissionregistration-v1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/admissionregistration.k8s.io/mutatingadmissionpolicybinding_v1.json
 # The operator defaults to docker.io/grafana/* images; rewrite them to mirror.gcr.io to stay clear
 # of Docker Hub pull rate limits.
 apiVersion: admissionregistration.k8s.io/v1
@@ -9,7 +9,7 @@ metadata:
 spec:
   policyName: grafana-image-mirror
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/yannh/kubernetes-json-schema/refs/heads/master/v1.36.0/mutatingadmissionpolicy-admissionregistration-v1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/admissionregistration.k8s.io/mutatingadmissionpolicy_v1.json
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingAdmissionPolicy
 metadata:

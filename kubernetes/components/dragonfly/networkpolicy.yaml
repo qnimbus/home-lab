@@ -1,4 +1,5 @@
 ---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/networking.k8s.io/networkpolicy_v1.json
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

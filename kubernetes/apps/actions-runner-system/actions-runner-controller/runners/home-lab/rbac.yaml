@@ -1,10 +1,12 @@
 ---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/core/serviceaccount_v1.json
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: actions-runner
   namespace: actions-runner-system
 ---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/rbac.authorization.k8s.io/clusterrolebinding_v1.json
 # cluster-admin is intentional: this is the one general-purpose self-hosted runner (kubectl,
 # talosctl via talos-serviceaccount.yaml, flux reconcile, etc.), matching bykaj's single-runner
 # home-ops shape rather than the split this repo tried first (home-lab-readonly / zero-RBAC,

@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/gateway.envoyproxy.io/envoyproxy_v1alpha1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/gateway.envoyproxy.io/envoyproxy_v1alpha1.json
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: EnvoyProxy
 metadata:
@@ -44,7 +44,7 @@ spec:
     metrics:
       prometheus: {}
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/gateway.networking.k8s.io/gatewayclass_v1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/gateway.networking.k8s.io/gatewayclass_v1.json
 apiVersion: gateway.networking.k8s.io/v1
 kind: GatewayClass
 metadata:
@@ -57,7 +57,7 @@ spec:
     name: envoy
     namespace: network
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/gateway.envoyproxy.io/backendtrafficpolicy_v1alpha1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/gateway.envoyproxy.io/backendtrafficpolicy_v1alpha1.json
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
@@ -83,7 +83,7 @@ spec:
     http:
       requestTimeout: 0s
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/gateway.envoyproxy.io/clienttrafficpolicy_v1alpha1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/gateway.envoyproxy.io/clienttrafficpolicy_v1alpha1.json
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: ClientTrafficPolicy
 metadata:

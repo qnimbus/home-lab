@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/http.keda.sh/interceptorroute_v1beta1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/http.keda.sh/interceptorroute_v1beta1.json
 apiVersion: http.keda.sh/v1beta1
 kind: InterceptorRoute
 metadata:

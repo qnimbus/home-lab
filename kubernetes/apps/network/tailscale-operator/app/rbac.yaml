@@ -1,4 +1,5 @@
 ---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/rbac.authorization.k8s.io/clusterrolebinding_v1.json
 # cluster-admin is intentional: this grants kubectl access via the Tailscale API-server
 # proxy, gated by tailnet membership/ACLs rather than a distributed kubeconfig.
 apiVersion: rbac.authorization.k8s.io/v1

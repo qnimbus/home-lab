@@ -1,5 +1,5 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/grafana.integreatly.org/grafanadatasource_v1beta1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadatasource_v1beta1.json
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDatasource
 metadata:
@@ -18,7 +18,7 @@ spec:
     isDefault: true
     url: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/grafana.integreatly.org/grafanadatasource_v1beta1.json
+# yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadatasource_v1beta1.json
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDatasource
 metadata:
