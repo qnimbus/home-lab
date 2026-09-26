@@ -150,7 +150,6 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  wait: false
 ```
 
 What the label does (via the patch in

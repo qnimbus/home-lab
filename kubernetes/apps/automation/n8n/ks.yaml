@@ -18,7 +18,6 @@ spec:
       APP: *app
       POSTGRES_BACKUP_SCHEDULE: "0 50 * * * *"
   prune: true
-  wait: false
   sourceRef:
     kind: GitRepository
     name: flux-system

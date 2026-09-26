@@ -15,7 +15,6 @@ spec:
     substitute:
       APP: *app
   prune: true
-  wait: false
   sourceRef:
     kind: GitRepository
     name: flux-system

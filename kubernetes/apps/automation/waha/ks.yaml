@@ -9,7 +9,6 @@ metadata:
 spec:
   components:
     - ../../../../components/kopiur/backup
-  wait: false
   prune: true
   interval: 1h
   path: ./kubernetes/apps/automation/waha/app

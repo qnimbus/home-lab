@@ -22,7 +22,6 @@ spec:
       POSTGRES_USERNAME: firefly
       POSTGRES_BACKUP_SCHEDULE: "0 19 * * * *"
   prune: true
-  wait: false
   sourceRef:
     kind: GitRepository
     name: flux-system

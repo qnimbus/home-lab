@@ -9,7 +9,6 @@ metadata:
     substitution.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: flux-system
-  wait: false
   prune: true
   interval: 1h
   path: ./kubernetes/apps/flux-system/flux-operator/app

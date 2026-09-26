@@ -24,7 +24,6 @@ spec:
       POSTGRES_USERNAME: paperless
       POSTGRES_BACKUP_SCHEDULE: "0 7 * * * *"
   prune: true
-  wait: false
   sourceRef:
     kind: GitRepository
     name: flux-system

@@ -57,8 +57,9 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  targetNamespace: <namespace>
 ```
+
+**Namespace:** don't set `metadata.namespace` or `spec.targetNamespace`; the namespace's `replacements` stamp both. Set them only under `flux-system` (no replacements there) or on a Kustomization labelled `replacements.flux.home.arpa/disabled: "true"` that deploys into its own namespace.
 
 **`wait`:** omit it for a normal leaf app — it defaults to `false`, and explicit `wait: false` is redundant boilerplate we no longer keep. Only add `wait: true` when _another_ Kustomization will `dependsOn` this one AND this Kustomization defines no `healthChecks`/`healthCheckExprs` — that is what gives the dependent a real readiness gate. If this Kustomization does define `healthChecks`, leave `wait` unset (setting `wait: true` would make Flux ignore those checks). Depending on another app (e.g. `kopiur` for persistence) does not by itself call for `wait`.
 

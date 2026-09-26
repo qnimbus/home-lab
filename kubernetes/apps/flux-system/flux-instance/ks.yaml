@@ -17,7 +17,6 @@ spec:
     # fails transiently on every bootstrap until ESO is ready.
     - name: external-secrets
       namespace: external-secrets
-  wait: false
   prune: true
   interval: 1h
   path: ./kubernetes/apps/flux-system/flux-instance/app

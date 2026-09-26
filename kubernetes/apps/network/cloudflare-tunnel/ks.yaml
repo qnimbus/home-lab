@@ -7,7 +7,6 @@ metadata:
   labels:
     decryption.flux.home.arpa/disabled: "true"
 spec:
-  wait: false
   prune: true
   interval: 1h
   path: ./kubernetes/apps/network/cloudflare-tunnel/tunnel-id
@@ -34,7 +33,6 @@ metadata:
     # bykaj's home-ops cloudflare-tunnel pattern.
     substitution.flux.home.arpa/disabled: "true"
 spec:
-  wait: false
   prune: true
   interval: 1h
   path: ./kubernetes/apps/network/cloudflare-tunnel/app
