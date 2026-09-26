@@ -107,6 +107,23 @@
       schedule: ["before 6am on Monday"],
     },
     {
+      // Both matchers must hit: only these images, and only in these namespaces
+      description: "Auto-merge patch updates for media and downloads apps",
+      matchFileNames: ["kubernetes/apps/downloads/**", "kubernetes/apps/media/**"],
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["patch"],
+      matchPackageNames: [
+        "ghcr.io/home-operations/plex",
+        "ghcr.io/home-operations/prowlarr",
+        "ghcr.io/home-operations/radarr",
+        "ghcr.io/home-operations/sonarr",
+      ],
+      automerge: true,
+      automergeType: "pr",
+      ignoreTests: false,
+      minimumReleaseAge: "1 day",
+    },
+    {
       description: "Auto-merge GitHub Actions",
       matchManagers: ["github-actions"],
       matchUpdateTypes: ["minor", "patch", "digest"],

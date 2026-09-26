@@ -18,24 +18,28 @@ area/devops:
 area/docker:
   - changed-files:
       - any-glob-to-any-file: "docker/**/*"
+area/kubernetes:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "kubernetes/apps/**/*"
+          - "kubernetes/components/**/*"
+          - "kubernetes/flux/**/*"
+          - "kubernetes/mod.just"
+area/talos:
+  - changed-files:
+      - any-glob-to-any-file: "kubernetes/talos/**/*"
+namespace/media:
+  - changed-files:
+      - any-glob-to-any-file: "kubernetes/apps/media/**/*"
+namespace/downloads:
+  - changed-files:
+      - any-glob-to-any-file: "kubernetes/apps/downloads/**/*"
+area/scripts:
+  - changed-files:
+      - any-glob-to-any-file: "scripts/**/*"
 area/docs:
   - changed-files:
       - any-glob-to-any-file:
           - "**/*.md"
           - "docs/**/*"
           - "README.md"
-area/kubernetes:
-  - changed-files:
-      - any-glob-to-any-file: "kubernetes/**/*"
-namespace/media:
-  - changed-files:
-      - any-glob-to-any-file: "kubernetes/media/**/*"
-namespace/downloads:
-  - changed-files:
-      - any-glob-to-any-file: "kubernetes/downloads/**/*"
-area/scripts:
-  - changed-files:
-      - any-glob-to-any-file: "scripts/**/*"
-area/talos:
-  - changed-files:
-      - any-glob-to-any-file: "talos/**/*"
