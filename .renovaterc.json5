@@ -117,6 +117,7 @@
         "ghcr.io/home-operations/prowlarr",
         "ghcr.io/home-operations/radarr",
         "ghcr.io/home-operations/sonarr",
+        "ghcr.io/home-operations/sabnzbd",
       ],
       automerge: true,
       automergeType: "pr",
