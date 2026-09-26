@@ -7,6 +7,24 @@ set shell := ['bash', '-euo', 'pipefail', '-c']
 # in-cluster runner, ubuntu-24.04 the GitHub-hosted fallback (e.g. while the cluster is down).
 # Image Pull ignores it — it needs talosctl access to the nodes.
 
+[doc('Delete container-step Secrets whose runner pod no longer exists')]
+[script]
+prune-secrets ns="actions-runner-system":
+    # The runner's Kubernetes container hook stores each container step's env (tokens included)
+    # in a Secret labelled runner-pod=<runner pod>, and only deletes it in its job cleanup. A
+    # runner pod that dies mid-job leaves it behind; secrets of live runners are left alone.
+    pods=$(kubectl get pods -n "{{ ns }}" --no-headers -o custom-columns=NAME:.metadata.name)
+    pruned=0
+    while read -r secret pod; do
+        [[ -z "$secret" ]] && continue
+        if ! grep -qxF "$pod" <<< "$pods"; then
+            kubectl delete secret -n "{{ ns }}" "$secret"
+            pruned=$((pruned + 1))
+        fi
+    done < <(kubectl get secrets -n "{{ ns }}" -l runner-pod --no-headers \
+        -o custom-columns=NAME:.metadata.name,POD:.metadata.labels.runner-pod)
+    just log info "Pruned stray runner step Secrets" "namespace" "{{ ns }}" "count" "$pruned"
+
 [doc('Show which runner the RUNNER repo variable selects')]
 [script]
 runner:
