@@ -5,12 +5,12 @@ kind: Kustomization
 metadata:
   name: &app snapshot-controller
 spec:
-  targetNamespace: snapshot-controller
+  targetNamespace: system
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: *app
-      namespace: snapshot-controller
+      namespace: system
   interval: 1h
   path: ./kubernetes/apps/system/snapshot-controller/app
   prune: true
