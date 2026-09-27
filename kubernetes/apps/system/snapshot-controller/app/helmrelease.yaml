@@ -9,6 +9,15 @@ spec:
     kind: OCIRepository
     name: snapshot-controller
   interval: 1h
+  postRenderers:
+    - kustomize:
+        patches:
+          - patch: |
+              - op: add
+                path: /metadata/annotations/helm.sh~1resource-policy
+                value: keep
+            target:
+              kind: CustomResourceDefinition
   values:
     controller:
       serviceMonitor:
