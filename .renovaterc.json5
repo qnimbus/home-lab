@@ -30,6 +30,12 @@
   // talosctl: CLI tool in .mise.toml — must match the running Talos server version; bump manually alongside Talos PRs.
   // etcd: CLI tool in .mise.toml — must match the etcd version bundled with the running Talos release.
   ignoreDeps: ["talos", "etcd"],
+  logLevelRemap: [
+    {
+      matchMessage: "/Some .+ did not have a releaseTimestamp, but as we're running with minimumReleaseAgeBehaviour=timestamp-optional, proceeding/",
+      newLogLevel: "info",
+    },
+  ],
   // ── Manager file-pattern overrides ──────────────────────────────────────────
   // Renovate's built-in managers each have a default set of filename globs they
   // scan. These overrides extend those defaults to cover this repo's structure.
@@ -124,6 +130,7 @@
       automergeType: "pr",
       ignoreTests: false,
       minimumReleaseAge: "1 day",
+      minimumReleaseAgeBehaviour: "timestamp-optional",
     },
     {
       description: "Auto-merge GitHub Actions",
