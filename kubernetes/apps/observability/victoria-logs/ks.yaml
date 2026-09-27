@@ -5,6 +5,7 @@ kind: Kustomization
 metadata:
   name: &app victoria-logs
 spec:
+  targetNamespace: observability
   dependsOn:
     - name: rook-ceph-cluster
       namespace: rook-ceph
@@ -20,4 +21,3 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  targetNamespace: observability

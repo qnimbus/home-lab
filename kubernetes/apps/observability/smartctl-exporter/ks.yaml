@@ -5,6 +5,7 @@ kind: Kustomization
 metadata:
   name: &app smartctl-exporter
 spec:
+  targetNamespace: observability
   interval: 1h
   path: ./kubernetes/apps/observability/smartctl-exporter/app
   prune: true
@@ -12,4 +13,3 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  targetNamespace: observability

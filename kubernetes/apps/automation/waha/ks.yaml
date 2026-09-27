@@ -5,6 +5,7 @@ kind: Kustomization
 metadata:
   name: &app waha
 spec:
+  targetNamespace: automation
   components:
     - ../../../../components/kopiur/backup
   prune: true
@@ -27,4 +28,3 @@ spec:
       kind: HelmRelease
       name: *app
       namespace: automation
-  targetNamespace: automation

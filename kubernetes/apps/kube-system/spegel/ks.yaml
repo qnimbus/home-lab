@@ -7,6 +7,7 @@ metadata:
   labels:
     substitution.flux.home.arpa/disabled: "true"
 spec:
+  targetNamespace: kube-system
   prune: true
   interval: 1h
   path: ./kubernetes/apps/kube-system/spegel/app
@@ -19,4 +20,3 @@ spec:
       kind: HelmRelease
       name: *app
       namespace: kube-system
-  targetNamespace: kube-system

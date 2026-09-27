@@ -5,6 +5,7 @@ kind: Kustomization
 metadata:
   name: &app whoami
 spec:
+  targetNamespace: default
   interval: 1h
   path: ./kubernetes/apps/default/whoami/app
   prune: true
@@ -12,4 +13,3 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  targetNamespace: default

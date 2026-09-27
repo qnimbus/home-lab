@@ -24,6 +24,8 @@ Whenever asked to sort these files, follow these instructions:
 
 - An `OCIRepository`'s `spec.verify`: `provider` before `matchOIDCIdentity`.
 
+- A Flux `Kustomization`'s `spec` (`ks.yaml`): `targetNamespace` first, then the rest alphabetically.
+
 ## HelmReleases based on app-template
 
 This section gives instructions specifically for HelmReleases that are based on the `app-template` chart. These can be identified by the presence of a sidecar `ocirepository.yaml` file that references `oci://ghcr.io/bjw-s-labs/helm/app-template` in the `url` field.

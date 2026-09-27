@@ -7,9 +7,9 @@ metadata:
   labels:
     substitution.flux.home.arpa/disabled: "true"
 spec:
+  targetNamespace: kube-system
   prune: true
   interval: 1h
-  targetNamespace: kube-system
   timeout: 10m
   path: ./kubernetes/apps/kube-system/cilium/app
   sourceRef:

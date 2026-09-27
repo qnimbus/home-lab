@@ -5,13 +5,13 @@ kind: Kustomization
 metadata:
   name: &app rook-ceph-operator
 spec:
+  targetNamespace: rook-ceph
   interval: 1h
   path: ./kubernetes/apps/rook-ceph/rook-ceph/operator/app
   prune: true
   # wait until the operator HelmRelease is fully installed before the cluster
   # Kustomization's dry-run runs — otherwise the CephCluster/CephBlockPool CRD
   # types won't exist yet and the dry-run fails (operator+CRD-instance split).
-  targetNamespace: rook-ceph
   wait: true
   sourceRef:
     kind: GitRepository
@@ -29,6 +29,7 @@ kind: Kustomization
 metadata:
   name: &app rook-ceph-csi-drivers
 spec:
+  targetNamespace: rook-ceph
   interval: 1h
   path: ./kubernetes/apps/rook-ceph/rook-ceph/csi-drivers/app
   prune: true
@@ -45,7 +46,6 @@ spec:
   # back the cluster HR's own spec (dependsOn, Ceph image pin) exactly when a
   # tag bump needs it applied; the HelmRelease-level dependsOn: ceph-csi-drivers
   # in cluster/app/helmrelease.yaml handles that ordering instead.
-  targetNamespace: rook-ceph
   wait: true
   sourceRef:
     kind: GitRepository
@@ -65,8 +65,8 @@ kind: Kustomization
 metadata:
   name: &app rook-ceph-cluster
 spec:
-  interval: 1h
   targetNamespace: rook-ceph
+  interval: 1h
   timeout: 15m
   path: ./kubernetes/apps/rook-ceph/rook-ceph/cluster/app
   prune: true

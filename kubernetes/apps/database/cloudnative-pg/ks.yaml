@@ -7,10 +7,10 @@ metadata:
   labels:
     substitution.flux.home.arpa/disabled: "true"
 spec:
+  targetNamespace: database
   interval: 1h
   path: ./kubernetes/apps/database/cloudnative-pg/operator/app
   prune: true
-  targetNamespace: database
   wait: true
   sourceRef:
     kind: GitRepository
@@ -33,10 +33,10 @@ metadata:
   labels:
     substitution.flux.home.arpa/disabled: "true"
 spec:
+  targetNamespace: database
   interval: 1h
   path: ./kubernetes/apps/database/cloudnative-pg/plugin-barman-cloud/app
   prune: true
-  targetNamespace: database
   wait: true
   sourceRef:
     kind: GitRepository

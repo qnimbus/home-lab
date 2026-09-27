@@ -5,6 +5,7 @@ kind: Kustomization
 metadata:
   name: &app dragonfly-operator
 spec:
+  targetNamespace: database
   interval: 1h
   path: ./kubernetes/apps/database/dragonfly/app
   postBuild:
@@ -15,5 +16,4 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  targetNamespace: database
   wait: true

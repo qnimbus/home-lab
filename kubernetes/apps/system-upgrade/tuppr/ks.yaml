@@ -7,12 +7,12 @@ metadata:
   labels:
     substitution.flux.home.arpa/disabled: "true"
 spec:
+  targetNamespace: system-upgrade
   dependsOn:
     - name: kube-prometheus-stack
       namespace: observability
   prune: true
   interval: 1h
-  targetNamespace: system-upgrade
   timeout: 10m
   path: ./kubernetes/apps/system-upgrade/tuppr/app
   sourceRef:
@@ -33,10 +33,10 @@ metadata:
   labels:
     substitution.flux.home.arpa/disabled: "true"
 spec:
+  targetNamespace: system-upgrade
   dependsOn:
     - name: tuppr
       namespace: system-upgrade
-  targetNamespace: system-upgrade
   wait: true
   prune: true
   interval: 1h

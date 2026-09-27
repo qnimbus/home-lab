@@ -5,6 +5,7 @@ kind: Kustomization
 metadata:
   name: &app unifi-voucher-site
 spec:
+  targetNamespace: default
   components:
     - ../../../../components/keda/http-scaler
   dependsOn:
@@ -27,4 +28,3 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  targetNamespace: default

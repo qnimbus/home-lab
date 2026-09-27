@@ -5,6 +5,7 @@ kind: Kustomization
 metadata:
   name: &app sabnzbd
 spec:
+  targetNamespace: downloads
   components:
     - ../../../../components/nfs-config
   interval: 1h
@@ -30,4 +31,3 @@ spec:
       kind: HelmRelease
       name: *app
       namespace: downloads
-  targetNamespace: downloads

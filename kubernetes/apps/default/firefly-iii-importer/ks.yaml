@@ -5,6 +5,7 @@ kind: Kustomization
 metadata:
   name: &app firefly-iii-importer
 spec:
+  targetNamespace: default
   components:
     - ../../../../components/keda/http-scaler
   interval: 1h
@@ -23,4 +24,3 @@ spec:
     # operator installs them — see bootstrap-ordering rule in CLAUDE.md.
     - name: keda-add-ons-http
       namespace: system
-  targetNamespace: default

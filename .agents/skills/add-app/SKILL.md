@@ -20,6 +20,7 @@ Scaffolds `kubernetes/apps/<namespace>/<app>/` with a Flux Kustomization (`ks.ya
 | container `securityContext`  | `allowPrivilegeEscalation`, `readOnlyRootFilesystem`, `capabilities` |
 | ExternalSecret `spec`        | `refreshInterval`, `secretStoreRef`, `target`, `dataFrom`            |
 | ExternalSecret `spec.target` | `name`, `creationPolicy`, `template`                                 |
+| Flux Kustomization `spec`    | `targetNamespace`, then alphabetical                                 |
 
 Everything the templates don't cover follows `sorting.instructions.md`.
 
@@ -62,6 +63,7 @@ kind: Kustomization
 metadata:
   name: <app>
 spec:
+  targetNamespace: <namespace>
   interval: 1h
   path: "./kubernetes/apps/<namespace>/<app>/app"
   prune: true
@@ -69,7 +71,6 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  targetNamespace: <namespace>
 ```
 
 **Namespace:** always set `spec.targetNamespace` explicitly, normally to the namespace directory the app lives in (an app may deploy elsewhere, as `system/snapshot-controller` does). Don't set `metadata.namespace`: the `namespace:` field in the namespace's `kustomization.yaml` stamps it, `flux-system` included.

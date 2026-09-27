@@ -5,6 +5,7 @@ kind: Kustomization
 metadata:
   name: &app plex
 spec:
+  targetNamespace: media
   components:
     - ../../../../components/gpu
     - ../../../../components/kopiur/backup
@@ -32,4 +33,3 @@ spec:
       kind: HelmRelease
       name: *app
       namespace: media
-  targetNamespace: media

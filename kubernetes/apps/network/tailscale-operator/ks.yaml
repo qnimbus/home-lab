@@ -67,6 +67,7 @@ metadata:
   labels:
     substitution.flux.home.arpa/disabled: "true"
 spec:
+  targetNamespace: network
   prune: true
   interval: 1h
   path: ./kubernetes/apps/network/tailscale-operator/configs
@@ -76,4 +77,3 @@ spec:
     namespace: flux-system
   dependsOn:
     - name: tailscale-operator
-  targetNamespace: network
