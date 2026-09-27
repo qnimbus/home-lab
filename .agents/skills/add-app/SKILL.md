@@ -72,7 +72,7 @@ spec:
   targetNamespace: <namespace>
 ```
 
-**Namespace:** always set `spec.targetNamespace` explicitly, normally to the namespace directory the app lives in (an app may deploy elsewhere, as `system/snapshot-controller` does). Don't set `metadata.namespace`: the `namespace:` field in the namespace's `kustomization.yaml` stamps it. The exception is `flux-system`, whose `ks.yaml` files set both.
+**Namespace:** always set `spec.targetNamespace` explicitly, normally to the namespace directory the app lives in (an app may deploy elsewhere, as `system/snapshot-controller` does). Don't set `metadata.namespace`: the `namespace:` field in the namespace's `kustomization.yaml` stamps it, `flux-system` included.
 
 **`wait`:** omit it for a normal leaf app — it defaults to `false`, and explicit `wait: false` is redundant boilerplate we no longer keep. Only add `wait: true` when _another_ Kustomization will `dependsOn` this one AND this Kustomization defines no `healthChecks`/`healthCheckExprs` — that is what gives the dependent a real readiness gate. If this Kustomization does define `healthChecks`, leave `wait` unset (setting `wait: true` would make Flux ignore those checks). Depending on another app (e.g. `kopiur` for persistence) does not by itself call for `wait`.
 
