@@ -38,7 +38,6 @@ jobs:
           bash .agents/skills/gitops-repo-audit/scripts/validate.sh \
             -d kubernetes \
             -E .github/validate.env \
-            -e kubernetes/components/replacements \
             -e kubernetes/talos
 
       - name: Setup Node.js

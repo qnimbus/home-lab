@@ -17,3 +17,4 @@ spec:
       kind: HelmRelease
       name: *app
       namespace: mail
+  targetNamespace: mail

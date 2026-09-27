@@ -8,6 +8,7 @@ metadata:
     substitution.flux.home.arpa/disabled: "true"
 spec:
   interval: 1h
+  targetNamespace: external-secrets
   wait: true
   prune: true
   path: ./kubernetes/apps/external-secrets/onepassword-connect/app

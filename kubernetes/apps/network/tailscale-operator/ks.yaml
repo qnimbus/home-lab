@@ -5,6 +5,7 @@ kind: Kustomization
 metadata:
   name: tailscale-user
 spec:
+  targetNamespace: network
   wait: true
   prune: true
   interval: 1h
@@ -32,6 +33,7 @@ metadata:
     # bootstrap isn't wired up yet, so a regular ExternalSecret substitutes).
     substitution.flux.home.arpa/disabled: "true"
 spec:
+  targetNamespace: network
   wait: true
   prune: true
   interval: 1h
@@ -74,3 +76,4 @@ spec:
     namespace: flux-system
   dependsOn:
     - name: tailscale-operator
+  targetNamespace: network

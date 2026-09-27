@@ -27,3 +27,4 @@ spec:
       kind: HelmRelease
       name: *app
       namespace: automation
+  targetNamespace: automation

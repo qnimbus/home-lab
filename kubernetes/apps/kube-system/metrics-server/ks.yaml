@@ -19,3 +19,4 @@ spec:
       kind: HelmRelease
       name: *app
       namespace: kube-system
+  targetNamespace: kube-system

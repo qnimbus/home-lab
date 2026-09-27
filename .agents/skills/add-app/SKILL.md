@@ -69,9 +69,10 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
+  targetNamespace: <namespace>
 ```
 
-**Namespace:** don't set `metadata.namespace` or `spec.targetNamespace`; the namespace's `replacements` stamp both. Set them only under `flux-system` (no replacements there) or on a Kustomization labelled `replacements.flux.home.arpa/disabled: "true"` that deploys into its own namespace.
+**Namespace:** always set `spec.targetNamespace` explicitly, normally to the namespace directory the app lives in (an app may deploy elsewhere, as `system/snapshot-controller` does). Don't set `metadata.namespace`: the `namespace:` field in the namespace's `kustomization.yaml` stamps it. The exception is `flux-system`, whose `ks.yaml` files set both.
 
 **`wait`:** omit it for a normal leaf app — it defaults to `false`, and explicit `wait: false` is redundant boilerplate we no longer keep. Only add `wait: true` when _another_ Kustomization will `dependsOn` this one AND this Kustomization defines no `healthChecks`/`healthCheckExprs` — that is what gives the dependent a real readiness gate. If this Kustomization does define `healthChecks`, leave `wait` unset (setting `wait: true` would make Flux ignore those checks). Depending on another app (e.g. `kopiur` for persistence) does not by itself call for `wait`.
 
@@ -288,7 +289,7 @@ Convention: `metadata.name` is `<app>`, the generated Secret is `<app>-secret`, 
 
 Add `./<app>/ks.yaml` to `kubernetes/apps/<namespace>/kustomization.yaml` `resources`, in alphabetical position among the app entries (`namespace.yaml` stays first; leave existing entries where they are).
 
-**New namespace?** Create `kubernetes/apps/<namespace>/` with a `namespace.yaml` and `kustomization.yaml` copied from an existing namespace (e.g. `automation`) — keep the `components/namespace` component and the `replacements` entry (no per-namespace kopiur secret is needed: the operator projects the repository password into mover namespaces) — and register the directory in `kubernetes/flux/cluster`'s apps kustomization if namespaces are listed there.
+**New namespace?** Create `kubernetes/apps/<namespace>/` with a `namespace.yaml` and `kustomization.yaml` copied from an existing namespace (e.g. `automation`) — keep the `components/namespace` component and the `namespace:` field (no per-namespace kopiur secret is needed: the operator projects the repository password into mover namespaces) — and register the directory in `kubernetes/flux/cluster`'s apps kustomization if namespaces are listed there.
 
 ## Step 4: Verify
 

@@ -5,7 +5,5 @@ kind: Kustomization
 components:
   - ../../components/namespace
 namespace: actions-runner-system
-replacements:
-  - path: ../../components/replacements/replacements.yaml
 resources:
   - ./actions-runner-controller/ks.yaml

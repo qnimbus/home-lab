@@ -64,8 +64,8 @@ The sources of truth are `.agents/instructions/*.md`, `CLAUDE.md`, and `add-app`
 
 **Namespace**
 
-- `kustomization.yaml` lists every `*/ks.yaml` in the folder, with no dangling entries. The `components/namespace` component and the `replacements` entry are present.
-- Each `ks.yaml` has a `spec.path` that matches its own directory. It has no `wait: false`, `commonMetadata` or `timeout`, and has `wait: true` only when something depends on it and it has no `healthChecks`. `dependsOn` is structural only (`flux-kustomization.instructions.md`) and every target exists. `postBuild.substitute.APP` is set when `components` is used, and `healthCheckExprs` is paired with `healthChecks`.
+- `kustomization.yaml` lists every `*/ks.yaml` in the folder, with no dangling entries. The `components/namespace` component and the `namespace:` field are present.
+- Each `ks.yaml` has a `spec.path` that matches its own directory and an explicit `spec.targetNamespace` (the folder's namespace unless it deliberately deploys elsewhere). It has no `wait: false`, `commonMetadata` or `timeout`, and has `wait: true` only when something depends on it and it has no `healthChecks`. `dependsOn` is structural only (`flux-kustomization.instructions.md`) and every target exists. `postBuild.substitute.APP` is set when `components` is used, and `healthCheckExprs` is paired with `healthChecks`.
 - Every `app/kustomization.yaml` references files that exist, and every manifest in `app/` is referenced. Report orphans: they're often dormant resources.
 - Sources, secrets and Renovate comments follow `helm-sources`, `external-secrets` and `renovate` instructions. There's no NetworkPolicy, apart from what the dragonfly component adds.
 
@@ -76,7 +76,7 @@ The sources of truth are `.agents/instructions/*.md`, `CLAUDE.md`, and `add-app`
 
 **Consistency across siblings**: the same thing should be done the same way throughout the folder: intervals, `reloader.stakater.com/auto`, security contexts, `&app` anchors, quoting, and whether `dependsOn`/`healthChecks` entries spell out `namespace`. Report the outliers.
 
-When the folder's majority disagrees with a documented convention, or two conventions disagree (e.g. `add-app`'s `ks.yaml` template vs. what replacements already stamp), report the divergence. Per `AGENTS.md`, propose whether it should become the convention. Don't pick a side silently.
+When the folder's majority disagrees with a documented convention, or two conventions disagree (e.g. `add-app`'s `ks.yaml` template vs. what most siblings do), report the divergence. Per `AGENTS.md`, propose whether it should become the convention. Don't pick a side silently.
 
 **Fix vs. report**: apply fixes that are mechanical and unambiguous: key order, missing `---`/schema line, redundant boilerplate (`wait: false`, `commonMetadata`, `timeout`), stale file references in the README. Report everything that changes behaviour (`dependsOn`, `wait`, secrets, renames, orphan files) with a concrete suggested change, and ask before applying it.
 

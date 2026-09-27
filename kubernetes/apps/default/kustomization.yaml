@@ -5,8 +5,6 @@ kind: Kustomization
 components:
   - ../../components/namespace
 namespace: default
-replacements:
-  - path: ../../components/replacements/replacements.yaml
 resources:
   - ./firefly-iii/ks.yaml
   - ./firefly-iii-importer/ks.yaml

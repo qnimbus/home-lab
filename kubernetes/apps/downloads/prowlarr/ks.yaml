@@ -28,3 +28,4 @@ spec:
       kind: HelmRelease
       name: *app
       namespace: downloads
+  targetNamespace: downloads

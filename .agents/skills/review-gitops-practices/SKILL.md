@@ -22,7 +22,6 @@ own conventions, reuses that skill's vendored scripts for validation, and report
 bash .agents/skills/gitops-repo-audit/scripts/validate.sh \
   -d kubernetes \
   -E .github/validate.env \
-  -e kubernetes/components/replacements \
   -e kubernetes/talos
 
 # Deprecated Flux API versions
@@ -124,7 +123,7 @@ grep -rl "kind: NetworkPolicy\|kind: CiliumNetworkPolicy" kubernetes --include="
 
 Before writing up anything as a new gap, check whether it's already a documented decision:
 
-- `CLAUDE.md`: e.g. no NetworkPolicies by design, the `flux-system` replacements exception,
+- `CLAUDE.md`: e.g. no NetworkPolicies by design, the `flux-system` namespace-component exception,
   the cluster-apps defaults and their opt-out labels.
 - `.agents/instructions/*.md` and the sibling skills' **Common mistakes** lists (`add-app`,
   `tidy-folder`).

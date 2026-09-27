@@ -17,7 +17,5 @@ patches:
           # observability's/rook-ceph's own kustomization.yaml patch pattern for
           # a group-specific namespace label on top of the shared component.
           resource.kubernetes.io/admin-access: "true"
-replacements:
-  - path: ../../components/replacements/replacements.yaml
 resources:
   - ./plex/ks.yaml

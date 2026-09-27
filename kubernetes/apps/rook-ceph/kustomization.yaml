@@ -17,7 +17,5 @@ patches:
           # these workloads are admitted regardless of any future cluster-wide PSA
           # tightening — every other namespace here relies on the permissive default.
           pod-security.kubernetes.io/enforce: privileged
-replacements:
-  - path: ../../components/replacements/replacements.yaml
 resources:
   - ./rook-ceph

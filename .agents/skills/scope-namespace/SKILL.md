@@ -16,10 +16,9 @@ relocate-and-keep-shared-cluster path (3a), and
 is the reference for actually migrating an app off the shared cluster (3b).
 
 Read `kubernetes/components/namespace/` (Namespace placeholder, nesting
-the `cluster-settings` ConfigMap component) and
-`kubernetes/components/replacements/replacements.yaml` (injects
-`metadata.namespace`/`spec.targetNamespace`) before starting — every step
-below depends on understanding what those two components actually do.
+the `cluster-settings` ConfigMap component) before starting — every step
+below depends on understanding what it and the wrapper's `namespace:` field
+actually do.
 
 ## Step 1: Wrapper `kustomization.yaml`
 
@@ -29,8 +28,6 @@ Add to `kubernetes/apps/<group>/kustomization.yaml`:
 namespace: <group>
 components:
   - ../../components/namespace
-replacements:
-  - path: ../../components/replacements/replacements.yaml
 ```
 
 Remove `./namespace.yaml` from `resources:` and delete the file if present.
@@ -40,9 +37,9 @@ conflict") if both exist.
 
 ## Step 2: Per-app `ks.yaml` — every doc that actually belongs in `<group>`
 
-- Remove `metadata.namespace: flux-system` and `spec.targetNamespace:
-<group>`. Both are now injected automatically by `replacements/replacements.yaml`,
-  sourced from the rendered `Namespace` object's name.
+- Remove `metadata.namespace: flux-system`; the wrapper's `namespace:
+<group>` field now stamps it. **Keep** `spec.targetNamespace: <group>`
+  (add it if missing) — every `ks.yaml` sets it explicitly.
 - For every `dependsOn` entry, add explicit `namespace: flux-system` if the
   target lives there — true for virtually all shared infra
   (`onepassword-store`, `rook-ceph-cluster`, `cloudnative-pg-cluster`,
@@ -58,9 +55,7 @@ Some apps have a second doc in the same `ks.yaml` — e.g. `<app>-db` — whose
 real `targetNamespace` is a shared namespace like `database`, not `<group>`.
 **A label cannot protect these.** `metadata.namespace` is set by the
 wrapper's own plain `namespace: <group>` field — a built-in Kustomize
-transformer with no label/selector support at all (only the custom
-`replacements` logic can be label-gated, and even that only protects
-`spec.targetNamespace`, not `metadata.namespace`). Leaving such a doc in the
+transformer with no label/selector support at all. Leaving such a doc in the
 wrapper silently relocates it.
 
 If the app is backed by the shared `postgres-v17` CNPG cluster (a
@@ -188,17 +183,16 @@ mise exec -- kustomize build --load-restrictor LoadRestrictionsNone kubernetes/a
 mise exec -- kustomize build --load-restrictor LoadRestrictionsNone kubernetes/apps   # full tree
 ```
 
-The `--load-restrictor` flag is required locally because both
-`components/namespace` and `components/replacements` live outside
+The `--load-restrictor` flag is required locally because
+`components/namespace` lives outside
 `kubernetes/apps/<group>` — Flux sets the equivalent option internally, so
 this is a local-validation-only requirement, not something to add to any
 committed manifest.
 
 Confirm in the output:
 
-- Relocated `Kustomization` CRs show `metadata.namespace: <group>` and
-  `spec.targetNamespace: <group>` — even though neither is written in the
-  source `ks.yaml`.
+- Relocated `Kustomization` CRs show `metadata.namespace: <group>` (not
+  written in the source `ks.yaml`) and `spec.targetNamespace: <group>`.
 - Any Step 3 sibling still shows its original `flux-system`/`<shared-ns>`
   values, untouched.
 - `${VAR}`s resolve to real values in the app's own build
@@ -309,7 +303,7 @@ kubectl get kustomization -A | grep -i "not found\|False"
 
 ## Common mistakes
 
-- **Removing `spec.targetNamespace` before `replacements` is wired in.**
+- **Removing `spec.targetNamespace`.**
   There is no fallback to the CR's own `metadata.namespace` for the app's
   own build (`spec.path`) — verified against Flux source
   (`fluxcd/pkg/kustomize/kustomize_generator.go`: `kus.Namespace` is only

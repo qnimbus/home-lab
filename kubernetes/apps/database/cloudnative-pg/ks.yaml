@@ -10,6 +10,7 @@ spec:
   interval: 1h
   path: ./kubernetes/apps/database/cloudnative-pg/operator/app
   prune: true
+  targetNamespace: database
   wait: true
   sourceRef:
     kind: GitRepository
@@ -35,6 +36,7 @@ spec:
   interval: 1h
   path: ./kubernetes/apps/database/cloudnative-pg/plugin-barman-cloud/app
   prune: true
+  targetNamespace: database
   wait: true
   sourceRef:
     kind: GitRepository

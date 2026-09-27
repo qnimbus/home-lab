@@ -17,6 +17,7 @@ spec:
       kind: ExternalSecret
       name: cloudflare-tunnel-id
       namespace: network
+  targetNamespace: network
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -53,3 +54,4 @@ spec:
       kind: HelmRelease
       name: *app
       namespace: network
+  targetNamespace: network
