@@ -42,6 +42,8 @@ spec:
       enabled: false
     minio:
       enabled: false
+    # The VolumeSnapshot CRDs belong to snapshot-controller; one release per
+    # CRD (.agents/instructions/helm-crds.instructions.md).
     openebs-crds:
       csi:
         volumeSnapshots:

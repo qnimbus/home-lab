@@ -59,6 +59,18 @@ kubectl get kustomizations,helmreleases -A -o json | \
   jq -r '.items[] | select(.spec.suspend==true) | "\(.kind)/\(.metadata.namespace)/\(.metadata.name) suspended"'
 ```
 
+**A CRD rendered by more than one Helm release** has two owners that silently overwrite each other
+(see [helm-crds](../../instructions/helm-crds.instructions.md#one-release-per-crd)). Any output line
+is a finding; empty output is healthy. It reads every release's stored manifest, so it takes about ten
+seconds, and it can't see duplicates shipped from charts' `crds/` directories:
+
+```bash
+helm list -A -o json | jq -r '.[] | "\(.namespace) \(.name)"' | while read -r ns name; do
+  helm get manifest "$name" -n "$ns" | yq -N 'select(.kind=="CustomResourceDefinition") | .metadata.name' |
+    sed "s|^|$ns/$name |"
+done | awk '{r[$2]=r[$2]" "$1; c[$2]++} END {for (k in c) if (c[k]>1) print k ":" r[k]}'
+```
+
 **A Deployment showing both `Available` and `Progressing` conditions as `True` is a normal rollout
 state, not stuck** — Kubernetes sets both during and briefly after a healthy rollout. Only worry if
 `Progressing` has been `True` for a long time with no new ReplicaSet activity, or `Available` is
