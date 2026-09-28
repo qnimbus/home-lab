@@ -55,12 +55,12 @@ Run automatically on `git commit`, staged-file-scoped: `mise fmt`, `mise lock` (
 
 `cluster-apps` injects cluster-wide defaults via Kustomize patches onto _every_ Kustomization/HelmRelease it manages, so individual apps don't repeat that boilerplate:
 
-- `postBuild.substituteFrom` the `cluster-settings` ConfigMap, looked up in the Kustomization's own namespace (it comes from `components/cluster-settings`, which `components/namespace` nests and `flux-system` pulls in on its own) — opt out with `substitution.flux.home.arpa/disabled: "true"`.
+- `postBuild.substituteFrom` the `cluster-settings` ConfigMap, looked up in the Kustomization's own namespace (it comes from `components/cluster-settings`, which every namespace's `kustomization.yaml` pulls in) — opt out with `substitution.flux.home.arpa/disabled: "true"`.
 - default `retryInterval: 2m`/`timeout: 15m`.
 - HelmRelease install/upgrade `CreateReplace`/`RetryOnFailure`/`RemediateOnFailure` strategy, and `driftDetection: enabled` (opt out with `drift-detection.flux.home.arpa/disabled: "true"`).
 - a label-driven patch: a Flux Kustomization tagged `components.postgres/cnpg=init` gets its CNPG `Cluster` rewritten to a plain `initdb` bootstrap instead of Barman recovery, for brand-new databases with no prior backup.
 
-Each namespace directory (`kubernetes/apps/<namespace>/kustomization.yaml`) pulls in the `components/namespace` component and sets `namespace: <namespace>`, which stamps `metadata.namespace` onto every child Flux Kustomization — so `ks.yaml` files don't set that themselves. Each `ks.yaml` does set `spec.targetNamespace` explicitly, to its namespace directory. **Exception: `flux-system`** still sets `namespace: flux-system` but doesn't use the component; it pulls in only `components/cluster-settings` for its Kustomizations' substitution. The namespace comes from bootstrap, and `components/namespace` would make Flux manage (and potentially prune) the `flux-system` Namespace itself. Don't "fix" this by adding that component.
+Each namespace directory (`kubernetes/apps/<namespace>/kustomization.yaml`) lists its own `namespace.yaml` (the Namespace, with `kustomize.toolkit.fluxcd.io/prune: disabled` and any namespace-specific labels such as PodSecurity levels) first in `resources`, pulls in `components/cluster-settings`, and sets `namespace: <namespace>`, which stamps `metadata.namespace` onto every child Flux Kustomization — so `ks.yaml` files don't set that themselves. Each `ks.yaml` does set `spec.targetNamespace` explicitly, to its namespace directory. **Exception: `flux-system`** has no `namespace.yaml`. The namespace comes from bootstrap, and a `namespace.yaml` would make Flux manage the `flux-system` Namespace itself. Don't "fix" this by adding one.
 
 Each app lives at `kubernetes/apps/<namespace>/<app>/`:
 
@@ -76,7 +76,7 @@ Each app lives at `kubernetes/apps/<namespace>/<app>/`:
     └── resources/             # optional — files wired in via configMapGenerator
 ```
 
-`kubernetes/components/` holds reusable kustomize components: `namespace` and `cluster-settings` (per-namespace wiring above), `postgres` (a dedicated CNPG cluster per app, parameterized via the consuming `ks.yaml`'s `postBuild.substitute` — see its README), `dragonfly` (a dedicated Dragonfly per app, `${APP}-dragonfly`, plus an optional `authentication` sub-component; the operator lives in `apps/database/dragonfly`), `keda/*` (`http-scaler`, `smb-scaler`), and `nfs-config`. `kubernetes/talos/` holds Talos machine-config Jinja templates (rendered with `minijinja-cli` + 1Password `op inject`, see `.justfile`'s `template` recipe) and `version.yaml` (pinned Talos/Kubernetes versions used by `kubernetes/talos/mod.just`).
+`kubernetes/components/` holds reusable kustomize components: `cluster-settings` (per-namespace wiring above), `postgres` (a dedicated CNPG cluster per app, parameterized via the consuming `ks.yaml`'s `postBuild.substitute` — see its README), `dragonfly` (a dedicated Dragonfly per app, `${APP}-dragonfly`, plus an optional `authentication` sub-component; the operator lives in `apps/database/dragonfly`), `keda/*` (`http-scaler`, `smb-scaler`), and `nfs-config`. `kubernetes/talos/` holds Talos machine-config Jinja templates (rendered with `minijinja-cli` + 1Password `op inject`, see `.justfile`'s `template` recipe) and `version.yaml` (pinned Talos/Kubernetes versions used by `kubernetes/talos/mod.just`).
 Scaffolding a new cluster app should follow the `add-app` skill (`.agents/skills/add-app/SKILL.md`) — mirror a recent real app in this repo rather than inventing structure.
 
 ### `docker/` — Compose stacks on the TrueNAS host

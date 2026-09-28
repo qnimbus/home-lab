@@ -4,7 +4,8 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: automation
 components:
-  - ../../components/namespace
+  - ../../components/cluster-settings
 resources:
+  - ./namespace.yaml
   - ./n8n/ks.yaml
   - ./waha/ks.yaml

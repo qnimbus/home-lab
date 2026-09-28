@@ -290,7 +290,7 @@ Convention: `metadata.name` is `<app>`, the generated Secret is `<app>-secret`, 
 
 Add `./<app>/ks.yaml` to `kubernetes/apps/<namespace>/kustomization.yaml` `resources`, in alphabetical position among the app entries (`namespace.yaml` stays first; leave existing entries where they are).
 
-**New namespace?** Create `kubernetes/apps/<namespace>/` with a `namespace.yaml` and `kustomization.yaml` copied from an existing namespace (e.g. `automation`) — keep the `components/namespace` component and the `namespace:` field (no per-namespace kopiur secret is needed: the operator projects the repository password into mover namespaces) — and register the directory in `kubernetes/flux/cluster`'s apps kustomization if namespaces are listed there.
+**New namespace?** Create `kubernetes/apps/<namespace>/` with a `namespace.yaml` and `kustomization.yaml` copied from an existing namespace (e.g. `automation`) — set `metadata.name` in `namespace.yaml` to the new namespace and keep its `kustomize.toolkit.fluxcd.io/prune: disabled` annotation, and keep the `components/cluster-settings` component and the `namespace:` field (no per-namespace kopiur secret is needed: the operator projects the repository password into mover namespaces) — and register the directory in `kubernetes/flux/cluster`'s apps kustomization if namespaces are listed there.
 
 ## Step 4: Verify
 
