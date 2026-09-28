@@ -10,7 +10,6 @@ spec:
   targetNamespace: kube-system
   prune: true
   interval: 1h
-  timeout: 10m
   path: ./kubernetes/apps/kube-system/cilium/app
   sourceRef:
     kind: GitRepository

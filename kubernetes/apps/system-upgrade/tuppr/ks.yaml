@@ -13,7 +13,6 @@ spec:
       namespace: observability
   prune: true
   interval: 1h
-  timeout: 10m
   path: ./kubernetes/apps/system-upgrade/tuppr/app
   sourceRef:
     kind: GitRepository

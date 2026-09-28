@@ -67,7 +67,6 @@ metadata:
 spec:
   targetNamespace: rook-ceph
   interval: 1h
-  timeout: 15m
   path: ./kubernetes/apps/rook-ceph/rook-ceph/cluster/app
   prune: true
   wait: true
