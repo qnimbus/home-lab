@@ -21,8 +21,8 @@ spec:
       repo: github://qnimbus/home-lab
       statusChecks: true
       verifyImages: true
-    # Internal: the UI and the read-only /mcp endpoint on the LAN/Tailscale. The public
-    # UI host (behind Cloudflare Access) and GitHub's /hooks route are in httproute.yaml.
+    # Internal host for the UI and the read-only /mcp endpoint. The public UI host and
+    # GitHub's /hooks route are in httproute.yaml.
     httpRoute:
       enabled: true
       hostnames:
