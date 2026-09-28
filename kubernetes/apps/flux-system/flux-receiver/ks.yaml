@@ -9,10 +9,8 @@ spec:
   dependsOn:
     - name: flux-operator
       namespace: flux-system
-    - name: onepassword-connect
+    - name: external-secrets
       namespace: external-secrets
-    - name: envoy-gateway-config
-      namespace: network
   wait: true
   prune: true
   interval: 1h
