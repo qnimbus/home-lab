@@ -16,7 +16,7 @@ Cluster-wide plumbing that apps rely on but don't talk to directly: storage driv
 | `reloader`                    | Restarts workloads annotated `reloader.stakater.com/auto` when their Secrets/ConfigMaps change | Watches every namespace                                                                                            |
 | `snapshot-controller`         | CSI VolumeSnapshot controller                                                                  | CRDs come from bootstrap, so nothing needs to `dependsOn` it; CRDs kept on uninstall                               |
 
-Everything deploys into `system`. The operators that template their CRDs mark them `helm.sh/resource-policy: keep`, so uninstalling a release (a deleted, renamed or moved HelmRelease) leaves the CRDs and every object of those kinds in place: `keda` through `crds.additionalAnnotations`, `keda-add-ons-http` and `snapshot-controller` through a post-renderer, since their charts have no value for it. Keep that protection; the cost is only that a real removal needs `kubectl delete crd`. Helm reads the policy from the stored release manifest, so it only protects a release once an upgrade has applied it.
+Everything deploys into `system`. The operators that template their CRDs mark them `helm.sh/resource-policy: keep`, so uninstalling a release (a deleted, renamed or moved HelmRelease) leaves the CRDs and every object of those kinds in place: `keda` through `crds.additionalAnnotations`, `keda-add-ons-http` and `snapshot-controller` through a post-renderer, since their charts have no value for it. See [helm-crds](../../../.agents/instructions/helm-crds.instructions.md) for the rule and what it costs.
 
 ## Storage choices
 

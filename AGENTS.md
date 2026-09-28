@@ -1,6 +1,7 @@
 @.agents/instructions/sorting.instructions.md
 @.agents/instructions/flux-kustomization.instructions.md
 @.agents/instructions/helm-sources.instructions.md
+@.agents/instructions/helm-crds.instructions.md
 @.agents/instructions/external-secrets.instructions.md
 @.agents/instructions/renovate.instructions.md
 @.agents/instructions/yaml-schemas.instructions.md
