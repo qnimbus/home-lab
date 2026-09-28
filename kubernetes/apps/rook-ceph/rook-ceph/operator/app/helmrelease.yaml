@@ -9,6 +9,19 @@ spec:
     kind: OCIRepository
     name: rook-ceph-operator
   interval: 1h
+  # The chart marks its ceph.rook.io CRDs keep, but the ceph-csi-operator
+  # subchart's csi.ceph.io CRDs aren't, and it has no value for it. Uninstalling
+  # this release would delete them and with them the Driver that
+  # ceph-csi-drivers keeps, tearing down the RBD node DaemonSet and provisioner.
+  postRenderers:
+    - kustomize:
+        patches:
+          - patch: |
+              - op: add
+                path: /metadata/annotations/helm.sh~1resource-policy
+                value: keep
+            target:
+              kind: CustomResourceDefinition
   values:
     # Let the chart manage Rook's CRDs (CephCluster, CephBlockPool, …).
     crds:
