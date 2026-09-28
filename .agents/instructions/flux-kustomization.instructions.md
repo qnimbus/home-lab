@@ -56,7 +56,7 @@ true`), not the CephCluster one that actually reads it. Only fall back to
 This gets stamped onto every resource the Kustomization renders
 (`HelmRelease`, `ExternalSecret`, `ClusterIssuer`, etc.), not just Pods.
 Nothing in this repo selects on it: no `NetworkPolicy`/`PodDisruptionBudget`
-exists, the Flux `Alert` matches `eventSources` by wildcard kind rather than
-label, Grafana's dashboard selectors use an unrelated label, and no justfile
+exists, the Flux `Alert`s (`components/alerts`) match `eventSources` by kind
+and wildcard name rather than label, Grafana's dashboard selectors use an unrelated label, and no justfile
 recipe filters by it. It's boilerplate without a consumer — leave it out
 unless a real selector need for it shows up.

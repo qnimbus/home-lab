@@ -9,5 +9,4 @@ resources:
   - ./flux-operator/ks.yaml
   - ./flux-instance/ks.yaml
   - ./flux-receiver/ks.yaml
-  - ./flux-alerts/ks.yaml
   - ./konflate/ks.yaml

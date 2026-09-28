@@ -27,7 +27,7 @@ Metrics, alerting, dashboards and logs for the cluster and the NAS. kube-prometh
 | Severity           | Receiver            | Behaviour                                                                                             |
 | ------------------ | ------------------- | ----------------------------------------------------------------------------------------------------- |
 | `critical`         | `pushover-critical` | Emergency priority: Pushover repeats every 60s until acknowledged, for up to 1h. Resolves are silent. |
-| `warning`, `error` | `pushover`          | Normal push. `error` is the severity Flux's notification-controller uses (`flux-system/flux-alerts`). |
+| `warning`, `error` | `pushover`          | Normal push. `error` is the severity Flux's notification-controller uses (`components/alerts`).       |
 | anything else      | `null`              | `info`, `Watchdog`, `InfoInhibitor`                                                                   |
 
 A firing `critical` alert mutes the `warning` alert with the same `alertname` in the same namespace. Reserve `critical` for things worth being woken for; that's why `OomKilled` is a `warning`. The Pushover credentials come from the 1Password `alertmanager` item, which `system-upgrade/tuppr` also reuses.
