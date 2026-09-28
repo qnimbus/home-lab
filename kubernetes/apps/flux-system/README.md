@@ -17,7 +17,7 @@ Flux's own error alerts aren't an app here: every namespace gets a `Provider` an
 
 ## How it fits together
 
-- **Bootstrap.** `bootstrap/kubernetes/helmfile/apps.yaml` installs `flux-operator` and then `flux-instance` straight from these folders' `ocirepository.yaml` and `helm/values.yaml`, so Flux adopts the exact releases bootstrap created. The helmfile reads the files verbatim, so keep them free of `${VAR}`; both Kustomizations opt out of cluster-settings substitution (`substitution.flux.home.arpa/disabled`).
+- **Bootstrap.** `bootstrap/kubernetes/helmfile/apps.yaml` installs `flux-operator` and then `flux-instance` straight from these folders' `ocirepository.yaml` and `helm/values.yaml`, so Flux adopts the exact releases bootstrap created. The helmfile reads the files verbatim, so keep them free of `${VAR}`. Both Kustomizations opt out of cluster-settings substitution (`substitution.flux.home.arpa/disabled`) so Flux renders them the same way and a stray `${VAR}` breaks straight away.
 - **Git credentials.** Bootstrap places `flux-github-app` from `bootstrap/kubernetes/kustomize/manifests/flux-system/secrets.yaml`; once running, `flux-instance`'s ExternalSecret takes it over from the 1Password `GitHub App` item.
 - **Change delivery.** A push to `main` hits the Receiver and triggers a reconcile at once; otherwise the instance's sync interval picks it up.
 - **konflate PR filter.** Only non-draft PRs labelled `area/kubernetes` (set by [`.github/labeler.yaml`](../../../.github/labeler.yaml)) are rendered. konflate re-evaluates on the `labeled` and `ready_for_review` webhooks, so a PR renders as soon as the label lands or it leaves draft.

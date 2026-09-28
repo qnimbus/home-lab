@@ -25,10 +25,11 @@ kind: Kustomization
 metadata:
   name: &app cloudflare-tunnel
   labels:
-    # CLOUDFLARE_TUNNEL_ID must stay out of the fleet-wide plaintext
-    # cluster-settings ConfigMap (unlike the domain/host vars) — sourced
-    # instead from the dedicated cloudflare-tunnel-id-secret above, per
-    # bykaj's home-ops cloudflare-tunnel pattern.
+    # Load-bearing: cluster-apps' substituteFrom patch replaces the whole
+    # list, which would drop cloudflare-tunnel-id-secret and render
+    # ${CLOUDFLARE_TUNNEL_ID} empty. cluster-settings is listed below instead.
+    # The tunnel ID has its own Secret (bykaj's home-ops pattern) to keep it
+    # out of the plaintext cluster-settings ConfigMap.
     substitution.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: network
