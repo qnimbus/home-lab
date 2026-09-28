@@ -22,7 +22,7 @@ lifecycle differs significantly:
   - `upgrade.crds`: `Skip`
 
   **This repository overrides those defaults globally.** The `cluster-apps`
-  Kustomization in `kubernetes/flux/cluster/ks.yaml` patches HelmReleases
+  Kustomization in `kubernetes/clusters/main/apps.yaml` patches HelmReleases
   with:
 
   ```yaml

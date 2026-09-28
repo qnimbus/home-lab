@@ -57,7 +57,7 @@ an entry.
 
 ```bash
 # prune should be true (default) on every Kustomization — flag explicit opt-outs
-grep -rn "prune: false" kubernetes/apps kubernetes/flux --include=ks.yaml
+grep -rn "prune: false" kubernetes/apps kubernetes/clusters --include=ks.yaml --include=apps.yaml
 
 # Drift-detection opt-outs — cluster-apps injects driftDetection.mode: enabled globally;
 # this label is the only way to fully disable it (see CLAUDE.md's cluster-apps defaults)

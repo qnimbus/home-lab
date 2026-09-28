@@ -47,7 +47,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |-
           images=$(flate diff images \
-              --path kubernetes/flux/cluster \
+              --path kubernetes/clusters/main \
               --base "origin/${BASE_REF}" \
               --output json \
               --no-progress \

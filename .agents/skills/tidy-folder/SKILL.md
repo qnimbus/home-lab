@@ -24,7 +24,7 @@ Then read every file in the folder, the existing `README.md` if there is one, an
 
 ```bash
 grep -rln "components/<name>" kubernetes --include=ks.yaml     # consumers
-grep -n "<name>" kubernetes/flux/cluster/ks.yaml                    # label-driven patches (e.g. cnpg=init)
+grep -n "<name>" kubernetes/clusters/main/apps.yaml                    # label-driven patches (e.g. cnpg=init)
 grep -rhoE '\$\{[A-Z_]+(:=[^}]*)?\}' $D | sort -u                     # substitution variables and defaults
 ```
 

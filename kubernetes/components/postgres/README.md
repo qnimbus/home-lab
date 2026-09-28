@@ -84,7 +84,7 @@ The PostgreSQL image is the same for every consumer and written as a plain `repo
 
 By default the `Cluster` bootstraps with `recovery` from `s3://vwn-io-cluster-cnpg/dedicated/${APP}/` (Barman server name `${APP}`). Deleting the `Cluster` and its PVCs therefore rebuilds the database from the latest base backup plus WAL. The `cnpg.io/skipEmptyWalArchiveCheck` annotation lets the rebuilt cluster archive to the same path, on a new timeline.
 
-A **brand-new database** has nothing to recover from, and `recovery` fails with "no target backup found". Label the app's Flux Kustomization `components.postgres/cnpg: init`. A patch in [`flux/cluster/ks.yaml`](../../flux/cluster/ks.yaml) then swaps `bootstrap` for a plain `initdb` of `POSTGRES_DATABASE` owned by `POSTGRES_USERNAME`.
+A **brand-new database** has nothing to recover from, and `recovery` fails with "no target backup found". Label the app's Flux Kustomization `components.postgres/cnpg: init`. A patch in [`clusters/main/apps.yaml`](../../clusters/main/apps.yaml) then swaps `bootstrap` for a plain `initdb` of `POSTGRES_DATABASE` owned by `POSTGRES_USERNAME`.
 
 **Remove the label once the first backup exists.** It's harmless day to day (bootstrap only runs when the cluster is created), but left in place it turns a future rebuild into an empty `initdb` instead of a restore. To get a backup right away, run `just k8s db-backup <namespace> <app>`.
 

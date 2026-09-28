@@ -23,7 +23,7 @@ area/kubernetes:
       - any-glob-to-any-file:
           - "kubernetes/apps/**/*"
           - "kubernetes/components/**/*"
-          - "kubernetes/flux/**/*"
+          - "kubernetes/clusters/**/*"
           - "kubernetes/mod.just"
 area/talos:
   - changed-files:

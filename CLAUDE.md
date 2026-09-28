@@ -51,7 +51,7 @@ Run automatically on `git commit`, staged-file-scoped: `mise fmt`, `mise lock` (
 
 ### `kubernetes/` — Flux-managed cluster state
 
-`kubernetes/flux/cluster/ks.yaml` defines one top-level Flux `Kustomization`, `cluster-apps`, which points at `./kubernetes/apps` and recurses: it finds the top-most `kustomization.yaml` in each app directory and applies everything it references.
+`kubernetes/clusters/main/apps.yaml` defines one top-level Flux `Kustomization`, `cluster-apps`, which points at `./kubernetes/apps` and recurses: it finds the top-most `kustomization.yaml` in each app directory and applies everything it references.
 
 `cluster-apps` injects cluster-wide defaults via Kustomize patches onto _every_ Kustomization/HelmRelease it manages, so individual apps don't repeat that boilerplate:
 
