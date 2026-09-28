@@ -1,0 +1,9 @@
+[
+  {
+    "status": "M",
+    "path": "kubernetes/apps/observability/smartctl-exporter/app/ocirepository.yaml",
+    "additions": 1,
+    "deletions": 1,
+    "binary": false
+  }
+]

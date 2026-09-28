@@ -1,0 +1,83 @@
+{
+  "status": "ready",
+  "pr": {
+    "number": 172,
+    "title": "feat(container): update image ghcr.io/prometheus-community/charts/kube-prometheus-stack (88.5.0 \u2794 88.6.5)",
+    "author": "qnimbus-homelab-assistant[bot]",
+    "authorAvatar": "/api/avatar?u=https%3A%2F%2Favatars.githubusercontent.com%2Fu%2F3206309%3Fv%3D4&s=3771dfb1c3736aea34761aa816e43486f454cc97b0b184a1d737ed323e7a3b1f",
+    "createdAt": "2026-09-28T10:36:34Z",
+    "state": "open",
+    "open": true,
+    "draft": false,
+    "headRef": "renovate/ghcr.io-prometheus-community-charts-kube-prometheus-stack-88.x",
+    "headSha": "aa84880b6d2ec907b8d29d823ba839f6f32bb9bd",
+    "baseRef": "main",
+    "fork": false,
+    "labels": [
+      {
+        "name": "type/minor",
+        "color": "ff9800"
+      },
+      {
+        "name": "area/kubernetes",
+        "color": "0e8a16"
+      }
+    ],
+    "url": "https://github.com/qnimbus/home-lab/pull/172"
+  },
+  "diff": {
+    "prNumber": 172,
+    "headSha": "aa84880b6d2ec907b8d29d823ba839f6f32bb9bd",
+    "summary": {
+      "changed": 3,
+      "added": 0,
+      "removed": 0
+    },
+    "impact": {
+      "resources": 3,
+      "parents": 2,
+      "namespaces": ["observability"],
+      "crds": 0
+    },
+    "blastRadius": [
+      {
+        "parent": "Kustomization observability/kube-prometheus-stack",
+        "direct": ["Kustomization flux-system/flux-alerts", "Kustomization system-upgrade/tuppr"],
+        "transitive": 3
+      }
+    ],
+    "images": [
+      {
+        "name": "ghcr.io/jkroepke/kube-webhook-certgen",
+        "from": "1.8.5",
+        "to": "1.8.8",
+        "refs": [
+          "Job observability/kube-prometheus-stack-admission-create",
+          "Job observability/kube-prometheus-stack-admission-patch"
+        ],
+        "upstream": "found"
+      }
+    ],
+    "failures": null,
+    "warnings": [
+      {
+        "level": "caution",
+        "rule": "immutable-field",
+        "resource": "Job observability/kube-prometheus-stack-admission-create",
+        "detail": "spec.template changed; immutable on Job; the apply fails until the resource is recreated (or Flux force is enabled)"
+      },
+      {
+        "level": "caution",
+        "rule": "immutable-field",
+        "resource": "Job observability/kube-prometheus-stack-admission-patch",
+        "detail": "spec.template changed; immutable on Job; the apply fails until the resource is recreated (or Flux force is enabled)"
+      }
+    ],
+    "routine": false,
+    "chromaCss": "",
+    "tree": null,
+    "resources": null
+  },
+  "mergeCommand": "gh pr merge 172 --repo qnimbus/home-lab",
+  "reviewUrl": "https://konflate.cluster.vwn.io/#/pr/172"
+}

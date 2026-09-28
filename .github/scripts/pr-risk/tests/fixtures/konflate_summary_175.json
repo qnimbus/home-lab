@@ -1,0 +1,91 @@
+{
+  "status": "ready",
+  "pr": {
+    "number": 175,
+    "title": "feat(container)!: Update flux-operator group (0.57.0 \u2794 0.60.0)",
+    "author": "qnimbus-homelab-assistant[bot]",
+    "authorAvatar": "/api/avatar?u=https%3A%2F%2Favatars.githubusercontent.com%2Fu%2F3206309%3Fv%3D4&s=3771dfb1c3736aea34761aa816e43486f454cc97b0b184a1d737ed323e7a3b1f",
+    "createdAt": "2026-09-28T10:36:53Z",
+    "state": "open",
+    "open": true,
+    "draft": false,
+    "headRef": "renovate/major-flux-operator",
+    "headSha": "8553559fd4d471c993a7fccb59365e682f9f6973",
+    "baseRef": "main",
+    "fork": false,
+    "labels": [
+      {
+        "name": "type/minor",
+        "color": "ff9800"
+      },
+      {
+        "name": "area/kubernetes",
+        "color": "0e8a16"
+      }
+    ],
+    "url": "https://github.com/qnimbus/home-lab/pull/175"
+  },
+  "diff": {
+    "prNumber": 175,
+    "headSha": "8553559fd4d471c993a7fccb59365e682f9f6973",
+    "summary": {
+      "changed": 2,
+      "added": 0,
+      "removed": 0
+    },
+    "impact": {
+      "resources": 2,
+      "parents": 2,
+      "namespaces": ["flux-system"],
+      "crds": 0
+    },
+    "blastRadius": [
+      {
+        "parent": "Kustomization flux-system/flux-operator",
+        "direct": [
+          "Kustomization flux-system/flux-instance",
+          "Kustomization flux-system/flux-receiver"
+        ],
+        "transitive": 2
+      },
+      {
+        "parent": "HelmRelease flux-system/flux-operator",
+        "direct": ["HelmRelease flux-system/flux-instance"],
+        "transitive": 1
+      }
+    ],
+    "images": [],
+    "failures": [
+      {
+        "parent": "HelmRelease flux-system/flux-instance",
+        "message": "dependencies failed: HelmRelease/flux-system/flux-operator: flux error: object not found: chart source OCIRepository/flux-system/flux-operator not ready: oras copy oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator:0.60.0: failed to perform \"Fetch\" on source: Get \"https://pkg-containers.githubusercontent.com/ghcrblobs04/blobs/sha256:1caf941d8ef243bc5d048e221269ed9a5795ffcf18c577a8d60b66e2d8a2f425\": dial tcp [2606:50c0:8003::154]:443: connect: network is unreachable"
+      },
+      {
+        "parent": "HelmRelease flux-system/flux-operator",
+        "message": "chart source OCIRepository/flux-system/flux-operator not ready: oras copy oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator:0.60.0: failed to perform \"Fetch\" on source: Get \"https://pkg-containers.githubusercontent.com/ghcrblobs04/blobs/sha256:1caf941d8ef243bc5d048e221269ed9a5795ffcf18c577a8d60b66e2d8a2f425\": dial tcp [2606:50c0:8003::154]:443: connect: network is unreachable"
+      },
+      {
+        "parent": "OCIRepository flux-system/flux-instance",
+        "message": "oras copy oci://ghcr.io/controlplaneio-fluxcd/charts/flux-instance:0.60.0: failed to perform \"Fetch\" on source: Get \"https://pkg-containers.githubusercontent.com/ghcrblobs11/blobs/sha256:710be3977ded228d3a3fb5df4e82bf219686c33da25a5ea2d5ffd075501b8074\": dial tcp [2606:50c0:8000::154]:443: connect: network is unreachable"
+      },
+      {
+        "parent": "OCIRepository flux-system/flux-operator",
+        "message": "oras copy oci://ghcr.io/controlplaneio-fluxcd/charts/flux-operator:0.60.0: failed to perform \"Fetch\" on source: Get \"https://pkg-containers.githubusercontent.com/ghcrblobs04/blobs/sha256:1caf941d8ef243bc5d048e221269ed9a5795ffcf18c577a8d60b66e2d8a2f425\": dial tcp [2606:50c0:8003::154]:443: connect: network is unreachable"
+      }
+    ],
+    "warnings": [
+      {
+        "level": "caution",
+        "rule": "dangling-dependson",
+        "resource": "HelmRelease flux-system/flux-operator",
+        "detail": "removed, but still declared in spec.dependsOn by HelmRelease flux-system/flux-instance; those will wedge on the missing dependency"
+      }
+    ],
+    "routine": false,
+    "chromaCss": "",
+    "tree": null,
+    "resources": null
+  },
+  "mergeCommand": "gh pr merge 175 --repo qnimbus/home-lab",
+  "reviewUrl": "https://konflate.cluster.vwn.io/#/pr/175"
+}

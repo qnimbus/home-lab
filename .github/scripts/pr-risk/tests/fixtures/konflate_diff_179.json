@@ -1,0 +1,273 @@
+{
+  "status": "ready",
+  "pr": {
+    "number": 179,
+    "title": "feat(container)!: Update image ghcr.io/prometheus-community/charts/prometheus-smartctl-exporter (0.16.1 ➔ 0.17.1)",
+    "author": "qnimbus-homelab-assistant[bot]",
+    "authorAvatar": "/api/avatar?u=https%3A%2F%2Favatars.githubusercontent.com%2Fu%2F3206309%3Fv%3D4&s=3771dfb1c3736aea34761aa816e43486f454cc97b0b184a1d737ed323e7a3b1f",
+    "createdAt": "2026-09-28T10:37:20Z",
+    "state": "open",
+    "open": true,
+    "draft": false,
+    "headRef": "renovate/major-ghcr.io-prometheus-community-charts-prometheus-smartctl-exporter-0.x",
+    "headSha": "fa8b5186bf82ba379efa242c6445f6ab668eea34",
+    "baseRef": "main",
+    "fork": false,
+    "labels": [
+      {
+        "name": "type/minor",
+        "color": "ff9800"
+      },
+      {
+        "name": "area/kubernetes",
+        "color": "0e8a16"
+      }
+    ],
+    "url": "https://github.com/qnimbus/home-lab/pull/179"
+  },
+  "diff": {
+    "prNumber": 179,
+    "headSha": "fa8b5186bf82ba379efa242c6445f6ab668eea34",
+    "summary": {
+      "changed": 3,
+      "added": 0,
+      "removed": 0
+    },
+    "impact": {
+      "resources": 3,
+      "parents": 2,
+      "namespaces": ["observability"],
+      "crds": 0
+    },
+    "images": [],
+    "failures": null,
+    "warnings": null,
+    "routine": false,
+    "chromaCss": "",
+    "tree": [
+      {
+        "label": "HelmRelease observability/smartctl-exporter",
+        "kinds": [
+          {
+            "kind": "PrometheusRule",
+            "items": [
+              {
+                "id": "r0",
+                "name": "observability/smartctl-exporter-prometheus-smartctl-exporter.rules",
+                "status": "changed",
+                "add": 1,
+                "del": 1
+              }
+            ]
+          },
+          {
+            "kind": "ServiceMonitor",
+            "items": [
+              {
+                "id": "r1",
+                "name": "observability/smartctl-exporter-prometheus-smartctl-exporter",
+                "status": "changed",
+                "add": 1,
+                "del": 1
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "label": "Kustomization observability/smartctl-exporter",
+        "kinds": [
+          {
+            "kind": "OCIRepository",
+            "items": [
+              {
+                "id": "r2",
+                "name": "observability/smartctl-exporter",
+                "status": "changed",
+                "add": 1,
+                "del": 1
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "resources": [
+      {
+        "id": "r0",
+        "title": "PrometheusRule observability/smartctl-exporter-prometheus-smartctl-exporter.rules",
+        "kind": "PrometheusRule",
+        "name": "observability/smartctl-exporter-prometheus-smartctl-exporter.rules",
+        "parent": "HelmRelease observability/smartctl-exporter",
+        "status": "changed",
+        "add": 1,
+        "del": 1,
+        "unified": [
+          {
+            "hunk": true,
+            "fold": "g0",
+            "count": 54
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 55,
+            "newNo": 55,
+            "html": "<span class=\"w\">        </span><span class=\"nt\">description</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">Device {{ $labels.device }} on instance {{ $labels.instance }}</span>"
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 56,
+            "newNo": 56,
+            "html": "<span class=\"w\">          </span><span class=\"l\">has bad status</span>"
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 57,
+            "newNo": 57,
+            "html": "<span class=\"w\">        </span><span class=\"nt\">summary</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">Device has bad status</span>"
+          },
+          {
+            "kind": "del",
+            "oldNo": 58,
+            "html": "<span class=\"w\">      </span><span class=\"nt\">expr</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">smartctl_device_status != 1</span>"
+          },
+          {
+            "kind": "add",
+            "newNo": 58,
+            "html": "<span class=\"w\">      </span><span class=\"nt\">expr</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">smartctl_device_s<span class=\"wd\">mart_s</span>tatus != 1</span>"
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 59,
+            "newNo": 59,
+            "html": "<span class=\"w\">      </span><span class=\"nt\">for</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">1m</span>"
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 60,
+            "newNo": 60,
+            "html": "<span class=\"w\">      </span><span class=\"nt\">labels</span><span class=\"p\">:</span>"
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 61,
+            "newNo": 61,
+            "html": "<span class=\"w\">        </span><span class=\"nt\">severity</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">critical</span>"
+          },
+          {
+            "hunk": true,
+            "fold": "g1",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "id": "r1",
+        "title": "ServiceMonitor observability/smartctl-exporter-prometheus-smartctl-exporter",
+        "kind": "ServiceMonitor",
+        "name": "observability/smartctl-exporter-prometheus-smartctl-exporter",
+        "parent": "HelmRelease observability/smartctl-exporter",
+        "status": "changed",
+        "add": 1,
+        "del": 1,
+        "unified": [
+          {
+            "hunk": true,
+            "fold": "g0",
+            "count": 26
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 27,
+            "newNo": 27,
+            "html": "<span class=\"w\">      </span><span class=\"nt\">app.kubernetes.io/managed-by</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">Helm</span>"
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 28,
+            "newNo": 28,
+            "html": "<span class=\"w\">      </span><span class=\"nt\">app.kubernetes.io/name</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">prometheus-smartctl-exporter</span>"
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 29,
+            "newNo": 29,
+            "html": "<span class=\"w\">      </span><span class=\"nt\">app.kubernetes.io/version</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">v0.14.0</span>"
+          },
+          {
+            "kind": "del",
+            "oldNo": 30,
+            "html": "<span class=\"w\">      </span><span class=\"nt\">helm.sh/chart</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">prometheus-smartctl-exporter-0.1<span class=\"wd\">6</span>.1</span>"
+          },
+          {
+            "kind": "add",
+            "newNo": 30,
+            "html": "<span class=\"w\">      </span><span class=\"nt\">helm.sh/chart</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">prometheus-smartctl-exporter-0.1<span class=\"wd\">7</span>.1</span>"
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 31,
+            "newNo": 31
+          }
+        ]
+      },
+      {
+        "id": "r2",
+        "title": "OCIRepository observability/smartctl-exporter",
+        "kind": "OCIRepository",
+        "name": "observability/smartctl-exporter",
+        "parent": "Kustomization observability/smartctl-exporter",
+        "status": "changed",
+        "add": 1,
+        "del": 1,
+        "unified": [
+          {
+            "hunk": true,
+            "fold": "g0",
+            "count": 11
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 12,
+            "newNo": 12,
+            "html": "<span class=\"w\">    </span><span class=\"nt\">mediaType</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">application/vnd.cncf.helm.chart.content.v1.tar+gzip</span>"
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 13,
+            "newNo": 13,
+            "html": "<span class=\"w\">    </span><span class=\"nt\">operation</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">copy</span>"
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 14,
+            "newNo": 14,
+            "html": "<span class=\"w\">  </span><span class=\"nt\">ref</span><span class=\"p\">:</span>"
+          },
+          {
+            "kind": "del",
+            "oldNo": 15,
+            "html": "<span class=\"w\">    </span><span class=\"nt\">tag</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"m\">0.1<span class=\"wd\">6</span>.1</span>"
+          },
+          {
+            "kind": "add",
+            "newNo": 15,
+            "html": "<span class=\"w\">    </span><span class=\"nt\">tag</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"m\">0.1<span class=\"wd\">7</span>.1</span>"
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 16,
+            "newNo": 16,
+            "html": "<span class=\"w\">  </span><span class=\"nt\">url</span><span class=\"p\">:</span><span class=\"w\"> </span><span class=\"l\">oci://ghcr.io/prometheus-community/charts/prometheus-smartctl-exporter</span>"
+          },
+          {
+            "kind": "ctx",
+            "oldNo": 17,
+            "newNo": 17
+          }
+        ]
+      }
+    ]
+  },
+  "mergeCommand": "gh pr merge 179 --repo qnimbus/home-lab"
+}
