@@ -14,7 +14,7 @@ metadata:
     # DNSEndpoint here would get published as a public, proxied Cloudflare record
     # pointing at a private IP. The Service source is cloudflare-exempt (it has no
     # `service` source enabled), which is what keeps this record UniFi-local.
-    external-dns.alpha.kubernetes.io/hostname: "gw-adam.iot.${DOMAIN_IO}"
+    external-dns.kubernetes.io/hostname: "gw-adam.iot.${DOMAIN_IO}"
 spec:
   type: ExternalName
   externalName: "${ADAM_IOT_HOST}"

@@ -107,8 +107,8 @@ spec:
           # as separate A records under the same name, and a client resolving it could get
           # handed either one. The IOT-side name (smtp-relay.iot.${DOMAIN_IO}) is published
           # separately by the smtp-relay-iot ExternalName Service (service-iot-dns.yaml).
-          external-dns.alpha.kubernetes.io/hostname: "smtp-relay.${DOMAIN_CLUSTER}"
-          external-dns.alpha.kubernetes.io/target: "10.60.0.240"
+          external-dns.kubernetes.io/hostname: "smtp-relay.${DOMAIN_CLUSTER}"
+          external-dns.kubernetes.io/target: "10.60.0.240"
           # Pin both LB IPs explicitly: mgmt (default pool, matches the target above) and
           # IOT (pool-iot-smtp-relay, serviceSelector-scoped to this Service) — see docs/QA.md.
           lbipam.cilium.io/ips: "10.60.0.240,10.30.0.240"

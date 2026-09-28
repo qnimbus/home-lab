@@ -15,7 +15,7 @@ metadata:
     # IPs — external-dns publishes every hostname against every ingress IP on that Service.
     # Same externalName-as-literal-IP trick used for anna/adam/canon makes external-dns emit
     # a clean single A record. type: ExternalName means no ClusterIP is ever allocated.
-    external-dns.alpha.kubernetes.io/hostname: "smtp-relay.iot.${DOMAIN_IO}"
+    external-dns.kubernetes.io/hostname: "smtp-relay.iot.${DOMAIN_IO}"
 spec:
   type: ExternalName
   externalName: "10.30.0.240"

@@ -171,8 +171,8 @@ spec:
           # IOT-side-hostname alternative, not needed here since Plex clients get the
           # IOT IP from PLEX_ADVERTISE_URL/plex.tv, not DNS).
           lbipam.cilium.io/ips: "${LB_IP_PLEX},${LB_IP_PLEX_IOT}"
-          external-dns.alpha.kubernetes.io/hostname: "plex.${DOMAIN_APPS}"
-          external-dns.alpha.kubernetes.io/target: "${LB_IP_PLEX}"
+          external-dns.kubernetes.io/hostname: "plex.${DOMAIN_APPS}"
+          external-dns.kubernetes.io/target: "${LB_IP_PLEX}"
         # Deliberately NOT externalTrafficPolicy: Local. Cilium's L2 announcement is
         # documented as incompatible with it (cilium/cilium#27800, upstream docs):
         # leader election for the announcing node is unaware of endpoint placement, so

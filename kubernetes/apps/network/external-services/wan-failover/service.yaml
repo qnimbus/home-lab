@@ -12,7 +12,7 @@ metadata:
     # endpoints; it exists only so external-dns points wan-failover.${DOMAIN_CLUSTER} straight
     # at the router's LAN IP (${WAN_FAILOVER_HOST}), same as browsing to it directly — no proxy,
     # no TLS, no Host rewrite needed. type: ExternalName means no ClusterIP is ever allocated.
-    external-dns.alpha.kubernetes.io/hostname: "wan-failover.${DOMAIN_CLUSTER}"
+    external-dns.kubernetes.io/hostname: "wan-failover.${DOMAIN_CLUSTER}"
 spec:
   type: ExternalName
   externalName: "${WAN_FAILOVER_HOST}"

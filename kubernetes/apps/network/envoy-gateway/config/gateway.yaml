@@ -5,7 +5,7 @@ kind: Gateway
 metadata:
   name: envoy-external
   annotations:
-    external-dns.alpha.kubernetes.io/target: "external.${DOMAIN_PROXII}"
+    external-dns.kubernetes.io/target: "external.${DOMAIN_PROXII}"
 spec:
   gatewayClassName: envoy
   infrastructure:
@@ -14,7 +14,7 @@ spec:
       lbipam.cilium.io/ips: "10.60.0.230"
       # UniFi external-dns (service source) creates: external.proxii.nl → 10.60.0.230 (LAN)
       # Cloudflare side is published separately via the cloudflare-tunnel DNSEndpoint (CNAME to the tunnel)
-      external-dns.alpha.kubernetes.io/hostname: "external.${DOMAIN_PROXII}"
+      external-dns.kubernetes.io/hostname: "external.${DOMAIN_PROXII}"
   listeners:
     - name: http
       protocol: HTTP
@@ -54,14 +54,14 @@ kind: Gateway
 metadata:
   name: envoy-internal
   annotations:
-    external-dns.alpha.kubernetes.io/target: "internal.${DOMAIN_PROXII}"
+    external-dns.kubernetes.io/target: "internal.${DOMAIN_PROXII}"
 spec:
   gatewayClassName: envoy
   infrastructure:
     annotations:
       lbipam.cilium.io/ips: "10.60.0.231"
       # UniFi external-dns (service source) creates: internal.proxii.nl → 10.60.0.231
-      external-dns.alpha.kubernetes.io/hostname: "internal.${DOMAIN_PROXII}"
+      external-dns.kubernetes.io/hostname: "internal.${DOMAIN_PROXII}"
   listeners:
     - name: http
       protocol: HTTP

@@ -5,7 +5,7 @@ kind: Service
 metadata:
   name: kube-api
   annotations:
-    external-dns.alpha.kubernetes.io/hostname: kube-vip.cluster.vwn.io
+    external-dns.kubernetes.io/hostname: kube-vip.cluster.vwn.io
     # Pin to the dedicated pool-kube-api pool — keeps this Service out of the
     # envoy-external/envoy-internal block (10.60.0.230/.231). 10.60.0.2 is the
     # same address as talos/controlplane.yaml.j2's Layer2VIPConfig (see
