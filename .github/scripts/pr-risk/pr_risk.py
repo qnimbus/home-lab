@@ -42,6 +42,7 @@ KONFLATE_UI = "https://konflate.cluster.vwn.io"
 BUDGET = {
     "description": 4_000,
     "release_notes": 16_000,
+    "release_notes_per_version": 6_000,
     "config": 10_000,
     "config_per_file": 5_000,
     "diff": 60_000,  # release notes and config come out of this, so the call stays in budget
@@ -410,6 +411,9 @@ def collect(event: dict, base: str, head: str, out: Path, konflate_url: str | No
         **facts,
     }
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
+    notes = gather_release_notes(meta)
+    (out / "release_notes.json").write_text(json.dumps(notes, indent=2))
+    log(f"release notes: {notes['source']}, {len(notes['sections'])} version(s) ({notes['reason']})")
 
     files = json.loads((out / "files.json").read_text())
     relevant = any(matches(f["path"], RENDERED) for f in files)
@@ -479,16 +483,17 @@ def may_break(meta) -> str | None:
     return None
 
 
-def pr_signals(meta, release_notes: str) -> list[Signal]:
+def pr_signals(meta, notes: dict) -> list[Signal]:
     """A major bump isn't a finding in itself: the release notes decide (breaking_notes and
-    breaking_affects_config). Without notes there is nothing to decide from, so someone has to
-    read the upstream changelog."""
+    breaking_affects_config). Without notes that say anything there is nothing to decide from,
+    so someone has to read the upstream changelog."""
     why = may_break(meta)
     if not why:
         return []
-    if release_notes:
-        return [Signal("pr", 0, f"{why}; release notes checked")]
-    return [Signal("pr", 1, f"{why} and the PR has no release notes: check the upstream changelog")]
+    if notes["sections"]:
+        where = "from GitHub releases" if notes["source"] == "github" else "from the PR"
+        return [Signal("pr", 0, f"{why}; release notes checked ({where}: {', '.join(s['version'] for s in notes['sections'][:6])})")]
+    return [Signal("pr", 1, f"{why} and no usable release notes ({notes['reason']}): check the upstream changelog")]
 
 
 def path_signals(files) -> list[Signal]:
@@ -718,6 +723,210 @@ def release_notes(body: str, kind: str) -> str:
     return notes.strip().removesuffix("---").strip()
 
 
+# ── Release notes: sections, substance, GitHub fallback ──────────────────────────────────────
+# Renovate's notes are the first source. They are split per version so the budget can keep the
+# oldest versions (the ones right after what runs now, where a jump's breaking changes are),
+# and they only count when a version says something: tailscale's say "Please refer to the
+# changelog available at …" for every release. Without usable notes, collect() looks up the
+# GitHub releases between the two versions itself.
+
+NOTE_HEADING = re.compile(r"(?m)^#{2,4} \[?`?([\w.-]*\d[\w.+-]*)`?\]?(?:\(.*)?$")  # ### [`v0.9.0`](…)
+POINTER = re.compile(r"(?i)\b(refer to|see|available at|moved to|can be found)\b.*\b(changelog|release notes|releases)\b")
+LINKS = re.compile(r"\[([^\]]*)\]\([^)]*\)|https?://\S+|<[^>]+>")
+
+
+def note_sections(notes: str) -> list[dict]:
+    """Renovate's notes, one section per version heading, oldest first (Renovate lists newest
+    first). Text before the first heading (the package summary line) is dropped."""
+    heads = list(NOTE_HEADING.finditer(notes))
+    sections = [
+        {"version": m.group(1), "text": notes[m.start() : heads[i + 1].start() if i + 1 < len(heads) else len(notes)].strip()}
+        for i, m in enumerate(heads)
+    ]
+    return sections[::-1]
+
+
+def substantive(text: str) -> bool:
+    """Whether a version's notes say anything beyond a heading, a compare link or a pointer to
+    a changelog elsewhere: some line with three or more words of its own."""
+    for line in text.splitlines()[1:]:
+        line = line.strip()
+        if not line or line.startswith("[Compare Source]") or POINTER.search(line):
+            continue
+        if len(re.findall(r"[A-Za-z]{2,}", LINKS.sub(r"\1", line))) >= 3:
+            return True
+    return False
+
+
+RENOVATE_ROW = re.compile(
+    r"(?m)^\|\s*\[([^\]]+)\]\(([^)]+)\)(?:\s*\(\[source\]\(([^)]+)\)\))?\s*\|\s*(\w+)\s*\|\s*`([^`]+)`\s*→\s*`([^`]+)`\s*\|"
+)
+GITHUB_REPO = re.compile(r"^https://(?:redirect\.)?github\.com/([\w.-]+/[\w.-]+?)(?:\.git)?/?(?:[#?].*)?$")
+TAG_VERSION = re.compile(r"(.*?)(v?\d+(?:\.\d+)+)")
+
+
+def renovate_updates(body: str) -> list[dict]:
+    """The rows of Renovate's update table: package, GitHub repos it links, from, to."""
+    out = []
+    for m in RENOVATE_ROW.finditer(body or ""):
+        package, link, source, kind, old, new = m.groups()
+        repos = [g.group(1) for u in (link, source) if u and (g := GITHUB_REPO.match(u))]
+        out.append({"package": package, "repos": list(dict.fromkeys(repos)), "type": kind, "from": old, "to": new})
+    return out
+
+
+def vkey(version: str) -> tuple | None:
+    m = re.fullmatch(r"v?(\d+(?:\.\d+)*)", version)
+    return tuple(int(x) for x in m.group(1).split(".")) if m else None
+
+
+def is_chart(package: str) -> bool:
+    return any(x in package for x in ("/charts/", "/charts-mirror/", "helm-charts", "/helm/"))
+
+
+def tag_version(tag: str, package: str) -> str | None:
+    """The version a release tag stands for, if the tag is about this package. A monorepo tag
+    must name it (`snapshot-controller-5.3.0`, `cloudnative-pg-v0.29.1`). A bare `v1.2.3` only
+    counts for a container image: for a chart it is the app's version, which is a different
+    number line (plugin-barman-cloud's app has a v0.8.0 of its own, years before chart 0.8.0).
+    Wrong notes are worse than none: they can read as a confident "nothing breaking"."""
+    m = TAG_VERSION.fullmatch(tag)
+    if not m:
+        return None
+    prefix, version = m.group(1).rstrip("-_/@"), m.group(2)
+    if prefix:
+        return version if prefix == package.rsplit("/", 1)[-1] else None
+    return None if is_chart(package) else version
+
+
+def candidate_repos(update: dict) -> list[str]:
+    """The repos Renovate's table links, then, for a chart, its org's usual chart monorepos:
+    Renovate often links the app's repo for a chart (prometheus-community's charts link
+    smartctl_exporter, not helm-charts). A wrong guess costs a lookup, never wrong notes:
+    tag_version() only accepts tags that name the chart."""
+    repos = list(update["repos"])
+    m = re.match(r"^[^/]+/([\w.-]+)/(?:charts|helm-charts|charts-mirror)/", update["package"])
+    if m and is_chart(update["package"]):
+        repos += [f"{m.group(1)}/helm-charts", f"{m.group(1)}/charts"]
+    return list(dict.fromkeys(repos))
+
+
+def github_release_sections(update: dict, get=None) -> tuple[list[dict], str]:
+    """Releases in (from, to] from the first candidate repo that has a matching release for
+    `to`, oldest first, with the reason when none qualify."""
+    get = get or github_pages
+    lo, hi = vkey(update["from"]), vkey(update["to"])
+    if not (lo and hi) or lo >= hi:
+        return [], f"{update['from']} → {update['to']} isn't a version range"
+    repos = candidate_repos(update)
+    if not repos:
+        return [], "no GitHub repo to look in"
+    for repo in repos:
+        found, reached_from = [], False
+        for page in get(f"/repos/{repo}/releases"):
+            for rel in page:
+                v = tag_version(rel.get("tag_name") or "", update["package"])
+                if not v or not vkey(v) or rel.get("draft") or rel.get("prerelease"):
+                    continue
+                if vkey(v) <= lo:
+                    reached_from = True
+                elif vkey(v) <= hi:
+                    found.append((vkey(v), {"version": rel["tag_name"], "text": f"### {rel['tag_name']}\n\n{(rel.get('body') or '').strip()}"}))
+            if reached_from:  # releases come newest first: everything in range has been seen
+                break
+        if not any(k == hi for k, _ in found):
+            continue  # the target release isn't here: not this package's repo
+        sections = [s for _, s in sorted(found, key=lambda x: x[0])]
+        bodies = {s["text"].split("\n", 2)[-1] for s in sections}
+        if len(sections) > 1 and len(bodies) == 1:
+            return [], f"{repo}'s releases repeat one text, not a changelog"
+        if not any(substantive(s["text"]) for s in sections):
+            return [], f"{repo}'s releases only point elsewhere"
+        partial = "" if reached_from else f", back to {sections[0]['version']} only"
+        return sections, f"GitHub releases of {repo}{partial}"
+    return [], "no release tagged for this package in " + ", ".join(repos)
+
+
+def github_pages(path: str, pages: int = 10):
+    """Yield the pages of a GitHub list, newest first for releases. The token (GITHUB_TOKEN or
+    GH_TOKEN) is optional: release lists are public, it only lifts the rate limit."""
+    api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    for page in range(1, pages + 1):
+        try:
+            status, _, body = http_json(f"{api}{path}?per_page=100&page={page}", headers=headers, timeout=15)
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            log(f"github {path}: {e}")
+            return
+        if status != 200 or not isinstance(body, list):
+            if status != 404:  # 404: a guessed repo that doesn't exist
+                log(f"github {path}: HTTP {status}")
+            return
+        yield body
+        if len(body) < 100:
+            return
+
+
+TAG_LINK = re.compile(r"/releases/tag/([^)\s#?]+)")
+
+
+def trusted_section(section: dict, updates: list[dict]) -> bool:
+    """Whether a Renovate notes section is about a package this PR updates, judged by its
+    heading link with the same rule as the GitHub lookup. Renovate gave plugin-barman-cloud's
+    chart 0.7.0 → 0.8.0 the app's v0.8.0 notes, a year older and with an unrelated breaking
+    change; those link the app's CHANGELOG.md, and a changelog without a tag is only trusted
+    for a container image. Without a parsed update table there is nothing to judge by."""
+    if not updates:
+        return True
+    m = TAG_LINK.search(section["text"].split("\n", 1)[0])
+    if m:
+        tag = urllib.parse.unquote(m.group(1))
+        return any(tag_version(tag, u["package"]) for u in updates)
+    return any(not is_chart(u["package"]) for u in updates)
+
+
+def gather_release_notes(meta: dict, get=None) -> dict:
+    """{source: renovate | github | none, sections (oldest first), reason}. Renovate's notes win
+    when a version has substance; otherwise each updated package's GitHub releases are tried."""
+    if meta.get("author_kind") != "renovate":
+        return {"source": "none", "sections": [], "reason": "not a Renovate PR"}
+    updates = renovate_updates(meta.get("body") or "")
+    sections = note_sections(release_notes(meta.get("body") or "", "renovate"))
+    trusted = [s for s in sections if trusted_section(s, updates)]
+    if any(substantive(s["text"]) for s in trusted):
+        return {"source": "renovate", "sections": trusted, "reason": "Renovate's PR body"}
+    if len(trusted) < len(sections):
+        why = "Renovate's notes are the app's releases, not the chart's"
+    else:
+        why = "Renovate's notes only point elsewhere" if sections else "Renovate found no release notes"
+    fetched, reasons = [], []
+    for update in updates:
+        got, reason = github_release_sections(update, get)
+        fetched += got
+        reasons.append(f"{update['package'].rsplit('/', 1)[-1]}: {reason}")
+    if fetched:
+        return {"source": "github", "sections": fetched, "reason": f"{why}; " + "; ".join(reasons)}
+    return {"source": "none", "sections": [], "reason": f"{why}; " + ("; ".join(reasons) or "no update table")}
+
+
+def budget_notes(sections: list[dict], total: int, per_version: int) -> tuple[str, bool]:
+    """Oldest versions first, newest dropped when over budget, with a note saying which."""
+    out, used, left_out = [], 0, []
+    for s in sections:
+        text = s["text"] if len(s["text"]) <= per_version else s["text"][:per_version] + "\n… (truncated)"
+        if used + len(text) > total:
+            left_out.append(s["version"])
+            continue
+        out.append(text)
+        used += len(text)
+    if left_out:
+        out.append(f"(newer versions left out for size: {', '.join(left_out)})")
+    return "\n\n".join(out), bool(left_out)
+
+
 def budget_config(config: dict[str, str], total: int, per_file: int) -> str:
     out, used = [], 0
     for path, text in config.items():
@@ -730,8 +939,8 @@ def budget_config(config: dict[str, str], total: int, per_file: int) -> str:
     return "\n".join(out)
 
 
-def raw_state(meta, files, diff, base_diff, notes="", config=None, scale=1.0) -> tuple[dict, bool]:
-    notes = notes[: int(BUDGET["release_notes"] * scale)]
+def raw_state(meta, files, diff, base_diff, sections=(), config=None, scale=1.0) -> tuple[dict, bool]:
+    notes, _ = budget_notes(list(sections), int(BUDGET["release_notes"] * scale), int(BUDGET["release_notes_per_version"] * scale))
     conf = budget_config(config or {}, int(BUDGET["config"] * scale), int(BUDGET["config_per_file"] * scale)) if notes else ""
     diff_budget = max(int(BUDGET["diff"] * scale) - len(notes) - len(conf), 8_000)
     text, truncated, omitted = budget_diff(diff, diff_budget, int(BUDGET["diff_per_file"] * scale))
@@ -1007,7 +1216,12 @@ def classify(d: Path, *, key: str | None, model: str, fixture: dict | None = Non
     diff = (d / "pr.diff").read_text(errors="replace") if (d / "pr.diff").exists() else ""
     base_diff = (d / "base_overlap.diff").read_text(errors="replace") if (d / "base_overlap.diff").exists() else ""
     config = read_json(d / "config.json", {})
-    notes = release_notes(meta.get("body") or "", meta.get("author_kind", "other"))
+    # collect() writes release_notes.json; older bundles and fixtures fall back to the PR body
+    notes = read_json(d / "release_notes.json")
+    if notes is None:
+        notes = gather_release_notes({**meta, "body": meta.get("body") or ""}, get=lambda path: [])
+        if notes["source"] == "none" and meta.get("author_kind") == "renovate":
+            notes["reason"] = notes["reason"].split(";")[0] + "; GitHub releases not checked (bundle predates release_notes.json)"
 
     relevant = any(matches(f["path"], RENDERED) for f in files)
     inert_only = bool(files) and all(tier(f["path"]) == "inert" for f in files)
@@ -1018,8 +1232,8 @@ def classify(d: Path, *, key: str | None, model: str, fixture: dict | None = Non
 
     jobs = {
         "raw": (
-            lambda sc: raw_state(meta, files, diff, base_diff, notes, config, sc),
-            raw_questions(bool(base_diff), bool(notes), bool(config)),
+            lambda sc: raw_state(meta, files, diff, base_diff, notes["sections"], config, sc),
+            raw_questions(bool(base_diff), bool(notes["sections"]), bool(config)),
         ),
     }
     if konflate.get("state") == "fresh" and kdiff:
@@ -1067,7 +1281,7 @@ def classify(d: Path, *, key: str | None, model: str, fixture: dict | None = Non
         "signals": [asdict(x) for x in signals],
         "konflate": kinfo,
         "jev": jev,
-        "release_notes": bool(notes),
+        "release_notes": {"source": notes["source"], "versions": [s["version"] for s in notes["sections"]], "reason": notes["reason"]},
         "change_kind": (answers.get("change_kind") or {}).get("choice"),
         "blast_radius": (answers.get("blast_radius") or {}).get("score"),
         "inert_only": inert_only,

@@ -85,6 +85,8 @@ jobs:
         continue-on-error: true
         env:
           BASE_REF: ${{ steps.pr.outputs.base-ref }}
+          # Release lists are public; the token only lifts the rate limit for the notes fallback.
+          GITHUB_TOKEN: ${{ github.token }}
           KONFLATE_URL: ${{ vars.KONFLATE_URL || 'http://konflate.flux-system.svc.cluster.local:8080' }}
           KONFLATE_WAIT_SECONDS: ${{ vars.KONFLATE_WAIT_SECONDS || '480' }}
         run: >-

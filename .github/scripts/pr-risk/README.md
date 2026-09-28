@@ -36,7 +36,14 @@ Only **findings about this change** raise the level. **Context** that holds for 
      - A CRD whose served or storage versions change is review. Other CRD changes are context: new fields and description churn can't break existing resources.
 2. **Jev** answers narrow yes/no questions. It can only **raise** the level.
    - The raw-diff call covers change kind, blast radius, removals, storage, secrets, exposure, Flux substitution, description match, prompt injection, and overlap with `main`.
-   - **Breaking changes.** For Renovate PRs the release notes are pulled out of the PR body into their own field, next to the config the app runs with (the sibling `helmrelease.yaml`, or the compose file). `breaking_notes` asks whether the notes describe a breaking change or a manual step. `breaking_affects_config` asks whether this repo's config uses what it breaks. Both yes is risky (plan the migration). Breaking notes that don't touch the config are review.
+   - **Breaking changes.** For Renovate PRs the release notes go to Jev in their own field, next to the config the app runs with (the sibling `helmrelease.yaml`, or the compose file). `breaking_notes` asks whether the notes describe a breaking change or a manual step. `breaking_affects_config` asks whether this repo's config uses what it breaks. Both yes is risky (plan the migration). Breaking notes that don't touch the config are review.
+   - **Where the notes come from** (`collect`, into `release_notes.json`):
+     1. Renovate's `### Release Notes`, split per version. A section only counts if it says something: tailscale's are all "Please refer to the changelog available at …". It also has to be about this package. Its heading link must be a release tag that names the package, or, for a container image only, any tag or changelog. Renovate gave plugin-barman-cloud's _chart_ 0.7.0 → 0.8.0 the _app's_ v0.8.0 notes, a year older and with an unrelated breaking change.
+     2. Otherwise the GitHub releases between the two versions, from the repos in Renovate's update table and, for a chart, its org's `helm-charts` and `charts` monorepos. Renovate links the app's repo for prometheus-community's charts. A tag must name the chart (`prometheus-smartctl-exporter-0.17.1`), and a bare `v1.2.3` only counts for an image, so a guessed repo can't produce wrong notes. Releases that all repeat one text (piraeus's chart description) don't count.
+     3. Otherwise none, and a major or 0.x bump asks for the changelog, with the reason.
+
+     Versions go to Jev oldest first: when the notes don't fit, the newest are left out, not the ones right after the version running now. On 2026-09-28 this gave all five open Renovate PRs usable notes, where the PR bodies had two.
+
    - The rendered-diff call runs only when Konflate has a fresh render. It covers availability, data loss, sensitive RBAC grants (Secrets, wildcards, escalate/bind/impersonate, cluster-admin), exposure, privileges, and CRD fields removed, renamed or narrowed. For a human PR it also asks about changes the title doesn't explain. A Renovate title only names the version, so that question fence-sat on every chart bump. CRD `description:` text is left out of the model's input, which keeps CRD-heavy chart bumps inside the budget.
    - Blast radius measures impact, not likelihood, so it's context. A PR becomes risky when a high blast radius (≥ 2.5) comes with an independent, certain finding from git, Konflate or Jev.
 3. **`safe` must be earned.** No hard rule fired, every model answer is a clear no, the description matches, `change_kind` confidence is high, and Konflate rendered the PR's current head (when the PR touches Flux resources). Anything short of that is `review`. Fence-sitting answers add `risk/uncertain`.
@@ -81,11 +88,15 @@ The Jev key is read from 1Password at `op://GitHub/jev/API_KEY`, using the same 
 # Offline tests (fixtures stand in for git, Konflate and Jev)
 uv run --no-project --python 3.13 -m unittest discover .github/scripts/pr-risk/tests
 
-# One PR, end to end. A minimal event JSON is enough (see backtest.py for its shape)
-python3 .github/scripts/pr-risk/pr_risk.py collect --base origin/main --event event.json \
-  --out /tmp/pr --konflate-url https://konflate.cluster.vwn.io
-python3 .github/scripts/pr-risk/pr_risk.py classify --input /tmp/pr --dry-run \
-  --jev-fixture .github/scripts/pr-risk/tests/fixtures/jev_179.json   # omit it to call Jev for real
+# One PR, end to end
+git fetch origin main '+refs/pull/<pr>/head:refs/remotes/origin/pr/<pr>'
+gh api repos/qnimbus/home-lab/pulls/<pr> | jq '{pull_request: .}' > /tmp/event.json
+GH_TOKEN=$(gh auth token) \
+  python3 .github/scripts/pr-risk/pr_risk.py collect --base origin/main --event /tmp/event.json \
+  --out /tmp/pr --konflate-url https://konflate.cluster.vwn.io   # the token only lifts GitHub's rate limit
+TYPESAFE_API_KEY=$(op read op://GitHub/jev/API_KEY) \
+  python3 .github/scripts/pr-risk/pr_risk.py classify --input /tmp/pr --dry-run
+# or, offline: classify ... --jev-fixture .github/scripts/pr-risk/tests/fixtures/jev_179.json
 
 # Re-classify a workflow run after a policy change: its artifact is the whole bundle
 gh run download <run-id> -D /tmp/run

@@ -113,10 +113,10 @@ class TestReleaseNotesAndConfig(unittest.TestCase):
     def test_raw_state_carries_notes_and_config_only_with_notes(self):
         meta = {"title": "t", "body": "", "author_kind": "renovate"}
         conf = {"kubernetes/apps/a/b/app/helmrelease.yaml": "values: {}\n"}
-        state, _ = p.raw_state(meta, [], "", "", "notes", conf)
+        state, _ = p.raw_state(meta, [], "", "", [{"version": "v1", "text": "notes"}], conf)
         self.assertEqual(state["release_notes"], "notes")
         self.assertIn("# kubernetes/apps/a/b/app/helmrelease.yaml", state["config"])
-        state, _ = p.raw_state(meta, [], "", "", "", conf)
+        state, _ = p.raw_state(meta, [], "", "", [], conf)
         self.assertNotIn("config", state)
         q = p.raw_questions(False, True, True)
         self.assertIn("release_notes", q["breaking_notes"]["instructions"]["question"])
@@ -142,6 +142,161 @@ class TestReleaseNotesAndConfig(unittest.TestCase):
         self.assertIn("0.x", p.may_break({"labels": ["type/minor"], "title": "feat(container)!: x", "author_kind": "renovate"}))
         self.assertIn("breaking", p.may_break({"labels": [], "title": "feat(ci)!: x", "author_kind": "owner"}))
         self.assertIsNone(p.may_break({"labels": ["type/minor"], "title": "feat(container): x", "author_kind": "renovate"}))
+
+
+# Real shapes from 2026-09-28's open PRs: #171's table row, #170's pointer-only notes.
+ROW_171 = ("| [ghcr.io/piraeusdatastore/helm-charts/snapshot-controller](https://redirect.github.com/piraeusdatastore/helm-charts) "
+           "([source](https://redirect.github.com/kubernetes-csi/external-snapshotter)) | minor | `5.1.1` → `5.3.0` |")  # fmt: skip
+POINTER_NOTES = "\n\n".join(
+    f"### [`v{v}`](https://redirect.github.com/tailscale/tailscale/releases/tag/v{v})\n\n"
+    f"[Compare Source](https://redirect.github.com/tailscale/tailscale/compare/x...v{v})\n\n"
+    "Please refer to the changelog available at <https://tailscale.com/changelog>"
+    for v in ("1.102.4", "1.102.3", "1.98.9")
+)
+
+
+def rel(tag, body=None, **kw):
+    return {"tag_name": tag, "body": body or f"- feat: the change shipped in {tag}", **kw}
+
+
+def one_page(*releases):
+    """A fake github_pages: every repo has these releases, on one page."""
+    return lambda path: [list(releases)]
+
+
+def renovate_meta(row, notes=None):
+    body = "| Package | Update | Change |\n|---|---|---|\n" + row + "\n"
+    if notes is not None:
+        body += "\n---\n\n### Release Notes\n\n<details>\n<summary>x</summary>\n\n" + notes + "\n\n</details>\n"
+    return {"author_kind": "renovate", "body": body + "\n---\n\n### Configuration\n\nstuff\n"}
+
+
+class TestReleaseNoteSources(unittest.TestCase):
+    def test_sections_oldest_first(self):
+        sections = p.note_sections(p.release_notes(RENOVATE_BODY.format(notes="x") + "", "renovate") + "\n\n### [`v0.8.5`](u)\n\n- fix: older one here")
+        self.assertEqual([s["version"] for s in sections], ["v0.8.5", "v0.9.0"])
+        self.assertFalse(p.note_sections("## Breaking changes\n\ntext"))  # a heading needs a version
+
+    def test_pointer_only_notes_are_not_notes(self):
+        sections = p.note_sections(POINTER_NOTES)
+        self.assertEqual(len(sections), 3)
+        self.assertFalse(any(p.substantive(s["text"]) for s in sections))
+        self.assertTrue(p.substantive("### v1\n\n- Drop support for `foo.bar`"))
+        row = "| [ghcr.io/home-operations/charts-mirror/tailscale-operator](https://redirect.github.com/tailscale/tailscale) | minor | `1.98.4` → `1.102.4` |"
+        notes = p.gather_release_notes(renovate_meta(row, POINTER_NOTES), get=one_page(rel("v1.102.4")))
+        self.assertEqual(notes["source"], "none")  # a chart can't use the app's bare tags either
+        self.assertIn("app's releases, not the chart's", notes["reason"])
+        img = "| [ghcr.io/tailscale/tailscale](https://redirect.github.com/tailscale/tailscale) | minor | `v1.98.4` → `v1.102.4` |"
+        notes = p.gather_release_notes(renovate_meta(img, POINTER_NOTES), get=one_page())
+        self.assertIn("only point elsewhere", notes["reason"])
+
+    def test_renovate_table(self):
+        (u,) = p.renovate_updates(ROW_171)
+        self.assertEqual(u["repos"], ["piraeusdatastore/helm-charts", "kubernetes-csi/external-snapshotter"])
+        self.assertEqual((u["from"], u["to"], u["type"]), ("5.1.1", "5.3.0", "minor"))
+
+    def test_monorepo_prefix_and_range(self):
+        releases = [rel("cloudnative-pg-v0.29.1"), rel("plugin-barman-cloud-v0.8.0"), rel("cloudnative-pg-v0.29.0"),
+                    rel("cloudnative-pg-v0.28.3"), rel("cloudnative-pg-v0.28.2"), rel("cloudnative-pg-v0.30.0-rc1", prerelease=True)]  # fmt: skip
+        row = ("| [ghcr.io/cloudnative-pg/charts/cloudnative-pg](https://cloudnative-pg.io) "
+               "([source](https://redirect.github.com/cloudnative-pg/charts)) | minor | `0.28.2` → `0.29.1` |")  # fmt: skip
+        notes = p.gather_release_notes(renovate_meta(row), get=one_page(*releases))
+        self.assertEqual(notes["source"], "github")
+        self.assertNotIn("back to", notes["reason"])  # saw 0.28.2, so the range is complete
+        self.assertEqual([s["version"] for s in notes["sections"]], ["cloudnative-pg-v0.28.3", "cloudnative-pg-v0.29.0", "cloudnative-pg-v0.29.1"])
+
+    def test_chart_ignores_app_tags(self):
+        row = ("| [ghcr.io/cloudnative-pg/charts/plugin-barman-cloud](https://cloudnative-pg.io) "
+               "([source](https://redirect.github.com/cloudnative-pg/plugin-barman-cloud)) | minor | `0.7.0` → `0.8.0` |")  # fmt: skip
+        notes = p.gather_release_notes(renovate_meta(row), get=one_page(rel("v0.8.0"), rel("v0.7.1")))
+        self.assertEqual(notes["source"], "none")
+
+    def test_renovate_notes_for_the_app_are_dropped_for_a_chart(self):
+        # #177: Renovate gave chart 0.7.0 → 0.8.0 the app's v0.8.0 notes (2025, unrelated breaking change)
+        row = ("| [ghcr.io/cloudnative-pg/charts/plugin-barman-cloud](https://cloudnative-pg.io) "
+               "([source](https://redirect.github.com/cloudnative-pg/plugin-barman-cloud)) | minor | `0.7.0` → `0.8.0` |")  # fmt: skip
+        app_notes = ("### [`v0.8.0`](https://redirect.github.com/cloudnative-pg/plugin-barman-cloud/blob/HEAD/CHANGELOG.md#080-2025-10-27)\n\n"
+                     "##### ⚠ BREAKING CHANGES\n\n- **rbac:** Resource names have been prefixed to avoid cluster conflicts.")  # fmt: skip
+        chart = [rel("plugin-barman-cloud-v0.8.0"), rel("plugin-barman-cloud-v0.7.1"), rel("cloudnative-pg-v0.29.1"), rel("plugin-barman-cloud-v0.7.0")]
+        notes = p.gather_release_notes(renovate_meta(row, app_notes), get=lambda path: [chart] if path == "/repos/cloudnative-pg/charts/releases" else [])
+        self.assertEqual(notes["source"], "github")
+        self.assertEqual([s["version"] for s in notes["sections"]], ["plugin-barman-cloud-v0.7.1", "plugin-barman-cloud-v0.8.0"])
+        self.assertIn("app's releases, not the chart's", notes["reason"])
+
+    def test_trusted_section(self):
+        chart = p.renovate_updates(ROW_171)
+        image = [{"package": "ghcr.io/foo/bar", "repos": [], "type": "minor", "from": "1", "to": "2"}]
+        tag = {"version": "5.3.0", "text": "### [`5.3.0`](https://redirect.github.com/o/r/releases/tag/snapshot-controller-5.3.0)"}
+        changelog = {"version": "v0.8.0", "text": "### [`v0.8.0`](https://redirect.github.com/o/r/blob/HEAD/CHANGELOG.md#080)"}
+        self.assertTrue(p.trusted_section(tag, chart))
+        self.assertFalse(p.trusted_section(changelog, chart))
+        self.assertTrue(p.trusted_section(changelog, image))
+        self.assertTrue(p.trusted_section(changelog, []))  # no table: nothing to judge by
+
+    def test_candidate_repos_guess_chart_monorepos(self):
+        (u,) = p.renovate_updates("| [ghcr.io/prometheus-community/charts/prometheus-smartctl-exporter](https://redirect.github.com/"
+                                  "prometheus-community/smartctl_exporter) | minor | `0.16.1` → `0.17.1` |")  # fmt: skip
+        self.assertEqual(p.candidate_repos(u), ["prometheus-community/smartctl_exporter", "prometheus-community/helm-charts", "prometheus-community/charts"])
+
+    def test_paging_stops_once_from_is_reached(self):
+        seen = []
+
+        def get(path):
+            for page in ([rel("x-1.3.0"), rel("other-9.0.0")], [rel("x-1.2.0"), rel("x-1.1.0")], [rel("x-1.0.0")]):
+                seen.append(page)
+                yield page
+
+        u = {"package": "ghcr.io/o/charts/x", "repos": ["o/helm-charts"], "type": "minor", "from": "1.1.0", "to": "1.3.0"}
+        sections, reason = p.github_release_sections(u, get)
+        self.assertEqual([s["version"] for s in sections], ["x-1.2.0", "x-1.3.0"])
+        self.assertEqual(len(seen), 2)
+        u["from"] = "0.9.0"  # older than every page: the range may be incomplete, and says so
+        seen.clear()
+        self.assertIn("back to x-1.0.0 only", p.github_release_sections(u, get)[1])
+
+    def test_image_uses_bare_tags(self):
+        row = "| [ghcr.io/kashalls/external-dns-unifi-webhook](https://redirect.github.com/kashalls/external-dns-unifi-webhook) | minor | `v0.8.2` → `v0.9.0` |"
+        notes = p.gather_release_notes(renovate_meta(row), get=one_page(rel("v0.9.0"), rel("v0.8.3"), rel("v0.8.2")))
+        self.assertEqual([s["version"] for s in notes["sections"]], ["v0.8.3", "v0.9.0"])
+
+    def test_repeated_boilerplate_is_not_a_changelog(self):
+        body = "Deploys a Snapshot Controller in a cluster. Snapshot Controllers are often bundled with the distribution."
+        releases = [rel("snapshot-controller-5.3.0", body), rel("snapshot-controller-5.2.0", body), rel("snapshot-controller-5.1.1", body)]
+        notes = p.gather_release_notes(renovate_meta(ROW_171), get=one_page(*releases))
+        self.assertEqual(notes["source"], "none")
+        self.assertIn("repeat one text", notes["reason"])
+
+    def test_next_repo_when_target_release_missing(self):
+        calls = []
+
+        def get(path):
+            calls.append(path)
+            return [[rel("snapshot-controller-5.3.0", "- feat: add groupsnapshot conversion webhook"),
+                     rel("snapshot-controller-5.2.0", "- fix: tolerate missing CRDs on startup")]] if "external-snapshotter" in path else []  # fmt: skip
+
+        notes = p.gather_release_notes(renovate_meta(ROW_171), get=get)
+        self.assertEqual(calls, ["/repos/piraeusdatastore/helm-charts/releases", "/repos/kubernetes-csi/external-snapshotter/releases"])
+        self.assertEqual(notes["source"], "github")
+
+    def test_renovate_notes_win_when_substantive(self):
+        tagged = "### [`5.3.0`](https://redirect.github.com/piraeusdatastore/helm-charts/releases/tag/snapshot-controller-5.3.0)\n\n- feat: something real"
+        notes = p.gather_release_notes(renovate_meta(ROW_171, tagged), get=lambda path: self.fail("fetched"))
+        self.assertEqual(notes["source"], "renovate")
+
+    def test_budget_keeps_oldest(self):
+        sections = [{"version": f"v1.{i}", "text": f"### v1.{i}\n" + "x" * 90} for i in range(5)]
+        text, cut = p.budget_notes(sections, 300, 6_000)
+        self.assertTrue(cut)
+        self.assertIn("### v1.0", text)
+        self.assertNotIn("### v1.4", text)
+        self.assertIn("newer versions left out for size: v1.3, v1.4", text)
+
+    def test_major_with_fetched_notes_is_checked(self):
+        meta = {"labels": ["type/major"], "title": "x"}
+        notes = {"source": "github", "sections": [{"version": "v2.0.0", "text": "t"}], "reason": "r"}
+        (s,) = p.pr_signals(meta, notes)
+        self.assertEqual(s.level, 0)
+        self.assertIn("from GitHub releases: v2.0.0", s.reason)
 
 
 class TestCrds(unittest.TestCase):
@@ -368,7 +523,9 @@ class TestDecision(unittest.TestCase):
         self.assertEqual(r["verdict"], "review")
         self.assertEqual(r["labels"], ["risk/review"])  # unexpected_changes isn't asked of Renovate titles
         self.assertEqual([s["reason"] for s in r["signals"] if s["level"] >= 1],
-                         ["0.x update that Renovate marks as breaking and the PR has no release notes: check the upstream changelog"])  # fmt: skip
+                         ["0.x update that Renovate marks as breaking and no usable release notes "
+                          "(Renovate found no release notes; GitHub releases not checked (bundle predates release_notes.json)): "
+                          "check the upstream changelog"])  # fmt: skip
         self.assertNotIn("unexpected_changes", r["jev"]["answers"]["rendered"])
         self.assertEqual(r["change_kind"], "version_bump")
         self.assertTrue(r["available"])
@@ -381,7 +538,7 @@ class TestDecision(unittest.TestCase):
         self.b.edit("meta.json", lambda m: {**m, "title": "feat(container): update foo (1.0 ➔ 2.0)", "labels": ["type/major"]})
         r = self.b.classify(fixture=clear_jev())
         self.assertEqual(r["verdict"], "review")
-        self.assertTrue(any(s["reason"].startswith("Major update and the PR has no release notes") for s in r["signals"]))
+        self.assertTrue(any(s["reason"].startswith("Major update and no usable release notes") for s in r["signals"]))
 
     def test_breaking_notes_that_touch_config_are_risky(self):
         self.b.edit("meta.json", lambda m: {**m, "body": RENOVATE_BODY.format(notes="BREAKING: `foo.bar` was renamed")})
