@@ -19,7 +19,7 @@ Scaffolds `kubernetes/apps/<namespace>/<app>/` with a Flux Kustomization (`ks.ya
 | ---------------------------- | -------------------------------------------------------------------- |
 | container `securityContext`  | `allowPrivilegeEscalation`, `readOnlyRootFilesystem`, `capabilities` |
 | ExternalSecret `spec`        | `refreshInterval`, `secretStoreRef`, `target`, `dataFrom`            |
-| ExternalSecret `spec.target` | `name`, `creationPolicy`, `template`                                 |
+| ExternalSecret `spec.target` | `name`, `creationPolicy` (only when not the default), `template`     |
 | Flux Kustomization `spec`    | `targetNamespace`, then alphabetical                                 |
 
 Everything the templates don't cover follows `sorting.instructions.md`.
@@ -270,7 +270,6 @@ spec:
     name: onepassword
   target:
     name: <app>-secret
-    creationPolicy: Owner
     template:
       data:
         SOME_ENV_VAR: "{{ .<app>_field_name }}"
