@@ -1,27 +1,19 @@
 ---
 instance:
-  distribution:
-    # renovate: datasource=github-releases depName=fluxcd/flux2
-    version: v2.9.5
   cluster:
     networkPolicy: false
     size: medium
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: flux
   components:
     - source-controller
     - kustomize-controller
     - helm-controller
     - notification-controller
-  sync:
-    kind: GitRepository
-    provider: github
-    interval: 5m0s
-    url: "https://github.com/qnimbus/home-lab"
-    ref: refs/heads/main
-    path: ./kubernetes/clusters/main
-    pullSecret: flux-github-app
-  commonMetadata:
-    labels:
-      app.kubernetes.io/name: flux
+  distribution:
+    # renovate: datasource=github-releases depName=fluxcd/flux2
+    version: v2.9.5
   kustomize:
     patches:
       - patch: |
@@ -126,3 +118,11 @@ instance:
         target:
           kind: Deployment
           name: (helm-controller|kustomize-controller|notification-controller)
+  sync:
+    interval: 5m0s
+    kind: GitRepository
+    path: ./kubernetes/clusters/main
+    provider: github
+    pullSecret: flux-github-app
+    ref: refs/heads/main
+    url: "https://github.com/qnimbus/home-lab"
