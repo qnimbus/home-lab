@@ -136,8 +136,8 @@ hardware diverges from the fleet. None exist today.
     proof of equivalence.
   - `machine.certSANs` — no new-style field exists at all.
 - **`KubeTalosAPIAccessConfig` is hard-restricted to control-plane nodes** — Talos rejects it on
-  workers outright. `actions-runner-system` pods can land on a worker with no apid access as a
-  result; there's no config-level fix.
+  workers outright, so the `home-lab` runner pins its pods to control-plane nodes with a
+  `nodeSelector` (see [actions-runner-system](../apps/actions-runner-system/README.md)).
 - **`KubeAPIServerConfig` needs two sibling documents to actually start the apiserver**:
   `KubeAuthorizerConfig` (one document per authorizer — `node`/`Node`, `rbac`/`RBAC`) and
   `KubeAuthenticationConfig`. Unlike the deprecated legacy fields they replace, neither has an

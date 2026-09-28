@@ -158,9 +158,8 @@ link: mgmt0
 # KubeTalosAPIAccessConfig is schema-restricted to control-plane nodes only —
 # Talos rejects it on workers outright. This means actions-runner-system pods
 # needing apid access (talosctl image pre-pull CI) only get it when scheduled
-# on a CP node; there's no config-level fix if a runner pod lands on a worker.
-# Confirmed live: actions-runner-system has no node-scheduling restriction
-# today, so this is a real, unresolved gap — not a style choice.
+# on a CP node, so the home-lab runner template pins its pods to control-plane
+# nodes with a nodeSelector.
 apiVersion: v1alpha1
 kind: KubeTalosAPIAccessConfig
 allowedRoles:

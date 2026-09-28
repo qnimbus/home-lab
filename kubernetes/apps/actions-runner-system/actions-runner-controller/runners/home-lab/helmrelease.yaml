@@ -43,6 +43,8 @@ spec:
               - mountPath: /var/run/secrets/talos.dev
                 name: talos
                 readOnly: true
+        nodeSelector:
+          node-role.kubernetes.io/control-plane: ""
         serviceAccountName: actions-runner
         volumes:
           - name: talos

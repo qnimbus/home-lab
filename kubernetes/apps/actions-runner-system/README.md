@@ -29,7 +29,7 @@ just github prune-secrets     # delete step Secrets left behind by runner pods t
 ## Gotchas
 
 - **The runner is cluster-admin, on purpose** ([rbac.yaml](./actions-runner-controller/runners/home-lab/rbac.yaml)). One general-purpose runner replaced a split into scoped runners on 2026-09-06, for simplicity. The cost: Image Pull triggers on `pull_request` and runs here, so a bug in a workflow, or a leaked bot-App key, gets full cluster-admin.
-- **Talos access only works when the runner pod lands on a control-plane node.** Talos accepts `KubeTalosAPIAccessConfig` on control planes only, and nothing pins runner pods there, so a job on a worker can't reach the Talos API. See [the Talos README](../../talos/README.md).
+- **Talos access only works when the runner pod lands on a control-plane node.** Talos accepts `KubeTalosAPIAccessConfig` on control planes only, so the runner template's `nodeSelector` keeps runner pods on control planes. Don't drop it: a job on a worker can't reach the Talos API. See [the Talos README](../../talos/README.md).
 - The controller's ServiceAccount name is fixed (`serviceAccount.name`) because the scale set refers to it by name in `controllerServiceAccount`. Rename both or neither.
 - The two charts must stay on the same version. Renovate bumps them together (the `actions-runner-controller` group in [.renovaterc.json5](../../../.renovaterc.json5)).
 - The runner's container hook keeps each container step's env, tokens included, in a Secret labelled `runner-pod=<pod>`, and deletes it only in its own job cleanup. That's why `prune-secrets` exists.
