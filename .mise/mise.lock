@@ -405,26 +405,50 @@ url_api = "https://api.github.com/repos/cli/cli/releases/assets/565857681"
 provenance = "github-attestations"
 
 [[tools."github:fluxcd/flux-schema"]]
-version = "0.13.0"
+version = "0.14.0"
 backend = "github:fluxcd/flux-schema"
-specifiers = ["0.13.0"]
+specifiers = ["v0.14.0"]
 
 [tools."github:fluxcd/flux-schema"."platforms.linux-arm64"]
-checksum = "sha256:f0a621dd897c39f0759edc635e5be143374feedcc045301f419b27a157cf0c83"
-url = "https://github.com/fluxcd/flux-schema/releases/download/v0.13.0/flux-schema_0.13.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/553169052"
+checksum = "sha256:62b25f3fcfd29a27f582472d71721927ac6ec20e82de8b1239e41bb2ec62ab7a"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.14.0/flux-schema_0.14.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/586181513"
+provenance = "github-attestations"
+
+[tools."github:fluxcd/flux-schema"."platforms.linux-arm64-musl"]
+checksum = "sha256:62b25f3fcfd29a27f582472d71721927ac6ec20e82de8b1239e41bb2ec62ab7a"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.14.0/flux-schema_0.14.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/586181513"
 provenance = "github-attestations"
 
 [tools."github:fluxcd/flux-schema"."platforms.linux-x64"]
-checksum = "sha256:809dea3dc3e5236b4750ca8058a36603ad220095c6b50b702fff47d0aaa47ba6"
-url = "https://github.com/fluxcd/flux-schema/releases/download/v0.13.0/flux-schema_0.13.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/553169054"
+checksum = "sha256:63c045b6dce07f5c66def75b0dfebf1bfb5b79e15ac22154aee096228685c21a"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.14.0/flux-schema_0.14.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/586181514"
+provenance = "github-attestations"
+
+[tools."github:fluxcd/flux-schema"."platforms.linux-x64-musl"]
+checksum = "sha256:63c045b6dce07f5c66def75b0dfebf1bfb5b79e15ac22154aee096228685c21a"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.14.0/flux-schema_0.14.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/586181514"
 provenance = "github-attestations"
 
 [tools."github:fluxcd/flux-schema"."platforms.macos-arm64"]
-checksum = "sha256:6f226ed964cdb9a8ed949e45329f029a68c9cf1711b19ed70b3d57da4e33d5d9"
-url = "https://github.com/fluxcd/flux-schema/releases/download/v0.13.0/flux-schema_0.13.0_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/553169051"
+checksum = "sha256:e30a284229b6ee8c5816cad9620fcde1940a474816f5741b1ad583c0e5c8eafd"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.14.0/flux-schema_0.14.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/586181512"
+provenance = "github-attestations"
+
+[tools."github:fluxcd/flux-schema"."platforms.macos-x64"]
+checksum = "sha256:84c126183a27acb1255d83ea48e5e7623f3e3b60f7824298a4f1db2b2c1681d7"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.14.0/flux-schema_0.14.0_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/586181515"
+provenance = "github-attestations"
+
+[tools."github:fluxcd/flux-schema"."platforms.windows-x64"]
+checksum = "sha256:19c4fe1b64db19deeb3104627f2eb24f4214e01e119aefe10df4944071a632c5"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.14.0/flux-schema_0.14.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/586181553"
 provenance = "github-attestations"
 
 [[tools."github:home-operations/flate"]]
@@ -796,50 +820,50 @@ backend = "krew:view-secret"
 specifiers = ["v0.16.0"]
 
 [[tools.kubecolor]]
-version = "0.7.1"
+version = "0.8.0"
 backend = "aqua:kubecolor/kubecolor"
-specifiers = ["0.7.1"]
+specifiers = ["0.8.0"]
 
 [tools.kubecolor."platforms.linux-arm64"]
-checksum = "sha256:53cefaa296faea812bf27ab7ba4ab128794236b81db9c4f64d8530a877f4d575"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.7.1/kubecolor_0.7.1_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/529496998"
+checksum = "sha256:8a53d33769dc2c984338973f6490ffdad60f130d60d172bef8109a76332c0c60"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890534"
 provenance = "github-attestations"
 
 [tools.kubecolor."platforms.linux-arm64-musl"]
-checksum = "sha256:53cefaa296faea812bf27ab7ba4ab128794236b81db9c4f64d8530a877f4d575"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.7.1/kubecolor_0.7.1_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/529496998"
+checksum = "sha256:8a53d33769dc2c984338973f6490ffdad60f130d60d172bef8109a76332c0c60"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890534"
 provenance = "github-attestations"
 
 [tools.kubecolor."platforms.linux-x64"]
-checksum = "sha256:b9d27d699e98fee23707b57e79d36de753de15d125ddc16b0f301b44732c00b5"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.7.1/kubecolor_0.7.1_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/529496990"
+checksum = "sha256:87289f8641ba18f4cb491ad6b30baa0da5f769c688aa7ce05489604da6099b28"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890521"
 provenance = "github-attestations"
 
 [tools.kubecolor."platforms.linux-x64-musl"]
-checksum = "sha256:b9d27d699e98fee23707b57e79d36de753de15d125ddc16b0f301b44732c00b5"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.7.1/kubecolor_0.7.1_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/529496990"
+checksum = "sha256:87289f8641ba18f4cb491ad6b30baa0da5f769c688aa7ce05489604da6099b28"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890521"
 provenance = "github-attestations"
 
 [tools.kubecolor."platforms.macos-arm64"]
-checksum = "sha256:acc821f20cab88c86da39f5875b7e785e86648ae7f1787b93cda3392c3e979ef"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.7.1/kubecolor_0.7.1_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/529496975"
+checksum = "sha256:c3a771a74dc1ac9b74c5b738e85715f530c660d27e480f8d9c859d8cbff33984"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890494"
 provenance = "github-attestations"
 
 [tools.kubecolor."platforms.macos-x64"]
-checksum = "sha256:87d25635983a602ebe389a53581aabed1cdee7bf5642d6367ac76782f5713007"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.7.1/kubecolor_0.7.1_darwin_amd64.tar.gz"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/529496973"
+checksum = "sha256:f97f55b7bdfdc6836e332717846c152643c7271ebf2d7c39fa69f657f86a9715"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890496"
 provenance = "github-attestations"
 
 [tools.kubecolor."platforms.windows-x64"]
-checksum = "sha256:d2e84223d971bfcca5e9815576464fba9a98396e6c634fd79eaf9ad9e8453c99"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.7.1/kubecolor_0.7.1_windows_amd64.zip"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/529497040"
+checksum = "sha256:64e1b12fc56662bf4bb67a760a396b0d7306c30774a52714e26c9ac075cef20b"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890550"
 provenance = "github-attestations"
 
 [[tools.kubeconform]]
@@ -1036,9 +1060,9 @@ checksum = "sha256:9fef7eca6743a6b910989cd8e78712376b394fcb9b6e1e9c44a0799a287f9
 url = "https://nodejs.org/dist/v26.10.0/node-v26.10.0-win-x64.zip"
 
 [[tools.oxfmt]]
-version = "0.67.0"
+version = "0.71.0"
 backend = "npm:oxfmt"
-specifiers = ["0.67.0"]
+specifiers = ["0.71.0"]
 
 [[tools."pipx:ansible"]]
 version = "14.4.0"
