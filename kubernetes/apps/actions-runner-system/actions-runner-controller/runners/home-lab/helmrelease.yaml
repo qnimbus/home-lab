@@ -4,7 +4,6 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: home-lab
-  namespace: actions-runner-system
 spec:
   chartRef:
     kind: OCIRepository
@@ -16,7 +15,7 @@ spec:
         accessModes: ["ReadWriteOnce"]
         resources:
           requests:
-            storage: 10Gi # revisit if heavier workflow jobs (image builds, large test suites) are added
+            storage: 10Gi
         storageClassName: openebs-hostpath
       type: kubernetes
     controllerServiceAccount:
@@ -34,15 +33,10 @@ spec:
             env:
               - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
                 value: "false"
-              # talosctl needs a node to target, and any node will do: Spegel (DaemonSet, all 5
-              # nodes) is a peer-to-peer pull-through mirror, so whichever node this pod lands on
-              # becomes the peer the others fetch the layer from when Flux reconciles. The layer
-              # is not replicated — it stays on that one node until another node actually needs it.
               - name: NODE
                 valueFrom:
                   fieldRef:
                     fieldPath: status.hostIP
-            # renovate: datasource=docker depName=ghcr.io/home-operations/actions-runner
             image: ghcr.io/home-operations/actions-runner:2.337.0
             name: runner
             volumeMounts:
@@ -51,7 +45,6 @@ spec:
                 readOnly: true
         serviceAccountName: actions-runner
         volumes:
-          # Populated by Talos itself from talos-serviceaccount.yaml — not 1Password.
           - name: talos
             secret:
               secretName: home-lab

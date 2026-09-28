@@ -4,18 +4,8 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: actions-runner
-  namespace: actions-runner-system
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/rbac.authorization.k8s.io/clusterrolebinding_v1.json
-# cluster-admin is intentional: this is the one general-purpose self-hosted runner (kubectl,
-# talosctl via talos-serviceaccount.yaml, flux reconcile, etc.), matching bykaj's single-runner
-# home-ops shape rather than the split this repo tried first (home-lab-readonly / zero-RBAC,
-# home-lab-image-pull / Talos-only) — consolidated back on 2026-09-06.
-#
-# Trade-off, stated once: renovate-pr-review.yml and image-pull.yaml's `pull` job both trigger on
-# pull_request (auto-triggered) and both run here, so a bug in either workflow — or a compromised
-# bot-App key — has full cluster-admin, not scoped access. Accepted knowingly in favor of
-# simplicity; see docs/CLUSTER.md's Actions Runner Controller section for the current shape.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:

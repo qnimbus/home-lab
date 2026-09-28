@@ -4,13 +4,11 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: actions-runner-controller
-  namespace: actions-runner-system
 spec:
   chartRef:
     kind: OCIRepository
     name: actions-runner-controller
   interval: 1h
   values:
-    # Explicit SA name so the runner scale set can reference it deterministically.
     serviceAccount:
       name: actions-runner-controller

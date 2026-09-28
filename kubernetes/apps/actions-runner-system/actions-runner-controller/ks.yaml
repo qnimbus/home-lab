@@ -30,8 +30,6 @@ metadata:
     substitution.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: actions-runner-system
-  # RunnerScaleSet CRDs don't exist until the controller HelmRelease is healthy.
-  # dependsOn blocks the dry-run until ARC registers its CRD types.
   dependsOn:
     - name: actions-runner-controller
   healthChecks:
