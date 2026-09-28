@@ -1,0 +1,115 @@
+{
+  "raw": {
+    "model": "jev-1.13.0",
+    "usage": {
+      "input_tokens": 1678,
+      "output_tokens": 243
+    },
+    "answers": {
+      "change_kind": {
+        "type": "choice",
+        "choice": "version_bump",
+        "confidence": 1.0,
+        "probabilities": {
+          "new_app": 0.0,
+          "app_config": 0.0,
+          "restructure": 0.0,
+          "version_bump": 1.0,
+          "ci_tooling": 0.0,
+          "docs": 0.0,
+          "removal": 0.0
+        }
+      },
+      "blast_radius": {
+        "type": "score",
+        "score": 1.69,
+        "confidence": 0.68,
+        "legend": {
+          "0": "Nothing that runs in the Kubernetes cluster or on the NAS",
+          "1": "One self-contained application, such as a media, downloads or default-namespace app",
+          "2": "A shared platform service used by several applications: databases, observability, shared components, autoscaling",
+          "3": "Cluster foundation: storage, networking, DNS, gateway, certificates, secrets, Flux, Talos or CI runners"
+        },
+        "probabilities": {
+          "0": 0.02,
+          "1": 0.28,
+          "2": 0.7,
+          "3": 0.0
+        }
+      },
+      "removes_or_renames": {
+        "type": "noul",
+        "noul": 0.04
+      },
+      "storage_change": {
+        "type": "noul",
+        "noul": 0.02
+      },
+      "secret_wiring": {
+        "type": "noul",
+        "noul": 0.02
+      },
+      "network_exposure": {
+        "type": "noul",
+        "noul": 0.02
+      },
+      "flux_substitution": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "breaking_notes": {
+        "type": "noul",
+        "noul": 0.06
+      },
+      "description_matches": {
+        "type": "noul",
+        "noul": 0.92
+      },
+      "addressed_to_reviewer": {
+        "type": "noul",
+        "noul": 0.04
+      }
+    }
+  },
+  "rendered": {
+    "model": "jev-1.13.0",
+    "usage": {
+      "input_tokens": 1408,
+      "output_tokens": 159
+    },
+    "answers": {
+      "reduces_availability": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "data_loss_risk": {
+        "type": "noul",
+        "noul": 0.02
+      },
+      "widens_rbac": {
+        "type": "noul",
+        "noul": 0.02
+      },
+      "widens_exposure": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "adds_privileges": {
+        "type": "noul",
+        "noul": 0.03
+      },
+      "crd_schema_change": {
+        "type": "noul",
+        "noul": 0.04
+      },
+      "unexpected_changes": {
+        "type": "noul",
+        "noul": 0.48
+      },
+      "addressed_to_reviewer": {
+        "type": "noul",
+        "noul": 0.04
+      }
+    }
+  }
+}

@@ -36,6 +36,15 @@
   color: "ff9800"
 - name: type/major
   color: "f6412d"
+# Risk (set by pr-risk.yaml)
+- name: risk/safe
+  color: "0e8a16"
+- name: risk/review
+  color: "fbca04"
+- name: risk/risky
+  color: "b60205"
+- name: risk/uncertain
+  color: "8250df"
 # Namespaces
 - name: namespace/downloads
   color: "1551c0"

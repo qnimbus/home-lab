@@ -1,0 +1,52 @@
+{
+  "status": "ready",
+  "pr": {
+    "number": 179,
+    "title": "feat(container)!: Update image ghcr.io/prometheus-community/charts/prometheus-smartctl-exporter (0.16.1 \u2794 0.17.1)",
+    "author": "qnimbus-homelab-assistant[bot]",
+    "authorAvatar": "/api/avatar?u=https%3A%2F%2Favatars.githubusercontent.com%2Fu%2F3206309%3Fv%3D4&s=3771dfb1c3736aea34761aa816e43486f454cc97b0b184a1d737ed323e7a3b1f",
+    "createdAt": "2026-09-28T10:37:20Z",
+    "state": "open",
+    "open": true,
+    "draft": false,
+    "headRef": "renovate/major-ghcr.io-prometheus-community-charts-prometheus-smartctl-exporter-0.x",
+    "headSha": "fa8b5186bf82ba379efa242c6445f6ab668eea34",
+    "baseRef": "main",
+    "fork": false,
+    "labels": [
+      {
+        "name": "type/minor",
+        "color": "ff9800"
+      },
+      {
+        "name": "area/kubernetes",
+        "color": "0e8a16"
+      }
+    ],
+    "url": "https://github.com/qnimbus/home-lab/pull/179"
+  },
+  "diff": {
+    "prNumber": 179,
+    "headSha": "fa8b5186bf82ba379efa242c6445f6ab668eea34",
+    "summary": {
+      "changed": 3,
+      "added": 0,
+      "removed": 0
+    },
+    "impact": {
+      "resources": 3,
+      "parents": 2,
+      "namespaces": ["observability"],
+      "crds": 0
+    },
+    "images": [],
+    "failures": null,
+    "warnings": null,
+    "routine": false,
+    "chromaCss": "",
+    "tree": null,
+    "resources": null
+  },
+  "mergeCommand": "gh pr merge 179 --repo qnimbus/home-lab",
+  "reviewUrl": "https://konflate.cluster.vwn.io/#/pr/179"
+}

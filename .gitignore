@@ -3,6 +3,7 @@
 .private/
 .task/
 .venv/
+__pycache__/
 *.iso
 .claude/settings.local.json
 

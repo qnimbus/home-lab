@@ -22,10 +22,10 @@ jobs:
           persist-credentials: false
 
       # Tool versions come from .mise/config.toml.
-      - name: Install flux, flux-schema, kustomize + lefthook
+      - name: Install flux, flux-schema, kustomize, lefthook + uv
         uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
         with:
-          install_args: flux2 github:fluxcd/flux-schema kustomize lefthook
+          install_args: flux2 github:fluxcd/flux-schema kustomize lefthook uv
           # Soak window on the mise binary itself: mise.jdx.dev/VERSION can advertise a release
           # before its GitHub assets exist (2026-09-08: every run failed on `curl: (22)`).
           # Preferred over a hard `version` pin that nothing would keep up to date.
@@ -39,6 +39,10 @@ jobs:
             -d kubernetes \
             -E .github/validate.env \
             -e kubernetes/talos
+
+      # Offline: fixtures stand in for git, Konflate and Jev.
+      - name: Test PR risk classifier
+        run: uv run --no-project --python 3.13 -m unittest discover .github/scripts/pr-risk/tests
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0

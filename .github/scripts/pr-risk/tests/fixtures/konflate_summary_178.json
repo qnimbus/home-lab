@@ -1,0 +1,60 @@
+{
+  "status": "ready",
+  "pr": {
+    "number": 178,
+    "title": "feat(container)!: Update image ghcr.io/kashalls/external-dns-unifi-webhook (v0.8.2 \u2794 v0.9.0)",
+    "author": "qnimbus-homelab-assistant[bot]",
+    "authorAvatar": "/api/avatar?u=https%3A%2F%2Favatars.githubusercontent.com%2Fu%2F3206309%3Fv%3D4&s=3771dfb1c3736aea34761aa816e43486f454cc97b0b184a1d737ed323e7a3b1f",
+    "createdAt": "2026-09-28T10:37:13Z",
+    "state": "open",
+    "open": true,
+    "draft": false,
+    "headRef": "renovate/major-ghcr.io-kashalls-external-dns-unifi-webhook-0.x",
+    "headSha": "b288e7e9d9722b41b26ed292d943bdebe309aadb",
+    "baseRef": "main",
+    "fork": false,
+    "labels": [
+      {
+        "name": "type/minor",
+        "color": "ff9800"
+      },
+      {
+        "name": "area/kubernetes",
+        "color": "0e8a16"
+      }
+    ],
+    "url": "https://github.com/qnimbus/home-lab/pull/178"
+  },
+  "diff": {
+    "prNumber": 178,
+    "headSha": "b288e7e9d9722b41b26ed292d943bdebe309aadb",
+    "summary": {
+      "changed": 2,
+      "added": 0,
+      "removed": 0
+    },
+    "impact": {
+      "resources": 2,
+      "parents": 2,
+      "namespaces": ["network"],
+      "crds": 0
+    },
+    "images": [
+      {
+        "name": "ghcr.io/kashalls/external-dns-unifi-webhook",
+        "from": "v0.8.2@sha256:7f0ddbbc83a36a2a9d762e25eef9cafcb3adf0493068a27d72ae71087eafe6f0",
+        "to": "v0.9.0@sha256:22f4106f44a0b9ac3c97cf29bbfef93026c1164492152dc797a1d6dc86ddfbb5",
+        "refs": ["Deployment network/external-dns-unifi"],
+        "upstream": "found"
+      }
+    ],
+    "failures": null,
+    "warnings": null,
+    "routine": true,
+    "chromaCss": "",
+    "tree": null,
+    "resources": null
+  },
+  "mergeCommand": "gh pr merge 178 --repo qnimbus/home-lab",
+  "reviewUrl": "https://konflate.cluster.vwn.io/#/pr/178"
+}
