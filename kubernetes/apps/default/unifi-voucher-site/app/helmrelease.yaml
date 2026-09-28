@@ -32,7 +32,6 @@ spec:
           app:
             image:
               repository: docker.io/glenndehaan/unifi-voucher-site
-              # renovate: datasource=docker depName=docker.io/glenndehaan/unifi-voucher-site
               tag: 8.13.1@sha256:3d6a371292a50922b7920ea632eaddd16f438d822e5258d6c4e5a2ea9be9558e
             env:
               # No portal login — acceptable only because this app is internal-only

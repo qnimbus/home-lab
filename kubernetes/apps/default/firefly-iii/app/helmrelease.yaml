@@ -22,7 +22,6 @@ spec:
           app:
             image:
               repository: fireflyiii/core
-              # renovate: datasource=docker depName=fireflyiii/core
               tag: "version-6.6.6"
             env:
               APP_ENV: production

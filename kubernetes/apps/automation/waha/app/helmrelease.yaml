@@ -22,7 +22,6 @@ spec:
           app:
             image:
               repository: docker.io/devlikeapro/waha
-              # renovate: datasource=docker depName=docker.io/devlikeapro/waha
               tag: "gows-2026.8.2"
             # Secret keys injected individually so WAHA_API_KEY_PLAIN is excluded from the environment;
             # the plain key is accessible only via the file mount at /run/secrets/waha (see persistence below).

@@ -22,7 +22,6 @@ spec:
         containers:
           app:
             image:
-              # renovate: datasource=docker depName=ghcr.io/raydak-labs/configarr
               repository: ghcr.io/raydak-labs/configarr
               tag: 1.32.0@sha256:8a94c8355f86619ac4c52298144f15859f9c66311515f96c4688435fa020039e
             env:

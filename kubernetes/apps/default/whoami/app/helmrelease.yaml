@@ -22,7 +22,6 @@ spec:
           app:
             image:
               repository: traefik/whoami
-              # renovate: datasource=docker depName=traefik/whoami
               tag: "v1.12.0"
             env:
               # Moves the app off the privileged port 80 default so it can run as non-root

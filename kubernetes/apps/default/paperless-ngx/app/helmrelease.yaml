@@ -32,7 +32,6 @@ spec:
         containers:
           app:
             image:
-              # renovate: datasource=docker depName=ghcr.io/paperless-ngx/paperless-ngx
               repository: ghcr.io/paperless-ngx/paperless-ngx
               tag: 3.0.5@sha256:65a4cabf0169ea7fbd90ab7bb28ba3f8b5909613635acda1a03ad606f34b456b
             env:
@@ -173,7 +172,6 @@ spec:
           gotenberg:
             image:
               repository: docker.io/gotenberg/gotenberg
-              # renovate: datasource=docker depName=docker.io/gotenberg/gotenberg
               tag: "8.37.0"
             args:
               - "gotenberg"
@@ -187,7 +185,6 @@ spec:
           tika:
             image:
               repository: docker.io/apache/tika
-              # renovate: datasource=docker depName=docker.io/apache/tika
               tag: "3.3.1.0"
             resources:
               requests:

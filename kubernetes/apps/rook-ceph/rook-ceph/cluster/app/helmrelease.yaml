@@ -41,7 +41,6 @@ spec:
     # `osd require-osd-release tentacle` itself once every OSD reports 20.x.
     cephImage:
       repository: quay.io/ceph/ceph
-      # renovate: datasource=docker depName=quay.io/ceph/ceph
       tag: v20.2.4
     monitoring:
       enabled: true

@@ -21,7 +21,6 @@ spec:
         containers:
           app:
             image:
-              # renovate: datasource=docker depName=ghcr.io/n8n-io/n8n
               repository: ghcr.io/n8n-io/n8n
               tag: 2.35.7@sha256:166d7e3ca384afdffe75394bf00046c299d84a4bf17b19b35d6cf7773af0a147
             env:
