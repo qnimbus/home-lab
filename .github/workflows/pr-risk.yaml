@@ -99,12 +99,18 @@ jobs:
           TYPESAFE_API_KEY: ${{ steps.load-secrets.outputs.TYPESAFE_API_KEY }}
           JEV_MODEL: ${{ vars.JEV_MODEL || 'jev-1.13.0' }}
           PR_RISK_MODE: ${{ vars.PR_RISK_MODE }}
+        # Exit 3 means Jev or Konflate was down: the summary still shows what it saw, but the step
+        # fails so Publish leaves the labels alone.
         run: |-
-          uv run --no-project --python 3.13 .github/scripts/pr-risk/pr_risk.py classify --input "$RUNNER_TEMP/pr-risk"
-          {
-            if [ "${PR_RISK_MODE:-shadow}" = shadow ]; then echo '> Shadow mode: nothing published to the PR.'; echo; fi
-            cat "$RUNNER_TEMP/pr-risk/comment.md"
-          } >> "$GITHUB_STEP_SUMMARY"
+          rc=0
+          uv run --no-project --python 3.13 .github/scripts/pr-risk/pr_risk.py classify --input "$RUNNER_TEMP/pr-risk" || rc=$?
+          if [ -f "$RUNNER_TEMP/pr-risk/comment.md" ]; then
+            {
+              if [ "${PR_RISK_MODE:-shadow}" = shadow ]; then echo '> Shadow mode: nothing published to the PR.'; echo; fi
+              cat "$RUNNER_TEMP/pr-risk/comment.md"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$rc"
 
       - name: Publish
         if: ${{ steps.classify.outcome == 'success' && contains(fromJSON('["labels", "comment"]'), vars.PR_RISK_MODE) }}
@@ -123,9 +129,8 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pr-risk-${{ inputs.pr }}
-          path: |
-            ${{ runner.temp }}/pr-risk/result.json
-            ${{ runner.temp }}/pr-risk/comment.md
-            ${{ runner.temp }}/pr-risk/konflate.json
+          # The whole bundle, so a run can be re-classified offline after a policy change
+          # (`pr_risk.py classify --input <dir> --jev-fixture` with the answers from result.json).
+          path: ${{ runner.temp }}/pr-risk/
           if-no-files-found: ignore
           retention-days: 30

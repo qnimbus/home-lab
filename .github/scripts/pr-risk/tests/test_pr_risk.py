@@ -61,6 +61,119 @@ def clear_jev():
     return fx
 
 
+# The shape of a Renovate PR body with release notes (from #178), `{notes}` filled per test.
+RENOVATE_BODY = """This PR contains the following updates:
+
+| Package | Update | Change |
+|---|---|---|
+| foo | minor | `v0.8.2` → `v0.9.0` |
+
+---
+
+### Release Notes
+
+<details>
+<summary>foo/foo (ghcr.io/foo/foo)</summary>
+
+### [`v0.9.0`](https://example.invalid/v0.9.0)
+
+{notes}
+
+</details>
+
+---
+
+### Configuration
+
+🚦 **Automerge**: Disabled by config. Please merge this manually once you are satisfied.
+
+ - [ ] <!-- rebase-check -->If you want to rebase/retry this PR, check this box
+"""
+
+
+def crd(rows):
+    return {"diff": {"resources": [{"kind": "CustomResourceDefinition", "title": "CustomResourceDefinition x.example.io",
+                                    "unified": [{"kind": k, "html": h} for k, h in rows]}]}}  # fmt: skip
+
+
+class TestReleaseNotesAndConfig(unittest.TestCase):
+    def test_release_notes_extracted(self):
+        body = RENOVATE_BODY.format(notes="- BREAKING: dropped `foo.bar`")
+        notes = p.release_notes(body, "renovate")
+        self.assertTrue(notes.startswith("foo/foo (ghcr.io/foo/foo)"))
+        self.assertIn("dropped `foo.bar`", notes)
+        self.assertNotIn("Configuration", notes)
+        self.assertNotIn("<details>", notes)
+        desc = p.clean_description(body, "renovate")
+        self.assertIn("`v0.8.2` → `v0.9.0`", desc)
+        self.assertNotIn("BREAKING", desc)  # notes go to their own field
+        self.assertEqual(p.release_notes(body, "owner"), "")
+        self.assertEqual(p.release_notes(load("bundle_179/meta.json")["body"], "renovate"), "")
+
+    def test_raw_state_carries_notes_and_config_only_with_notes(self):
+        meta = {"title": "t", "body": "", "author_kind": "renovate"}
+        conf = {"kubernetes/apps/a/b/app/helmrelease.yaml": "values: {}\n"}
+        state, _ = p.raw_state(meta, [], "", "", "notes", conf)
+        self.assertEqual(state["release_notes"], "notes")
+        self.assertIn("# kubernetes/apps/a/b/app/helmrelease.yaml", state["config"])
+        state, _ = p.raw_state(meta, [], "", "", "", conf)
+        self.assertNotIn("config", state)
+        q = p.raw_questions(False, True, True)
+        self.assertIn("release_notes", q["breaking_notes"]["instructions"]["question"])
+        self.assertIn("breaking_affects_config", q)
+        self.assertNotIn("breaking_affects_config", p.raw_questions(False, False, True))
+
+    def test_config_paths(self):
+        files = [
+            {"status": "M", "path": "kubernetes/apps/observability/smartctl-exporter/app/ocirepository.yaml"},
+            {"status": "M", "path": "kubernetes/components/postgres/cluster.yaml"},
+            {"status": "M", "path": "docker/nas/00-exporters/docker-compose.yaml"},
+            {"status": "D", "path": "kubernetes/apps/media/gone/app/helmrelease.yaml"},
+            {"status": "M", "path": "kubernetes/apps/media/README.md"},
+        ]
+        self.assertEqual(p.config_paths(files), [
+            "kubernetes/apps/observability/smartctl-exporter/app/helmrelease.yaml",
+            "kubernetes/components/postgres/cluster.yaml",
+            "docker/nas/00-exporters/docker-compose.yaml",
+        ])  # fmt: skip
+
+    def test_may_break(self):
+        self.assertEqual(p.may_break({"labels": ["type/major"], "title": "x"}), "Major update")
+        self.assertIn("0.x", p.may_break({"labels": ["type/minor"], "title": "feat(container)!: x", "author_kind": "renovate"}))
+        self.assertIn("breaking", p.may_break({"labels": [], "title": "feat(ci)!: x", "author_kind": "owner"}))
+        self.assertIsNone(p.may_break({"labels": ["type/minor"], "title": "feat(container): x", "author_kind": "renovate"}))
+
+
+class TestCrds(unittest.TestCase):
+    def test_new_fields_are_not_a_version_change(self):
+        self.assertEqual(p.crd_version_changes(crd([("add", "        newField:"), ("ctx", "    served: true")])), [])
+
+    def test_dropped_or_moved_versions_are(self):
+        for rows in ([("del", "    served: true")], [("del", "    storage: true")], [("add", "    served: false")]):
+            self.assertEqual(p.crd_version_changes(crd(rows)), ["CustomResourceDefinition x.example.io"], rows)
+
+    def test_version_change_is_a_konflate_finding(self):
+        s, _ = p.konflate_signals(fresh("konflate_summary_179.json"), True, crd([("del", "    storage: true")]))
+        self.assertEqual(levels(s), [1])
+
+    def test_per_resource_cap_only_when_over_budget(self):
+        big = crd([("add", "    field%d: x" % i) for i in range(400)])
+        self.assertFalse(p.budget_rendered(big, 60_000, 1_000)[1])
+        self.assertTrue(p.budget_rendered(big, 5_000, 1_000)[1])
+
+    def test_descriptions_left_out_of_model_input(self):
+        text = p.render_resource(crd([
+            ("ctx", "            spec:"),
+            ("del", "              description: |-"),
+            ("del", "                Old words."),
+            ("add", "              description: New words"),
+            ("add", "              type: string"),
+        ])["diff"]["resources"][0], 8_000)  # fmt: skip
+        self.assertNotIn("words", text)
+        self.assertIn("+              type: string", text)
+        self.assertIn("(3 description lines left out)", text)
+
+
 class TestGlobsAndTiers(unittest.TestCase):
     def test_glob(self):
         self.assertTrue(p.matches("kubernetes/apps/media/plex/app/helmrelease.yaml", ["kubernetes/apps/**"]))
@@ -97,6 +210,19 @@ class TestKonflateSignals(unittest.TestCase):
         s, info = p.konflate_signals(fresh("konflate_summary_172.json"), True)
         self.assertEqual(levels(s), [1, 1])
         self.assertEqual(info["rules"], ["immutable-field", "immutable-field"])
+
+    def test_immutable_helm_hook_job_is_context(self):
+        def job(delete_policy):
+            rows = [("ctx", "  annotations:"), ("ctx", "    helm.sh/hook: pre-install,pre-upgrade"),
+                    ("ctx", f"    helm.sh/hook-delete-policy: {delete_policy}"), ("add", "        image: x:2")]  # fmt: skip
+            return {"diff": {"resources": [{"kind": "Job", "title": "Job observability/kube-prometheus-stack-admission-create",
+                                            "unified": [{"kind": k, "html": h, "folded": k == "ctx"} for k, h in rows]}]}}  # fmt: skip
+
+        s, _ = p.konflate_signals(fresh("konflate_summary_172.json"), True, job("before-hook-creation,hook-succeeded"))
+        self.assertEqual(levels(s), [0, 1])  # only admission-create is in the rendered diff here
+        self.assertIn("Helm hook", s[0].reason)
+        s, _ = p.konflate_signals(fresh("konflate_summary_172.json"), True, job("hook-failed"))
+        self.assertEqual(levels(s), [1, 1])
 
     def test_immutable_non_job_is_risky(self):
         k = fresh("konflate_summary_172.json")
@@ -237,10 +363,50 @@ class TestDecision(unittest.TestCase):
         self.b.cleanup()
 
     def test_real_fixture_is_review(self):
+        # 0.16 → 0.17 of a 0.x chart with no release notes: the one thing left is the changelog.
         r = self.b.classify(fixture=load("jev_179.json"))
         self.assertEqual(r["verdict"], "review")
-        self.assertIn("risk/uncertain", r["labels"])  # unexpected_changes fence-sits
+        self.assertEqual(r["labels"], ["risk/review"])  # unexpected_changes isn't asked of Renovate titles
+        self.assertEqual([s["reason"] for s in r["signals"] if s["level"] >= 1],
+                         ["0.x update that Renovate marks as breaking and the PR has no release notes: check the upstream changelog"])  # fmt: skip
+        self.assertNotIn("unexpected_changes", r["jev"]["answers"]["rendered"])
         self.assertEqual(r["change_kind"], "version_bump")
+        self.assertTrue(r["available"])
+
+    def test_renovate_bang_minor_with_clean_notes_is_safe(self):
+        self.b.edit("meta.json", lambda m: {**m, "body": RENOVATE_BODY.format(notes="- chore(deps): update actions")})
+        self.assertEqual(self.b.classify(fixture=clear_jev())["verdict"], "safe")
+
+    def test_major_label_without_notes_is_review(self):
+        self.b.edit("meta.json", lambda m: {**m, "title": "feat(container): update foo (1.0 ➔ 2.0)", "labels": ["type/major"]})
+        r = self.b.classify(fixture=clear_jev())
+        self.assertEqual(r["verdict"], "review")
+        self.assertTrue(any(s["reason"].startswith("Major update and the PR has no release notes") for s in r["signals"]))
+
+    def test_breaking_notes_that_touch_config_are_risky(self):
+        self.b.edit("meta.json", lambda m: {**m, "body": RENOVATE_BODY.format(notes="BREAKING: `foo.bar` was renamed")})
+        (self.b.dir / "config.json").write_text(json.dumps({"kubernetes/apps/x/y/app/helmrelease.yaml": "foo:\n  bar: 1\n"}))
+        fx = clear_jev()
+        fx["raw"]["answers"]["breaking_notes"]["noul"] = 0.9
+        fx["raw"]["answers"]["breaking_affects_config"] = {"noul": 0.85}
+        r = self.b.classify(fixture=fx)
+        self.assertEqual(r["verdict"], "risky")
+        self.assertTrue(any("plan the migration" in s["reason"] for s in r["signals"]))
+
+    def test_breaking_notes_elsewhere_are_review(self):
+        self.b.edit("meta.json", lambda m: {**m, "body": RENOVATE_BODY.format(notes="BREAKING: `other` was removed")})
+        (self.b.dir / "config.json").write_text(json.dumps({"kubernetes/apps/x/y/app/helmrelease.yaml": "foo: 1\n"}))
+        fx = clear_jev()
+        fx["raw"]["answers"]["breaking_notes"]["noul"] = 0.9
+        fx["raw"]["answers"]["breaking_affects_config"] = {"noul": 0.05}
+        r = self.b.classify(fixture=fx)
+        self.assertEqual(r["verdict"], "review")
+        self.assertFalse(r["uncertain"])
+
+    def test_overlap_without_conflict_is_context(self):
+        self.b.edit("meta.json", lambda m: {**m, "title": "fix(container): update image foo (1.0.1 ➔ 1.0.2)"})
+        self.b.edit("overlap.json", lambda o: ["kubernetes/apps/observability/smartctl-exporter/app/ocirepository.yaml"])
+        self.assertEqual(self.b.classify(fixture=clear_jev())["verdict"], "safe")
 
     def test_safe_is_earned(self):
         self.b.edit("meta.json", lambda m: {**m, "title": "fix(container): update image foo (1.0.1 ➔ 1.0.2)"})
@@ -261,16 +427,31 @@ class TestDecision(unittest.TestCase):
         self.assertEqual(r["verdict"], "review")
         self.assertTrue(r["uncertain"])
         self.assertIn("raw", r["jev"]["errors"])
+        self.assertFalse(r["available"])  # an outage publishes nothing
+        self.assertIn("PR risk unavailable: Jev down", p.render_comment(r))
+
+    def test_konflate_outage_is_unavailable_but_stale_is_not(self):
+        self.b.edit("konflate.json", lambda k: {"state": "unavailable", "summary": {"reason": "Konflate unreachable"}})
+        self.assertEqual(self.b.classify(fixture=clear_jev())["outage"], ["Konflate"])
+        self.b.edit("konflate.json", lambda k: {"state": "stale", "summary": {"reason": "rendering"}})
+        self.assertTrue(self.b.classify(fixture=clear_jev())["available"])
 
     def test_model_cannot_lower_hard_rule(self):
         self.b.edit("conflict.json", lambda c: {"conflict": True, "files": ["x"]})
         self.assertEqual(self.b.classify(fixture=clear_jev())["verdict"], "risky")
 
-    def test_foundation_never_safe(self):
+    def test_clean_foundation_bump_is_safe(self):
+        # The tier is context: a clean, rendered patch bump of Rook merges as-is.
         self.b.edit("meta.json", lambda m: {**m, "title": "fix: x"})
         self.b.edit("files.json", lambda f: [{**f[0], "path": "kubernetes/apps/rook-ceph/rook-ceph/app/ocirepository.yaml"}])
         r = self.b.classify(fixture=clear_jev())
-        self.assertEqual(r["verdict"], "review")
+        self.assertEqual(r["verdict"], "safe")
+        self.assertTrue(any(s["reason"].startswith("Cluster foundation") and s["level"] == 0 for s in r["signals"]))
+
+    def test_unrendered_paths_never_safe(self):
+        self.b.edit("meta.json", lambda m: {**m, "title": "fix: x"})
+        self.b.edit("files.json", lambda f: [{**f[0], "path": "kubernetes/talos/version.yaml"}])
+        self.assertEqual(self.b.classify(fixture=clear_jev())["verdict"], "review")
 
     def test_injection_is_risky(self):
         fx = clear_jev()
@@ -287,18 +468,26 @@ class TestDecision(unittest.TestCase):
         self.assertEqual(r["verdict"], "review")
         self.assertTrue(r["uncertain"])
 
-    def test_high_blast_alone_is_review(self):
+    def test_high_blast_alone_is_not_a_finding(self):
         self.b.edit("meta.json", lambda m: {**m, "title": "fix(container): update image coredns (1.0.1 ➔ 1.0.2)"})
         fx = clear_jev()
         fx["raw"]["answers"]["blast_radius"].update(score=2.9, confidence=0.9)
+        self.assertEqual(self.b.classify(fixture=fx)["verdict"], "safe")
+
+    def test_high_blast_with_major_bump_is_review(self):
+        # #178 (external-dns webhook, routine render, chore-only notes) was labelled risky this way.
+        fx = clear_jev()  # the fixture's title is a `!:` 0.x update without release notes
+        fx["raw"]["answers"]["blast_radius"].update(score=2.9, confidence=0.9)
         self.assertEqual(self.b.classify(fixture=fx)["verdict"], "review")
 
-    def test_high_blast_with_major_bump_is_risky(self):
-        fx = clear_jev()  # the fixture's title is a `!:` major update
+    def test_high_blast_with_konflate_finding_is_risky(self):
+        self.b.edit("konflate.json", lambda k: {**k, "summary": {**k["summary"], "diff": {
+            **k["summary"]["diff"], "warnings": [{"level": "caution", "rule": "replicas-zero", "resource": "Deployment a/b"}]}}})  # fmt: skip
+        fx = clear_jev()
         fx["raw"]["answers"]["blast_radius"].update(score=2.9, confidence=0.9)
         r = self.b.classify(fixture=fx)
         self.assertEqual(r["verdict"], "risky")
-        self.assertTrue(any("combined with: Major update" in s["reason"] for s in r["signals"]))
+        self.assertTrue(any("combined with: `replicas-zero`" in s["reason"] for s in r["signals"]))
 
     def test_high_blast_with_uncertainty_stays_review(self):
         self.b.edit("meta.json", lambda m: {**m, "title": "fix: x"})
@@ -318,8 +507,9 @@ class TestDecision(unittest.TestCase):
         r = self.b.classify(fixture=load("jev_179.json"))
         md = p.render_comment(r)
         self.assertTrue(md.startswith(p.COMMENT_MARKER))
-        self.assertIn("PR risk: **review** · uncertain", md)
-        self.assertIn("| pr | 🟡 Major update", md)
+        self.assertIn("PR risk: **review**, check the 🟡 findings before merging\n", md)
+        self.assertIn("| pr | 🟡 0.x update that Renovate marks as breaking", md)
+        self.assertIn("| jev | Blast radius 1.7/3 |", md)
         self.assertIn("kind **version_bump** · jev-1.13.0", md)
         self.assertIn("/#/pr/179", md)
 
