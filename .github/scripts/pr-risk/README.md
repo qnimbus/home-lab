@@ -21,9 +21,20 @@ Code decides. [Jev](https://docs.typesafe.ai) only advises.
 2. **Jev** answers narrow yes/no questions in two calls. It can only **raise** the level.
    - The raw-diff call covers change kind, blast radius, storage, secrets, exposure, Flux substitution, breaking notes, description match, prompt injection, and overlap with `main`.
    - The rendered-diff call runs only when Konflate has a fresh render. It covers availability, data loss, RBAC, exposure, privileges, CRD schema, and changes the title doesn't explain.
+   - Blast radius measures impact, not likelihood. On its own it only asks for review. A PR becomes risky when a high blast radius (≥ 2.5) comes with an independent, certain finding, such as a major bump, a Konflate caution or a storage change.
 3. **`safe` must be earned.** No hard rule fired, every model answer is a clear no, the description matches, confidence is high, and Konflate rendered the PR's current head (when the PR touches Flux resources). Anything short of that is `review`. Fence-sitting answers add `risk/uncertain`.
 
 Thresholds live in `THRESHOLDS`. Tune them with the backtest before trusting the labels.
+
+The first backtest ran on 2026-09-28 with `jev-1.13.0`, over 113 merged PRs:
+
+|        | Count                                  |
+| ------ | -------------------------------------- |
+| risky  | 11 (8 of them later reverted or fixed) |
+| review | 87                                     |
+| safe   | 15                                     |
+
+Across all 1,058 direct commits, 9 of the 10 later-reverted ones were flagged review or above. The miss was a paperless-ngx memory-limit bump (`cf4bee2`), and resource limits have no question of their own yet. The main knob left is `blast_review` (1.5), which currently sends most shared-platform bumps to review.
 
 ## Security model
 

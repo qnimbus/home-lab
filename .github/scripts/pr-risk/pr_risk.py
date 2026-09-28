@@ -754,13 +754,18 @@ def decide(signals: list[Signal], answers: dict, *, inert_only: bool, konflate_o
     dm = nv("description_matches")
     if dm is not None and dm <= t["description_bad"]:
         s.append(Signal("jev", 1, f"Title/description don't match the diff (`description_matches` {dm:.2f})"))
+    # Blast radius is impact, not likelihood: on its own it only asks for review. It makes a PR
+    # risky together with an independent, certain finding (paths excluded: same information).
+    # Backtest 2026-09-28: as a standalone risky rule it labelled 52% of merged PRs risky,
+    # patch bumps of CoreDNS and cert-manager included.
     blast = answers.get("blast_radius") or {}
     if "score" in blast:
         b = blast["score"]
-        if b >= t["blast_risky"]:
-            s.append(Signal("jev", 2, f"Blast radius {b:.1f}/3"))
-        elif b >= t["blast_review"]:
+        if b >= t["blast_review"]:
             s.append(Signal("jev", 1, f"Blast radius {b:.1f}/3"))
+        partners = [x for x in s if x.level >= 1 and not x.uncertain and x.source in ("git", "pr", "konflate", "jev") and not x.reason.startswith("Blast")]
+        if b >= t["blast_risky"] and partners:
+            s.append(Signal("decision", 2, f"High blast radius ({b:.1f}/3) combined with: {partners[0].reason}"))
     for k in ("change_kind", "blast_radius"):
         c = (answers.get(k) or {}).get("confidence")
         if c is not None and c < t["confidence_unsure"]:

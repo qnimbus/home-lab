@@ -287,6 +287,26 @@ class TestDecision(unittest.TestCase):
         self.assertEqual(r["verdict"], "review")
         self.assertTrue(r["uncertain"])
 
+    def test_high_blast_alone_is_review(self):
+        self.b.edit("meta.json", lambda m: {**m, "title": "fix(container): update image coredns (1.0.1 ➔ 1.0.2)"})
+        fx = clear_jev()
+        fx["raw"]["answers"]["blast_radius"].update(score=2.9, confidence=0.9)
+        self.assertEqual(self.b.classify(fixture=fx)["verdict"], "review")
+
+    def test_high_blast_with_major_bump_is_risky(self):
+        fx = clear_jev()  # the fixture's title is a `!:` major update
+        fx["raw"]["answers"]["blast_radius"].update(score=2.9, confidence=0.9)
+        r = self.b.classify(fixture=fx)
+        self.assertEqual(r["verdict"], "risky")
+        self.assertTrue(any("combined with: Major update" in s["reason"] for s in r["signals"]))
+
+    def test_high_blast_with_uncertainty_stays_review(self):
+        self.b.edit("meta.json", lambda m: {**m, "title": "fix: x"})
+        self.b.edit("konflate.json", lambda k: {"state": "stale", "summary": {"reason": "rendering"}})
+        fx = clear_jev()
+        fx["raw"]["answers"]["blast_radius"].update(score=2.9, confidence=0.9)
+        self.assertEqual(self.b.classify(fixture=fx)["verdict"], "review")
+
     def test_inert_only_shortcut(self):
         self.b.edit("files.json", lambda f: [{"status": "M", "path": "README.md", "additions": 1, "deletions": 0}])
         self.b.edit("konflate.json", lambda k: {"state": "skipped", "summary": {}})

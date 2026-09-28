@@ -87,7 +87,10 @@ def run_item(event, base, head, konflate_url, key, model) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
         p.collect(event, base, head, out, konflate_url, 0)
-        if not konflate_url:  # no render exists for history: judge the rest on its own
+        # No render exists for older history (commits, or PRs from before Konflate): judge the
+        # rest on its own rather than flag every item uncertain.
+        state = json.loads((out / "konflate.json").read_text())["state"]
+        if not konflate_url or state == "not_rendered":
             (out / "konflate.json").write_text(json.dumps({"state": "ignored", "summary": {"reason": "backtest"}}))
         return p.classify(out, key=key, model=model)
 
