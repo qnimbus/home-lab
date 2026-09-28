@@ -33,7 +33,7 @@ spec:
             image:
               repository: ghcr.io/gethomepage/homepage
               # renovate: datasource=docker depName=ghcr.io/gethomepage/homepage
-              tag: v2.0.0@sha256:638dacf5c844e908dc06c1fd57a2b5694f8efd91f91f152829ea0c2f547458f2
+              tag: v2.4.0@sha256:643bd0be730d40f69d58028a55d1a896739333e8815786df42bc97f109ecbe61
             env:
               HOMEPAGE_ALLOWED_HOSTS: "homepage.${DOMAIN_CLUSTER}"
               # https://gethomepage.dev/configs/mcp/ — read-only; HOMEPAGE_MCP_ALLOW_WRITE is
