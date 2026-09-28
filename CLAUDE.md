@@ -56,7 +56,7 @@ Run automatically on `git commit`, staged-file-scoped: `mise fmt`, `mise lock` (
 `cluster-apps` injects cluster-wide defaults via Kustomize patches onto _every_ Kustomization/HelmRelease it manages, so individual apps don't repeat that boilerplate:
 
 - `postBuild.substituteFrom` the `cluster-settings` ConfigMap, looked up in the Kustomization's own namespace (it comes from `components/cluster-settings`, which every namespace's `kustomization.yaml` pulls in) — opt out with `substitution.flux.home.arpa/disabled: "true"`.
-- default `retryInterval: 2m`/`timeout: 15m`.
+- default `retryInterval: 2m`/`timeout: 15m`, and `deletionPolicy: WaitForTermination`: deleting a Kustomization deletes its resources and waits (up to `timeout`) until they're actually gone. It deletes even with `prune: false`, so moving an app without losing its data still needs a temporary `deletionPolicy: Orphan` patched onto the old live Kustomization first.
 - HelmRelease install/upgrade `CreateReplace`/`RetryOnFailure`/`RemediateOnFailure` strategy, and `driftDetection: enabled` (opt out with `drift-detection.flux.home.arpa/disabled: "true"`).
 - a label-driven patch: a Flux Kustomization tagged `components.postgres/cnpg=init` gets its CNPG `Cluster` rewritten to a plain `initdb` bootstrap instead of Barman recovery, for brand-new databases with no prior backup.
 
