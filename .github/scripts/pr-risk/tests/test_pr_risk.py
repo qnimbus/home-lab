@@ -327,6 +327,31 @@ class TestCrds(unittest.TestCase):
         self.assertNotIn("words", text)
         self.assertIn("+              type: string", text)
         self.assertIn("(3 description lines left out)", text)
+        self.assertNotIn("only description text changed", text)
+
+    # #177 (plugin-barman-cloud 0.7.0 → 0.8.0): a longer description, nothing else. Jev saw an
+    # empty "changed" CRD and answered crd_schema_change 0.41, which alone made the PR uncertain.
+    DESCRIPTION_ONLY = [
+        ("ctx", "                                key:"),
+        ("del", "                                  description: The key to select."),
+        ("add", "                                  description: |-"),
+        ("add", "                                    The key to select from the ConfigMap's Data field."),
+        ("add", ""),
+        ("add", "                                    Keys in the BinaryData field are not currently propagated."),
+        ("ctx", "                                  type: string"),
+    ]
+
+    def test_description_only_crd_says_so(self):
+        r = crd(self.DESCRIPTION_ONLY)
+        self.assertFalse(p.crd_schema_changed(r["diff"]["resources"][0]))  # the blank line stays in the block
+        text = p.render_resource(r["diff"]["resources"][0], 8_000)
+        self.assertIn("(only description text changed; the schema itself is unchanged)", text)
+        self.assertNotIn("\n+", text)
+
+    def test_description_only_crd_is_not_asked_about(self):
+        self.assertFalse(p.any_crd_schema_change(crd(self.DESCRIPTION_ONLY)))
+        self.assertNotIn("crd_schema_change", p.rendered_questions(False, crd_schema=False))
+        self.assertTrue(p.any_crd_schema_change(crd(self.DESCRIPTION_ONLY + [("add", "                                  pattern: ^x$")])))
 
 
 class TestGlobsAndTiers(unittest.TestCase):

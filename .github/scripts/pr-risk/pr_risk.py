@@ -639,30 +639,51 @@ TAG = re.compile(r"<[^>]+>")
 DESCRIPTION_KEY = re.compile(r"^(\s*)description:")
 
 
-def render_resource(r: dict, per_resource: int) -> str:
-    """A CRD's diff is mostly `description:` text; it goes, so the budget holds the schema."""
-    lines = [f"### {r.get('status', '?')} {r.get('title') or r.get('kind', '?')} (from {r.get('parent') or '-'})"]
-    crd, skip_indent, skipped = r.get("kind") == "CustomResourceDefinition", None, 0
+def visible_rows(r: dict):
+    """Yield (row, text, is_description) for a resource's unfolded rows and hunk markers. For a
+    CRD, a `description:` key and its continuation lines (blank ones included) are flagged."""
+    crd, skip_indent = r.get("kind") == "CustomResourceDefinition", None
     for u in r.get("unified") or []:
         if u.get("hunk"):
-            lines.append("@@")
             skip_indent = None
-        elif not u.get("folded"):
-            text = row_text(u)
-            if crd:
-                indent = len(text) - len(text.lstrip())
-                if skip_indent is not None and text.strip() and indent > skip_indent:
-                    skipped += 1
-                    continue
+            yield u, "", False
+            continue
+        if u.get("folded"):
+            continue
+        text, desc = row_text(u), False
+        if crd:
+            indent = len(text) - len(text.lstrip())
+            if skip_indent is not None and (not text.strip() or indent > skip_indent):
+                desc = True
+            else:
                 skip_indent = None
                 m = DESCRIPTION_KEY.match(text)
                 if m:
-                    skip_indent, skipped = len(m.group(1)), skipped + 1
-                    continue
-            prefix = {"add": "+", "del": "-"}.get(u.get("kind"), " ")
-            lines.append(prefix + text)
+                    skip_indent, desc = len(m.group(1)), True
+        yield u, text, desc
+
+
+def crd_schema_changed(r: dict) -> bool:
+    """Whether a CRD's diff changes anything besides description text."""
+    return any(u.get("kind") in ("add", "del") and not desc for u, _, desc in visible_rows(r))
+
+
+def render_resource(r: dict, per_resource: int) -> str:
+    """A CRD's diff is mostly `description:` text; it goes, so the budget holds the schema."""
+    lines = [f"### {r.get('status', '?')} {r.get('title') or r.get('kind', '?')} (from {r.get('parent') or '-'})"]
+    skipped = 0
+    for u, text, desc in visible_rows(r):
+        if u.get("hunk"):
+            lines.append("@@")
+        elif desc:
+            skipped += 1
+        else:
+            lines.append({"add": "+", "del": "-"}.get(u.get("kind"), " ") + text)
     if skipped:
         lines.append(f"({skipped} description lines left out)")
+    if r.get("kind") == "CustomResourceDefinition" and not crd_schema_changed(r):
+        # Said outright: an empty "changed" CRD left the model unsure (#177, `crd_schema_change` 0.41)
+        lines.append("(only description text changed; the schema itself is unchanged)")
     text = clip_lines("\n".join(lines), BUDGET["line"])
     if len(text) > per_resource:
         text = text[:per_resource] + "\n… (resource truncated)"
@@ -1034,7 +1055,7 @@ def raw_questions(has_base_changes: bool, has_notes: bool = False, has_config: b
     return q
 
 
-def rendered_questions(human_title: bool = True) -> dict:
+def rendered_questions(human_title: bool = True, crd_schema: bool = True) -> dict:
     q = {
         "reduces_availability": noul("`rendered_diff` lowers a replica count, removes a PodDisruptionBudget, or switches a workload to the Recreate strategy"),
         "data_loss_risk": noul(
@@ -1065,7 +1086,15 @@ def rendered_questions(human_title: bool = True) -> dict:
         # A Renovate title is only "update X a → b", so everything a chart bump renders "doesn't
         # follow from" it: the question fence-sat on every chart bump.
         q["unexpected_changes"] = noul("`rendered_diff` contains changes that do not follow from what `title` describes")
+    if not crd_schema:
+        # No CRD changes beyond description text: the answer is known, so the model isn't asked.
+        del q["crd_schema_change"]
     return q
+
+
+def any_crd_schema_change(kdiff: dict | None) -> bool:
+    resources = ((kdiff or {}).get("diff") or {}).get("resources") or []
+    return any(r.get("kind") == "CustomResourceDefinition" and crd_schema_changed(r) for r in resources)
 
 
 ESCALATE_RISKY = {"data_loss_risk", "semantic_overlap", "addressed_to_reviewer"}
@@ -1239,7 +1268,7 @@ def classify(d: Path, *, key: str | None, model: str, fixture: dict | None = Non
     if konflate.get("state") == "fresh" and kdiff:
         jobs["rendered"] = (
             lambda sc: rendered_state(meta, kinfo, kdiff, sc),
-            rendered_questions(human_title=meta.get("author_kind") != "renovate"),
+            rendered_questions(human_title=meta.get("author_kind") != "renovate", crd_schema=any_crd_schema_change(kdiff)),
         )
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         futures = {n: pool.submit(ask, n, b, q, key=key, model=model, fixture=fixture) for n, (b, q) in jobs.items()}
@@ -1324,7 +1353,9 @@ def render_comment(r: dict) -> str:
     if answer_rows:
         details = "\n<details><summary>Jev answers</summary>\n\n| call | question | answer |\n|---|---|---|\n" + "\n".join(answer_rows) + "\n\n</details>\n"
     kind = f"kind **{r['change_kind']}** · " if r.get("change_kind") else ""
-    url = k.get("url") or f"{KONFLATE_UI}/#/pr/{r['number']}"  # reviewUrl follows Konflate's publicUrl
+    # Not Konflate's reviewUrl: it follows the host of the request, which in the workflow is the
+    # in-cluster Service (http://konflate.flux-system.svc.cluster.local:8080), useless in a comment.
+    url = f"{KONFLATE_UI}/#/pr/{r['number']}"
     link = f" · [rendered diff]({url})" if k.get("state") == "fresh" else ""
     errors = "; ".join(f"{n}: {e[:120]}" for n, e in (r["jev"].get("errors") or {}).items())
     footer = f"<sub>{kind}{r['jev'].get('model') or 'Jev not used'}{' (' + errors + ')' if errors else ''} · advisory only{link}</sub>"
