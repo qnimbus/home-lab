@@ -2,20 +2,23 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: PR Risk
 
-# Classifies each PR as risk/safe|review|risky (+ risk/uncertain) from git facts, path tiers,
+# Classifies a PR as risk/safe|review|risky (+ risk/uncertain) from git facts, path tiers,
 # Konflate's render and TypeSafe Jev. Advisory and fail-open: code decides, Jev can only raise
 # the level, and no step here can fail the job over a classification problem. PR_RISK_MODE picks
 # what it publishes: shadow (default: job summary + artifact), labels, or comment (labels + comment).
+# Manual for now (`gh workflow run pr-risk.yaml -f pr=<number>`) while runner egress is sorted out.
 # See .github/scripts/pr-risk/README.md.
 
 on:
-  pull_request:
-    branches:
-      - main
-    types: [opened, synchronize, reopened, ready_for_review, edited]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number to classify
+        required: true
+        type: number
 
 concurrency:
-  group: pr-risk-${{ github.event.pull_request.number }}
+  group: pr-risk-${{ inputs.pr }}
   cancel-in-progress: true
 
 permissions:
@@ -24,9 +27,6 @@ permissions:
 jobs:
   classify:
     name: PR Risk
-    # Same-repo PRs only: the job runs on the in-cluster runner with secrets. Drafts wait for
-    # ready_for_review, as Konflate does.
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft }}
     # Its own variable, not RUNNER: Konflate is only reachable in-cluster. On a GitHub-hosted
     # runner the classifier still runs, raw-diff-only and flagged uncertain.
     runs-on: ${{ vars.PR_RISK_RUNNER || 'home-lab' }}
@@ -35,12 +35,33 @@ jobs:
       contents: read
       pull-requests: write # labels + the sticky comment
     steps:
+      # The Pulls API's object has the shape of a pull_request event payload, so pr_risk.py reads
+      # it as one. Open, same-repo PRs only: the job runs on the in-cluster runner with secrets.
+      - name: Resolve PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+        run: |-
+          curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pulls/${PR}" \
+            | jq '{pull_request: .}' > "$RUNNER_TEMP/event.json"
+          state=$(jq -r '.pull_request.state' "$RUNNER_TEMP/event.json")
+          head_repo=$(jq -r '.pull_request.head.repo.full_name' "$RUNNER_TEMP/event.json")
+          if [ "$state" != open ] || [ "$head_repo" != "$GITHUB_REPOSITORY" ]; then
+            echo "::error::PR #${PR} is ${state} from ${head_repo}; only open same-repo PRs are classified"
+            exit 1
+          fi
+          echo "base-ref=$(jq -r '.pull_request.base.ref' "$RUNNER_TEMP/event.json")" >> "$GITHUB_OUTPUT"
+
       # The base branch, never the PR: the classifier comes from main, so a PR can't rewrite its
       # own verdict. PR content is only read as git objects (diff, merge-tree), never executed.
       - name: Checkout base branch
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.base.ref }}
+          ref: ${{ steps.pr.outputs.base-ref }}
           fetch-depth: 0 # merge-base, overlap and the PR head (a same-repo branch)
           persist-credentials: false
 
@@ -63,12 +84,12 @@ jobs:
         id: collect
         continue-on-error: true
         env:
-          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          BASE_REF: ${{ steps.pr.outputs.base-ref }}
           KONFLATE_URL: ${{ vars.KONFLATE_URL || 'http://konflate.flux-system.svc.cluster.local:8080' }}
           KONFLATE_WAIT_SECONDS: ${{ vars.KONFLATE_WAIT_SECONDS || '480' }}
         run: >-
           uv run --no-project --python 3.13 .github/scripts/pr-risk/pr_risk.py collect
-          --base "origin/${BASE_REF}" --event "$GITHUB_EVENT_PATH" --out "$RUNNER_TEMP/pr-risk"
+          --base "origin/${BASE_REF}" --event "$RUNNER_TEMP/event.json" --out "$RUNNER_TEMP/pr-risk"
 
       - name: Classify
         id: classify
@@ -101,7 +122,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: pr-risk-${{ github.event.pull_request.number }}
+          name: pr-risk-${{ inputs.pr }}
           path: |
             ${{ runner.temp }}/pr-risk/result.json
             ${{ runner.temp }}/pr-risk/comment.md

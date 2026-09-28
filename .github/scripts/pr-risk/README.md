@@ -1,6 +1,12 @@
 # PR risk classifier
 
-`.github/workflows/pr-risk.yaml` labels each PR `risk/safe`, `risk/review` or `risk/risky`, plus `risk/uncertain` when the evidence is thin. It is advisory and fails open. A crash, an outage or a missing key leaves the labels as they are, and the job never fails because of them.
+`.github/workflows/pr-risk.yaml` labels a PR `risk/safe`, `risk/review` or `risk/risky`, plus `risk/uncertain` when the evidence is thin. It is advisory and fails open. A crash, an outage or a missing key leaves the labels as they are, and the job never fails because of them.
+
+For now it only runs on demand, while the in-cluster runner's outbound network is fixed (the runner pods intermittently tried IPv6 and couldn't reach 1Password):
+
+```bash
+gh workflow run pr-risk.yaml -f pr=174
+```
 
 ## How a verdict is made
 
@@ -38,7 +44,7 @@ Across all 1,058 direct commits, 9 of the 10 later-reverted ones were flagged re
 
 ## Security model
 
-- The trigger is `pull_request` on same-repo PRs only. The repo is private, so only push-access actors (you and the Renovate App) open PRs. Fork PRs don't run at all.
+- The trigger is `workflow_dispatch` with a PR number. It only runs for open, same-repo PRs; the job fetches the PR from the API and stops otherwise. The repo is private, so only push-access actors (you and the Renovate App) open PRs. To run on every PR again, switch the trigger back to `pull_request` on `main` (types `opened, synchronize, reopened, ready_for_review, edited`) and read the event from `$GITHUB_EVENT_PATH`.
 - The checkout is the **base** branch, so the classifier always comes from `main`. PR content is read as git objects (`git diff --no-ext-diff --no-textconv`, `git merge-tree`) and is never executed.
 - The job runs on the in-cluster `home-lab` runner, because Konflate is internal-only. That runner is cluster-admin, which is exactly why nothing from the PR runs.
 - Everything the PR author wrote is untrusted input to the model: the title, body, diff and the rendered YAML. Hard rules come only from Konflate's structured fields. `addressed_to_reviewer` is a prompt-injection tripwire, and a hit makes the PR risky.
