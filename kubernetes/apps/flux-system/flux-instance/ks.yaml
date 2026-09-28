@@ -11,9 +11,6 @@ spec:
   dependsOn:
     - name: flux-operator
       namespace: flux-system
-    # flux-github-app ExternalSecret in this path requires the ESO webhook to be
-    # serving before dry-run validation passes; without this the Kustomization
-    # fails transiently on every bootstrap until ESO is ready.
     - name: external-secrets
       namespace: external-secrets
   prune: true

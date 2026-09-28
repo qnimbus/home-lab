@@ -1,7 +1,5 @@
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/gateway.networking.k8s.io/httproute_v1.json
-# GitHub's webhook deliveries (POST /hooks), same shape as flux-receiver's flux-webhook
-# route. Kept on its own host because that's the URL the GitHub App delivers to.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -22,8 +20,6 @@ spec:
             value: /hooks
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/gateway.networking.k8s.io/httproute_v1.json
-# The public UI, and the host publicUrl links to from PR comments. konflate has no auth;
-# that's fine because this repo is public, so its rendered manifests are too.
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:

@@ -4,9 +4,6 @@ instance:
     # renovate: datasource=github-releases depName=fluxcd/flux2
     version: v2.9.5
   cluster:
-    # No NetworkPolicies in flux-system, like every other namespace here. The operator's
-    # default set only admits cross-namespace ingress on 8080, which silently broke
-    # Prometheus scraping konflate's metrics port (8081).
     networkPolicy: false
     size: medium
   components:
@@ -53,10 +50,6 @@ instance:
         target:
           kind: Deployment
           name: (kustomize-controller|helm-controller|source-controller)
-      # kustomize-controller runs at a higher concurrency than helm-controller/source-controller
-      # (more Kustomizations than HelmReleases in this repo, and dependency-chain unblocking
-      # benefits most from extra parallelism) — kept in one patch so the effective value is
-      # explicit rather than the result of two patches landing in a particular list order.
       - patch: |
           - op: add
             path: /spec/template/spec/containers/0/args/-
@@ -106,12 +99,6 @@ instance:
         target:
           kind: Deployment
           name: helm-controller
-      # Inject shared pod label onto the three scalable controllers only so they form one
-      # 6-pod group (3 x 2 replicas) for topology spread. Scoped to these three by name:
-      # source-controller cannot run 2 Ready replicas (artifact server only starts on leader);
-      # flux-operator manages the FluxInstance CR and has no HA value. Including either in the
-      # label group would skew the per-node count before the constrained pods are placed and
-      # would cause DoNotSchedule to block valid placements.
       - patch: |
           - op: add
             path: /spec/template/metadata/labels/app.kubernetes.io~1part-of
@@ -119,9 +106,6 @@ instance:
         target:
           kind: Deployment
           name: (helm-controller|kustomize-controller|notification-controller)
-      # Scale to 2 replicas: pre-places one pod per two nodes so a single node failure
-      # triggers leader-election failover (~35 s lease duration) instead of pod rescheduling
-      # (~5-6 min). source-controller and flux-operator excluded — see label patch above.
       - patch: |
           - op: replace
             path: /spec/replicas
@@ -129,10 +113,6 @@ instance:
         target:
           kind: Deployment
           name: (helm-controller|kustomize-controller|notification-controller)
-      # Spread the 6 scalable Flux controller pods (3 controllers x 2 replicas) across 3 nodes.
-      # ScheduleAnyway (soft) keeps controllers running through single-node upgrade reboots —
-      # DoNotSchedule would leave helm-controller and notification-controller Pending for the
-      # entire ~80-minute reboot window on every Talos/K8s upgrade, stalling reconciliation.
       - patch: |
           - op: add
             path: /spec/template/spec/topologySpreadConstraints

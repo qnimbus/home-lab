@@ -13,16 +13,11 @@ spec:
     config:
       mcp: true
       prComments: true
-      # Only non-draft PRs that touch the cluster. area/kubernetes comes from the labeler;
-      # konflate re-evaluates on the `labeled` / `ready_for_review` webhooks, so a PR is
-      # rendered as soon as the label lands or it leaves draft.
       prFilterExpr: "pr.labels.exists(l, l.name == 'area/kubernetes') && !pr.draft"
       publicUrl: "https://${APP}.${DOMAIN_APP}"
       repo: github://qnimbus/home-lab
       statusChecks: true
       verifyImages: true
-    # Internal host for the UI and the read-only /mcp endpoint. The public UI host and
-    # GitHub's /hooks route are in httproute.yaml.
     httpRoute:
       enabled: true
       hostnames:

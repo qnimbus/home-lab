@@ -7,8 +7,6 @@ metadata:
 spec:
   targetNamespace: flux-system
   dependsOn:
-    # The ExternalSecret in this path needs the ESO webhook serving before dry-run
-    # validation passes (same reason as flux-instance).
     - name: external-secrets
       namespace: external-secrets
   interval: 1h
