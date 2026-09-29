@@ -44,9 +44,52 @@ kubectl get externalsecrets -A
 # PVCs not Bound
 kubectl get pvc -A | grep -v Bound
 
-# Recent warning events, fleet-wide
-kubectl get events -A --field-selector type=Warning --sort-by=.lastTimestamp | tail -30
+# Recent warning events, fleet-wide, minus known self-resolving noise (see below)
+succeeded=$(kubectl get snapshots.kopiur.home-operations.com -A -o json |
+  jq -c '[.items[] | select(.status.phase == "Succeeded") | "\(.metadata.namespace)/\(.metadata.name)"]')
+pvs=$(kubectl get pv -o json | jq -c '[.items[].metadata.name]')
+pushed=$(kubectl get pushsecrets -A -o json | jq -c '[.items[]
+  | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))
+  | "\(.metadata.namespace)/\(.metadata.name)"]')
+kubectl get events -A --field-selector type=Warning -o json |
+  jq -r --argjson ok "$succeeded" --argjson pvs "$pvs" --argjson pushed "$pushed" '
+  .items | sort_by(.lastTimestamp // .eventTime) | .[] |
+  select((.reason == "MissingDependency" and .involvedObject.kind == "Snapshot"
+    and (.involvedObject.apiVersion | startswith("kopiur."))
+    and ("\(.involvedObject.namespace)/\(.involvedObject.name)" as $s | $ok | index($s))) | not) |
+  select((.reason == "VolumeFailedDelete" and (.message | test("is still attached to node"))
+    and (.involvedObject.name as $pv | $pvs | index($pv) | not)) | not) |
+  select((.reason == "Errored" and .involvedObject.kind == "PushSecret"
+    and (.message | test("error updating 1Password Item: status 400"))
+    and ("\(.involvedObject.namespace)/\(.involvedObject.name)" as $p | $pushed | index($p))) | not) |
+  "\(.lastTimestamp // .eventTime)  \(.involvedObject.namespace // "-")  \(.reason)  \(.involvedObject.kind)/\(.involvedObject.name)  \(.message)"' |
+  tail -30
 ```
+
+The query above drops three warnings that fire routinely and resolve on their own, once they have.
+The first two come from every kopiur backup run:
+
+- **`MissingDependency` on the `Snapshot`** ("waiting for VolumeSnapshot `<ns>/<name>-snap` to
+  become readyToUse"). kopiur checks the Ceph snapshot it has just created about a second later,
+  before the snapshot can be ready; it's usually ready within a minute or two. It's dropped once the
+  `Snapshot` has reached `Succeeded`. If one still shows, check that `Snapshot`'s `status.phase`:
+  still running before the message's "staging fails at" time is expected. Only a `Failed` phase, or a
+  run still waiting past that time, is a finding.
+- **`VolumeFailedDelete` "is still attached to node"** on the PV behind kopiur's temporary
+  `<name>-src` PVC. kopiur deletes that PVC as soon as the backup finishes, while the volume is still
+  being detached, so the CSI provisioner's first 3–4 delete attempts fail. It succeeds a few seconds
+  later. The event is dropped once the PV no longer exists, whatever created it. A PV that still
+  exists is a finding, and so is a leftover `-src` PVC.
+
+The third comes from the certificate PushSecrets in `network`:
+
+- **`Errored` "set secret failed: … error updating 1Password Item: status 400: Unable to update
+  item"** on a PushSecret. ESO's 1Password Connect provider writes each `data` entry as a separate
+  read-modify-write of the whole item. When the `tls.crt` write's new item version hasn't reached
+  Connect yet, the `tls.key` write is based on the old version and 1Password rejects it. ESO retries
+  and succeeds a few seconds later, so roughly one such event per hourly sync round is normal. It's
+  dropped while the PushSecret is `Ready`. A PushSecret that isn't `Ready`, or any other push error,
+  is a finding.
 
 For Kustomizations/HelmReleases, `READY` + `STATUS`/`MESSAGE` columns are the signal. `Unknown` that
 persists for more than a couple of reconcile intervals is as bad as `False` — Flux only shows
@@ -160,6 +203,10 @@ If nothing is wrong, say so plainly — don't manufacture findings to justify th
   a pod that restarted 100 times over 3 days but not recently is not an active incident.
 - **Not checking `spec.suspend`** before flagging a non-Ready Kustomization/HelmRelease —
   deliberately suspended resources are not incidents.
+- **Reporting kopiur's per-backup warnings** — `MissingDependency` for a `Snapshot` that is still
+  within its deadline or has already `Succeeded`, or `VolumeFailedDelete` for a PV that is already
+  gone. Both fire on every backup run. Likewise a PushSecret's 1Password `status 400` event when
+  the PushSecret is `Ready` again.
 - **Trying `flux get ...`** — not installed; this repo's toolchain is `kubectl`-only for Flux CRs.
 - **Skipping the Silence check** — an alert matching an active `Silence` CR is already known and
   accepted; re-diagnosing it from scratch wastes time and risks a wrong root cause.
