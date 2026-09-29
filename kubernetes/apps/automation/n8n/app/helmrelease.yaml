@@ -22,7 +22,7 @@ spec:
           app:
             image:
               repository: ghcr.io/n8n-io/n8n
-              tag: 2.35.7@sha256:166d7e3ca384afdffe75394bf00046c299d84a4bf17b19b35d6cf7773af0a147
+              tag: 2.42.0@sha256:862c954d784885f0406b19d9ee8f6a2ec9f93e976e2a6580ad85dedd58463bb1
             env:
               # --- Database: dedicated CNPG cluster (components/postgres), same namespace
               # as this Deployment — NAME/USER/PASSWORD read from the generated
