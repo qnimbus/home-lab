@@ -17,7 +17,6 @@ spec:
   postBuild:
     substitute:
       APP: *app
-      KOPIUR_CLAIM: firefly-iii
       KOPIUR_MOVER_GID: "33"
       KOPIUR_MOVER_UID: "33"
       POSTGRES_BACKUP_SCHEDULE: "0 19 3 * * *"
