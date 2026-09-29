@@ -49,7 +49,7 @@ just k8s browse-pvc default <claim>
 - **paperless `PAPERLESS_FILENAME_FORMAT`**: app-template runs env values through Helm's `tpl`, so Jinja's `{{ }}` must be written `{{"{{"}} … {{"}}"}}`. Unescaped, the HelmRelease fails to render and the old pod silently keeps running. `{% %}` needs no escaping.
 - **paperless starts as root** (container `securityContext`). The s6-overlay init installs `tesseract-ocr-nld` for `PAPERLESS_OCR_LANGUAGES` and chowns the volumes; both fail as non-root. `USERMAP_UID`/`USERMAP_GID` then drop the app processes to 1000.
 - **paperless v3** needs `PAPERLESS_DBENGINE` set explicitly (it was inferred from `DBHOST` before).
-- **paperless's Dragonfly has no auth.** The operator's NetworkPolicy admits `6379` from any pod in `default`, so anything in this namespace can reach it.
+- **paperless's Dragonfly has no auth.** With no NetworkPolicy, any pod in the cluster can reach it on `6379`.
 - **Long startup probes** (`failureThreshold: 60`) on firefly and paperless cover first-boot migrations and search-index builds.
 - **The kopiur PVCs keep their pre-rename names**, `firefly-iii` and `paperless-ngx-config` (`KOPIUR_CLAIM` in each `ks.yaml`). kopiur keys its snapshots on the claim name, and a new name would be restored as an empty volume. firefly's PVC was created by an older chart version and carries `helm.sh/resource-policy: keep`.
 - **forgejo** leaves `image.tag` unset so it follows the pinned chart's `appVersion`. `cache`/`queue`/`session` are unset too, so the chart falls back to in-memory, which is fine for one replica.

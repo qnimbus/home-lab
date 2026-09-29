@@ -114,8 +114,8 @@ total=$(find kubernetes -iname "ocirepository.yaml" | wc -l)
 cosign=$(grep -rl "provider: cosign" kubernetes --include=ocirepository.yaml | wc -l)
 echo "cosign verify: $cosign / $total OCIRepositories"
 
-# NetworkPolicies: none by design, except the dragonfly component's metrics allow rule
-# (CLAUDE.md § Network policies). Anything else listed here is a deviation.
+# NetworkPolicies: none by design (CLAUDE.md § Network policies). Anything listed here
+# is a deviation.
 grep -rl "kind: NetworkPolicy\|kind: CiliumNetworkPolicy" kubernetes --include="*.yaml"
 ```
 
