@@ -7,8 +7,8 @@ components:
 namespace: default
 resources:
   - ./namespace.yaml
-  - ./firefly-iii/ks.yaml
-  - ./firefly-iii-importer/ks.yaml
+  - ./firefly/ks.yaml
+  - ./firefly-importer/ks.yaml
   - ./forgejo/ks.yaml
   - ./homepage/ks.yaml
   - ./paperless-ngx/ks.yaml

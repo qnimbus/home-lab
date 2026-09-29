@@ -3,7 +3,7 @@
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
-  name: firefly-iii-importer
+  name: firefly-importer
   annotations:
     gethomepage.dev/description: "Bank CSV/API import tool for Firefly III"
     gethomepage.dev/enabled: "true"

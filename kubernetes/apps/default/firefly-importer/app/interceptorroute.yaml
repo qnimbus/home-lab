@@ -3,7 +3,7 @@
 apiVersion: http.keda.sh/v1beta1
 kind: InterceptorRoute
 metadata:
-  name: firefly-iii-importer
+  name: firefly-importer
 spec:
   coldStart:
     placeholder:
@@ -41,4 +41,4 @@ spec:
       targetValue: 1
   target:
     port: 8080
-    service: firefly-iii-importer
+    service: firefly-importer
