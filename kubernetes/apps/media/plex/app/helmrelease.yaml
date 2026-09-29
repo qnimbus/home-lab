@@ -9,7 +9,7 @@ spec:
   # KEDA's nfs-scaler ScaledObject (app/scaledobject.yaml) manages replicas via its own
   # HPA once the NAS's NFS export goes unreachable. Without this, Flux's drift detection
   # reverts it back to the chart's desired replica count on the next reconcile/drift
-  # check, undoing scale-to-zero within the hour (same reasoning as paperless-ngx's and
+  # check, undoing scale-to-zero within the hour (same reasoning as paperless's and
   # open-webui's helmrelease.yaml).
   driftDetection:
     ignore:

@@ -3,11 +3,11 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: paperless-ngx
+  name: paperless
 spec:
   chartRef:
     kind: OCIRepository
-    name: paperless-ngx
+    name: paperless
   interval: 1h
   dependsOn: []
   driftDetection:
@@ -23,7 +23,7 @@ spec:
         runAsGroup: 1000
         runAsUser: 1000
     controllers:
-      paperless-ngx:
+      paperless:
         annotations:
           reloader.stakater.com/auto: "true"
         strategy: Recreate
@@ -47,13 +47,13 @@ spec:
                 valueFrom:
                   secretKeyRef:
                     key: password
-                    name: paperless-ngx-postgres-app
+                    name: paperless-postgres-app
               PAPERLESS_DBPORT: "5432"
               PAPERLESS_DBUSER:
                 valueFrom:
                   secretKeyRef:
                     key: username
-                    name: paperless-ngx-postgres-app
+                    name: paperless-postgres-app
               PAPERLESS_DISABLE_REGULAR_LOGIN: "false"
               PAPERLESS_EXPORT_DIR: &exportPath /mnt/archive/export
               PAPERLESS_FILENAME_FORMAT: >-
@@ -141,7 +141,7 @@ spec:
         globalMounts:
           - path: *dataPath
       archive:
-        existingClaim: "paperless-ngx-smb-archive"
+        existingClaim: "paperless-smb-archive"
         globalMounts:
           - path: *consumePath
             subPath: consume
@@ -150,7 +150,7 @@ spec:
           - path: *mediaPath
             subPath: media
       backups:
-        existingClaim: "paperless-ngx-smb-backup"
+        existingClaim: "paperless-smb-backup"
         globalMounts:
           - path: /mnt/backups
             subPath: Apps/Paperless
@@ -163,7 +163,7 @@ spec:
             subPath: log
     service:
       app:
-        controller: paperless-ngx
+        controller: paperless
         ports:
           http:
             port: *port
