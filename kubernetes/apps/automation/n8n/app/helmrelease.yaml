@@ -59,10 +59,17 @@ spec:
               # actual webhook routing base) from N8N_PROTOCOL/N8N_HOST/N8N_PORT and always
               # appends the port verbatim — it doesn't special-case 443. Externally this is
               # reachable on envoy-internal's standard https port (443), not the container's
-              # own listen port (5678) above, so WEBHOOK_URL overrides the generated base to
-              # match what's actually reachable.
-              WEBHOOK_URL: "https://n8n.${DOMAIN_CLUSTER}/"
-              N8N_RUNNERS_ENABLED: "true"
+              # own listen port (5678) above, so N8N_WEBHOOK_URL overrides the generated base
+              # to match what's actually reachable.
+              N8N_WEBHOOK_URL: "https://n8n.${DOMAIN_CLUSTER}/"
+              # Pinned ahead of n8n's announced default changes (2.42 startup deprecation
+              # notice): keep the 5-minute runner timeout rather than the upcoming 1 minute;
+              # adopt the new, tighter defaults for the rest now. No community packages are
+              # installed, so unverified ones stay off.
+              N8N_RUNNERS_TASK_TIMEOUT: "300"
+              N8N_UNVERIFIED_PACKAGES_ENABLED: "false"
+              N8N_COMPRESSION_NODE_MAX_DECOMPRESSED_SIZE_BYTES: "268435456" # 256 MiB
+              N8N_COMPRESSION_NODE_MAX_ZIP_ENTRIES: "1000"
               N8N_DIAGNOSTICS_ENABLED: "false"
               N8N_HIDE_USAGE_PAGE: "true"
               # fsGroup (below) already makes the mounted PVC group-writable; n8n's own
