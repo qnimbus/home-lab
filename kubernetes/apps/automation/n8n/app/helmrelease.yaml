@@ -62,11 +62,17 @@ spec:
               # own listen port (5678) above, so N8N_WEBHOOK_URL overrides the generated base
               # to match what's actually reachable.
               N8N_WEBHOOK_URL: "https://n8n.${DOMAIN_CLUSTER}/"
+              # Code nodes run in the `runners` sidecar (below), not in-process. It shares
+              # the pod network, so the broker's default 127.0.0.1:5679 listen address
+              # already reaches it and stays unexposed; N8N_RUNNERS_AUTH_TOKEN comes from
+              # n8n-secret via envFrom.
+              N8N_RUNNERS_MODE: "external"
+              N8N_NATIVE_PYTHON_RUNNER: "true"
               # Pinned ahead of n8n's announced default changes (2.42 startup deprecation
               # notice): keep the 5-minute runner timeout rather than the upcoming 1 minute;
               # adopt the new, tighter defaults for the rest now. No community packages are
               # installed, so unverified ones stay off.
-              N8N_RUNNERS_TASK_TIMEOUT: "300"
+              N8N_RUNNERS_TASK_TIMEOUT: &taskTimeout "300"
               N8N_UNVERIFIED_PACKAGES_ENABLED: "false"
               N8N_COMPRESSION_NODE_MAX_DECOMPRESSED_SIZE_BYTES: "268435456" # 256 MiB
               N8N_COMPRESSION_NODE_MAX_ZIP_ENTRIES: "1000"
@@ -126,10 +132,51 @@ spec:
                 memory: 256Mi
               limits:
                 memory: 2Gi
-            securityContext:
+            securityContext: &securityContext
               allowPrivilegeEscalation: false
               capabilities:
                 drop: ["ALL"]
+          # External task runner launcher (JS + Python). Its tag must match n8n's exactly;
+          # Renovate bumps both together (n8n group in .renovaterc.json5). Module
+          # allowlists stay at the image's /etc/n8n-task-runners.json defaults.
+          runners:
+            image:
+              repository: ghcr.io/n8n-io/runners
+              tag: 2.42.0@sha256:388ecad97dc8804a0d3c04f3a9d78a9f0c74df055f36ce05f26c9b6e3ae34733
+            env:
+              GENERIC_TIMEZONE: "${CLUSTER_TIMEZONE}"
+              # Only the token, not envFrom: the runner has no business seeing
+              # N8N_ENCRYPTION_KEY.
+              N8N_RUNNERS_AUTH_TOKEN:
+                valueFrom:
+                  secretKeyRef:
+                    name: n8n-secret
+                    key: N8N_RUNNERS_AUTH_TOKEN
+              N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT: "15"
+              N8N_RUNNERS_TASK_BROKER_URI: "http://localhost:5679"
+              N8N_RUNNERS_TASK_TIMEOUT: *taskTimeout
+              # Same cgroup-blind V8 heap sizing as the app container above.
+              NODE_OPTIONS: "--max-old-space-size=768"
+            probes:
+              liveness: &runnerProbes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /healthz
+                    port: 5680
+                  initialDelaySeconds: 0
+                  periodSeconds: 10
+                  timeoutSeconds: 1
+                  failureThreshold: 3
+              readiness: *runnerProbes
+            resources:
+              requests:
+                cpu: 5m
+                memory: 64Mi
+              limits:
+                memory: 1Gi
+            securityContext: *securityContext
     defaultPodOptions:
       securityContext:
         runAsNonRoot: true
