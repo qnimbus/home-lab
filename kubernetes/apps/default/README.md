@@ -51,7 +51,8 @@ just k8s browse-pvc default <claim>
 - **paperless v3** needs `PAPERLESS_DBENGINE` set explicitly (it was inferred from `DBHOST` before).
 - **paperless's Dragonfly has no auth.** With no NetworkPolicy, any pod in the cluster can reach it on `6379`.
 - **Long startup probes** (`failureThreshold: 60`) on firefly and paperless cover first-boot migrations and search-index builds.
-- **The kopiur PVCs keep their pre-rename names**, `firefly-iii` and `paperless-ngx-config` (`KOPIUR_CLAIM` in each `ks.yaml`). kopiur keys its snapshots on the claim name, and a new name would be restored as an empty volume. firefly's PVC was created by an older chart version and carries `helm.sh/resource-policy: keep`.
+- **firefly's upload PVC keeps its pre-rename name**, `firefly-iii` (`KOPIUR_CLAIM` in its `ks.yaml`). kopiur keys its snapshots on the claim name, and a new name would be restored as an empty volume. The PVC was created by an older chart version and carries `helm.sh/resource-policy: keep`.
+- **paperless's `paperless` PVC holds only derived data**: the search index, the classifier model and scheduler state. Everything else is in Postgres and on the NAS. An empty volume is recoverable with `document_index reindex` and `document_create_classifier`, run in the `app` container.
 - **forgejo** leaves `image.tag` unset so it follows the pinned chart's `appVersion`. `cache`/`queue`/`session` are unset too, so the chart falls back to in-memory, which is fine for one replica.
 - **unifi-voucher-site** has `AUTH_DISABLE: "true"`. That's only acceptable while it's internal-only; revisit it if the route is ever widened. Its secret reshapes the shared 1Password `unifi` item (full-URL `UNIFI_HOST` to bare `UNIFI_IP`/`UNIFI_PORT`, `API_KEY` to `UNIFI_TOKEN`). All other settings are listed in the [upstream README](https://github.com/glenndehaan/unifi-voucher-site).
 - **whoami** listens on 8080 so it can run as non-root; its Service keeps port 80.

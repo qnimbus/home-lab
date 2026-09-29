@@ -20,7 +20,6 @@ spec:
   postBuild:
     substitute:
       APP: *app
-      KOPIUR_CLAIM: paperless-ngx-config
       POSTGRES_BACKUP_SCHEDULE: "0 7 3 * * *"
   prune: true
   sourceRef:
