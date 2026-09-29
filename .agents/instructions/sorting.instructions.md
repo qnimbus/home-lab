@@ -24,7 +24,7 @@ Whenever asked to sort these files, follow these instructions:
 
 - An `OCIRepository`'s `spec.verify`: `provider` before `matchOIDCIdentity`.
 
-- A Flux `Kustomization`'s `spec` (`ks.yaml`): `targetNamespace` first, then the rest alphabetically.
+- A Flux `Kustomization`'s `spec` (`ks.yaml`): `targetNamespace` first, then the rest alphabetically, then `healthChecks` and `healthCheckExprs` last, in that order. The health checks say when the rest counts as ready, so they close the spec, with the expressions that refine them directly after.
 
 ## HelmReleases based on app-template
 

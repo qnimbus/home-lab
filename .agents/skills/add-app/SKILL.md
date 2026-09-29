@@ -15,12 +15,12 @@ Scaffolds `kubernetes/apps/<namespace>/<app>/` with a Flux Kustomization (`ks.ya
 
 **The templates below are leading, key order included.** Where a template orders keys differently from the alphabetical default in `.agents/instructions/sorting.instructions.md`, follow the template. Keep its order when writing new files, and don't "sort" existing files away from it. The template-specific orders are:
 
-| Section                      | Order                                                                |
-| ---------------------------- | -------------------------------------------------------------------- |
-| container `securityContext`  | `allowPrivilegeEscalation`, `readOnlyRootFilesystem`, `capabilities` |
-| ExternalSecret `spec`        | `refreshInterval`, `secretStoreRef`, `target`, `dataFrom`            |
-| ExternalSecret `spec.target` | `name`, `creationPolicy` (only when not the default), `template`     |
-| Flux Kustomization `spec`    | `targetNamespace`, then alphabetical                                 |
+| Section                      | Order                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| container `securityContext`  | `allowPrivilegeEscalation`, `readOnlyRootFilesystem`, `capabilities`     |
+| ExternalSecret `spec`        | `refreshInterval`, `secretStoreRef`, `target`, `dataFrom`                |
+| ExternalSecret `spec.target` | `name`, `creationPolicy` (only when not the default), `template`         |
+| Flux Kustomization `spec`    | `targetNamespace`, alphabetical, then `healthChecks`, `healthCheckExprs` |
 
 Everything the templates don't cover follows `sorting.instructions.md`.
 
