@@ -3,55 +3,48 @@
 apiVersion: v1
 kind: PersistentVolume
 metadata:
+  name: ${APP}-smb-archive
   annotations:
     pv.kubernetes.io/provisioned-by: smb.csi.k8s.io
-  name: ${APP}-smb-archive
 spec:
-  capacity:
-    storage: 2T
   accessModes:
     - ReadWriteMany
-  # Static SMB binding, not a StorageClass-driven provisioner — Retain so deleting the
-  # PVC (or the whole app) never deletes documents sitting on the NAS share.
-  persistentVolumeReclaimPolicy: Retain
-  # No "smb" StorageClass object exists in-cluster (csi-driver-smb is deliberately
-  # driver-only, see kubernetes/apps/system/csi-driver-smb/app/helmrelease.yaml) — this
-  # is just a matching label the PVC below must repeat for static binding to succeed.
-  storageClassName: smb
-  mountOptions:
-    - noperm
+  capacity:
+    storage: 2T
   csi:
     driver: smb.csi.k8s.io
-    # volumeHandle format: {smb-server-address}#{sub-dir-name}#{share-name}
-    # make sure this value is unique for every share in the cluster
-    volumeHandle: ${APP}-smb-archive
-    volumeAttributes:
-      source: //${NAS_HOST}/Archive
     nodeStageSecretRef:
       name: smb-credentials
       namespace: system
+    volumeAttributes:
+      source: //${NAS_HOST}/Archive
+    volumeHandle: ${APP}-smb-archive
+  mountOptions:
+    - noperm
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: smb
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/core/persistentvolume_v1.json
 apiVersion: v1
 kind: PersistentVolume
 metadata:
+  name: ${APP}-smb-backup
   annotations:
     pv.kubernetes.io/provisioned-by: smb.csi.k8s.io
-  name: ${APP}-smb-backup
 spec:
-  capacity:
-    storage: 2T
   accessModes:
     - ReadWriteMany
-  persistentVolumeReclaimPolicy: Retain
-  storageClassName: smb
-  mountOptions:
-    - noperm
+  capacity:
+    storage: 2T
   csi:
     driver: smb.csi.k8s.io
-    volumeHandle: ${APP}-smb-backup
-    volumeAttributes:
-      source: //${NAS_HOST}/Backup
     nodeStageSecretRef:
       name: smb-credentials
       namespace: system
+    volumeAttributes:
+      source: //${NAS_HOST}/Backup
+    volumeHandle: ${APP}-smb-backup
+  mountOptions:
+    - noperm
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: smb

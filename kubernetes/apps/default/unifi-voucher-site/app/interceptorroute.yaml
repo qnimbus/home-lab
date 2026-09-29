@@ -36,10 +36,6 @@ spec:
   rules:
     - hosts:
         - "voucher.${DOMAIN_CLUSTER}"
-  # requestRate, not concurrency — see pgadmin/app/interceptorroute.yaml and
-  # docs/QA.md for the full trace: coldStart.placeholder serves in microseconds,
-  # so a concurrency gauge is back at 0 before the scaler's poll ever samples it
-  # and scale-up never fires. requestRate's monotonic counter survives that.
   scalingMetric:
     requestRate:
       targetValue: 1

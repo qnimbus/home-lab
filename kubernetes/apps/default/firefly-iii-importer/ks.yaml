@@ -8,6 +8,9 @@ spec:
   targetNamespace: default
   components:
     - ../../../../components/keda/http-scaler
+  dependsOn:
+    - name: keda-add-ons-http
+      namespace: system
   interval: 1h
   path: ./kubernetes/apps/default/firefly-iii-importer/app
   postBuild:
@@ -18,9 +21,3 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    - name: firefly-iii
-    # InterceptorRoute/ScaledObject CRDs don't exist until the add-on's
-    # operator installs them — see bootstrap-ordering rule in CLAUDE.md.
-    - name: keda-add-ons-http
-      namespace: system

@@ -5,18 +5,15 @@ kind: HelmRelease
 metadata:
   name: firefly-iii-importer
 spec:
+  chartRef:
+    kind: OCIRepository
+    name: firefly-iii-importer
   interval: 1h
-  # KEDA (scaledobject.yaml) scales this Deployment's replicas directly; without
-  # this, Flux's drift detection reverts it back to the chart's desired replica
-  # count on the next reconcile/drift check, undoing scale-to-zero within the hour.
   driftDetection:
     ignore:
       - paths: ["/spec/replicas"]
         target:
           kind: Deployment
-  chartRef:
-    kind: OCIRepository
-    name: firefly-iii-importer
   values:
     controllers:
       firefly-iii-importer:
@@ -27,14 +24,11 @@ spec:
           app:
             image:
               repository: fireflyiii/data-importer
-              tag: "version-2.3.4"
+              tag: version-2.3.4@sha256:26459e1f014544f1ae56d1beed9c6a0ddf208b1eaa24cf11fa77ebd1f51422c8
             env:
               FIREFLY_III_URL: "http://firefly-iii.default.svc.cluster.local:8080"
-              # Server-to-server calls use the internal URL above; anything sent to the
-              # user's browser (OAuth authorize redirect, generated links) must use a
-              # browser-reachable URL instead — see Firefly III Data Importer docs.
-              VANITY_URL: "https://firefly.${DOMAIN_CLUSTER}"
               TRUSTED_PROXIES: "**"
+              VANITY_URL: "https://firefly.${DOMAIN_CLUSTER}"
             envFrom:
               - secretRef:
                   name: firefly-iii-importer-secret
@@ -43,31 +37,35 @@ spec:
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 3
                   httpGet:
                     path: /
                     port: &port 8080
                   initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 5
-                  failureThreshold: 3
               readiness: *probes
               startup:
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 10
                   httpGet:
                     path: /
                     port: *port
                   initialDelaySeconds: 5
                   periodSeconds: 10
                   timeoutSeconds: 5
-                  failureThreshold: 10
             resources:
               requests:
                 cpu: 10m
                 memory: 128Mi
               limits:
                 memory: 256Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
     service:
       app:
         controller: firefly-iii-importer

@@ -5,14 +5,18 @@ kind: HelmRelease
 metadata:
   name: firefly-iii
 spec:
-  interval: 1h
-  # Placeholder so components/postgres's JSON6902 patch has an existing array to append to.
-  # (appends to /spec/dependsOn/-) — see kubernetes/components/postgres/kustomization.yaml.
-  dependsOn: []
   chartRef:
     kind: OCIRepository
     name: firefly-iii
+  interval: 1h
+  dependsOn: []
   values:
+    defaultPodOptions:
+      securityContext:
+        fsGroup: 33
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 33
+        runAsUser: 33
     controllers:
       firefly-iii:
         annotations:
@@ -22,30 +26,27 @@ spec:
           app:
             image:
               repository: fireflyiii/core
-              tag: "version-6.6.6"
+              tag: version-6.6.6@sha256:ae69fdd95cdef9038cd7a460a5aec731f14813973e4f096511d5a4ea9ff0e972
             env:
-              APP_ENV: production
               APP_DEBUG: "false"
-              DB_CONNECTION: pgsql
-              # --- Database: dedicated CNPG cluster (components/postgres), same namespace
-              # as this Deployment — USERNAME/PASSWORD read from the generated
-              # firefly-iii-postgres-app Secret rather than duplicated via ExternalSecret.
-              DB_HOST: "${APP}-postgres-rw"
-              DB_PORT: "5432"
-              DB_DATABASE: firefly
+              APP_ENV: production
               APP_URL: "https://firefly.${DOMAIN_CLUSTER}"
-              TRUSTED_PROXIES: "**"
-              TZ: ${CLUSTER_TIMEZONE}
-              DB_USERNAME:
-                valueFrom:
-                  secretKeyRef:
-                    name: firefly-iii-postgres-app
-                    key: username
+              DB_CONNECTION: pgsql
+              DB_DATABASE: firefly
+              DB_HOST: "${APP}-postgres-rw"
               DB_PASSWORD:
                 valueFrom:
                   secretKeyRef:
-                    name: firefly-iii-postgres-app
                     key: password
+                    name: firefly-iii-postgres-app
+              DB_PORT: "5432"
+              DB_USERNAME:
+                valueFrom:
+                  secretKeyRef:
+                    key: username
+                    name: firefly-iii-postgres-app
+              TRUSTED_PROXIES: "**"
+              TZ: ${CLUSTER_TIMEZONE}
             envFrom:
               - secretRef:
                   name: firefly-iii-secret
@@ -54,50 +55,43 @@ spec:
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 3
                   httpGet:
                     path: /
                     port: &port 8080
                   initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 5
-                  failureThreshold: 3
               readiness: *probes
               startup:
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 60
                   httpGet:
                     path: /
                     port: *port
                   initialDelaySeconds: 10
                   periodSeconds: 10
                   timeoutSeconds: 5
-                  # Laravel runs DB migrations on first boot, which can take a while -
-                  # generous budget so the pod isn't killed mid-migration.
-                  failureThreshold: 60
             resources:
               requests:
                 cpu: 50m
                 memory: 512Mi
               limits:
                 memory: 1Gi
-    defaultPodOptions:
-      securityContext:
-        runAsUser: 33
-        runAsGroup: 33
-        fsGroup: 33
-        fsGroupChangePolicy: OnRootMismatch
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop: ["ALL"]
+    persistence:
+      upload:
+        existingClaim: "${KOPIUR_CLAIM:=${APP}}"
+        globalMounts:
+          - path: /var/www/html/storage/upload
     service:
       app:
         controller: firefly-iii
         ports:
           http:
             port: *port
-    persistence:
-      upload:
-        # PVC comes from components/kopiur/backup. The live claim was created by
-        # this chart; it carries helm.sh/resource-policy: keep so Helm leaves it
-        # in place now that it's no longer rendered here.
-        existingClaim: "${KOPIUR_CLAIM:=${APP}}"
-        globalMounts:
-          - path: /var/www/html/storage/upload

@@ -13,4 +13,3 @@ resources:
   - ./homepage/ks.yaml
   - ./paperless-ngx/ks.yaml
   - ./unifi-voucher-site/ks.yaml
-  # - ./whoami/ks.yaml # Uncomment to deploy whoami app

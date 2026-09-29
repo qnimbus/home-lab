@@ -5,25 +5,9 @@ kind: InterceptorRoute
 metadata:
   name: firefly-iii-importer
 spec:
-  target:
-    service: firefly-iii-importer
-    port: 8080
-  rules:
-    - hosts:
-        - "firefly-importer.${DOMAIN_CLUSTER}"
-  # requestRate, not concurrency — see pgadmin/app/interceptorroute.yaml and
-  # docs/QA.md for the full trace: coldStart.placeholder serves in microseconds,
-  # so a concurrency gauge is back at 0 before the scaler's poll ever samples it
-  # and scale-up never fires. requestRate's monotonic counter survives that.
-  scalingMetric:
-    requestRate:
-      targetValue: 1
   coldStart:
     placeholder:
       response:
-        statusCode: 503
-        headers:
-          Content-Type: text/html; charset=utf-8
         body: |
           <!doctype html>
           <html lang="en">
@@ -46,3 +30,15 @@ spec:
             </div>
           </body>
           </html>
+        headers:
+          Content-Type: text/html; charset=utf-8
+        statusCode: 503
+  rules:
+    - hosts:
+        - "firefly-importer.${DOMAIN_CLUSTER}"
+  scalingMetric:
+    requestRate:
+      targetValue: 1
+  target:
+    port: 8080
+    service: firefly-iii-importer

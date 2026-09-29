@@ -5,22 +5,19 @@ kind: HTTPRoute
 metadata:
   name: firefly-iii-importer
   annotations:
-    gethomepage.dev/enabled: "true"
-    gethomepage.dev/name: "Firefly III Data Importer"
     gethomepage.dev/description: "Bank CSV/API import tool for Firefly III"
+    gethomepage.dev/enabled: "true"
     gethomepage.dev/group: "Finance"
     gethomepage.dev/icon: "mdi-database-import"
+    gethomepage.dev/name: "Firefly III Data Importer"
 spec:
+  hostnames:
+    - "firefly-importer.${DOMAIN_CLUSTER}"
   parentRefs:
     - name: envoy-internal
       namespace: network
       sectionName: https
-  hostnames:
-    - "firefly-importer.${DOMAIN_CLUSTER}"
   rules:
-    # Routed through the KEDA HTTP Add-on interceptor (not the importer's Service
-    # directly) so it can hold first-request traffic while the importer scales up
-    # from 0 — see interceptorroute.yaml/scaledobject.yaml in this directory.
     - backendRefs:
         - name: keda-add-ons-http-interceptor-proxy
           namespace: system

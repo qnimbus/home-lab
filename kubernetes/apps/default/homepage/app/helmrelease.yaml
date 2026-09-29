@@ -11,16 +11,13 @@ spec:
   interval: 1h
   values:
     defaultPodOptions:
-      # Homepage's "kubernetes" widget and Gateway API service auto-discovery need the
-      # cluster-wide read access granted below — v5 defaults this to false.
       automountServiceAccountToken: true
       securityContext:
+        runAsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
-        runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
-
     controllers:
       *app :
         annotations:
@@ -35,16 +32,12 @@ spec:
               tag: v2.4.0@sha256:643bd0be730d40f69d58028a55d1a896739333e8815786df42bc97f109ecbe61
             env:
               HOMEPAGE_ALLOWED_HOSTS: "homepage.${DOMAIN_CLUSTER}"
-              # https://gethomepage.dev/configs/mcp/ — read-only; HOMEPAGE_MCP_ALLOW_WRITE is
-              # skipped since /app/config is a ConfigMap mount (always read-only in-cluster).
-              # No HOMEPAGE_AUTH_ENABLED session auth is configured, so the endpoint relies on
-              # HOMEPAGE_MCP_TOKEN (from homepage-secret via envFrom below) for auth instead.
               HOMEPAGE_MCP_ENABLED: "true"
               LOG_LEVEL: "info"
               TZ: "${CLUSTER_TIMEZONE}"
             envFrom:
               - secretRef:
-                  name: &secret homepage-secret
+                  name: homepage-secret
             resources:
               requests:
                 cpu: 10m
@@ -53,9 +46,8 @@ spec:
                 memory: 256Mi
             securityContext:
               allowPrivilegeEscalation: false
-              capabilities: { drop: ["ALL"] }
               readOnlyRootFilesystem: true
-
+              capabilities: { drop: ["ALL"] }
     persistence:
       config:
         type: configMap
@@ -69,10 +61,6 @@ spec:
             subPath: tmp
           - path: /app/config/logs
             subPath: logs
-
-    # Read-only, cluster-wide: lets homepage auto-discover services from the
-    # gethomepage.dev/* annotations on other apps' HTTPRoutes instead of a hand-maintained
-    # services.yaml, and populate the kubernetes cluster/node resource widget.
     rbac:
       bindings:
         *app :
@@ -94,13 +82,11 @@ spec:
               resources: [nodes, pods]
               verbs: [get, list]
           type: ClusterRole
-
     service:
       app:
         controller: *app
         ports:
           http:
             port: 3000
-
     serviceAccount:
       *app : {}

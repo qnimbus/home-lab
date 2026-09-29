@@ -18,9 +18,6 @@ spec:
       namespace: network
       sectionName: https
   rules:
-    # Routed through the KEDA HTTP Add-on interceptor (not the app's Service
-    # directly) so it can hold first-request traffic while it scales up from 0
-    # — see interceptorroute.yaml/scaledobject.yaml in this directory.
     - backendRefs:
         - name: keda-add-ons-http-interceptor-proxy
           namespace: system

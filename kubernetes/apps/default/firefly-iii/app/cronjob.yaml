@@ -5,27 +5,16 @@ kind: CronJob
 metadata:
   name: firefly-iii-cron
 spec:
-  # Firefly III recommends hitting the cron endpoint at least once a day to fire
-  # recurring transactions, bills, and auto-budgets; hourly keeps them close to on-time.
-  schedule: "0 * * * *"
   concurrencyPolicy: Forbid
-  successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
       backoffLimit: 2
       template:
         spec:
-          restartPolicy: Never
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 65534
-            runAsGroup: 65534
-            seccompProfile:
-              type: RuntimeDefault
           containers:
             - name: cron
-              image: curlimages/curl:8.22.0
+              image: curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
               command:
                 - /bin/sh
                 - -c
@@ -34,8 +23,8 @@ spec:
                 - name: CRON_TOKEN
                   valueFrom:
                     secretKeyRef:
-                      name: firefly-iii-secret
                       key: STATIC_CRON_TOKEN
+                      name: firefly-iii-secret
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
@@ -47,3 +36,12 @@ spec:
                   memory: 32Mi
                 limits:
                   memory: 64Mi
+          restartPolicy: Never
+          securityContext:
+            runAsGroup: 65534
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+  schedule: "0 * * * *"
+  successfulJobsHistoryLimit: 1

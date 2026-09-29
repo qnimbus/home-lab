@@ -9,10 +9,6 @@ spec:
     kind: OCIRepository
     name: unifi-voucher-site
   interval: 1h
-  # KEDA (interceptorroute.yaml + the http-scaler component's ScaledObject) scales
-  # this Deployment's replicas directly; without this, Flux's drift detection
-  # reverts it back to the chart's desired replica count on the next reconcile,
-  # undoing scale-to-zero within the hour.
   driftDetection:
     ignore:
       - paths: ["/spec/replicas"]
@@ -21,84 +17,32 @@ spec:
   values:
     defaultPodOptions:
       securityContext:
+        runAsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
-        runAsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
     controllers:
       *app :
+        annotations:
+          reloader.stakater.com/auto: "true"
         containers:
           app:
             image:
               repository: docker.io/glenndehaan/unifi-voucher-site
               tag: 8.13.1@sha256:3d6a371292a50922b7920ea632eaddd16f438d822e5258d6c4e5a2ea9be9558e
             env:
-              # No portal login — acceptable only because this app is internal-only
-              # (envoy-internal, LAN/VPN); revisit if exposure is ever widened.
               AUTH_DISABLE: "true"
               LOG_LEVEL: info
               TZ: "${CLUSTER_TIMEZONE}"
               UNIFI_SITE_ID: default
-              # ── Every other env var this app supports (github.com/glenndehaan/unifi-voucher-site),
-              # commented out at its documented default. Uncomment + set to override.
-              # UniFi controller connection — UNIFI_IP/UNIFI_PORT/UNIFI_TOKEN come from
-              # unifi-voucher-site-secret (envFrom) instead of being set here.
-              # UNIFI_SITE_MANAGER: "false"            # use Site Manager cloud API instead of local IP
-              # UNIFI_SITE_MANAGER_CONSOLE_ID: ""       # console ID, only when UNIFI_SITE_MANAGER=true
-              # UNIFI_SSID: ""                          # guest WiFi SSID shown/printed on vouchers
-              # UNIFI_SSID_PASSWORD: ""                 # guest WiFi password shown/printed on vouchers
-              # Authentication (portal login is disabled above via AUTH_DISABLE)
-              # AUTH_INTERNAL_ENABLED: "true"
-              # AUTH_INTERNAL_PASSWORD: "0000"
-              # AUTH_INTERNAL_BEARER_TOKEN: "00000000-0000-0000-0000-000000000000"
-              # AUTH_OIDC_ENABLED: "false"
-              # AUTH_OIDC_ISSUER_BASE_URL: ""
-              # AUTH_OIDC_APP_BASE_URL: ""
-              # AUTH_OIDC_CLIENT_ID: ""
-              # AUTH_OIDC_CLIENT_SECRET: ""
-              # AUTH_OIDC_REDIRECT_LOGIN: "false"
-              # AUTH_OIDC_RESTRICT_VISIBILITY: "false"
-              # Voucher configuration
-              # VOUCHER_TYPES: "480,1,,,;"               # expiry(min),usage-type,upload,download,data limits
-              # VOUCHER_CUSTOM: "true"                   # allow ad-hoc custom vouchers in the UI
-              # VOUCHER_NOTE_REQUIRED: "false"
-              # Services
-              # SERVICE_WEB: "true"
-              # SERVICE_API: "false"                     # expose the REST API alongside the web UI
-              # Printing
-              # PRINTERS: ""                              # e.g. "pdf,192.168.1.10"
-              # PRINTERS_LAYOUT: "full"                   # full | slim_qr | slim
-              # Email/SMTP
-              # SMTP_FROM: ""
-              # SMTP_HOST: ""
-              # SMTP_PORT: ""
-              # SMTP_SECURE: "false"
-              # SMTP_USERNAME: ""
-              # SMTP_PASSWORD: ""
-              # Kiosk mode (self-service guest voucher terminal at /kiosk)
-              # KIOSK_ENABLED: "false"
-              # KIOSK_VOUCHER_TYPES: "480,1,,,;"
-              # KIOSK_NAME_REQUIRED: "false"
-              # KIOSK_TIMEOUT: "60"
-              # KIOSK_HOMEPAGE: "false"                   # redirect / to /kiosk
-              # KIOSK_EMAIL: "false"
-              # KIOSK_PRINTER: ""                         # ESC/POS printer IP for auto-printing
-              # Other
-              # BIND_ADDRESS: "0.0.0.0"
-              # TRANSLATION_DEFAULT: "en"
-              # TRANSLATION_HIDDEN_LANGUAGES: ""
-              # TRANSLATION_DEBUG: "false"
-              # TASK_CLEANUP_EXPIRED: "false"
-              # TASK_CLEANUP_UNUSED: "false"
-              # TASK_CLEANUP_UNUSED_DAYS: "1"
             envFrom:
               - secretRef:
                   name: unifi-voucher-site-secret
             probes:
               liveness: &probes
-                custom: true
                 enabled: true
+                custom: true
                 spec:
                   failureThreshold: 3
                   httpGet:
@@ -116,8 +60,8 @@ spec:
                 memory: 256Mi
             securityContext:
               allowPrivilegeEscalation: false
-              capabilities: { drop: ["ALL"] }
               readOnlyRootFilesystem: true
+              capabilities: { drop: ["ALL"] }
     persistence:
       tmp:
         type: emptyDir

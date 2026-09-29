@@ -10,10 +10,8 @@ spec:
   resources:
     requests:
       storage: 2T
-  # Explicit binding to the static PV above — storageClassName must still match (it's
-  # compared even when volumeName is set) even though no "smb" StorageClass object exists.
-  volumeName: ${APP}-smb-archive
   storageClassName: smb
+  volumeName: ${APP}-smb-archive
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/core/persistentvolumeclaim_v1.json
 apiVersion: v1
@@ -26,5 +24,5 @@ spec:
   resources:
     requests:
       storage: 2T
-  volumeName: ${APP}-smb-backup
   storageClassName: smb
+  volumeName: ${APP}-smb-backup

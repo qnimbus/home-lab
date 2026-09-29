@@ -5,18 +5,18 @@ kind: HTTPRoute
 metadata:
   name: firefly-iii
   annotations:
-    gethomepage.dev/enabled: "true"
-    gethomepage.dev/name: "Firefly III"
     gethomepage.dev/description: "Personal finance manager"
+    gethomepage.dev/enabled: "true"
     gethomepage.dev/group: "Finance"
     gethomepage.dev/icon: "mdi-cash-multiple"
+    gethomepage.dev/name: "Firefly III"
 spec:
+  hostnames:
+    - "firefly.${DOMAIN_CLUSTER}"
   parentRefs:
     - name: envoy-internal
       namespace: network
       sectionName: https
-  hostnames:
-    - "firefly.${DOMAIN_CLUSTER}"
   rules:
     - backendRefs:
         - name: firefly-iii

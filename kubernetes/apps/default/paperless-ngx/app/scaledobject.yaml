@@ -5,22 +5,17 @@ kind: ScaledObject
 metadata:
   name: ${APP}-scaler
 spec:
-  scaleTargetRef:
-    name: ${APP}
-  minReplicaCount: 0
-  maxReplicaCount: 1
   advanced:
     restoreToOriginalReplicaCount: true
-  # 30s, same rationale as components/keda/postgres-scaler: one extra confirmation
-  # window beyond each blackbox probe's own 30s scrape interval before committing to
-  # scale-down, so a single transient failed scrape doesn't cold-restart the app.
   cooldownPeriod: 30
-  # Scales to zero while the SMB share backing the archive/backup PVCs (app/pv.yaml) is
-  # unreachable. Dragonfly and Postgres are co-located and gated by ks.yaml's health checks.
+  maxReplicaCount: 1
+  minReplicaCount: 0
+  scaleTargetRef:
+    name: ${APP}
   triggers:
-    - type: prometheus
-      metadata:
-        serverAddress: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-        query: probe_success{instance="${NAS_HOST}:445"}
-        threshold: "1"
+    - metadata:
         ignoreNullValues: "0"
+        query: probe_success{instance="${NAS_HOST}:445"}
+        serverAddress: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+        threshold: "1"
+      type: prometheus

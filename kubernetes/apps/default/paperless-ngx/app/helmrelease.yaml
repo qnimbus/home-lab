@@ -5,26 +5,24 @@ kind: HelmRelease
 metadata:
   name: paperless-ngx
 spec:
+  chartRef:
+    kind: OCIRepository
+    name: paperless-ngx
   interval: 1h
-  # KEDA (scaledobject.yaml) scales this Deployment's replicas directly; without
-  # this, Flux's drift detection reverts it back to the chart's desired replica
-  # count on the next reconcile/drift check, undoing scale-to-zero within the hour.
+  dependsOn: []
   driftDetection:
     ignore:
       - paths: ["/spec/replicas"]
         target:
           kind: Deployment
-  # Placeholder so components/postgres's JSON6902 patch has an existing array to append to.
-  # (appends to /spec/dependsOn/-) — see kubernetes/components/postgres/kustomization.yaml.
-  dependsOn: []
-  chartRef:
-    kind: OCIRepository
-    name: paperless-ngx
   values:
+    defaultPodOptions:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
     controllers:
-      # First multi-container controller in this repo: gotenberg/tika are tightly-coupled
-      # sidecars talking to `app` over localhost (no separate Service/Kustomization needed),
-      # mirroring the vaskozl/home-infra community pattern researched for this deployment.
       paperless-ngx:
         annotations:
           reloader.stakater.com/auto: "true"
@@ -35,144 +33,89 @@ spec:
               repository: ghcr.io/paperless-ngx/paperless-ngx
               tag: 3.0.5@sha256:65a4cabf0169ea7fbd90ab7bb28ba3f8b5909613635acda1a03ad606f34b456b
             env:
-              # OIDC integration
               PAPERLESS_APPS: "allauth.socialaccount.providers.openid_connect"
-              PAPERLESS_DISABLE_REGULAR_LOGIN: "false"
-              PAPERLESS_REDIRECT_LOGIN_TO_SSO: "false"
-              # Configure application
-              # Structure: real correspondents get correspondent/year/... (matches the
-              # existing per-category StoragePath rules imported from the old instance);
-              # documents with no correspondent at all file under a literal None/year/...
-              # subfolder rather than flat year/... - keeps their year folders
-              # (1996, 2003, ...) from mixing in among real correspondent folders at the
-              # top level. (An earlier revision used a placeholder "Onbekend" Correspondent
-              # object for this; removed as redundant since this condition already covers
-              # "no correspondent" - see docs/SESSIONS.md.) doc_pk suffix guarantees
-              # uniqueness without relying on paperless's _01/_02 collision fallback.
-              # correspondent|string (not correspondent.name) is required for the real-
-              # correspondent branch - Jinja2's sandboxed environment rejects direct
-              # attribute access on the MatchingModelContext object but allows __str__ via
-              # the `string` filter. Verified live against real documents via
-              # format_filename() before deploying.
-              #
-              # The {{"{{"}}/{{"}}"}}  escaping below is required because app-template
-              # pipes every env value through Helm's own `tpl` function before it reaches
-              # the container - a first, unescaped attempt at plain "{{ created }}" made
-              # Helm's Go template engine try to evaluate it as ITS OWN template syntax
-              # (error: function "created" not defined), failing the HelmRelease for ~22h
-              # with the old pod silently left running. Go templates only recognize
-              # {{ }} as delimiters, not Jinja2's {% %}, so only the {{ }} expressions
-              # need escaping - confirmed via `helm template` against the real chart.
-              # {% if not correspondent %}None/{{"{{"}} created_year {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}{% else %}{{"{{"}} correspondent {{"}}"}}/{{"{{"}} created_year {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}{% endif %}
-              PAPERLESS_FILENAME_FORMAT: >-
-                {{"{{"}} created_year {{"}}"}}/{{"{{"}} correspondent {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}
-              PAPERLESS_FILENAME_FORMAT_REMOVE_NONE: "true"
-              PAPERLESS_PORT: &port 8000
-              PAPERLESS_TASK_WORKERS: "2"
-              PAPERLESS_TIME_ZONE: ${CLUSTER_TIMEZONE}
-              PAPERLESS_URL: "https://paperless.${DOMAIN_CLUSTER}"
-              PAPERLESS_WEBSERVER_WORKERS: "2"
-              PAPERLESS_WORKER_TIMEOUT: "14400"
-              # Configure folders
-              PAPERLESS_CONSUMPTION_DIR: &consumePath /mnt/archive/consume
-              PAPERLESS_DATA_DIR: &dataPath /usr/src/paperless/data
-              PAPERLESS_EXPORT_DIR: &exportPath /mnt/archive/export
-              PAPERLESS_MEDIA_ROOT: &mediaPath /mnt/archive/media
-              # Configure folder importer
-              # v3 renamed this from PAPERLESS_CONSUMER_POLLING (docs/migration-v3.md)
               PAPERLESS_CONSUMER_POLLING_INTERVAL: "15"
               PAPERLESS_CONSUMER_RECURSIVE: "true"
               PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS: "true"
-              # Configure OCR
-              PAPERLESS_OCR_LANGUAGE: nld+eng
-              PAPERLESS_OCR_LANGUAGES: nld
-              # Configure database
-              # v3 requires the engine explicitly - previously inferred from DBHOST (docs/migration-v3.md)
+              PAPERLESS_CONSUMPTION_DIR: &consumePath /mnt/archive/consume
+              PAPERLESS_CSRF_TRUSTED_ORIGINS: "https://paperless.${DOMAIN_CLUSTER}"
+              PAPERLESS_DATA_DIR: &dataPath /usr/src/paperless/data
               PAPERLESS_DBENGINE: postgresql
-              # Dedicated CNPG cluster (components/postgres), same namespace as this
-              # Deployment — DBUSER/DBPASS below read from the generated
-              # paperless-ngx-postgres-app Secret rather than duplicated via ExternalSecret.
               PAPERLESS_DBHOST: "${APP}-postgres-rw"
-              PAPERLESS_DBPORT: "5432"
               PAPERLESS_DBNAME: paperless
-              PAPERLESS_DBUSER:
-                valueFrom:
-                  secretKeyRef:
-                    name: paperless-ngx-postgres-app
-                    key: username
               PAPERLESS_DBPASS:
                 valueFrom:
                   secretKeyRef:
-                    name: paperless-ngx-postgres-app
                     key: password
-              # Dedicated Dragonfly (components/dragonfly), same namespace; no auth — its
-              # NetworkPolicy only admits pods from this namespace.
+                    name: paperless-ngx-postgres-app
+              PAPERLESS_DBPORT: "5432"
+              PAPERLESS_DBUSER:
+                valueFrom:
+                  secretKeyRef:
+                    key: username
+                    name: paperless-ngx-postgres-app
+              PAPERLESS_DISABLE_REGULAR_LOGIN: "false"
+              PAPERLESS_EXPORT_DIR: &exportPath /mnt/archive/export
+              PAPERLESS_FILENAME_FORMAT: >-
+                {{"{{"}} created_year {{"}}"}}/{{"{{"}} correspondent {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}
+              PAPERLESS_FILENAME_FORMAT_REMOVE_NONE: "true"
+              PAPERLESS_MEDIA_ROOT: &mediaPath /mnt/archive/media
+              PAPERLESS_OCR_LANGUAGE: nld+eng
+              PAPERLESS_OCR_LANGUAGES: nld
+              PAPERLESS_PORT: &port 8000
+              PAPERLESS_REDIRECT_LOGIN_TO_SSO: "false"
               PAPERLESS_REDIS: "redis://${APP}-dragonfly:6379"
-              # Miscellaneous
+              PAPERLESS_TASK_WORKERS: "2"
               PAPERLESS_TIKA_ENABLED: "1"
               PAPERLESS_TIKA_ENDPOINT: http://localhost:9998
               PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://localhost:3000
-
-              PAPERLESS_CSRF_TRUSTED_ORIGINS: "https://paperless.${DOMAIN_CLUSTER}"
+              PAPERLESS_TIME_ZONE: ${CLUSTER_TIMEZONE}
               PAPERLESS_TRUSTED_PROXIES: "**"
-
-              # The image's s6-overlay entrypoint must start as root: PAPERLESS_OCR_LANGUAGES
-              # triggers a runtime `apt-get install tesseract-ocr-nld`, and it also chowns the
-              # mounted volumes - both fail silently as non-root (confirmed live: container
-              # crash-looped with "Unable to install language tesseract-ocr-nld as non-root").
-              # USERMAP_UID/GID is the image's documented mechanism to drop root privileges to
-              # this UID/GID for the actual gunicorn/celery processes after that init work is
-              # done - see containers.app.securityContext below for the matching root override.
-              # Configure user permissions
-              USERMAP_UID: "1000"
+              PAPERLESS_URL: "https://paperless.${DOMAIN_CLUSTER}"
+              PAPERLESS_WEBSERVER_WORKERS: "2"
+              PAPERLESS_WORKER_TIMEOUT: "14400"
               USERMAP_GID: "1000"
+              USERMAP_UID: "1000"
             envFrom:
               - secretRef:
                   name: paperless-secret
-            securityContext:
-              runAsUser: 0
-              runAsGroup: 0
             probes:
               liveness: &probes
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 3
                   httpGet:
                     path: /
                     port: *port
                   initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 5
-                  failureThreshold: 3
               readiness: *probes
               startup:
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 60
                   httpGet:
                     path: /
                     port: *port
                   initialDelaySeconds: 10
                   periodSeconds: 10
                   timeoutSeconds: 5
-                  # First boot runs DB migrations + search-index build, which can take a
-                  # while - generous budget so the pod isn't killed mid-migration.
-                  failureThreshold: 60
             resources:
               requests:
                 cpu: 250m
                 memory: 2Gi
-              # TEMPORARY: bumped from 4Gi - document_archiver -f OOMKilled the container
-              # twice (2026-07-28) reprocessing the imported TrueNAS backup, once at
-              # --processes 2 and once single-process, so it's not purely a concurrency
-              # issue - at least one document's OCR pass needs more than 4Gi alone.
-              # Revert to 4Gi once the archiver run completes.
               limits:
                 memory: 4Gi
+            securityContext:
+              runAsGroup: 0
+              runAsUser: 0
           gotenberg:
             image:
               repository: docker.io/gotenberg/gotenberg
-              tag: "8.37.0"
+              tag: 8.37.0@sha256:f29984bd1e226bf1b93ba90af06000afa8b315853e99d27b9aaa41b93f15c769
             args:
               - "gotenberg"
               - "--chromium-disable-javascript=true"
@@ -185,25 +128,13 @@ spec:
           tika:
             image:
               repository: docker.io/apache/tika
-              tag: "3.3.1.0"
+              tag: 3.3.1.0@sha256:90b7fa1dc018434075fce9e1d9b88b1e3d0ea6979d0cf86e116c79a8073ae973
             resources:
               requests:
                 cpu: 50m
                 memory: 256Mi
               limits:
                 memory: 768Mi
-    defaultPodOptions:
-      securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
-        fsGroupChangePolicy: OnRootMismatch
-    service:
-      app:
-        controller: paperless-ngx
-        ports:
-          http:
-            port: *port
     persistence:
       config:
         existingClaim: "${KOPIUR_CLAIM:=${APP}}"
@@ -230,3 +161,9 @@ spec:
             subPath: tmp
           - path: /usr/src/paperless/data/log
             subPath: log
+    service:
+      app:
+        controller: paperless-ngx
+        ports:
+          http:
+            port: *port

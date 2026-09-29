@@ -8,30 +8,18 @@ spec:
   chartRef:
     kind: OCIRepository
     name: forgejo
-  # Placeholder so components/**/ JSON6902 patch has an existing array to append to.
-  # (appends to /spec/dependsOn/-) — see kubernetes/components/**/kustomization.yaml.
   dependsOn: []
   interval: 1h
   values:
-    # image.registry/repository/rootless already default to code.forgejo.org/forgejo/forgejo
-    # rootless — leaving image.tag unset tracks the chart's own appVersion pairing rather
-    # than jumping ahead to an app release the pinned chart version wasn't tested against.
     containerSecurityContext:
       allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
       capabilities:
         drop: ["ALL"]
-      readOnlyRootFilesystem: true
       runAsGroup: 1000
       runAsNonRoot: true
       runAsUser: 1000
     gitea:
-      # cache/queue/session deliberately left unset: this chart's own template falls
-      # back to memory/level/memory when unspecified, which is correct for a single
-      # replicaCount deployment — no Redis/Valkey instance needed for one consumer.
-      #
-      # NAME/USER/PASSWD all read from the CNPG-generated forgejo-postgres-app
-      # Secret rather than being hardcoded — stays correct if POSTGRES_DATABASE/
-      # POSTGRES_USERNAME are ever overridden away from the ${APP} default.
       additionalConfigFromEnvs:
         - name: GITEA__DATABASE__NAME
           valueFrom:
@@ -53,8 +41,6 @@ spec:
       config:
         database:
           DB_TYPE: postgres
-          # Dedicated cluster (components/postgres), same namespace as this
-          # Deployment now — no more cross-namespace secret duplication needed.
           HOST: "${APP}-postgres-rw:5432"
         server:
           DOMAIN: forgejo.${DOMAIN_CLUSTER}
