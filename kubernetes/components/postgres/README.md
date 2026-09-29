@@ -97,7 +97,14 @@ Every name, including the S3 path, derives from `${APP}`, so a rename creates a 
 3. **Right before pushing**, `kubectl -n <ns> patch ks <old> --type merge -p '{"spec":{"deletionPolicy":"Orphan"}}'`. Otherwise pruning the old Kustomization deletes the old cluster and PVCs. Push nothing else first: a `cluster-apps` reconcile resets it.
 4. Once the rename is applied, delete the old HelmRelease **and its HTTPRoute/InterceptorRoute**. The older route wins a hostname conflict and sends traffic to the deleted Service. Delete the old ExternalSecret too if the new one targets the same Secret name: ESO won't take over a Secret another ExternalSecret owns.
 5. `just k8s database restore <ns> <new> <file> <db>` (its prompt needs a real terminal), restart the app, take a backup, then drop the label.
-6. Delete the orphans by hand (`kubectl -n <ns> get all,externalsecrets,ocirepositories,prometheusrules,scheduledbackups,objectstores,clusters -o name | grep <old>`), the old `Cluster` last. Keep anything named after a pinned `KOPIUR_CLAIM`.
+6. Delete the orphans by hand, the old `Cluster` last. Keep anything named after a pinned `KOPIUR_CLAIM`. Everything the old Kustomization applied, the components' objects included, still carries its label, so this lists them all:
+
+   ```bash
+   kubectl get "$(kubectl api-resources --verbs=list --namespaced -o name | grep -v '^events' | paste -sd, -)" \
+     -n <ns> -l kustomize.toolkit.fluxcd.io/name=<old> -o name
+   ```
+
+   A list of kinds misses whatever a component adds: the paperless rename left `components/dragonfly`'s PodMonitor behind. Objects an operator created carry no Flux label and go with their owner.
 
 ## Backups
 
