@@ -88,6 +88,17 @@ A **brand-new database** has nothing to recover from, and `recovery` fails with 
 
 **Remove the label once the first backup exists.** It's harmless day to day (bootstrap only runs when the cluster is created), but left in place it turns a future rebuild into an empty `initdb` instead of a restore. To get a backup right away, run `just k8s db-backup <namespace> <app>`.
 
+## Renaming an app
+
+Every name, including the S3 path, derives from `${APP}`, so a rename creates a new, empty cluster and the data moves by dump and restore (done for `firefly-iii` → `firefly`):
+
+1. Dump the old database: `just k8s database dump <ns> <old> "" <db>`.
+2. In the new `ks.yaml`, add the `init` label. If the app uses kopiur, pin `KOPIUR_CLAIM` to the old claim name: its snapshots are keyed on it, and a new name restores an empty volume.
+3. **Right before pushing**, `kubectl -n <ns> patch ks <old> --type merge -p '{"spec":{"deletionPolicy":"Orphan"}}'`. Otherwise pruning the old Kustomization deletes the old cluster and PVCs. Push nothing else first: a `cluster-apps` reconcile resets it.
+4. Once the rename is applied, delete the old HelmRelease **and its HTTPRoute/InterceptorRoute**. The older route wins a hostname conflict and sends traffic to the deleted Service.
+5. `just k8s database restore <ns> <new> <file> <db>` (its prompt needs a real terminal), restart the app, take a backup, then drop the label.
+6. Delete the orphans by hand (`kubectl -n <ns> get all,externalsecrets,ocirepositories,prometheusrules,scheduledbackups,objectstores,clusters -o name | grep <old>`), the old `Cluster` last. Keep anything named after a pinned `KOPIUR_CLAIM`.
+
 ## Backups
 
 Base backups on the schedule above, plus continuous WAL archiving, go to one shared Backblaze B2 bucket (`vwn-io-cluster-cnpg`), each app under its own `dedicated/${APP}/` prefix. They're bzip2-compressed, AES256-encrypted and kept for 14 days.
