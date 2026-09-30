@@ -106,6 +106,15 @@ Every name, including the S3 path, derives from `${APP}`, so a rename creates a 
 
    A list of kinds misses whatever a component adds: the paperless rename left `components/dragonfly`'s PodMonitor behind. Objects an operator created carry no Flux label and go with their owner.
 
+7. To drop the `KOPIUR_CLAIM` pin later (done for both firefly and paperless), first check what the claim holds. An empty claim, or one with only derived data, can switch straight away, because the new claim starts empty. Real data has to be copied across first. The old claim isn't pruned (it's create-once), so delete it by hand. Its kopia snapshots and policies stay in the repository: deleting a schedule defaults to `onScheduleDelete: Retain`, and the UI's connection is read-only. Delete them from a pod with its own read-write connection to the repository:
+
+   ```bash
+   kopia snapshot delete --all-snapshots-for-source <claim>@<ns>:/pvc/<claim> --delete
+   kopia policy delete <claim>@<ns>:/pvc/<claim> <claim>@<ns>
+   ```
+
+   `<claim>` is the old pinned claim name, which is also the policy name kopia files it under: `paperless-ngx-config`, not `paperless-ngx`. The space comes back after the next full maintenance run and kopia's safety delay.
+
 ## Backups
 
 Base backups on the schedule above, plus continuous WAL archiving, go to one shared Backblaze B2 bucket (`vwn-io-cluster-cnpg`), each app under its own `dedicated/${APP}/` prefix. They're bzip2-compressed, AES256-encrypted and kept for 14 days.
