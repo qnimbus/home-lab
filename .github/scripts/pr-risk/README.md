@@ -11,11 +11,13 @@
 
 It is advisory and fails open. A crash, Jev or Konflate being down, or a missing key leaves the labels as they are, and the job never fails because of them.
 
-For now it only runs on demand, while the in-cluster runner's outbound network is fixed (the runner pods intermittently tried IPv6 and couldn't reach 1Password):
+It runs on every same-repo, non-draft PR to `main` (opened, pushed to, reopened, marked ready, or its title or body edited), and on demand for any open same-repo PR:
 
 ```bash
 gh workflow run pr-risk.yaml -f pr=174
 ```
+
+From 2026-09-28 it ran on demand only, while the in-cluster runner intermittently failed to reach 1Password over IPv6 (`bea8f4e`); the PR trigger came back on 2026-09-30.
 
 ## The model
 
@@ -175,7 +177,8 @@ An answer ≥ 0.70 is a **probable** finding, ≤ 0.20 is **ruled out** (recorde
 ## Security model
 
 - **The repository is public** (`gh repo view qnimbus/home-lab --json visibility` says `PUBLIC`; v1's README said private). What follows from that:
-  - Anyone can open a PR from a fork, and forks can't be trusted. The job only classifies open PRs whose head is in this repository (checked in "Resolve PR"), so only push-access actors (the owner and the Renovate App) get classified, and `workflow_dispatch` itself needs write access.
+  - For a same-repo PR, GitHub runs the PR's own copy of this workflow file, so a PR that edits `pr-risk.yaml` changes what runs on the cluster-admin runner; the classifier code still comes from `main`. That is why only push-access actors' PRs run at all.
+  - Anyone can open a PR from a fork, and forks can't be trusted. The job only classifies open PRs whose head is in this repository (the job's `if` for PR events, "Resolve PR" for manual runs), so only push-access actors (the owner and the Renovate App) get classified, and `workflow_dispatch` itself needs write access.
   - Secret material committed in a PR is already published when the PR is pushed; merging makes it permanent in `main`'s history. `sec.secret_material_in_git` is an established integrity finding (**risky**: rotate it) in a public repository and a review obligation in a private one. The visibility comes from the PR payload (`base.repo.visibility`), with `REPO_VISIBILITY` as the fallback and "public" as the default.
   - Workflow artifacts of a public repository are downloadable by anyone signed in, for 30 days. `collect` scans the diff for secret-shaped strings (private keys with key material, GitHub/AWS/Slack/1Password/API tokens, JWTs, age keys) before anything is cut, and redacts them from `pr.diff`, `base_overlap.diff`, `config.json` and the PR title and body. The same redaction is applied to everything sent to Jev.
   - `secrets.json` is that scan's result: a list of `{path, kind}` for each hit on an added line, never the value. It is `[]` for a normal PR. A non-empty list is what raises `sec.secret_material_in_git` (risky: rotate it), and it's kept because the redacted diff no longer shows what was found.
