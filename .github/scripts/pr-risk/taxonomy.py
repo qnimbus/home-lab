@@ -11,7 +11,7 @@ import re
 from dataclasses import asdict, dataclass, field
 
 SCHEMA = "pr-risk/v2"
-POLICY_VERSION = "2.0"
+POLICY_VERSION = "2.1"
 
 # ── Context dimensions ───────────────────────────────────────────────────────────────────────
 
@@ -103,6 +103,7 @@ CODES = _codes(
     ("compat.crd_version_dropped", "mechanism", "data_loss", "A CRD stops serving a version"),
     ("compat.crd_storage_version_moved", "obligation", "none", "A CRD's storage version moves"),
     ("compat.crd_schema_narrowed", "mechanism", "reconciliation_failure", "A CRD schema removes or narrows a field"),
+    ("compat.crd_conversion_changed", "obligation", "reconciliation_failure", "A CRD's version conversion (webhook) changes"),
     # Kubernetes lifecycle
     ("lifecycle.resource_removed", "mechanism", "availability_loss", "A deployed resource is removed"),
     ("lifecycle.release_reinstalled", "mechanism", "availability_loss", "A HelmRelease is uninstalled and installed again"),

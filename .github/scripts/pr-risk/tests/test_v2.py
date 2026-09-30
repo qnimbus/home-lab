@@ -582,6 +582,42 @@ class TestRegressions(Assertions):
         self.verdict(r, "review")
         self.assertIn("ev.unrendered_surface", codes(r))
 
+    def test_folded_description_prose_is_not_schema_186(self):
+        """#186: Konflate folded the `description:` line, so its prose looked like schema. The
+        real change there (networkPolicyEnabled dropped) still counts."""
+        prose = [("ctx", "                  description: |-", True), ("del", "                    This is a beta field and requires enabling X.", False),
+                 ("add", "                    This field is GA.", False)]  # fmt: skip
+        r = {"kind": "CustomResourceDefinition", "unified": [{"kind": k, "html": h, "folded": f} for k, h, f in prose]}
+        self.assertFalse(p.crd_schema_changed(r))
+        missing_key = {"kind": "CustomResourceDefinition", "unified": [{"kind": "del", "html": "                    This requires the ProcMountType feature flag."}]}
+        self.assertFalse(p.crd_schema_changed(missing_key))  # the key line isn't in the diff at all
+        field = {"kind": "CustomResourceDefinition", "unified": [{"kind": "del", "html": "              networkPolicyEnabled:"},
+                                                                 {"kind": "del", "html": "                default: true"}]}  # fmt: skip
+        self.assertTrue(p.crd_schema_changed(field))
+
+    def test_crd_conversion_webhook_removed_171(self):
+        """#171: the chart dropped the group-snapshot CRD's conversion webhook. A review
+        obligation, not a narrowed schema, and the schema question isn't asked about it."""
+        rows = [("ctx", "spec:"), ("del", "  conversion:"), ("del", "    strategy: Webhook"), ("del", "    webhook:"),
+                ("del", "      clientConfig:"), ("del", "        service:"), ("del", "          name: snapshot-controller-conversion-webhook")]  # fmt: skip
+        kdiff = crd_kdiff("CustomResourceDefinition volumegroupsnapshotcontents.groupsnapshot.storage.k8s.io", rows,
+                          parent="HelmRelease system/snapshot-controller")  # fmt: skip
+        self.assertFalse(p.any_crd_schema_change(kdiff))
+        diff = mkdiff("kubernetes/apps/system/snapshot-controller/app/ocirepository.yaml", "  ref:\n-    tag: 5.1.1\n+    tag: 5.3.0", header="spec:")
+        jev = Jev({"crd_schema_narrowed": 0.75})
+        r = Scenario(diff, kdiff=kdiff, konflate=konflate_fresh(crds=1), author="renovate").run(jev)
+        self.verdict(r, "review")
+        self.assertIn("compat.crd_conversion_changed", codes(r))
+        self.assertNotIn("crd_schema_narrowed", jev.asked.get("rendered", []))
+
+    def test_weak_breaking_lean_is_no(self):
+        """#35, #45, #80, #147, #160: `breaking_notes` 0.21-0.26 on chore-only notes."""
+        notes = {"source": "renovate", "sections": [{"version": "v0.9.0", "text": "### v0.9.0\n\n- chore: bump dependencies here"}], "reason": "r"}
+        r = Scenario(DIGEST_BUMP, author="renovate", notes=notes, config={APP_HR: "x"}).run(Jev({"breaking_notes": 0.26}))
+        self.verdict(r, "safe")
+        r = Scenario(DIGEST_BUMP, author="renovate", notes=notes, config={APP_HR: "x"}).run(Jev({"breaking_notes": 0.36}))
+        self.verdict(r, "review", uncertain=True)  # above the band: still on the fence
+
     def test_postgres_digest_bump_169(self):
         diff = mkdiff("kubernetes/components/postgres/cluster.yaml", """\
 -  imageName: ghcr.io/cloudnative-pg/postgresql:18.0-standard-trixie@sha256:1111111111111111111111111111111111111111111111111111111111111111

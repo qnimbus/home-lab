@@ -458,28 +458,44 @@ def budget_diff(diff: str, total: int, per_file: int) -> tuple[str, list[str], l
 DESCRIPTION_KEY = re.compile(r"^(\s*)description:")
 
 
+CONVERSION_KEY = re.compile(r"^(\s*)conversion:\s*$")
+YAML_STRUCTURE = re.compile(r"""^\s*(-\s+)?("[^"]*"|'[^']*'|[\w$.\-/]+):(\s|$)|^\s*-(\s|$)|^\s*[\]\[{}]""")
+
+
 def visible_rows(r: dict):
-    """Yield (row, text, is_description) for a resource's unfolded rows and hunk markers. For a
-    CRD, a `description:` key and its continuation lines (blank ones included) are flagged."""
-    crd, skip_indent = r.get("kind") == "CustomResourceDefinition", None
+    """Yield (row, text, kind) for a resource's unfolded rows and hunk markers. For a CRD, kind
+    is "description" for a `description:` key, its continuation lines (blank ones included)
+    and prose whose `description:` line Konflate folded or left out (#186: "This is a beta
+    field and requires enabling …" counted as schema), "conversion" for the conversion block
+    (compat.crd_conversion_changed covers it), and "" for the schema. Folded rows still drive
+    the tracking; they just aren't yielded."""
+    crd = r.get("kind") == "CustomResourceDefinition"
+    desc_indent = conv_indent = None
     for u in r.get("unified") or []:
         if u.get("hunk"):
-            skip_indent = None
-            yield u, "", False
+            desc_indent = None
+            if not u.get("folded"):
+                yield u, "", ""
             continue
-        if u.get("folded"):
-            continue
-        text, desc = row_text(u), False
+        text, kind = row_text(u), ""
         if crd:
             indent = len(text) - len(text.lstrip())
-            if skip_indent is not None and (not text.strip() or indent > skip_indent):
-                desc = True
+            if conv_indent is not None and text.strip() and indent <= conv_indent:
+                conv_indent = None
+            if desc_indent is not None and (not text.strip() or indent > desc_indent):
+                kind = "description"
             else:
-                skip_indent = None
-                m = DESCRIPTION_KEY.match(text)
-                if m:
-                    skip_indent, desc = len(m.group(1)), True
-        yield u, text, desc
+                desc_indent = None
+                if m := DESCRIPTION_KEY.match(text):
+                    desc_indent, kind = len(m.group(1)), "description"
+                elif m := CONVERSION_KEY.match(text):
+                    conv_indent, kind = len(m.group(1)), "conversion"
+                elif conv_indent is not None:
+                    kind = "conversion"
+                elif text.strip() and not YAML_STRUCTURE.match(text):
+                    kind = "description"  # prose: a description whose key line isn't in the diff
+        if not u.get("folded"):
+            yield u, text, kind
 
 
 def crd_schema_changed(r: dict) -> bool:
@@ -506,16 +522,21 @@ def crd_version_changes(kdiff: dict | None) -> list[str]:
 def render_resource(r: dict, per_resource: int) -> str:
     """A CRD's diff is mostly `description:` text; it goes, so the budget holds the schema."""
     lines = [f"### {r.get('status', '?')} {r.get('title') or r.get('kind', '?')} (from {r.get('parent') or '-'})"]
-    skipped = 0
-    for u, text, desc in visible_rows(r):
+    skipped, conversion = 0, 0
+    for u, text, kind in visible_rows(r):
         if u.get("hunk"):
             lines.append("@@")
-        elif desc:
+        elif kind == "description":
             skipped += 1
+        elif kind == "conversion":
+            conversion += u.get("kind") in ("add", "del")
         else:
             lines.append({"add": "+", "del": "-"}.get(u.get("kind"), " ") + text)
     if skipped:
         lines.append(f"({skipped} description lines left out)")
+    if conversion:
+        # Not a schema change: said so, so the schema question isn't answered about it (#171).
+        lines.append(f"({conversion} lines of the conversion strategy changed; that is assessed separately and is not a schema change)")
     if r.get("kind") == "CustomResourceDefinition" and not crd_schema_changed(r):
         # Said outright: an empty "changed" CRD left the model unsure (#177, `crd_schema_change` 0.41)
         lines.append("(only description text changed; the schema itself is unchanged)")

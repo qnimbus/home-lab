@@ -740,7 +740,8 @@ def in_kdiff(kdiff: dict | None, title: str) -> bool:
 
 
 @rule("crd.lifecycle", "konflate",
-      ["compat.crd_version_dropped", "compat.crd_storage_version_moved", "lifecycle.crd_unprotected", "lifecycle.crd_second_owner",
+      ["compat.crd_version_dropped", "compat.crd_storage_version_moved", "compat.crd_conversion_changed", "lifecycle.crd_unprotected",
+       "lifecycle.crd_second_owner",
        "lifecycle.release_reinstalled", "ctx.crd_touched", "ctx.crd_added"],
       lambda f: f.konflate.get("state") == "fresh")  # fmt: skip
 def crd_lifecycle(f: Facts, a: Assessment) -> None:
@@ -771,6 +772,13 @@ def crd_lifecycle(f: Facts, a: Assessment) -> None:
             eid = a.record("render", f"{title}: the storage version moves", sid)
             a.find("compat.crd_storage_version_moved", "established", sid, (eid,),
                    f"`{title}` moves its storage version: stored objects need migrating before the old version can be dropped.")  # fmt: skip
+        conversion = [ln for ln in lines if ln.changed and not ln.blank and (ln.key == "conversion" or ln.within("conversion"))]
+        if conversion:
+            removed = all(ln.sign == "-" for ln in conversion)
+            eid = a.record("render", f"{title}: conversion " + ("removed" if removed else "changed"), sid)
+            a.find("compat.crd_conversion_changed", "established", sid, (eid,),
+                   f"`{title}` {'drops its conversion webhook' if removed else 'changes how versions are converted'}: objects stored "
+                   "in another served version are no longer converted. Harmless if no objects of this kind exist.")  # fmt: skip
         if any(ln.sign == "-" and "helm.sh/resource-policy: keep" in ln.text for ln in lines) and not any(
             ln.sign == "+" and "helm.sh/resource-policy: keep" in ln.text for ln in lines
         ):

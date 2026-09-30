@@ -22,6 +22,9 @@ THRESHOLDS = {
     "unsure_hi": 0.65,
     "description_bad": 0.40,
     "description_good": 0.60,
+    # breaking_notes only: the 2026-09-30 live backtest had five chore-only bumps at 0.21-0.26
+    # (#35, #45, #80, #147, #160), each a review for nothing. Up to here counts as "no".
+    "breaking_no": 0.35,
 }
 
 UNTRUSTED = (
@@ -303,7 +306,7 @@ def breaking(f: Facts, a: Assessment, call: Call, nv: dict, eid) -> None:
     bn = nv["breaking_notes"]
     scope = call.questions["breaking_notes"]
     sid = f.widest(sorted(scope))
-    b = band(bn)
+    b = "no" if bn <= THRESHOLDS["breaking_no"] else band(bn)
     if b == "no":
         eid("breaking_notes", sid)
         return

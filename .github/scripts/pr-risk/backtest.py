@@ -70,15 +70,24 @@ def ground_truth(commits: list[dict]) -> tuple[dict, list[dict]]:
             window = [x for x in commits if c["date"] - timedelta(days=14) <= x["date"] < c["date"] and x["files"] & c["files"]]
             for target in window[-1:]:  # the nearest earlier commit touching the same files
                 strong.setdefault(target["sha"], f"reverted by {c['sha'][:7]}")
-    fixes = [c for c in commits if re.match(r"^fix(\(|:)", c["subject"]) and "renovate" not in c["author"].lower()]
+    fixes = [c for c in commits if re.match(r"^fix(\(|:)", c["subject"]) and "renovate" not in c["author"].lower() and not BUMP.search(c["subject"])]
     return strong, fixes
+
+
+# A follow-up that is itself a version bump isn't a fix of the item (f93ed16, ff18e2f: the
+# next Renovate update, committed under a human name).
+BUMP = re.compile(r"(?i)\bupdate (image|chart|tool|release|dependency|action|module)\b|[➔→]")
+# Files many unrelated changes touch: overlap through these alone says nothing. 2439395 (a
+# bootstrap secret fix) labelled six chart bumps through the bootstrap helmfile that pins them.
+SHARED = ["**/*.md", "docs/**", "bootstrap/**", "kubernetes/bootstrap/**", ".renovaterc.json5", ".renovate/**", "renovate.json5",
+          ".mise.toml", ".mise/**", "**/*.lock", ".github/labels.yaml"]  # fmt: skip
 
 
 def label_item(shas, when, files, strong, fixes) -> str:
     for s in shas:
         if s in strong:
             return "strong: " + strong[s]
-    files = set(files)
+    files = {f for f in files if f and not p.matches(f, SHARED)}
     for f in fixes:
         if when < f["date"] <= when + timedelta(hours=48) and files & f["files"] and f["sha"] not in shas:
             return f"weak: fix {f['sha'][:7]}"
@@ -90,21 +99,30 @@ def clean_jev(name, state, questions):
     return {"model": "none (--no-jev)", "usage": {}, "answers": {q: {"type": "noul", "noul": 0.95 if q == "description_matches" else 0.0} for q in questions}}
 
 
-def run_item(event, base, head, konflate_url, key, model, no_jev=False) -> dict:
+def run_item(event, base, head, konflate_url, key, model, no_jev=False, keep: Path | None = None) -> dict:
+    """Collect and classify one item. With `keep`, the bundle stays there with result.json and
+    comment.md, like a workflow artifact: readable, and replayable offline with
+    `pr_risk.py classify --input <dir> --jev-fixture <dir>/result.json`."""
     with tempfile.TemporaryDirectory() as tmp:
-        out = Path(tmp)
+        out = keep or Path(tmp)
+        out.mkdir(parents=True, exist_ok=True)
         p.collect(event, base, head, out, konflate_url, 0)
         # No render exists for older history (commits, or PRs from before Konflate): judge the
         # rest on its own rather than flag every item uncertain.
         state = json.loads((out / "konflate.json").read_text())["state"]
         if not konflate_url or state == "not_rendered":
             (out / "konflate.json").write_text(json.dumps({"state": "ignored", "summary": {"reason": "backtest"}}))
-        return p.classify(out, key=key, model=model, answer=clean_jev if no_jev else None)
+        r = p.classify(out, key=key, model=model, answer=clean_jev if no_jev else None)
+        if keep:
+            (out / "result.json").write_text(json.dumps(r, indent=2))
+            (out / "comment.md").write_text(p.render_comment(r))
+        return r
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("mode", choices=["prs", "commits"])
+    ap.add_argument("mode", choices=["prs", "commits", "replay"],
+                    help="replay: re-classify a --keep directory with its recorded Jev answers (no API calls)")  # fmt: skip
     ap.add_argument("--limit", type=int, default=200)
     ap.add_argument("--since", help="commits mode: only commits after this date (YYYY-MM-DD)")
     ap.add_argument("--ref", default="origin/main")
@@ -112,8 +130,13 @@ def main() -> None:
     ap.add_argument("--no-jev", action="store_true", help="deterministic rules only (every Jev question answered no)")
     ap.add_argument("--baseline", help="an earlier run's CSV (v1 or v2) to compare verdicts with")
     ap.add_argument("--out", default="pr-risk-backtest.csv")
+    ap.add_argument("--keep", type=Path, help="keep each item's bundle, result.json and comment.md in <dir>/pr-<n> or <dir>/<sha>")
     a = ap.parse_args()
 
+    if a.mode == "replay":
+        if not a.keep:
+            sys.exit("replay needs --keep <dir> from an earlier run")
+        return replay(a)
     key = None if a.no_jev else os.environ.get("TYPESAFE_API_KEY")
     if not a.no_jev and not key:
         sys.exit("TYPESAFE_API_KEY not set (or pass --no-jev)")
@@ -134,7 +157,8 @@ def main() -> None:
                 "labels": [{"name": lbl["name"]} for lbl in pr["labels"]], "head": {"sha": pr["headRefOid"]},
             }}  # fmt: skip
             try:
-                r = run_item(event, pr["baseRefOid"], pr["headRefOid"], a.konflate_url, key, model, a.no_jev)
+                r = run_item(event, pr["baseRefOid"], pr["headRefOid"], a.konflate_url, key, model, a.no_jev,
+                             keep=a.keep / f"pr-{pr['number']}" if a.keep else None)
             except subprocess.CalledProcessError as e:
                 print(f"#{pr['number']}: skipped ({e.stderr.strip()[:100]}); fetch refs/pull/*/head first", file=sys.stderr)
                 continue
@@ -153,7 +177,7 @@ def main() -> None:
                 "labels": [], "head": {"sha": c["sha"]},
             }}  # fmt: skip
             try:
-                r = run_item(event, c["sha"] + "^", c["sha"], None, key, model, a.no_jev)
+                r = run_item(event, c["sha"] + "^", c["sha"], None, key, model, a.no_jev, keep=a.keep / c["sha"][:7] if a.keep else None)
             except subprocess.CalledProcessError:
                 continue  # root commit
             rows.append(row(c["sha"][:7], c["subject"], r, label_item({c["sha"]}, c["date"], c["files"], strong, fixes)))
@@ -164,6 +188,47 @@ def main() -> None:
         w.writeheader()
         w.writerows(rows)
     report(rows, baseline(a.baseline) if a.baseline else None)
+    print(f"\nwrote {a.out}")
+
+
+def replay(a) -> None:
+    """Re-classify every kept item with the Jev answers its run recorded, and compare with what
+    that run said. Questions the current policy asks that the run didn't are unanswered, so they
+    show up as uncertain rather than being guessed."""
+    commits = history(a.ref)
+    strong, fixes = ground_truth(commits)
+    merged = {}
+    if any(d.name.startswith("pr-") for d in a.keep.iterdir()):
+        prs = json.loads(sh("gh", "pr", "list", "--state", "merged", "--limit", "1000", "--json", "number,mergedAt"))
+        merged = {f"pr-{x['number']}": datetime.fromisoformat(x["mergedAt"].replace("Z", "+00:00")) for x in prs}
+    by_sha = {c["sha"][:7]: c for c in commits}
+    rows, before = [], {}
+    for d in sorted(a.keep.iterdir(), key=lambda d: (len(d.name), d.name), reverse=True):
+        old_path = d / "result.json"
+        if not old_path.exists():
+            continue
+        old = json.loads(old_path.read_text())
+        fixture = {n: {"answers": ans, "model": old["jev"].get("model")} for n, ans in old["jev"].get("answers", {}).items()}
+        r = p.classify(d, key=None, model=old["jev"].get("model") or p.JEV_MODEL_DEFAULT, fixture=fixture)
+        meta = json.loads((d / "meta.json").read_text())
+        files = [f["path"] for f in json.loads((d / "files.json").read_text())]
+        ident = f"#{meta['number']}" if d.name.startswith("pr-") else d.name
+        if d.name in merged:
+            shas = set(sh("git", "rev-list", f"{meta['merge_base']}..{meta['head_sha']}").split())
+            truth = label_item(shas, merged[d.name], files, strong, fixes)
+        elif d.name in by_sha:
+            c = by_sha[d.name]
+            truth = label_item({c["sha"]}, c["date"], c["files"], strong, fixes)
+        else:
+            truth = ""
+        before[ident] = old.get("classification", old.get("verdict"))
+        rows.append(row(ident, meta.get("title", ""), r, truth))
+        print(f"{ident}: {before[ident]} → {tag(r)}  {meta.get('title', '')[:60]}", file=sys.stderr)
+    with open(a.out, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]) if rows else ["id"])
+        w.writeheader()
+        w.writerows(rows)
+    report(rows, baseline(a.baseline) if a.baseline else before)
     print(f"\nwrote {a.out}")
 
 
