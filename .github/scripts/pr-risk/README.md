@@ -222,6 +222,10 @@ verdict, available                               # v1 names, kept while v1 CSVs 
 
 The comment leads with the verdict and the rule that produced it, then a table of findings (surface, code, certainty, consequence), the missing evidence when uncertain, the context, and, folded, the evidence per surface and Jev's answers. No numeric level is shown as if it were a risk score.
 
+## Second opinion
+
+The `review-pr-risk` agent skill (`.agents/skills/review-pr-risk/`) reviews one PR independently in this vocabulary, reaching its own verdict before it reads the workflow's result, then compares the two finding by finding and says which part of the classifier caused any disagreement. Ask Claude Code for "a second opinion on the risk of PR 189".
+
 ## Running locally
 
 ```bash
