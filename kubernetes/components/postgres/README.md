@@ -106,11 +106,11 @@ Every name, including the S3 path, derives from `${APP}`, so a rename creates a 
 
    A list of kinds misses whatever a component adds: the paperless rename left `components/dragonfly`'s PodMonitor behind. Objects an operator created carry no Flux label and go with their owner.
 
-7. To drop the `KOPIUR_CLAIM` pin later (done for both firefly and paperless), first check what the claim holds. An empty claim, or one with only derived data, can switch straight away, because the new claim starts empty. Real data has to be copied across first. The old claim isn't pruned (it's create-once), so delete it by hand. Its kopia snapshots and policies stay in the repository: deleting a schedule defaults to `onScheduleDelete: Retain`, and the UI's connection is read-only. Delete them from a pod with its own read-write connection to the repository:
+7. To drop the `KOPIUR_CLAIM` pin later (done for both firefly and paperless), first check what the claim holds. An empty claim, or one with only derived data, can switch straight away, because the new claim starts empty. Real data has to be copied across first. The old claim isn't pruned (it's create-once), so delete it by hand. Its kopia snapshots and policies stay in the repository, because deleting a schedule defaults to `onScheduleDelete: Retain`. Delete them in the Kopia UI (`kopia.${DOMAIN_CLUSTER}`, see [system](../../apps/system/README.md)), or with the CLI from `nas-kopia-ui`'s pod:
 
    ```bash
-   kopia snapshot delete --all-snapshots-for-source <claim>@<ns>:/pvc/<claim> --delete
-   kopia policy delete <claim>@<ns>:/pvc/<claim> <claim>@<ns>
+   kubectl -n system exec deploy/nas-kopia-ui -- kopia snapshot delete --all-snapshots-for-source <claim>@<ns>:/pvc/<claim> --delete
+   kubectl -n system exec deploy/nas-kopia-ui -- kopia policy delete <claim>@<ns>:/pvc/<claim> <claim>@<ns>
    ```
 
    `<claim>` is the old pinned claim name, which is also the policy name kopia files it under: `paperless-ngx-config`, not `paperless-ngx`. The space comes back after the next full maintenance run and kopia's safety delay.

@@ -24,6 +24,12 @@ spec:
       kopiaUi:
         enabled: true
     monitoring:
+      dashboards:
+        enabled: true
+        grafanaOperator:
+          enabled: true
+          matchLabels:
+            dashboards: grafana
       prometheusRule:
         enabled: true
       serviceMonitor:

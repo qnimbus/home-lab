@@ -49,6 +49,11 @@ spec:
     timezone: Europe/Amsterdam
   server:
     auth:
-      generate: {}
+      secretRef:
+        name: nas-kopia-ui-secret
+        passwordKey: password
+        usernameKey: username
     namespace: system
-    readOnly: true
+    # Writable so snapshots and policies can be deleted from the UI (e.g. an old
+    # claim's after a rename); kopiur only retains them.
+    readOnly: false
