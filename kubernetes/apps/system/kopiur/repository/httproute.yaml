@@ -10,6 +10,7 @@ metadata:
     gethomepage.dev/group: "Storage"
     gethomepage.dev/icon: "kopia"
     gethomepage.dev/name: "Kopia"
+    gethomepage.dev/pod-selector: "app.kubernetes.io/name=kopiur-server,app.kubernetes.io/instance=nas"
 spec:
   hostnames:
     - "kopia.${DOMAIN_CLUSTER}"

@@ -72,6 +72,7 @@ spec:
         gethomepage.dev/group: "Observability"
         gethomepage.dev/icon: "mdi-chart-areaspline"
         gethomepage.dev/name: "Grafana"
+        gethomepage.dev/pod-selector: "app=grafana"
     spec:
       hostnames:
         - "grafana.${DOMAIN_CLUSTER}"

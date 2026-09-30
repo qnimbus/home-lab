@@ -7,6 +7,10 @@ metadata:
 spec:
   scaleTargetRef:
     name: ${APP}
+  # Scaled to 0, the app has no pods, so homepage's pod-status lookup reports "not
+  # found" (amber dot) and logs an error on every refresh. Consumers set
+  # `gethomepage.dev/external: "true"` on their HTTPRoute to skip that lookup; not
+  # `siteMonitor`, whose requests pass the interceptor and wake the app.
   minReplicaCount: 0
   maxReplicaCount: 1
   # Idle window before scaling to 0 once request activity stops. Consumers of this

@@ -7,6 +7,7 @@ metadata:
   annotations:
     gethomepage.dev/description: "Bank CSV/API import tool for Firefly III"
     gethomepage.dev/enabled: "true"
+    gethomepage.dev/external: "true"
     gethomepage.dev/group: "Finance"
     gethomepage.dev/icon: "mdi-database-import"
     gethomepage.dev/name: "Firefly III Data Importer"
