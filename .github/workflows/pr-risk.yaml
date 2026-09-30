@@ -8,10 +8,14 @@ name: PR Risk
 # Jev or Konflate outage publishes nothing. No step here can fail the job over a classification
 # problem. PR_RISK_MODE picks what it publishes: shadow (default: job summary + artifact),
 # labels, or comment (labels + comment).
-# Manual for now (`gh workflow run pr-risk.yaml -f pr=<number>`) while runner egress is sorted out.
+# Runs on every same-repo PR to main, and on demand (`gh workflow run pr-risk.yaml -f pr=<number>`).
 # See .github/scripts/pr-risk/README.md.
 
 on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   workflow_dispatch:
     inputs:
       pr:
@@ -20,7 +24,7 @@ on:
         type: number
 
 concurrency:
-  group: pr-risk-${{ inputs.pr }}
+  group: pr-risk-${{ github.event.pull_request.number || inputs.pr }}
   cancel-in-progress: true
 
 permissions:
@@ -29,6 +33,9 @@ permissions:
 jobs:
   classify:
     name: PR Risk
+    # Same-repo, non-draft PRs only (the job runs on the in-cluster runner with secrets); a
+    # manual run is checked in Resolve PR instead.
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}
     # Its own variable, not RUNNER: Konflate is only reachable in-cluster. On a GitHub-hosted
     # runner the classifier still runs, raw-diff-only and flagged uncertain.
     runs-on: ${{ vars.PR_RISK_RUNNER || 'home-lab' }}
@@ -43,7 +50,7 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ github.token }}
-          PR: ${{ inputs.pr }}
+          PR: ${{ github.event.pull_request.number || inputs.pr }}
         run: |-
           curl -fsSL \
             -H "Authorization: Bearer ${GH_TOKEN}" \
@@ -134,7 +141,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: pr-risk-${{ inputs.pr }}
+          name: pr-risk-${{ github.event.pull_request.number || inputs.pr }}
           # The whole bundle (result.json is pr-risk/v2), so a run can be re-classified offline
           # after a policy change (`pr_risk.py classify --input <dir> --jev-fixture <dir>/result.json`).
           # Secret-shaped strings are redacted by collect: this repo is public, and so are its artifacts.
