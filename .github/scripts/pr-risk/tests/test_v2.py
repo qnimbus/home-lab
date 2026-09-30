@@ -886,6 +886,20 @@ class TestBoundaries(Assertions):
         self.verdict(r, "review")
         self.assertIn("intent.unexplained_change", codes(r))
 
+    def test_breaking_change_elsewhere_with_generated_config_197(self):
+        """#197 with its generated config in view: notes that break a Prowlarr alias this repo's
+        config.yml doesn't use are "elsewhere", still review but with a clear reason."""
+        path = "kubernetes/apps/downloads/configarr/app/helmrelease.yaml"
+        diff = mkdiff(path, "          image:\n-            tag: 1.32.0\n+            tag: 1.33.0", header="spec:")
+        notes = {"source": "renovate", "sections": [{"version": "1.33.0", "text": "### 1.33.0\n\n- prowlarr: drop deprecated app_profile alias (soft-breaking)"}],
+                 "reason": "r"}  # fmt: skip
+        config = {path: "values: {}\n", "kubernetes/apps/downloads/configarr/app/resources/config.yml": "sonarr:\n  main: {}\nradarr:\n  main: {}\n"}
+        jev = Jev({"breaking_notes": 0.79, "breaking_affects_config": 0.10})
+        r = Scenario(diff, author="renovate", notes=notes, config=config).run(jev)
+        self.verdict(r, "review", rule="R3")
+        self.assertEqual(codes(r) - {"ev.release_notes_missing"}, {"compat.breaking_change_elsewhere"})
+        self.assertIn("resources/config.yml", jev.states["raw"]["config"])
+
     def test_breaking_notes_that_touch_config_are_risky(self):
         notes = {"source": "renovate", "sections": [{"version": "v0.9.0", "text": "### v0.9.0\n\n- BREAKING: `foo.bar` was renamed"}], "reason": "r"}
         r = Scenario(DIGEST_BUMP, title="feat(container)!: update foo (v0.8.2 ➔ v0.9.0)", author="renovate", notes=notes,

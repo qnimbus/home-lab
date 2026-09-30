@@ -226,12 +226,48 @@ def config_paths(files: list[dict]) -> list[str]:
     return list(dict.fromkeys(out))
 
 
+def generator_files(kustomization: str, directory: str) -> list[str]:
+    """The files a kustomization.yaml's configMapGenerator/secretGenerator read, as repo paths.
+    Much of an app's real config lives there, not in its HelmRelease: configarr's
+    `resources/config.yml` (#197), and a dozen apps' `values.yaml=./helm/values.yaml`."""
+    out, block, files_indent = [], None, None
+    for line in kustomization.splitlines():
+        s, indent = line.strip(), len(line) - len(line.lstrip())
+        if not s or s.startswith("#"):
+            continue
+        if indent == 0:
+            block = s.rstrip(":") if s in ("configMapGenerator:", "secretGenerator:") else None
+            files_indent = None
+            continue
+        if block is None:
+            continue
+        if re.match(r"(-\s+)?files:\s*$", s):
+            files_indent = indent + (2 if s.startswith("-") else 0)
+            continue
+        if files_indent is not None and indent > files_indent and s.startswith("- "):
+            item = s[2:].strip().strip("\"'")
+            out.append(os.path.normpath(os.path.join(directory, item.split("=", 1)[-1])))
+        elif files_indent is not None and indent <= files_indent:
+            files_indent = None
+    return list(dict.fromkeys(out))
+
+
 def collect_config(files: list[dict], head: str) -> dict[str, str]:
+    def show(path):
+        r = git("show", f"{head}:{path}", check=False)  # a git object, never checked out
+        return r.stdout if r.returncode == 0 else None
+
     config = {}
     for path in config_paths(files):
-        r = git("show", f"{head}:{path}", check=False)  # a git object, never checked out
-        if r.returncode == 0:
-            config[path] = r.stdout
+        text = show(path)
+        if text is not None:
+            config[path] = text
+    # Files generated into ConfigMaps/Secrets next to each changed app's manifests.
+    for directory in dict.fromkeys(p.rsplit("/", 1)[0] for p in config_paths(files) if p.startswith("kubernetes/apps/")):
+        kustomization = show(f"{directory}/kustomization.yaml")
+        for path in generator_files(kustomization or "", directory):
+            if path not in config and (text := show(path)) is not None:
+                config[path] = text
     return config
 
 

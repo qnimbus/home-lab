@@ -99,6 +99,29 @@ class TestReleaseNotesAndConfig(unittest.TestCase):
             "docker/nas/00-exporters/docker-compose.yaml",
         ])  # fmt: skip
 
+    def test_generator_files_197(self):
+        """#197: configarr's config is `resources/config.yml`, fed in by a configMapGenerator, so
+        Jev judged whether "config uses" a Prowlarr setting without it."""
+        root = HERE.parent.parent.parent.parent
+        d = "kubernetes/apps/downloads/configarr/app"
+        self.assertEqual(p.generator_files((root / d / "kustomization.yaml").read_text(), d), [f"{d}/resources/config.yml"])
+        kus = ("resources:\n  - ./helmrelease.yaml\nconfigMapGenerator:\n  - name: a-values\n    files:\n      - values.yaml=./helm/values.yaml\n"
+               "  - files:\n      - config.yaml=./resources/config.yaml\n    name: b\nsecretGenerator:\n  - name: s\n    files:\n      - ./x.env\n"
+               "generatorOptions:\n  disableNameSuffixHash: true\n")  # fmt: skip
+        self.assertEqual(p.generator_files(kus, "k/a/app"), ["k/a/app/helm/values.yaml", "k/a/app/resources/config.yaml", "k/a/app/x.env"])
+
+        shown = {}
+
+        def fake_git(*args, check=True):
+            path = args[1].split(":", 1)[1]
+            f = root / path
+            shown[path] = f.exists()
+            return mock.Mock(returncode=0 if f.exists() else 128, stdout=f.read_text() if f.exists() else "")
+
+        with mock.patch.object(p, "git", side_effect=fake_git):
+            config = p.collect_config([{"status": "M", "path": f"{d}/helmrelease.yaml"}], "HEAD")
+        self.assertEqual(list(config), [f"{d}/helmrelease.yaml", f"{d}/resources/config.yml"])
+
     def test_may_break(self):
         self.assertEqual(p.may_break({"labels": ["type/major"], "title": "x"}), "Major update")
         self.assertIn("0.x", p.may_break({"labels": ["type/minor"], "title": "feat(container)!: x", "author_kind": "renovate"}))
