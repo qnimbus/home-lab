@@ -36,8 +36,11 @@ lifecycle differs significantly:
   chart's `crds/` directory are both installed and updated/replaced when the
   chart changes.
 
-  Do not add per-HelmRelease `install.crds` or `upgrade.crds` settings merely
-  to obtain this behavior; the cluster-wide patch already provides it.
+  Do not add per-HelmRelease `install.crds` or `upgrade.crds` settings: the
+  patch is applied on top of the HelmRelease, so it overwrites them anyway.
+  To stop a release managing its `crds/` CRDs at all, label the HelmRelease
+  `crds.flux.home.arpa/disabled: "true"`. The patch then sets both policies to
+  `Skip` instead (see "One release per CRD").
 
   `CreateReplace` still does **not** delete a CRD when the chart stops
   shipping it. Such a CRD remains in the cluster and may require manual
@@ -173,7 +176,12 @@ chart installs**, check before committing:
 3. Switch the copy off in the new release, and say who owns it in a comment,
    as `system/openebs` does for the VolumeSnapshot CRDs that
    `snapshot-controller` owns (`openebs-crds.csi.volumeSnapshots.enabled:
-false`). If the chart can't switch them off, raise it rather than
+false`). If the chart has no such value but ships them in `crds/`, label
+   the release `crds.flux.home.arpa/disabled: "true"`, as
+   `network/external-dns-cloudflare` does for the external-dns CRDs that
+   `external-dns-unifi` owns. The label skips every `crds/` CRD of that
+   release, so only use it when another release owns all of them. If the
+   copies are templated and can't be switched off, raise it rather than
    installing a second copy.
 
 The `check-cluster-health` skill runs a live check for templated duplicates.
