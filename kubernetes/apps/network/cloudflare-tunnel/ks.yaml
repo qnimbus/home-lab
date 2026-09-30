@@ -30,7 +30,6 @@ spec:
   targetNamespace: network
   dependsOn:
     - name: cloudflare-tunnel-id
-    - name: envoy-gateway-config
     - name: external-dns-unifi
   interval: 1h
   path: ./kubernetes/apps/network/cloudflare-tunnel/app

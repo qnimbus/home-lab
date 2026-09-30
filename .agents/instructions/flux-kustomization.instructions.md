@@ -33,6 +33,12 @@ Cluster`, etc.) whose CRD is installed by another app's Helm chart, when
   PVCs and timed-out Helm installs while Ceph comes up. The cost is that a
   not-Ready storage Kustomization also pauses reconciliation of its
   dependents.
+- **Restoring certificates before cert-manager sees them** (accepted
+  exception): `network/certificates-export` depends on
+  `certificates-import` (`wait: true`). Also runtime ordering, but a
+  `Certificate` that finds no Secret makes cert-manager issue a new one
+  from Let's Encrypt instead of adopting the copy restored from 1Password.
+  The dependency closes that race on a fresh cluster.
 
 ### Don't use it for
 

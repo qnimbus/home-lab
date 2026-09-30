@@ -6,8 +6,6 @@ metadata:
   name: &app external-dns-cloudflare
 spec:
   targetNamespace: network
-  dependsOn:
-    - name: envoy-gateway-config
   interval: 1h
   path: ./kubernetes/apps/network/external-dns/cloudflare
   prune: true
@@ -28,8 +26,6 @@ metadata:
   name: &app external-dns-unifi
 spec:
   targetNamespace: network
-  dependsOn:
-    - name: envoy-gateway-config
   interval: 1h
   path: ./kubernetes/apps/network/external-dns/unifi
   prune: true

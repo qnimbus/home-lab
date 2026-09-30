@@ -30,7 +30,7 @@ Everything between a client and an app: the two Envoy Gateways every HTTPRoute a
 
 cert-manager issues a wildcard for each of `${DOMAIN_APP}`, `${DOMAIN_CASA}`, `${DOMAIN_IO}`, `${DOMAIN_APPS}` and `${DOMAIN_CLUSTER}` ([certificates.yaml](./certificates/export/certificates.yaml)). A `PushSecret` copies each one to a 1Password item of the same name, and keeps re-pushing (`updatePolicy: Replace`) so renewals get there too. `deletionPolicy: None` means removing the PushSecret never deletes the item.
 
-On a rebuild, `certificates-import` restores them before the Certificates exist. The ExternalSecrets write the TLS Secret with cert-manager's own labels and annotations, so cert-manager adopts it instead of issuing a new one. It's one-shot: `refreshPolicy: CreatedOnce` stops ESO from overwriting cert-manager's renewals. `creationPolicy: Orphan` alone would not.
+On a rebuild, `certificates-import` restores them before the Certificates exist: `certificates-export` depends on it, an accepted exception to the structural-only `dependsOn` rule. The ExternalSecrets write the TLS Secret with cert-manager's own labels and annotations, so cert-manager adopts it instead of issuing a new one. It's one-shot: `refreshPolicy: CreatedOnce` stops ESO from overwriting cert-manager's renewals. `creationPolicy: Orphan` alone would not.
 
 ## Gotchas
 
