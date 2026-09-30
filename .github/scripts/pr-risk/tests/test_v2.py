@@ -431,6 +431,13 @@ class TestRisky(Assertions):
         # Private: still a finding, but a review one.
         self.verdict(Scenario(diff, visibility="private").run(), "review")
 
+    def test_secret_in_pr_body_never_reaches_jev(self):
+        token = "ghp_" + "b" * 36
+        jev = Jev()
+        r = Scenario(DIGEST_BUMP, title=f"fix: rotate {token}", body=f"old token was {token}").run(jev)
+        self.assertNotIn(token, json.dumps(jev.states))
+        self.assertNotIn(token, json.dumps(r))
+
     def test_pull_request_target(self):
         diff = mkdiff(".github/workflows/x.yaml", "on:\n-  pull_request:\n+  pull_request_target:")
         r = Scenario(diff).run()

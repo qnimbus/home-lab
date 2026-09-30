@@ -393,8 +393,8 @@ def collect(event: dict, base: str, head: str, out: Path, konflate_url: str | No
     login = pr["user"]["login"]
     meta = {
         "number": pr["number"],
-        "title": pr.get("title") or "",
-        "body": pr.get("body") or "",
+        "title": redact(pr.get("title") or ""),  # public already, but it goes to Jev and the artifact
+        "body": redact(pr.get("body") or ""),
         "author": login,
         "author_kind": author_kind(login),
         "labels": [lbl["name"] for lbl in pr.get("labels", [])],
@@ -827,8 +827,8 @@ def raw_state(meta, files, diff, base_diff, sections=(), config=None, scale=1.0,
     diff_budget = max(int(BUDGET["diff"] * scale) - len(notes) - len(conf), 8_000)
     text, cut, omitted = budget_diff(redact(diff), diff_budget, int(BUDGET["diff_per_file"] * scale))
     state = {
-        "title": meta.get("title", ""),
-        "description": clean_description(meta.get("body") or "", meta.get("author_kind", "other"))[: BUDGET["description"]],
+        "title": redact(meta.get("title", "")),
+        "description": clean_description(redact(meta.get("body") or ""), meta.get("author_kind", "other"))[: BUDGET["description"]],
         "author": meta.get("author_kind", "other"),
         "files": [file_line(f) for f in files],
         "diff": text + (f"\n(omitted for size: {', '.join(omitted)})" if omitted else ""),
@@ -847,7 +847,7 @@ def raw_state(meta, files, diff, base_diff, sections=(), config=None, scale=1.0,
 def rendered_state(meta, kinfo, kdiff, scale=1.0) -> tuple[dict, list[str]]:
     text, cut = budget_rendered(kdiff, int(BUDGET["rendered"] * scale), int(BUDGET["rendered_per_resource"] * scale))
     return {
-        "title": meta.get("title", ""),
+        "title": redact(meta.get("title", "")),
         "konflate": {k: kinfo.get(k) for k in ("resources", "crds", "images", "rules", "routine")},
         "rendered_diff": text,
     }, cut

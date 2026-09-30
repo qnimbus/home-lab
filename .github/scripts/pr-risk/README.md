@@ -177,7 +177,9 @@ An answer ≥ 0.70 is a **probable** finding, ≤ 0.20 is **ruled out** (recorde
 - **The repository is public** (`gh repo view qnimbus/home-lab --json visibility` says `PUBLIC`; v1's README said private). What follows from that:
   - Anyone can open a PR from a fork, and forks can't be trusted. The job only classifies open PRs whose head is in this repository (checked in "Resolve PR"), so only push-access actors (the owner and the Renovate App) get classified, and `workflow_dispatch` itself needs write access.
   - Secret material committed in a PR is already published when the PR is pushed; merging makes it permanent in `main`'s history. `sec.secret_material_in_git` is an established integrity finding (**risky**: rotate it) in a public repository and a review obligation in a private one. The visibility comes from the PR payload (`base.repo.visibility`), with `REPO_VISIBILITY` as the fallback and "public" as the default.
-  - Workflow artifacts of a public repository are downloadable by anyone signed in. `collect` scans the diff for secret-shaped strings before anything is cut and redacts them from `pr.diff`, `base_overlap.diff` and `config.json`; `secrets.json` records only the file and the kind. The same redaction is applied to everything sent to Jev.
+  - Workflow artifacts of a public repository are downloadable by anyone signed in, for 30 days. `collect` scans the diff for secret-shaped strings (private keys with key material, GitHub/AWS/Slack/1Password/API tokens, JWTs, age keys) before anything is cut, and redacts them from `pr.diff`, `base_overlap.diff`, `config.json` and the PR title and body. The same redaction is applied to everything sent to Jev.
+  - `secrets.json` is that scan's result: a list of `{path, kind}` for each hit on an added line, never the value. It is `[]` for a normal PR. A non-empty list is what raises `sec.secret_material_in_git` (risky: rotate it), and it's kept because the redacted diff no longer shows what was found.
+  - The rest of the bundle is public already: the PR (title, body, diff), files at the PR's head, and Konflate's render, which Konflate also serves without auth. Konflate's service account can't read Secrets, so values Flux substitutes from Secrets (`CLOUDFLARE_TUNNEL_ID`, `TAILSCALE_USER`) never reach the render. No credential the workflow holds (the Jev key, the GitHub token) is written to the bundle.
 - The checkout is the **base** branch, so the classifier always comes from `main`, and a PR that changes it gets `ev.self_evaluation`. PR content is read as git objects only (`git diff --no-ext-diff --no-textconv`, `git merge-tree`, `git show`, `git ls-tree`, `git grep` against a commit) and is never executed or checked out.
 - The job runs on the in-cluster `home-lab` runner, because Konflate is internal-only. That runner is cluster-admin, which is exactly why nothing from the PR runs, and why workflow changes are a pre-merge execution surface in their own right.
 - What leaves the cluster: PR diffs and rendered manifests (hostnames, internal IPs), minus anything secret-shaped, go to TypeSafe. The API key is read from 1Password at `op://GitHub/jev/API_KEY` and only ever sent as the bearer token.
@@ -186,7 +188,7 @@ An answer ≥ 0.70 is a **probable** finding, ≤ 0.20 is **ruled out** (recorde
 
 | Repo variable           | Default                                              | Meaning                                                                                                             |
 | ----------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `PR_RISK_MODE`          | `shadow`                                             | `shadow`: job summary + artifact only. `labels`: also sync `risk/*` labels. `comment`: also a sticky comment.       |
+| `PR_RISK_MODE`          | `shadow` (set: `comment`)                            | `shadow`: job summary + artifact only. `labels`: also sync `risk/*` labels. `comment`: also a sticky comment.       |
 | `PR_RISK_RUNNER`        | `home-lab`                                           | Kept separate from `RUNNER`. On a GitHub-hosted runner Konflate is unreachable: an outage, so nothing is published. |
 | `JEV_MODEL`             | `jev-1.13.0`                                         | Pinned, because the answer bands (`semantic.THRESHOLDS`) are tuned per model version.                               |
 | `KONFLATE_URL`          | `http://konflate.flux-system.svc.cluster.local:8080` |                                                                                                                     |
@@ -305,8 +307,8 @@ What remains risky is mostly planned migrations and moves: storage-class switche
 ## Rollout
 
 1. **Shadow**: done; the backtests above.
-2. **`labels`** (now, from 2026-09-30): no material historical incident is an unexplained false safe.
-3. **`comment`**.
+2. **`labels`** (2026-09-30): no material historical incident is an unexplained false safe; first live run #189, `risk/safe`.
+3. **`comment`** (now, from 2026-09-30): labels plus the scorecard as a sticky PR comment.
 
 GitHub auto-merge isn't available here (no rulesets on this plan). If you ever want the verdict to gate anything, the lever is a dedicated check-run that fails on `risky` (Renovate's automerge, `ignoreTests: false`, waits for checks), not this advisory workflow failing.
 
