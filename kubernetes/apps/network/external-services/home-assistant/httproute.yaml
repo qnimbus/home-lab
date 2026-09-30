@@ -12,12 +12,11 @@ spec:
       namespace: network
       sectionName: https
   rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      backendRefs:
-        # Envoy Gateway Backend, not a Service — the port lives in the Backend resource.
+    - backendRefs:
         - group: gateway.envoyproxy.io
           kind: Backend
           name: *app
+      matches:
+        - path:
+            type: PathPrefix
+            value: /

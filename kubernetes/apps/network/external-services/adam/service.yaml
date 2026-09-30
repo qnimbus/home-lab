@@ -3,18 +3,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: &app adam
+  name: adam
   annotations:
-    # Plugwise Adam gateway — a physical LAN device, not a Kubernetes workload. This
-    # Service carries no real endpoints; it exists only so external-dns points
-    # gw-adam.iot.${DOMAIN_IO} straight at the device's LAN IP. type: ExternalName
-    # means no ClusterIP is ever allocated (unlike a plain ClusterIP Service, which
-    # always gets one regardless of endpoints). Not a DNSEndpoint: external-dns-cloudflare
-    # also watches the `crd` source and shares ${DOMAIN_IO} in its domainFilters, so a
-    # DNSEndpoint here would get published as a public, proxied Cloudflare record
-    # pointing at a private IP. The Service source is cloudflare-exempt (it has no
-    # `service` source enabled), which is what keeps this record UniFi-local.
     external-dns.kubernetes.io/hostname: "gw-adam.iot.${DOMAIN_IO}"
 spec:
-  type: ExternalName
   externalName: "${ADAM_IOT_HOST}"
+  type: ExternalName

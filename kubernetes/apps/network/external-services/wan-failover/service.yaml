@@ -5,14 +5,7 @@ kind: Service
 metadata:
   name: wan-failover
   annotations:
-    # Bypasses Envoy Gateway entirely: the router firmware validates the inbound Host header
-    # against its own management IP, and Envoy Gateway has no supported way to rewrite Host to
-    # an IP literal (URLRewrite.hostname rejects IP literals; RequestHeaderModifier silently
-    # strips "Host" as disallowed — see docs/ROADMAP.md history). This Service carries no real
-    # endpoints; it exists only so external-dns points wan-failover.${DOMAIN_CLUSTER} straight
-    # at the router's LAN IP (${WAN_FAILOVER_HOST}), same as browsing to it directly — no proxy,
-    # no TLS, no Host rewrite needed. type: ExternalName means no ClusterIP is ever allocated.
     external-dns.kubernetes.io/hostname: "wan-failover.${DOMAIN_CLUSTER}"
 spec:
-  type: ExternalName
   externalName: "${WAN_FAILOVER_HOST}"
+  type: ExternalName

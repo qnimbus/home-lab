@@ -5,25 +5,9 @@ kind: Connector
 metadata:
   name: subnet-router
 spec:
-  hostname: k8s-subnet-router
-  # Advertise as an exit node so tailnet clients can route all traffic
-  # through this cluster. Advertising alone isn't enough — exit nodes must
-  # also be approved per-device in the Tailscale admin console (or via an
-  # autoApprovers ACL rule) before clients can select them.
   exitNode: true
+  hostname: k8s-subnet-router
   subnetRouter:
     advertiseRoutes:
-      # Advertise the /23 supernet, not the /24 LAN, to avoid hijacking LAN
-      # traffic. Tailscale installs its routes via ip rules (~priority 5200)
-      # evaluated before the main routing table, so a /24 advertisement would
-      # win over the LAN route on any machine that can already reach
-      # 10.60.0.0/24 directly — sending its local traffic through Tailscale
-      # instead. Advertising the less-specific /23 lets the OS's
-      # longest-prefix-match keep preferring each machine's own /24 LAN
-      # route, while still giving Tailscale-only peers reachability into it.
-      # Ref: https://github.com/tailscale/tailscale/issues/1227
-      #      https://github.com/tailscale/tailscale/issues/6231
-      #      https://github.com/tailscale/tailscale/issues/7947
-      #      https://tailscale.com/docs/reference/troubleshooting/network-configuration/lan-traffic-overlapping-subnets
       - "10.10.0.0/23"
       - "10.60.0.0/23"

@@ -3,7 +3,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app canon
+  name: canon
 spec:
   targetNamespace: network
   interval: 1h
@@ -18,7 +18,7 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app wan-failover
+  name: wan-failover
 spec:
   targetNamespace: network
   interval: 1h
@@ -33,7 +33,7 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app adam
+  name: adam
 spec:
   targetNamespace: network
   interval: 1h
@@ -48,7 +48,7 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app anna
+  name: anna
 spec:
   targetNamespace: network
   interval: 1h

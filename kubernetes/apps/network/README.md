@@ -1,0 +1,47 @@
+# network
+
+Everything between a client and an app: the two Envoy Gateways every HTTPRoute attaches to, their wildcard certificates, DNS for both the LAN and Cloudflare, the Cloudflare Tunnel that carries WAN traffic, and Tailscale for remote access. `external-services` puts LAN devices that aren't Kubernetes workloads behind the same DNS.
+
+## Apps
+
+| Kustomization                                           | What it does                                                                       | Notes                                                                         |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| certificates-import / certificates-export               | Wildcard certs for every domain, round-tripped through 1Password                   | See [Certificates](#certificates)                                             |
+| envoy-gateway / envoy-gateway-config                    | Controller, then the `envoy` GatewayClass, both Gateways and their policies        | Gateway API CRDs are pre-installed by bootstrap                               |
+| external-dns-unifi                                      | LAN DNS on the UniFi gateway, via the webhook provider                             | Sources: HTTPRoutes and Services; owner `k8s-internal`                        |
+| external-dns-cloudflare                                 | Public DNS in Cloudflare, proxied                                                  | Sources: HTTPRoutes on `envoy-external` and `DNSEndpoint`s; owner `k8s`       |
+| cloudflare-tunnel-id / cloudflare-tunnel                | cloudflared, forwarding WAN traffic to `envoy-external`                            | Ingress rules in [config.yaml](./cloudflare-tunnel/app/resources/config.yaml) |
+| tailscale-user / tailscale-operator / tailscale-configs | Operator, API-server proxy, and the `subnet-router` Connector                      | Subnet router and exit node                                                   |
+| adam, anna, canon, wan-failover                         | DNS names for LAN devices (`*.iot.${DOMAIN_IO}`, `wan-failover.${DOMAIN_CLUSTER}`) | `ExternalName` Services, no proxy                                             |
+
+`external-services/home-assistant` and `external-services/truenas` (Envoy `Backend` + HTTPRoute) are in the tree but **not deployed**: [external-services/ks.yaml](./external-services/ks.yaml) has no Kustomization for them.
+
+## How it fits together
+
+**Two Gateways.** `envoy-external` (`10.60.0.230`) and `envoy-internal` (`10.60.0.231`) both terminate TLS for every domain, and both are LAN-reachable. Their VIPs come from Cilium's LB-IPAM pool and are advertised over BGP (see `kube-system/cilium/config`). Only `envoy-external` is reachable from the WAN, through the tunnel. `envoy-internal` also has a raw-TCP `ssh` listener on port 22 for forgejo's git-over-SSH, LAN-only like the rest of it.
+
+**DNS.** external-dns-unifi publishes every route on either Gateway, plus `external`/`internal.${DOMAIN_PROXII}` from the Gateways' own Services, so LAN clients go straight to the VIPs. external-dns-cloudflare only follows `envoy-external` (`--gateway-name`) and points each hostname at `external.${DOMAIN_PROXII}`, which the tunnel's `DNSEndpoint` CNAMEs to `<tunnel-id>.cfargotunnel.com`. Records are proxied (`--cloudflare-proxied`).
+
+**WAN path.** Cloudflare edge → tunnel → cloudflared → `envoy-external` over HTTPS. cloudflared matches SNI to the Host and verifies the origin cert (`noTLSVerify: false`), so a domain whose certificate fails to renew hard-fails at the tunnel instead of passing silently. The `ClientTrafficPolicy` trusts `X-Forwarded-For` from the pod CIDR so Envoy sees the real client IP behind cloudflared.
+
+**Tunnel ID substitution.** `${CLOUDFLARE_TUNNEL_ID}` comes from its own ExternalSecret (`cloudflare-tunnel-id`), not the plaintext `cluster-settings` ConfigMap. `tailscale-operator` does the same for `${TAILSCALE_USER}` (`tailscale-user`). Both set `substitution.flux.home.arpa/disabled` and list `cluster-settings` in their own `substituteFrom`: cluster-apps' patch replaces the whole list, and would drop the Secret.
+
+### Certificates
+
+cert-manager issues a wildcard for each of `${DOMAIN_APP}`, `${DOMAIN_CASA}`, `${DOMAIN_IO}`, `${DOMAIN_APPS}` and `${DOMAIN_CLUSTER}` ([certificates.yaml](./certificates/export/certificates.yaml)). A `PushSecret` copies each one to a 1Password item of the same name, and keeps re-pushing (`updatePolicy: Replace`) so renewals get there too. `deletionPolicy: None` means removing the PushSecret never deletes the item.
+
+On a rebuild, `certificates-import` restores them before the Certificates exist. The ExternalSecrets write the TLS Secret with cert-manager's own labels and annotations, so cert-manager adopts it instead of issuing a new one. It's one-shot: `refreshPolicy: CreatedOnce` stops ESO from overwriting cert-manager's renewals. `creationPolicy: Orphan` alone would not.
+
+## Gotchas
+
+- **Two-level domains aren't WAN-safe.** `${DOMAIN_CLUSTER}` and `${DOMAIN_APPS}` sit two levels under `vwn.io`, and Cloudflare's free Universal SSL only covers one level. The origin cert is fine, but the edge has none, so the handshake fails with `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` before the tunnel is reached. Put new public routes on `${DOMAIN_APP}`, `${DOMAIN_CASA}` or `${DOMAIN_IO}`.
+- **LAN devices are `ExternalName` Services, not `DNSEndpoint`s.** external-dns-cloudflare watches the `crd` source and shares `${DOMAIN_IO}` in its filters, so a `DNSEndpoint` would be published as a public, proxied Cloudflare record pointing at a private IP. It has no `service` source, which keeps these records UniFi-only. `ExternalName` also means no ClusterIP is allocated.
+- **wan-failover bypasses Envoy.** The router checks the Host header against its own IP, and Envoy Gateway can't rewrite Host to an IP literal (`URLRewrite.hostname` rejects it, `RequestHeaderModifier` silently drops `Host`). So the name points straight at the router, with no TLS.
+- **`externalTrafficPolicy: Cluster`** on the Envoy Service dates from L2 announcements, where `Local` black-holed the VIP whenever the elected node had no Envoy pod. The VIPs are on BGP now; `Cluster` is still correct, and Cilium's DSR keeps the client IP.
+- **`enableBackend: true`** in the envoy-gateway values turns on the `Backend` CRD (off by default), which lets an HTTPRoute target an off-cluster host with its own TLS settings instead of a Service with a hand-managed EndpointSlice.
+- **TrueNAS Backend** skips TLS verification (self-signed cert, no way to enrol it in cert-manager) and pins ALPN to `http/1.1`. The default also offers h2, and HTTP/2 has no Upgrade, so the UI's WebSocket got a 400 from TrueNAS's nginx.
+- **cloudflared restarts on config changes** through Reloader. `config.yaml` is a `subPath` mount, which Kubernetes never updates in place.
+- **Tailscale subnet router advertises `/23`s, not the `/24` LANs.** Tailscale's routes go in via ip rules evaluated before the main table, so a `/24` would beat the LAN route on machines already on that LAN and pull their local traffic through Tailscale. The `/23` loses on longest-prefix match there and still reaches Tailscale-only peers ([tailscale#1227](https://github.com/tailscale/tailscale/issues/1227), [overlapping subnets](https://tailscale.com/docs/reference/troubleshooting/network-configuration/lan-traffic-overlapping-subnets)).
+- **Tailscale exit node** needs approving per device in the admin console, or an `autoApprovers` ACL rule, before clients can pick it.
+- **`cluster-admin` for `${TAILSCALE_USER}`** is intentional: kubectl goes through the operator's API-server proxy, gated by tailnet ACLs instead of a distributed kubeconfig.
+- **Shared 1Password items.** `cloudflare-tunnel` feeds the tunnel token, the tunnel ID and external-dns's `API_TOKEN`; `tailscale` feeds the operator's OAuth client and `USERNAME`; `unifi` is shared with `default/unifi-voucher-site`. Rename a field and check every consumer: `grep -rn "key: <item>" kubernetes`.

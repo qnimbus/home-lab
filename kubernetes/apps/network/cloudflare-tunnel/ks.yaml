@@ -6,9 +6,9 @@ metadata:
   name: cloudflare-tunnel-id
 spec:
   targetNamespace: network
-  prune: true
   interval: 1h
   path: ./kubernetes/apps/network/cloudflare-tunnel/tunnel-id
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -25,15 +25,13 @@ kind: Kustomization
 metadata:
   name: &app cloudflare-tunnel
   labels:
-    # Load-bearing: cluster-apps' substituteFrom patch replaces the whole
-    # list, which would drop cloudflare-tunnel-id-secret and render
-    # ${CLOUDFLARE_TUNNEL_ID} empty. cluster-settings is listed below instead.
-    # The tunnel ID has its own Secret (bykaj's home-ops pattern) to keep it
-    # out of the plaintext cluster-settings ConfigMap.
     substitution.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: network
-  prune: true
+  dependsOn:
+    - name: cloudflare-tunnel-id
+    - name: envoy-gateway-config
+    - name: external-dns-cloudflare
   interval: 1h
   path: ./kubernetes/apps/network/cloudflare-tunnel/app
   postBuild:
@@ -43,14 +41,11 @@ spec:
       - kind: ConfigMap
         name: cluster-settings
         optional: true
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    - name: cloudflare-tunnel-id
-    - name: envoy-gateway-config
-    - name: external-dns-cloudflare
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease

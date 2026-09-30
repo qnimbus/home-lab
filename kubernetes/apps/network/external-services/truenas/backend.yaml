@@ -10,14 +10,6 @@ spec:
         address: "${NAS_LAN_HOST}"
         port: 8443
   tls:
-    # TrueNAS serves its own self-signed cert on 8443 and there is no path to enrol it in our
-    # cert-manager PKI; the hop is a single LAN link to a host we already trust.
-    insecureSkipVerify: true
-    # Pin to HTTP/1.1: TrueNAS's nginx offers h2 over TLS, and Backend.spec.tls.alpnProtocols
-    # defaults to [h2, http/1.1], so Envoy negotiates h2 to the backend unless told otherwise.
-    # HTTP/2 has no Upgrade mechanism (RFC 9113 §8.2.2 forbids the Connection/Upgrade headers
-    # entirely — WebSocket over h2 requires extended CONNECT instead), so the WebSocket upgrade
-    # TrueNAS's UI depends on for its middleware API got a 400 from nginx once TLS enabled h2
-    # negotiation. Plain HTTP never had this problem: no ALPN, so it was always HTTP/1.1.
     alpnProtocols:
       - http/1.1
+    insecureSkipVerify: true

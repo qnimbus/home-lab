@@ -6,10 +6,10 @@ metadata:
   name: cloudflare-tunnel
 spec:
   allowCrossNamespaceImport: true
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
   url: https://grafana.com/api/dashboards/17457/revisions/6/download

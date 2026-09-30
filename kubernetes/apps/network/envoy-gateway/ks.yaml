@@ -6,16 +6,16 @@ metadata:
   name: &app envoy-gateway
 spec:
   targetNamespace: network
-  prune: true
+  dependsOn:
+    - name: cilium-config
+      namespace: kube-system
   interval: 1h
   path: ./kubernetes/apps/network/envoy-gateway/app
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    - name: cilium-config
-      namespace: kube-system
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -29,16 +29,16 @@ metadata:
   name: envoy-gateway-config
 spec:
   targetNamespace: network
-  prune: true
+  dependsOn:
+    - name: envoy-gateway
+    - name: certificates-import
   interval: 1h
   path: ./kubernetes/apps/network/envoy-gateway/config
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    - name: envoy-gateway
-    - name: certificates-import
   healthChecks:
     - apiVersion: gateway.networking.k8s.io/v1
       kind: Gateway

@@ -10,43 +10,34 @@ spec:
   gatewayClassName: envoy
   infrastructure:
     annotations:
-      # Pin this gateway to a specific IP from the CiliumLoadBalancerIPPool
-      lbipam.cilium.io/ips: "10.60.0.230"
-      # UniFi external-dns (service source) creates: external.proxii.nl → 10.60.0.230 (LAN)
-      # Cloudflare side is published separately via the cloudflare-tunnel DNSEndpoint (CNAME to the tunnel)
       external-dns.kubernetes.io/hostname: "external.${DOMAIN_PROXII}"
+      lbipam.cilium.io/ips: "10.60.0.230"
   listeners:
-    - name: http
-      protocol: HTTP
-      port: 80
-      allowedRoutes:
+    - allowedRoutes:
         namespaces:
           from: Same
-    - name: https
-      protocol: HTTPS
-      port: 443
-      allowedRoutes:
+      name: http
+      port: 80
+      protocol: HTTP
+    - allowedRoutes:
         namespaces:
           from: All
+      name: https
+      port: 443
+      protocol: HTTPS
       tls:
-        mode: Terminate
         certificateRefs:
-          # WAN-safe — one level under their own zone root, covered by Cloudflare's
-          # free Universal SSL at the edge:
           - kind: Secret
             name: vwn-app-tls
           - kind: Secret
             name: vwn-casa-tls
           - kind: Secret
             name: vwn-io-tls
-          # NOT WAN-safe for new routes — two levels under vwn.io's zone root.
-          # These origin certs are correct, but Cloudflare's edge has no cert
-          # covering them, so the TLS handshake fails before the tunnel is ever
-          # reached. See docs/QA.md > Networking > "ERR_SSL_VERSION_OR_CIPHER_MISMATCH".
           - kind: Secret
             name: cluster-vwn-io-tls
           - kind: Secret
             name: apps-vwn-io-tls
+        mode: Terminate
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/gateway.networking.k8s.io/gateway_v1.json
 apiVersion: gateway.networking.k8s.io/v1
@@ -59,24 +50,22 @@ spec:
   gatewayClassName: envoy
   infrastructure:
     annotations:
-      lbipam.cilium.io/ips: "10.60.0.231"
-      # UniFi external-dns (service source) creates: internal.proxii.nl → 10.60.0.231
       external-dns.kubernetes.io/hostname: "internal.${DOMAIN_PROXII}"
+      lbipam.cilium.io/ips: "10.60.0.231"
   listeners:
-    - name: http
-      protocol: HTTP
-      port: 80
-      allowedRoutes:
+    - allowedRoutes:
         namespaces:
           from: Same
-    - name: https
-      protocol: HTTPS
-      port: 443
-      allowedRoutes:
+      name: http
+      port: 80
+      protocol: HTTP
+    - allowedRoutes:
         namespaces:
           from: All
+      name: https
+      port: 443
+      protocol: HTTPS
       tls:
-        mode: Terminate
         certificateRefs:
           - kind: Secret
             name: vwn-app-tls
@@ -88,11 +77,10 @@ spec:
             name: cluster-vwn-io-tls
           - kind: Secret
             name: apps-vwn-io-tls
-    # Raw-TCP passthrough for git-over-SSH (forgejo). LAN-only, matching this
-    # Gateway's other listeners — no WAN exposure.
-    - name: ssh
-      protocol: TCP
-      port: 22
-      allowedRoutes:
+        mode: Terminate
+    - allowedRoutes:
         namespaces:
           from: All
+      name: ssh
+      port: 22
+      protocol: TCP

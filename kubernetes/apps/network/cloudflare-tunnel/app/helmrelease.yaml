@@ -5,16 +5,19 @@ kind: HelmRelease
 metadata:
   name: cloudflare-tunnel
 spec:
-  interval: 1h
   chartRef:
     kind: OCIRepository
     name: cloudflare-tunnel
+  interval: 1h
   values:
+    defaultPodOptions:
+      securityContext:
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
     controllers:
       cloudflare-tunnel:
         annotations:
-          # config.yaml is mounted via subPath, which Kubernetes never live-updates —
-          # Reloader forces a rolling restart so ConfigMap edits actually take effect.
           reloader.stakater.com/auto: "true"
         replicas: 2
         strategy: RollingUpdate
@@ -23,27 +26,27 @@ spec:
             image:
               repository: mirror.gcr.io/cloudflare/cloudflared
               tag: 2026.9.3@sha256:072c067d25ccbe61d46e18f0d0723255f2bb5304f7317caa95b27031520ff92c
+            args: ["tunnel", "run"]
             env:
               NO_AUTOUPDATE: "true"
               TUNNEL_METRICS: "0.0.0.0:8080"
-              TUNNEL_TRANSPORT_PROTOCOL: http2
               TUNNEL_ORIGIN_ENABLE_HTTP2: "true"
+              TUNNEL_TRANSPORT_PROTOCOL: http2
             envFrom:
               - secretRef:
                   name: cloudflare-tunnel-secret
-            args: ["tunnel", "run"]
             probes:
               liveness: &probes
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 3
                   httpGet:
                     path: /ready
                     port: &port 8080
                   initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 1
-                  failureThreshold: 3
               readiness: *probes
             resources:
               requests:
@@ -53,12 +56,17 @@ spec:
             securityContext:
               allowPrivilegeEscalation: false
               readOnlyRootFilesystem: true
-              capabilities: { drop: ["ALL"] }
-    defaultPodOptions:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 65534
-        runAsGroup: 65534
+              capabilities:
+                drop:
+                  - ALL
+    persistence:
+      config-file:
+        type: configMap
+        name: cloudflare-tunnel-config
+        globalMounts:
+          - path: /etc/cloudflared/config.yaml
+            readOnly: true
+            subPath: config.yaml
     service:
       app:
         ports:
@@ -67,16 +75,8 @@ spec:
     serviceMonitor:
       app:
         endpoints:
-          - port: http
-            scheme: http
+          - interval: 1m
             path: /metrics
-            interval: 1m
+            port: http
+            scheme: http
             scrapeTimeout: 30s
-    persistence:
-      config-file:
-        type: configMap
-        name: cloudflare-tunnel-config
-        globalMounts:
-          - path: /etc/cloudflared/config.yaml
-            subPath: config.yaml
-            readOnly: true

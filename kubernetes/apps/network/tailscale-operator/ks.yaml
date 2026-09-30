@@ -6,14 +6,14 @@ metadata:
   name: tailscale-user
 spec:
   targetNamespace: network
-  wait: true
-  prune: true
   interval: 1h
   path: ./kubernetes/apps/network/tailscale-operator/tailscale-user
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
+  wait: true
   healthChecks:
     - apiVersion: external-secrets.io/v1
       kind: ExternalSecret
@@ -26,17 +26,13 @@ kind: Kustomization
 metadata:
   name: &app tailscale-operator
   labels:
-    # Load-bearing: cluster-apps' substituteFrom patch replaces the whole
-    # list, which would drop tailscale-user-secret and render
-    # ${TAILSCALE_USER} empty. cluster-settings is listed below instead.
-    # TAILSCALE_USER has its own Secret (an ExternalSecret, where bykaj seeds
-    # it at bootstrap) to keep it out of the plaintext cluster-settings
-    # ConfigMap.
     substitution.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: network
-  wait: true
-  prune: true
+  dependsOn:
+    - name: tailscale-user
+    - name: cilium-config
+      namespace: kube-system
   interval: 1h
   path: ./kubernetes/apps/network/tailscale-operator/app
   postBuild:
@@ -46,14 +42,12 @@ spec:
       - kind: ConfigMap
         name: cluster-settings
         optional: true
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    - name: tailscale-user
-    - name: cilium-config
-      namespace: kube-system
+  wait: true
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -67,12 +61,12 @@ metadata:
   name: tailscale-configs
 spec:
   targetNamespace: network
-  prune: true
+  dependsOn:
+    - name: tailscale-operator
   interval: 1h
   path: ./kubernetes/apps/network/tailscale-operator/configs
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    - name: tailscale-operator

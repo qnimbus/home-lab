@@ -10,10 +10,10 @@ spec:
     name: tailscale-operator
   interval: 1h
   values:
-    installCRDs: true
     fullnameOverride: *app
+    installCRDs: true
     oauthSecretVolume:
       secret:
-        secretName: &secret tailscale-operator
+        secretName: tailscale-operator
     operatorConfig:
       hostname: *app

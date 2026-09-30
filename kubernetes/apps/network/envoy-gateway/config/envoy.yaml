@@ -9,20 +9,8 @@ spec:
     level:
       default: info
   provider:
-    type: Kubernetes
     kubernetes:
       envoyDeployment:
-        replicas: 3
-        pod:
-          topologySpreadConstraints:
-            - maxSkew: 1
-              topologyKey: kubernetes.io/hostname
-              whenUnsatisfiable: DoNotSchedule
-              matchLabelKeys:
-                - pod-template-hash
-              labelSelector:
-                matchLabels:
-                  app.kubernetes.io/component: proxy
         container:
           resources:
             requests:
@@ -30,14 +18,20 @@ spec:
               memory: 256Mi
             limits:
               memory: 1Gi
-      # Cluster (not Local): Cilium's L2-announcement leader election is unaware of
-      # service endpoints and can elect a node with no local envoy pod (replicas: 3
-      # across 5 nodes), silently black-holing all traffic to the VIP.
-      # loadBalancer.mode: dsr (cilium values) already preserves the real client IP
-      # under Cluster policy, so this loses nothing. Documented Cilium incompatibility
-      # + fix: https://docs.cilium.io/en/stable/network/l2-announcements/
+        pod:
+          topologySpreadConstraints:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: proxy
+              matchLabelKeys:
+                - pod-template-hash
+              maxSkew: 1
+              topologyKey: kubernetes.io/hostname
+              whenUnsatisfiable: DoNotSchedule
+        replicas: 3
       envoyService:
         externalTrafficPolicy: Cluster
+    type: Kubernetes
   shutdown:
     drainTimeout: 180s
   telemetry:
@@ -66,10 +60,10 @@ spec:
   compressor:
     - type: Zstd
       zstd: {}
-    - type: Brotli
-      brotli: {}
-    - type: Gzip
-      gzip: {}
+    - brotli: {}
+      type: Brotli
+    - gzip: {}
+      type: Gzip
   retry:
     numRetries: 2
     retryOn:
@@ -89,7 +83,6 @@ kind: ClientTrafficPolicy
 metadata:
   name: envoy
 spec:
-  # Trust pod CIDR for X-Forwarded-For so Cloudflare Tunnel can propagate real client IPs
   clientIPDetection:
     xForwardedFor:
       trustedCIDRs:
@@ -97,12 +90,12 @@ spec:
   http2:
     onInvalidMessage: TerminateStream
   http3: {}
-  tls:
-    minVersion: "1.2"
-    alpnProtocols:
-      - h2
-      - http/1.1
-  tcpKeepalive: {}
   targetSelectors:
     - group: gateway.networking.k8s.io
       kind: Gateway
+  tcpKeepalive: {}
+  tls:
+    alpnProtocols:
+      - h2
+      - http/1.1
+    minVersion: "1.2"
