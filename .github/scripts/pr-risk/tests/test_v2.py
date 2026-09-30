@@ -617,6 +617,68 @@ class TestRegressions(Assertions):
         self.assertIn("compat.crd_conversion_changed", codes(r))
         self.assertNotIn("crd_schema_narrowed", jev.asked.get("rendered", []))
 
+    SCHEMA_HEAD = [("ctx", "spec:"), ("ctx", "  versions:"), ("ctx", "  - name: v1alpha1"), ("ctx", "    schema:"),
+                   ("ctx", "      openAPIV3Schema:"), ("ctx", "        properties:"), ("ctx", "          spec:"),
+                   ("ctx", "            properties:")]  # fmt: skip
+
+    def test_keda_http_additive_crd_192(self):
+        """#192: keda-add-ons-http 0.16 adds optional fields (with `required` and `enum` inside
+        them), drops a default and loosens a validation rule. Jev said narrowed (0.81); nothing
+        existing objects use is narrowed, so it's review, not risky."""
+        rows = self.SCHEMA_HEAD + [
+            ("ctx", "              placeholder:"), ("ctx", "                properties:"), ("ctx", "                  statusCode:"),
+            ("del", "                    default: 503"), ("ctx", "                    type: integer"),
+            ("add", "              maxPendingRequests:"), ("add", "                minimum: 1"), ("add", "                type: integer"),
+            ("add", "              overflow:"), ("add", "                default: Reject"), ("add", "                enum:"),
+            ("add", "                - Reject"), ("add", "                - Placeholder"), ("add", "                type: string"),
+            ("add", "              staticRoutes:"), ("add", "                items:"), ("add", "                  properties:"),
+            ("add", "                    path:"), ("add", "                      type: string"), ("add", "                  required:"),
+            ("add", "                  - path"), ("add", "                type: array"),
+        ]  # fmt: skip
+        kdiff = crd_kdiff("CustomResourceDefinition interceptorroutes.http.keda.sh", rows, parent="HelmRelease system/keda-add-ons-http")
+        self.assertEqual(rules.crd_narrowing(rules.render_hunks(kdiff)), [])
+        diff = mkdiff("kubernetes/apps/system/keda/app-http-add-on/ocirepository.yaml", "  ref:\n-    tag: 0.15.0\n+    tag: 0.16.0", header="spec:")
+        r = Scenario(diff, kdiff=kdiff, konflate=konflate_fresh(crds=1), author="renovate", notes=NO_NOTES,
+                     title="fix(container): update image ghcr.io/home-operations/charts-mirror/keda-add-ons-http (0.15.0 ➔ 0.16.0)").run(
+            Jev({"crd_schema_narrowed": 0.81}))  # fmt: skip
+        self.verdict(r, "review")
+        self.assertIn("compat.crd_schema_narrowed", codes(r, {"possible"}))
+        self.assertNotIn("compat.crd_schema_narrowed", codes(r, {"probable", "established"}))
+
+    def test_dragonfly_property_removed_186(self):
+        """#186: the Dragonfly CRD drops `networkPolicyEnabled`. Risky from the render alone,
+        whatever Jev says."""
+        rows = self.SCHEMA_HEAD + [("del", "              networkPolicyEnabled:"), ("del", "                default: true"),
+                                   ("del", "                type: boolean"), ("ctx", "              nodeSelector:")]  # fmt: skip
+        kdiff = crd_kdiff("CustomResourceDefinition dragonflies.dragonflydb.io", rows, parent="HelmRelease database/dragonfly")
+        self.assertEqual(rules.crd_narrowing(rules.render_hunks(kdiff)), ["property `networkPolicyEnabled` removed"])
+        # As Konflate really rendered it: a fold marker, then the hunk starts below `properties:`.
+        folded = [{"hunk": True, "fold": "g0", "count": 900}] + [{"kind": k, "html": h} for k, h in [
+            ("ctx", "                type: integer"), ("del", "              networkPolicyEnabled:"), ("del", "                default: true"),
+            ("del", "                description: Whether to create a NetworkPolicy."), ("del", "                type: boolean"),
+            ("ctx", "              nodeSelector:")]]  # fmt: skip
+        real = {"diff": {"resources": [{"kind": "CustomResourceDefinition", "title": "CustomResourceDefinition dragonflies.dragonflydb.io",
+                                        "status": "changed", "parent": "HelmRelease database/dragonfly", "unified": folded}]}}  # fmt: skip
+        self.assertEqual(rules.crd_narrowing(rules.render_hunks(real)), ["property `networkPolicyEnabled` removed"])
+        diff =mkdiff("kubernetes/apps/database/dragonfly/app/ocirepository.yaml", "  ref:\n-    tag: v1.6.1\n+    tag: v1.7.0", header="spec:")
+        r = Scenario(diff, kdiff=kdiff, konflate=konflate_fresh(crds=1), author="renovate").run(Jev({"crd_schema_narrowed": 0.03}))
+        self.verdict(r, "risky")
+        self.assertIn("compat.crd_schema_narrowed", codes(r, {"probable"}))
+
+    def test_other_narrowing_shapes(self):
+        head = self.SCHEMA_HEAD + [("ctx", "              mode:")]
+        cases = {
+            "enum value `Legacy` removed": [("ctx", "                enum:"), ("ctx", "                - Modern"), ("del", "                - Legacy")],
+            "type `string` → `integer`": [("del", "                type: string"), ("add", "                type: integer")],
+        }
+        for want, rows in cases.items():
+            got = rules.crd_narrowing(rules.render_hunks(crd_kdiff("CustomResourceDefinition x.example.io", head + rows)))
+            self.assertEqual(got, [want])
+        required = self.SCHEMA_HEAD + [("ctx", "              replicas:"), ("ctx", "                type: integer"),
+                                       ("ctx", "            required:"), ("add", "            - replicas")]  # fmt: skip
+        self.assertEqual(rules.crd_narrowing(rules.render_hunks(crd_kdiff("CustomResourceDefinition x.example.io", required))),
+                         ["`replicas` newly required"])  # fmt: skip
+
     def test_weak_breaking_lean_is_no(self):
         """#35, #45, #80, #147, #160: `breaking_notes` 0.21-0.26 on chore-only notes."""
         notes = {"source": "renovate", "sections": [{"version": "v0.9.0", "text": "### v0.9.0\n\n- chore: bump dependencies here"}], "reason": "r"}

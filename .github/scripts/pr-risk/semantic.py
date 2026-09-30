@@ -57,6 +57,7 @@ class Q:
     rendered: str | None = None  # the question in the rendered-diff call
     kind: str | None = None  # the kind a "yes" gets, when not the code's default
     consequence: str | None = None
+    capped: bool = False  # a "yes" is only possible: the deterministic rules own this fact
 
 
 QUESTIONS = {
@@ -145,7 +146,8 @@ QUESTIONS = {
           kind="mechanism"),
         Q("crd_schema_narrowed", "compat.crd_schema_narrowed", None,
           "`rendered_diff` removes a field from a CustomResourceDefinition schema, renames one, makes one required, or narrows "
-          "its type or allowed values"),
+          "its type or allowed values",
+          capped=True),  # rules.crd_narrowing decides; #192 was a yes on purely additive changes
     ]
 }  # fmt: skip
 
@@ -287,7 +289,8 @@ def interpret(f: Facts, a: Assessment, call: Call, resp: dict | None, err: str |
         if q in ("breaking_notes", "breaking_affects_config"):
             continue  # together, below
         if b == "yes":
-            a.find(spec.code, "probable", sid, (eid(q, sid),), f"Jev: {short_q(spec, call)} (`{q}` {v:.2f}).", kind=spec.kind, consequence=spec.consequence)
+            certainty = "possible" if spec.capped else "probable"
+            a.find(spec.code, certainty, sid, (eid(q, sid),), f"Jev: {short_q(spec, call)} (`{q}` {v:.2f}).", kind=spec.kind, consequence=spec.consequence)
         elif b == "lean":
             a.find(spec.code, "possible", sid, (eid(q, sid),), f"Jev leans towards: {short_q(spec, call)} (`{q}` {v:.2f}).",
                    kind=spec.kind, consequence=spec.consequence)  # fmt: skip

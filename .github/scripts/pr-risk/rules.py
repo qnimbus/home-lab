@@ -735,12 +735,59 @@ def recreated_hook(kdiff: dict | None, title: str) -> bool:
     return False
 
 
+SCHEMA_KEYWORDS = {"type", "properties", "items", "required", "enum", "default", "format", "description", "minimum", "maximum",
+                   "pattern", "additionalProperties", "anyOf", "oneOf", "allOf", "not", "nullable", "minItems", "maxItems",
+                   "minLength", "maxLength", "x-kubernetes-validations", "x-kubernetes-list-type", "x-kubernetes-map-type",
+                   "x-kubernetes-preserve-unknown-fields", "x-kubernetes-int-or-string", "x-kubernetes-list-map-keys"}  # fmt: skip
+
+
+def crd_narrowing(hunks: list[Hunk]) -> list[str]:
+    """What in a CRD's rendered diff narrows the schema for objects that already exist: a
+    property removed (#186: dragonfly's `networkPolicyEnabled`), a type changed, an enum value
+    removed, or a `required` entry for a property that isn't itself new. New optional
+    properties, whatever they require inside, narrow nothing (#192). Description text and the
+    conversion block don't count."""
+    out = []
+    # Konflate splits a big CRD at its fold markers, so a hunk can start below `properties:`
+    # and a property's parent is unknown (#186). A removed key then counts as a property when
+    # it isn't a schema keyword and its own children say `type:` or `properties:`; one whose
+    # name comes back anywhere in the CRD was moved, not removed.
+    added_anywhere = {ln.key for h in hunks for ln in h.lines if ln.sign == "+" and ln.key}
+    for h in hunks:
+        lines = [ln for ln in h.lines if not ln.blank and not ln.within("description", "conversion") and ln.key != "description"]
+        added_keys = {(ln.keys, ln.key) for ln in lines if ln.sign == "+" and ln.key}
+        added_items = {(ln.keys, ln.value) for ln in lines if ln.sign == "+" and ln.key is None}
+        removed_items = {(ln.keys, ln.value) for ln in lines if ln.sign == "-" and ln.key is None}
+        new_props = {ln.key for ln in lines if ln.sign == "+" and ln.keys[-1:] == ("properties",)}
+        for i, ln in enumerate(lines):
+            if ln.sign != "-" or not ln.key or (ln.keys, ln.key) in added_keys:
+                continue
+            under_properties = ln.keys[-1:] == ("properties",)
+            orphan = not ln.keys and ln.key not in SCHEMA_KEYWORDS and ln.key not in added_anywhere and any(
+                c.keys[-1:] == (ln.key,) and c.key in ("type", "properties", "items", "x-kubernetes-preserve-unknown-fields")
+                for c in lines[i + 1 : i + 12] if c.sign == "-"
+            )  # fmt: skip
+            if under_properties or orphan:
+                out.append(f"property `{ln.key}` removed")
+        for ln in lines:
+            if ln.sign == "-" and ln.key is None and ln.keys[-1:] == ("enum",) and (ln.keys, ln.value) not in added_items:
+                out.append(f"enum value `{ln.value}` removed")
+            elif ln.sign == "+" and ln.key is None and ln.keys[-1:] == ("required",) and ln.value not in new_props \
+                    and (ln.keys, ln.value) not in removed_items:  # fmt: skip
+                out.append(f"`{ln.value}` newly required")
+        kept = {id(ln) for ln in lines}
+        for c in changes(Hunk(h.path, [ln for ln in h.lines if id(ln) in kept or ln.sign == " "])):
+            if c.key == "type" and c.old and c.new and "properties" in c.keys:
+                out.append(f"type `{c.old}` → `{c.new}`")
+    return list(dict.fromkeys(out))
+
+
 def in_kdiff(kdiff: dict | None, title: str) -> bool:
     return any(r.get("title") == title for r in ((kdiff or {}).get("diff") or {}).get("resources") or [])
 
 
 @rule("crd.lifecycle", "konflate",
-      ["compat.crd_version_dropped", "compat.crd_storage_version_moved", "compat.crd_conversion_changed", "lifecycle.crd_unprotected",
+      ["compat.crd_version_dropped", "compat.crd_storage_version_moved", "compat.crd_conversion_changed", "compat.crd_schema_narrowed", "lifecycle.crd_unprotected",
        "lifecycle.crd_second_owner",
        "lifecycle.release_reinstalled", "ctx.crd_touched", "ctx.crd_added"],
       lambda f: f.konflate.get("state") == "fresh")  # fmt: skip
@@ -763,6 +810,11 @@ def crd_lifecycle(f: Facts, a: Assessment) -> None:
             a.find("lifecycle.crd_second_owner", "possible", sid, (eid,),
                    f"Adds `{title}`: check no other release already owns it (`kubectl get crd`), or two releases will take turns overwriting it.")  # fmt: skip
             continue
+        narrowed = crd_narrowing(hs)
+        if narrowed:
+            eid = a.record("render", f"{title}: " + "; ".join(narrowed[:4]), sid)
+            a.find("compat.crd_schema_narrowed", "probable", sid, (eid,),
+                   f"`{title}` narrows its schema ({short(narrowed, 3)}): existing objects that use it can fail validation or lose the field.")  # fmt: skip
         dropped, moved_ = crd_versions(lines)
         if dropped:
             eid = a.record("render", f"{title}: a served version is removed", sid)

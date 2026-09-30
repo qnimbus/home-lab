@@ -11,7 +11,7 @@ import re
 from dataclasses import asdict, dataclass, field
 
 SCHEMA = "pr-risk/v2"
-POLICY_VERSION = "2.1"
+POLICY_VERSION = "2.2"
 
 # ── Context dimensions ───────────────────────────────────────────────────────────────────────
 
