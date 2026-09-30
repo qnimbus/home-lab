@@ -2,10 +2,12 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
 name: PR Risk
 
-# Classifies a PR as risk/safe|review|risky (+ risk/uncertain) from git facts, path tiers,
-# Konflate's render and TypeSafe Jev. Advisory and fail-open: code decides, Jev can only raise
-# the level, and no step here can fail the job over a classification problem. PR_RISK_MODE picks
-# what it publishes: shadow (default: job summary + artifact), labels, or comment (labels + comment).
+# Classifies a PR as risk/safe|review|risky (+ risk/uncertain) with the pr-risk/v2 model: typed
+# findings from git, Konflate's render and TypeSafe Jev, an evidence ledger per surface, and a
+# deterministic policy. Advisory and fail-open: Jev can add findings but never remove one, and a
+# Jev or Konflate outage publishes nothing. No step here can fail the job over a classification
+# problem. PR_RISK_MODE picks what it publishes: shadow (default: job summary + artifact),
+# labels, or comment (labels + comment).
 # Manual for now (`gh workflow run pr-risk.yaml -f pr=<number>`) while runner egress is sorted out.
 # See .github/scripts/pr-risk/README.md.
 
@@ -89,6 +91,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           KONFLATE_URL: ${{ vars.KONFLATE_URL || 'http://konflate.flux-system.svc.cluster.local:8080' }}
           KONFLATE_WAIT_SECONDS: ${{ vars.KONFLATE_WAIT_SECONDS || '480' }}
+          # Plaintext secrets are risky in a public repository; the PR payload normally says which.
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
         run: >-
           uv run --no-project --python 3.13 .github/scripts/pr-risk/pr_risk.py collect
           --base "origin/${BASE_REF}" --event "$RUNNER_TEMP/event.json" --out "$RUNNER_TEMP/pr-risk"
@@ -131,8 +135,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: pr-risk-${{ inputs.pr }}
-          # The whole bundle, so a run can be re-classified offline after a policy change
-          # (`pr_risk.py classify --input <dir> --jev-fixture` with the answers from result.json).
+          # The whole bundle (result.json is pr-risk/v2), so a run can be re-classified offline
+          # after a policy change (`pr_risk.py classify --input <dir> --jev-fixture <dir>/result.json`).
+          # Secret-shaped strings are redacted by collect: this repo is public, and so are its artifacts.
           path: ${{ runner.temp }}/pr-risk/
           if-no-files-found: ignore
           retention-days: 30

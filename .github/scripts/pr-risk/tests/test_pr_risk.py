@@ -1,13 +1,13 @@
-"""Offline tests for pr_risk.py: no network, no git, no API key.
+"""Offline tests for pr_risk.py's collectors and plumbing: release notes, Konflate polling, model
+input budgets, the Jev client and publishing. No network, no git, no API key. The v2 decision
+model (findings, evidence, policy) is tested in test_v2.py.
 
     uv run --no-project --python 3.13 -m unittest discover .github/scripts/pr-risk/tests
 """
 
 import copy
 import json
-import shutil
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -17,48 +17,11 @@ FIX = HERE / "fixtures"
 sys.path.insert(0, str(HERE.parent))
 
 import pr_risk as p  # noqa: E402
+import surfaces  # noqa: E402
 
 
 def load(name):
     return json.loads((FIX / name).read_text())
-
-
-def fresh(summary_file):
-    return {"state": "fresh", "summary": load(summary_file)}
-
-
-def levels(signals, source=None):
-    return [s.level for s in signals if source is None or s.source == source]
-
-
-class Bundle:
-    """A copy of bundle_179 that a test can edit before classifying."""
-
-    def __init__(self):
-        self.dir = Path(tempfile.mkdtemp())
-        shutil.copytree(FIX / "bundle_179", self.dir, dirs_exist_ok=True)
-
-    def edit(self, name, fn):
-        path = self.dir / name
-        path.write_text(json.dumps(fn(json.loads(path.read_text()))))
-
-    def classify(self, fixture=None, key=None):
-        return p.classify(self.dir, key=key, model=p.JEV_MODEL_DEFAULT, fixture=fixture)
-
-    def cleanup(self):
-        shutil.rmtree(self.dir)
-
-
-def clear_jev():
-    """A Jev fixture where every answer is a confident, clean 'no'."""
-    fx = load("jev_179.json")
-    for call in fx.values():
-        for a in call["answers"].values():
-            if "noul" in a:
-                a["noul"] = 0.03
-        call["answers"].get("description_matches", {})["noul"] = 0.95
-    fx["raw"]["answers"]["blast_radius"].update(score=0.8, confidence=0.8)
-    return fx
 
 
 # The shape of a Renovate PR body with release notes (from #178), `{notes}` filled per test.
@@ -118,10 +81,9 @@ class TestReleaseNotesAndConfig(unittest.TestCase):
         self.assertIn("# kubernetes/apps/a/b/app/helmrelease.yaml", state["config"])
         state, _ = p.raw_state(meta, [], "", "", [], conf)
         self.assertNotIn("config", state)
-        q = p.raw_questions(False, True, True)
-        self.assertIn("release_notes", q["breaking_notes"]["instructions"]["question"])
-        self.assertIn("breaking_affects_config", q)
-        self.assertNotIn("breaking_affects_config", p.raw_questions(False, False, True))
+        state, _ = p.raw_state(meta, [], "", "", [], conf, invariants=True)  # setting_conflict needs both
+        self.assertIn("invariants", state)
+        self.assertIn("# kubernetes/apps/a/b/app/helmrelease.yaml", state["config"])
 
     def test_config_paths(self):
         files = [
@@ -291,13 +253,6 @@ class TestReleaseNoteSources(unittest.TestCase):
         self.assertNotIn("### v1.4", text)
         self.assertIn("newer versions left out for size: v1.3, v1.4", text)
 
-    def test_major_with_fetched_notes_is_checked(self):
-        meta = {"labels": ["type/major"], "title": "x"}
-        notes = {"source": "github", "sections": [{"version": "v2.0.0", "text": "t"}], "reason": "r"}
-        (s,) = p.pr_signals(meta, notes)
-        self.assertEqual(s.level, 0)
-        self.assertIn("from GitHub releases: v2.0.0", s.reason)
-
 
 class TestCrds(unittest.TestCase):
     def test_new_fields_are_not_a_version_change(self):
@@ -306,10 +261,6 @@ class TestCrds(unittest.TestCase):
     def test_dropped_or_moved_versions_are(self):
         for rows in ([("del", "    served: true")], [("del", "    storage: true")], [("add", "    served: false")]):
             self.assertEqual(p.crd_version_changes(crd(rows)), ["CustomResourceDefinition x.example.io"], rows)
-
-    def test_version_change_is_a_konflate_finding(self):
-        s, _ = p.konflate_signals(fresh("konflate_summary_179.json"), True, crd([("del", "    storage: true")]))
-        self.assertEqual(levels(s), [1])
 
     def test_per_resource_cap_only_when_over_budget(self):
         big = crd([("add", "    field%d: x" % i) for i in range(400)])
@@ -350,11 +301,10 @@ class TestCrds(unittest.TestCase):
 
     def test_description_only_crd_is_not_asked_about(self):
         self.assertFalse(p.any_crd_schema_change(crd(self.DESCRIPTION_ONLY)))
-        self.assertNotIn("crd_schema_change", p.rendered_questions(False, crd_schema=False))
         self.assertTrue(p.any_crd_schema_change(crd(self.DESCRIPTION_ONLY + [("add", "                                  pattern: ^x$")])))
 
 
-class TestGlobsAndTiers(unittest.TestCase):
+class TestGlobsAndSurfaces(unittest.TestCase):
     def test_glob(self):
         self.assertTrue(p.matches("kubernetes/apps/media/plex/app/helmrelease.yaml", ["kubernetes/apps/**"]))
         self.assertTrue(p.matches("README.md", ["**/*.md"]))
@@ -363,85 +313,38 @@ class TestGlobsAndTiers(unittest.TestCase):
         self.assertTrue(p.matches("kubernetes/apps/system/openebs/ks.yaml", ["kubernetes/apps/system/{openebs,kopiur}/**"]))
         self.assertFalse(p.matches("kubernetes/apps/system/openebs-x/ks.yaml", ["kubernetes/apps/system/{openebs,kopiur}/**"]))
 
-    def test_tiers(self):
+    def test_surfaces(self):
+        """(surface id, reach). Reach is context: how far a real finding would propagate."""
         cases = {
-            "kubernetes/talos/version.yaml": "foundation",
-            "kubernetes/apps/rook-ceph/rook-ceph/cluster/helmrelease.yaml": "foundation",
-            "kubernetes/apps/rook-ceph/README.md": "inert",  # docs win over location
-            "kubernetes/components/postgres/cluster.yaml": "shared",
-            "kubernetes/apps/media/kustomization.yaml": "shared",
-            "docker/nas/00-exporters/docker-compose.yaml": "shared",
-            ".github/workflows/validate.yaml": "shared",
-            ".github/labels.yaml": "inert",
-            ".mise/config.toml": "inert",
-            "kubernetes/apps/media/plex/app/helmrelease.yaml": "app",
+            "kubernetes/talos/version.yaml": ("talos", "host"),
+            "kubernetes/apps/rook-ceph/rook-ceph/cluster/helmrelease.yaml": ("rook-ceph/rook-ceph", "cluster"),
+            "kubernetes/apps/rook-ceph/README.md": ("docs", "none"),  # docs win over location
+            "kubernetes/components/postgres/cluster.yaml": ("component:postgres", "shared"),
+            "kubernetes/apps/media/kustomization.yaml": ("namespace:media", "shared"),
+            "docker/nas/00-exporters/docker-compose.yaml": ("nas:00-exporters", "app"),
+            ".github/workflows/validate.yaml": ("ci:workflows", "ci"),
+            ".github/workflows/pr-risk.yaml": ("pr-risk", "ci"),
+            ".github/labels.yaml": ("docs", "none"),
+            ".mise/config.toml": ("workstation:hooks", "workstation"),  # not inert: mise runs hooks
+            ".lefthook.yaml": ("workstation:hooks", "workstation"),
+            ".justfile": ("workstation:tooling", "workstation"),
+            ".agents/skills/add-app/SKILL.md": ("agents", "workstation"),  # agent instructions aren't plain docs
+            "kubernetes/apps/media/plex/app/helmrelease.yaml": ("media/plex", "app"),
+            "kubernetes/apps/kube-system/cilium/app/helmrelease.yaml": ("kube-system/cilium", "cluster"),
+            "kubernetes/apps/database/cloudnative-pg/app/helmrelease.yaml": ("database/cloudnative-pg", "shared"),
+            "kubernetes/clusters/main/apps.yaml": ("flux:cluster", "cluster"),
+            "some/new/thing.py": ("repo", "workstation"),
         }
-        for path, want in cases.items():
-            self.assertEqual(p.tier(path), want, path)
+        for path, (sid, reach) in cases.items():
+            sd, got = surfaces.classify_path(path)
+            self.assertEqual((got, sd.reach), (sid, reach), path)
 
-
-class TestKonflateSignals(unittest.TestCase):
-    def test_clean_render(self):
-        s, info = p.konflate_signals(fresh("konflate_summary_179.json"), True)
-        self.assertEqual(s, [])
-        self.assertEqual(info["head"], "fa8b518")
-
-    def test_immutable_job_is_review(self):
-        s, info = p.konflate_signals(fresh("konflate_summary_172.json"), True)
-        self.assertEqual(levels(s), [1, 1])
-        self.assertEqual(info["rules"], ["immutable-field", "immutable-field"])
-
-    def test_immutable_helm_hook_job_is_context(self):
-        def job(delete_policy):
-            rows = [("ctx", "  annotations:"), ("ctx", "    helm.sh/hook: pre-install,pre-upgrade"),
-                    ("ctx", f"    helm.sh/hook-delete-policy: {delete_policy}"), ("add", "        image: x:2")]  # fmt: skip
-            return {"diff": {"resources": [{"kind": "Job", "title": "Job observability/kube-prometheus-stack-admission-create",
-                                            "unified": [{"kind": k, "html": h, "folded": k == "ctx"} for k, h in rows]}]}}  # fmt: skip
-
-        s, _ = p.konflate_signals(fresh("konflate_summary_172.json"), True, job("before-hook-creation,hook-succeeded"))
-        self.assertEqual(levels(s), [0, 1])  # only admission-create is in the rendered diff here
-        self.assertIn("Helm hook", s[0].reason)
-        s, _ = p.konflate_signals(fresh("konflate_summary_172.json"), True, job("hook-failed"))
-        self.assertEqual(levels(s), [1, 1])
-
-    def test_immutable_non_job_is_risky(self):
-        k = fresh("konflate_summary_172.json")
-        k["summary"]["diff"]["warnings"][0]["resource"] = "StatefulSet default/forgejo"
-        self.assertEqual(max(levels(p.konflate_signals(k, True)[0])), 2)
-
-    def test_infra_failures_are_uncertain_not_risky(self):
-        s, _ = p.konflate_signals(fresh("konflate_summary_175.json"), True)
-        failure = [x for x in s if "fetch sources" in x.reason]
-        self.assertEqual(len(failure), 1)
-        self.assertEqual(failure[0].level, 1)
-        self.assertTrue(failure[0].uncertain)
-        self.assertIn(2, levels(s))  # dangling-dependson is risky in its own right
-
-    def test_real_failure_is_risky(self):
-        k = fresh("konflate_summary_175.json")
-        k["summary"]["diff"]["failures"] = [{"parent": "HelmRelease x/y", "message": "values don't meet the schema"}]
-        k["summary"]["diff"]["warnings"] = None
-        s, _ = p.konflate_signals(k, True)
-        self.assertEqual(levels(s), [2])
-
-    def test_unknown_rule_is_review(self):
-        k = fresh("konflate_summary_179.json")
-        k["summary"]["diff"]["warnings"] = [{"level": "caution", "rule": "brand-new-rule", "resource": "X a/b"}]
-        s, _ = p.konflate_signals(k, True)
-        self.assertEqual(levels(s), [1])
-        self.assertIn("unknown rule", s[0].reason)
-
-    def test_blocking_and_missing_image(self):
-        k = fresh("konflate_summary_178.json")
-        k["summary"]["diff"]["warnings"] = [{"level": "blocking", "rule": "image-not-found", "resource": "Deployment a/b"}]
-        k["summary"]["diff"]["images"][0]["upstream"] = "missing"
-        self.assertEqual(levels(p.konflate_signals(k, True)[0]), [2, 2])
-
-    def test_unavailable(self):
-        s, _ = p.konflate_signals({"state": "stale", "summary": {"reason": "rendering"}}, True)
-        self.assertEqual(levels(s), [1])
-        self.assertTrue(s[0].uncertain)
-        self.assertEqual(p.konflate_signals({"state": "skipped", "summary": {}}, False)[0], [])
+    def test_content_adds_stakes(self):
+        files = [{"status": "M", "path": "kubernetes/apps/media/plex/app/helmrelease.yaml"}]
+        (plain,) = surfaces.build_surfaces(files, {})
+        (held,) = surfaces.build_surfaces(files, {"media/plex": "persistence:\n  config:\n    existingClaim: plex"})
+        self.assertNotIn("data", plain.stakes)
+        self.assertIn("data", held.stakes)
 
 
 class TestKonflateFetch(unittest.TestCase):
@@ -533,167 +436,6 @@ class TestJevClient(unittest.TestCase):
             with self.assertRaises(p.JevError):
                 p.call_jev({}, {}, key="k", model="m", sleep=lambda s: None)
         self.assertEqual(h.call_count, 1)
-
-
-class TestDecision(unittest.TestCase):
-    def setUp(self):
-        self.b = Bundle()
-
-    def tearDown(self):
-        self.b.cleanup()
-
-    def test_real_fixture_is_review(self):
-        # 0.16 → 0.17 of a 0.x chart with no release notes: the one thing left is the changelog.
-        r = self.b.classify(fixture=load("jev_179.json"))
-        self.assertEqual(r["verdict"], "review")
-        self.assertEqual(r["labels"], ["risk/review"])  # unexpected_changes isn't asked of Renovate titles
-        self.assertEqual([s["reason"] for s in r["signals"] if s["level"] >= 1],
-                         ["0.x update that Renovate marks as breaking and no usable release notes "
-                          "(Renovate found no release notes; GitHub releases not checked (bundle predates release_notes.json)): "
-                          "check the upstream changelog"])  # fmt: skip
-        self.assertNotIn("unexpected_changes", r["jev"]["answers"]["rendered"])
-        self.assertEqual(r["change_kind"], "version_bump")
-        self.assertTrue(r["available"])
-
-    def test_renovate_bang_minor_with_clean_notes_is_safe(self):
-        self.b.edit("meta.json", lambda m: {**m, "body": RENOVATE_BODY.format(notes="- chore(deps): update actions")})
-        self.assertEqual(self.b.classify(fixture=clear_jev())["verdict"], "safe")
-
-    def test_major_label_without_notes_is_review(self):
-        self.b.edit("meta.json", lambda m: {**m, "title": "feat(container): update foo (1.0 ➔ 2.0)", "labels": ["type/major"]})
-        r = self.b.classify(fixture=clear_jev())
-        self.assertEqual(r["verdict"], "review")
-        self.assertTrue(any(s["reason"].startswith("Major update and no usable release notes") for s in r["signals"]))
-
-    def test_breaking_notes_that_touch_config_are_risky(self):
-        self.b.edit("meta.json", lambda m: {**m, "body": RENOVATE_BODY.format(notes="BREAKING: `foo.bar` was renamed")})
-        (self.b.dir / "config.json").write_text(json.dumps({"kubernetes/apps/x/y/app/helmrelease.yaml": "foo:\n  bar: 1\n"}))
-        fx = clear_jev()
-        fx["raw"]["answers"]["breaking_notes"]["noul"] = 0.9
-        fx["raw"]["answers"]["breaking_affects_config"] = {"noul": 0.85}
-        r = self.b.classify(fixture=fx)
-        self.assertEqual(r["verdict"], "risky")
-        self.assertTrue(any("plan the migration" in s["reason"] for s in r["signals"]))
-
-    def test_breaking_notes_elsewhere_are_review(self):
-        self.b.edit("meta.json", lambda m: {**m, "body": RENOVATE_BODY.format(notes="BREAKING: `other` was removed")})
-        (self.b.dir / "config.json").write_text(json.dumps({"kubernetes/apps/x/y/app/helmrelease.yaml": "foo: 1\n"}))
-        fx = clear_jev()
-        fx["raw"]["answers"]["breaking_notes"]["noul"] = 0.9
-        fx["raw"]["answers"]["breaking_affects_config"] = {"noul": 0.05}
-        r = self.b.classify(fixture=fx)
-        self.assertEqual(r["verdict"], "review")
-        self.assertFalse(r["uncertain"])
-
-    def test_overlap_without_conflict_is_context(self):
-        self.b.edit("meta.json", lambda m: {**m, "title": "fix(container): update image foo (1.0.1 ➔ 1.0.2)"})
-        self.b.edit("overlap.json", lambda o: ["kubernetes/apps/observability/smartctl-exporter/app/ocirepository.yaml"])
-        self.assertEqual(self.b.classify(fixture=clear_jev())["verdict"], "safe")
-
-    def test_safe_is_earned(self):
-        self.b.edit("meta.json", lambda m: {**m, "title": "fix(container): update image foo (1.0.1 ➔ 1.0.2)"})
-        r = self.b.classify(fixture=clear_jev())
-        self.assertEqual(r["verdict"], "safe", r["signals"])
-        self.assertEqual(r["labels"], ["risk/safe"])
-
-    def test_not_safe_without_konflate(self):
-        self.b.edit("meta.json", lambda m: {**m, "title": "fix: x"})
-        self.b.edit("konflate.json", lambda k: {"state": "stale", "summary": {"reason": "rendering"}})
-        r = self.b.classify(fixture=clear_jev())
-        self.assertEqual(r["verdict"], "review")
-        self.assertTrue(r["uncertain"])
-
-    def test_not_safe_without_jev(self):
-        self.b.edit("meta.json", lambda m: {**m, "title": "fix: x"})
-        r = self.b.classify(key=None)
-        self.assertEqual(r["verdict"], "review")
-        self.assertTrue(r["uncertain"])
-        self.assertIn("raw", r["jev"]["errors"])
-        self.assertFalse(r["available"])  # an outage publishes nothing
-        self.assertIn("PR risk unavailable: Jev down", p.render_comment(r))
-
-    def test_konflate_outage_is_unavailable_but_stale_is_not(self):
-        self.b.edit("konflate.json", lambda k: {"state": "unavailable", "summary": {"reason": "Konflate unreachable"}})
-        self.assertEqual(self.b.classify(fixture=clear_jev())["outage"], ["Konflate"])
-        self.b.edit("konflate.json", lambda k: {"state": "stale", "summary": {"reason": "rendering"}})
-        self.assertTrue(self.b.classify(fixture=clear_jev())["available"])
-
-    def test_model_cannot_lower_hard_rule(self):
-        self.b.edit("conflict.json", lambda c: {"conflict": True, "files": ["x"]})
-        self.assertEqual(self.b.classify(fixture=clear_jev())["verdict"], "risky")
-
-    def test_clean_foundation_bump_is_safe(self):
-        # The tier is context: a clean, rendered patch bump of Rook merges as-is.
-        self.b.edit("meta.json", lambda m: {**m, "title": "fix: x"})
-        self.b.edit("files.json", lambda f: [{**f[0], "path": "kubernetes/apps/rook-ceph/rook-ceph/app/ocirepository.yaml"}])
-        r = self.b.classify(fixture=clear_jev())
-        self.assertEqual(r["verdict"], "safe")
-        self.assertTrue(any(s["reason"].startswith("Cluster foundation") and s["level"] == 0 for s in r["signals"]))
-
-    def test_unrendered_paths_never_safe(self):
-        self.b.edit("meta.json", lambda m: {**m, "title": "fix: x"})
-        self.b.edit("files.json", lambda f: [{**f[0], "path": "kubernetes/talos/version.yaml"}])
-        self.assertEqual(self.b.classify(fixture=clear_jev())["verdict"], "review")
-
-    def test_injection_is_risky(self):
-        fx = clear_jev()
-        fx["raw"]["answers"]["addressed_to_reviewer"]["noul"] = 0.97
-        r = self.b.classify(fixture=fx)
-        self.assertEqual(r["verdict"], "risky")
-        self.assertTrue(any("prompt injection" in s["reason"] for s in r["signals"]))
-
-    def test_fence_sitting_is_uncertain(self):
-        self.b.edit("meta.json", lambda m: {**m, "title": "fix: x"})
-        fx = clear_jev()
-        fx["raw"]["answers"]["storage_change"]["noul"] = 0.5
-        r = self.b.classify(fixture=fx)
-        self.assertEqual(r["verdict"], "review")
-        self.assertTrue(r["uncertain"])
-
-    def test_high_blast_alone_is_not_a_finding(self):
-        self.b.edit("meta.json", lambda m: {**m, "title": "fix(container): update image coredns (1.0.1 ➔ 1.0.2)"})
-        fx = clear_jev()
-        fx["raw"]["answers"]["blast_radius"].update(score=2.9, confidence=0.9)
-        self.assertEqual(self.b.classify(fixture=fx)["verdict"], "safe")
-
-    def test_high_blast_with_major_bump_is_review(self):
-        # #178 (external-dns webhook, routine render, chore-only notes) was labelled risky this way.
-        fx = clear_jev()  # the fixture's title is a `!:` 0.x update without release notes
-        fx["raw"]["answers"]["blast_radius"].update(score=2.9, confidence=0.9)
-        self.assertEqual(self.b.classify(fixture=fx)["verdict"], "review")
-
-    def test_high_blast_with_konflate_finding_is_risky(self):
-        self.b.edit("konflate.json", lambda k: {**k, "summary": {**k["summary"], "diff": {
-            **k["summary"]["diff"], "warnings": [{"level": "caution", "rule": "replicas-zero", "resource": "Deployment a/b"}]}}})  # fmt: skip
-        fx = clear_jev()
-        fx["raw"]["answers"]["blast_radius"].update(score=2.9, confidence=0.9)
-        r = self.b.classify(fixture=fx)
-        self.assertEqual(r["verdict"], "risky")
-        self.assertTrue(any("combined with: `replicas-zero`" in s["reason"] for s in r["signals"]))
-
-    def test_high_blast_with_uncertainty_stays_review(self):
-        self.b.edit("meta.json", lambda m: {**m, "title": "fix: x"})
-        self.b.edit("konflate.json", lambda k: {"state": "stale", "summary": {"reason": "rendering"}})
-        fx = clear_jev()
-        fx["raw"]["answers"]["blast_radius"].update(score=2.9, confidence=0.9)
-        self.assertEqual(self.b.classify(fixture=fx)["verdict"], "review")
-
-    def test_inert_only_shortcut(self):
-        self.b.edit("files.json", lambda f: [{"status": "M", "path": "README.md", "additions": 1, "deletions": 0}])
-        self.b.edit("konflate.json", lambda k: {"state": "skipped", "summary": {}})
-        (self.b.dir / "konflate_diff.json").unlink()
-        self.b.edit("meta.json", lambda m: {**m, "title": "docs: typo"})
-        self.assertEqual(self.b.classify(key=None)["verdict"], "safe")
-
-    def test_comment_golden(self):
-        r = self.b.classify(fixture=load("jev_179.json"))
-        md = p.render_comment(r)
-        self.assertTrue(md.startswith(p.COMMENT_MARKER))
-        self.assertIn("PR risk: **review**, check the 🟡 findings before merging\n", md)
-        self.assertIn("| pr | 🟡 0.x update that Renovate marks as breaking", md)
-        self.assertIn("| jev | Blast radius 1.7/3 |", md)
-        self.assertIn("kind **version_bump** · jev-1.13.0", md)
-        self.assertIn("/#/pr/179", md)
 
 
 class FakeGitHub(p.GitHub):

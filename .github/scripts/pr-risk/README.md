@@ -1,14 +1,15 @@
-# PR risk classifier
+# PR risk classifier (`pr-risk/v2`)
 
-`.github/workflows/pr-risk.yaml` answers one question about a PR: can it merge as-is?
+`.github/workflows/pr-risk.yaml` answers one question about a PR: **can it merge as-is, on the evidence available now?**
 
-| Label         | Meaning                                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------------------------------ |
-| `risk/safe`   | Merge as-is.                                                                                                 |
-| `risk/review` | Check the 🟡 findings in the comment first (a changelog to read, a breaking change that seems not to apply). |
-| `risk/risky`  | Plan it: a migration the release notes ask for, a data-loss path, a conflict, a render failure.              |
+| Label            | Meaning                                                                                                                          |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `risk/safe`      | Merge as-is: every surface is identified, the evidence covers it, and nothing needs a look.                                      |
+| `risk/review`    | A bounded check first: a possible or non-grave finding, an obligation, or one piece of evidence a human can fetch (a changelog). |
+| `risk/risky`     | Plan it: a concrete defect (conflict, render failure, immutable field), or a grave mechanism (data loss, privilege escalation).  |
+| `risk/uncertain` | Added alongside: required evidence is missing, so the verdict can't be earned. An epistemic state, not a fourth severity.        |
 
-`risk/uncertain` is added when the evidence is thin. It is advisory and fails open. A crash, a missing key, or Jev or Konflate being down leaves the labels as they are, and the job never fails because of them.
+It is advisory and fails open. A crash, Jev or Konflate being down, or a missing key leaves the labels as they are, and the job never fails because of them.
 
 For now it only runs on demand, while the in-cluster runner's outbound network is fixed (the runner pods intermittently tried IPv6 and couldn't reach 1Password):
 
@@ -16,71 +17,206 @@ For now it only runs on demand, while the in-cluster runner's outbound network i
 gh workflow run pr-risk.yaml -f pr=174
 ```
 
-## How a verdict is made
+## The model
 
-Code decides. [Jev](https://docs.typesafe.ai) only advises.
+> Reach, stakes and activation describe the change. Findings describe what can go wrong. Evidence describes how well we know. Policy turns those into a verdict.
 
-Only **findings about this change** raise the level. **Context** that holds for every change to an app is shown in the comment but doesn't: the app's path tier, Jev's blast radius, a major version number, a CRD being touched, files also changed on `main`. The first version counted those as findings and sent nearly every platform bump to review. On the 2026-09-28 runs it labelled a routine external-dns webhook bump (chore-only release notes) risky and a Postgres digest bump review.
+v1 folded all of that into one `Signal.level`, so a path tier, a model's blast-radius score and a real defect were the same kind of number. v2 keeps them apart, and only findings and evidence reach the policy.
 
-1. **Hard rules** (`pr_risk.py`, no model):
-   - **Git.** A textual conflict with `main` is risky. These are review:
-     - deleted deployed files
-     - binaries
-     - `dependsOn`, `prune`, `wait`, `suspend` or `healthChecks` edits in a `ks.yaml`
-   - **Version.** A `type/major` label, or a `!:` title, means the release notes decide (below). Renovate's `!:` also marks 0.x minor bumps, which it labels `type/minor`. When the PR has no release notes, which is common for charts mirrored to OCI, that's review: someone has to read the upstream changelog.
-   - **Path tiers** are context: they order the model's diff budget and make a real finding risky. Only `NEVER_SAFE` paths (Talos, bootstrap), which Konflate doesn't render, block `safe`. When every file is inert (`INERT`: docs, agent and dev tooling), the PR can be safe without Jev.
-   - **Konflate.** Rule IDs map to levels in `KONFLATE_RULES`, and unknown rules count as review.
-     - Render failures are risky, except that network or chart-fetch failures in Konflate's own environment are review plus uncertain.
-     - A missing upstream image is risky.
-     - `immutable-field` on a Job is review, or context for a Helm hook that Helm deletes and recreates (`before-hook-creation`/`hook-succeeded`).
-     - A CRD whose served or storage versions change is review. Other CRD changes are context: new fields and description churn can't break existing resources.
-2. **Jev** answers narrow yes/no questions. It can only **raise** the level.
-   - The raw-diff call covers change kind, blast radius, removals, storage, secrets, exposure, Flux substitution, description match, prompt injection, and overlap with `main`.
-   - **Breaking changes.** For Renovate PRs the release notes go to Jev in their own field, next to the config the app runs with (the sibling `helmrelease.yaml`, or the compose file). `breaking_notes` asks whether the notes describe a breaking change or a manual step. `breaking_affects_config` asks whether this repo's config uses what it breaks. Both yes is risky (plan the migration). Breaking notes that don't touch the config are review.
-   - **Where the notes come from** (`collect`, into `release_notes.json`):
-     1. Renovate's `### Release Notes`, split per version. A section only counts if it says something: tailscale's are all "Please refer to the changelog available at …". It also has to be about this package. Its heading link must be a release tag that names the package, or, for a container image only, any tag or changelog. Renovate gave plugin-barman-cloud's _chart_ 0.7.0 → 0.8.0 the _app's_ v0.8.0 notes, a year older and with an unrelated breaking change.
-     2. Otherwise the GitHub releases between the two versions, from the repos in Renovate's update table and, for a chart, its org's `helm-charts` and `charts` monorepos. Renovate links the app's repo for prometheus-community's charts. A tag must name the chart (`prometheus-smartctl-exporter-0.17.1`), and a bare `v1.2.3` only counts for an image, so a guessed repo can't produce wrong notes. Releases that all repeat one text (piraeus's chart description) don't count.
-     3. Otherwise none, and a major or 0.x bump asks for the changelog, with the reason.
+### Context: surfaces
 
-     Versions go to Jev oldest first: when the notes don't fit, the newest are left out, not the ones right after the version running now. On 2026-09-28 this gave all five open Renovate PRs usable notes, where the PR bodies had two.
+`surfaces.py` maps every changed path to a **surface**, first match wins: an app (`default/paperless`), a component (`component:postgres`), `flux:cluster`, `talos`, `ci:workflows`, `workstation:hooks`, `docs`, and so on. Each has:
 
-   - The rendered-diff call runs only when Konflate has a fresh render. It covers availability, data loss, sensitive RBAC grants (Secrets, wildcards, escalate/bind/impersonate, cluster-admin), exposure, privileges, and CRD fields removed, renamed or narrowed. For a human PR it also asks about changes the title doesn't explain. A Renovate title only names the version, so that question fence-sat on every chart bump. CRD `description:` text is left out of the model's input, which keeps CRD-heavy chart bumps inside the budget. When that is all a PR changes in its CRDs, the CRD question isn't asked: the first live run (#177) showed Jev an empty "changed" CRD and got an unsure 0.41, which alone kept the PR from `safe`.
-   - Blast radius measures impact, not likelihood, so it's context. A PR becomes risky when a high blast radius (≥ 2.5) comes with an independent, certain finding from git, Konflate or Jev.
-3. **`safe` must be earned.** No hard rule fired, every model answer is a clear no, the description matches, `change_kind` confidence is high, and Konflate rendered the PR's current head (when the PR touches Flux resources). Anything short of that is `review`. Fence-sitting answers add `risk/uncertain`.
+| Dimension         | Values                                                                            | Meaning                                                                        |
+| ----------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| **reach**         | `none` < `workstation` < `ci` < `app` < `shared` < `cluster` < `host`             | How far a real mechanism propagates.                                           |
+| **stakes**        | a set of `data`, `credentials`, `trust_boundary`, `control_plane`, `availability` | What is exposed. Content can add one: an app with `persistence:` holds `data`. |
+| **activation**    | `pre_merge`, `reconcile`, `operation`, `manual`, `latent`                         | When it takes effect. Workflows run `pre_merge`; tuppr starts an `operation`.  |
+| **reversibility** | `revert` < `revert_with_toil` < `non_reversible`                                  | Whether `git revert` restores the state. Findings can lower it.                |
 
-Thresholds live in `THRESHOLDS`. Tune them with the backtest before trusting the labels.
+None of these is a finding. A clean Cilium patch bump is `cluster` reach with `control_plane` stakes and nothing wrong with it: **safe**. Reach only decides how grave a real finding's consequence is (below). Executable tooling isn't inert: `.mise/`, `.lefthook.yaml`, `.claude/settings.json` and `.mcp.json` are `workstation:hooks` (they run code on a workstation, before merge), and `.agents/**` is `agents`, not `docs`.
 
-The first backtest ran on 2026-09-28 with `jev-1.13.0`, over 113 merged PRs:
+### Findings
 
-|        | Count                                  |
-| ------ | -------------------------------------- |
-| risky  | 11 (8 of them later reverted or fixed) |
-| review | 87                                     |
-| safe   | 15                                     |
+A finding is what can go wrong. Each one has:
 
-Across all 1,058 direct commits, 9 of the 10 later-reverted ones were flagged review or above. The miss was a paperless-ngx memory-limit bump (`cf4bee2`), and resource limits have no question of their own yet.
+| Field         | Values                                                                                                                                                      |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `code`        | a stable reason code (below)                                                                                                                                |
+| `kind`        | `integrity` (known-bad state), `mechanism` (a way harm happens), `obligation` (a human must confirm), `intent`, `evidence` (a gap, see the ledger)          |
+| `certainty`   | `established`, `probable`, `possible`, `ruled_out`                                                                                                          |
+| `consequence` | `none`, `degradation`, `availability_loss`, `reconciliation_failure`, `data_loss`, `security_exposure`, `privilege_escalation`, `irreversible_state_change` |
+| `surface`     | where it lands                                                                                                                                              |
+| `evidence`    | ids of the evidence records it rests on                                                                                                                     |
 
-That backtest predates the findings-versus-context split above, which removed `blast_review` and the path-tier floors. Replaying the eight manual runs of 2026-09-28 with their recorded Jev answers: #169 (Postgres digest), #178 (external-dns webhook) and #180 (mise tools) went from review/risky to safe, #179 (0.x chart, no release notes) to review for its changelog alone. #172 (kube-prometheus-stack) stayed review only on `immutable-field` for its admission Jobs; they are `before-hook-creation,hook-succeeded` hooks, which now count as context, but its render was gone so the replay couldn't show that. #170 and #171 (tailscale-operator, snapshot-controller) stayed risky on answers to the old, broader CRD and RBAC questions, and need a live run. Re-run the backtest before switching labels on.
+### Evidence ledger
+
+Every surface tracks each evidence source it needs, as `sufficient`, `limited` (a bounded gap a human can close with one check) or `insufficient` (the property can't be established). A source that doesn't apply is absent.
+
+| Source          | Needed when                                                      | Lowered by                                                                                                          |
+| --------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `git`           | always                                                           | `ev.merge_result_unknown`, `ev.opaque_content` (insufficient)                                                       |
+| `render`        | Flux surfaces (Konflate renders them); Talos, bootstrap, ansible | `ev.render_missing`, `ev.render_incomplete` (insufficient); `ev.unrendered_surface` (limited); `ev.unknown_signal`  |
+| `release_notes` | the PR crosses a major or 0.x boundary                           | `ev.release_notes_missing`, `ev.release_notes_partial` (limited)                                                    |
+| `model`         | every surface but `docs`                                         | `ev.model_unavailable`, `ev.model_indecisive`, `ev.model_input_truncated`, `ev.manipulation_attempt` (insufficient) |
+| `invariants`    | always (the deterministic rules ran)                             | `ev.self_evaluation` (limited): the PR changes this classifier                                                      |
+
+A surface's sufficiency is its worst source. Evidence is per surface, so a stale render of one app doesn't make a README change in the same PR uncertain.
+
+`ev.unrendered_surface` is also how the classifier says "the render doesn't show what matters": for a surface that starts an operation (tuppr's Talos and Kubernetes upgrades render as one changed line), and for a configuration change (not a version bump) to a controller with `control_plane` stakes, such as Cilium, Rook or Longhorn, whose effect only shows at runtime.
+
+### Policy (`policy.py`)
+
+| Rule   | When                                                                                                                            | Verdict                                         |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| **R1** | any `integrity` finding that is established or probable, or a `mechanism` finding that is established or probable **and grave** | `risky` (plus `uncertain` if evidence is short) |
+| **R2** | otherwise, any surface's evidence is `insufficient`                                                                             | `review` + `uncertain`                          |
+| **R3** | otherwise, any remaining finding (possible, non-grave, obligation, intent), a `limited` surface, or a `non_reversible` change   | `review`                                        |
+| **R4** | none of the above                                                                                                               | `safe`                                          |
+
+A consequence is **grave** when it is `data_loss`, `security_exposure` or `privilege_escalation`; `availability_loss` or `reconciliation_failure` on a surface of reach `shared` or wider; or `irreversible_state_change` on a surface with `data` stakes. So scaling one app to zero is review, and scaling Dragonfly to zero is risky. Reach never escalates on its own: it only grades a finding that exists.
+
+The policy reads findings and the ledger, nothing else: no path tier, no model score, no blast radius.
+
+### Reason codes
+
+Codes are defined in `taxonomy.py` (`CODES`, `CONTEXT_CODES`), and every rule declares the codes it may emit (the registry refuses anything else). Context codes (`ctx.*`) are informational and never escalate.
+
+| Family       | Codes                                                                                                                                                                                                                                                                                                   |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| integrity    | `integrity.merge_conflict`, `render_failed`, `image_unresolvable`, `apply_rejected`, `dependency_unsatisfiable`, `semantic_merge_hazard`                                                                                                                                                                |
+| data         | `data.volume_removed`, `volume_identity_changed`, `path_changed`, `recovery_path_changed`, `forward_only_migration`, `engine_major_upgrade`                                                                                                                                                             |
+| availability | `avail.capacity_reduced`, `drain_blocked`, `writes_blocked`, `resource_envelope_changed`, `traffic_newly_restricted`, `startup_dependency_changed`                                                                                                                                                      |
+| compat       | `compat.breaking_change_applies`, `breaking_change_elsewhere`, `setting_conflict`, `version_pair_split`, `crd_version_dropped`, `crd_storage_version_moved`, `crd_schema_narrowed`                                                                                                                      |
+| lifecycle    | `lifecycle.resource_removed`, `release_reinstalled`, `crd_removed`, `crd_unprotected`, `crd_second_owner`, `namespace_removed`                                                                                                                                                                          |
+| recon        | `recon.structural_dependency_removed`, `prune_changed`, `suspension_changed`, `health_gate_changed`, `deletion_policy_changed`, `substitution_unresolved`, `component_contract_broken`, `cluster_defaults_changed`                                                                                      |
+| security     | `sec.rbac_widened`, `privilege_added`, `exposure_widened`, `secret_material_in_git`                                                                                                                                                                                                                     |
+| execution    | `exec.pre_merge_privileged`, `workflow_privilege_widened`, `review_bypass_widened`, `workstation_hook_changed`                                                                                                                                                                                          |
+| intent       | `intent.unexplained_change`, `bot_diff_out_of_shape`                                                                                                                                                                                                                                                    |
+| evidence     | `ev.render_missing`, `render_incomplete`, `unrendered_surface`, `release_notes_missing`, `release_notes_partial`, `model_unavailable`, `model_indecisive`, `model_input_truncated`, `opaque_content`, `merge_result_unknown`, `stale_base`, `manipulation_attempt`, `self_evaluation`, `unknown_signal` |
+| context      | `ctx.version_boundary`, `crd_touched`, `crd_added`, `base_overlap`, `large_changeset`, `helm_hook_recreated`, `networkpolicy_removed`, `unrendered_surface`, `runner_privileged`, `resource_envelope`                                                                                                   |
+
+Three codes extend the design's list: `integrity.merge_conflict` (the design names the case but not the code), `compat.crd_storage_version_moved` (a storage-version move is an obligation, a dropped served version is a mechanism), and `ev.model_unavailable` (an outage, kept apart from `ev.model_indecisive`). `intent.bot_diff_out_of_shape`, `avail.writes_blocked` and `ev.stale_base` are reserved: nothing emits them yet.
+
+## Where facts come from
+
+### Deterministic rules (`rules.py`)
+
+YAML is read line by line with its enclosing keys worked out from indentation (standard library only), for both the git diff and Konflate's rendered rows, so one rule covers raw and rendered changes. YAML in Markdown, agent docs and scripts is treated as an example, not a manifest.
+
+| Rule                                                                   | Codes                                                                                                                 | What it checks                                                                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `git.merge`                                                            | `integrity.merge_conflict`, `ev.merge_result_unknown`                                                                 | `git merge-tree`: exit 1 is a conflict (**risky**), any other failure is unknown (**uncertain**).                                                                                                                                                                                                        |
+| `git.removals`                                                         | `lifecycle.resource_removed`, `lifecycle.release_reinstalled`, `data.volume_identity_changed`                         | Deleted deployed files; an app directory moved (Flux uninstalls the old release).                                                                                                                                                                                                                        |
+| `git.opaque`, `git.overlap`, `git.size`                                | `ev.opaque_content`, `ctx.base_overlap`, `ctx.large_changeset`                                                        |                                                                                                                                                                                                                                                                                                          |
+| `flux.kustomization`                                                   | `recon.*`, `data.recovery_path_changed`                                                                               | `dependsOn` removals, `prune`, `suspend`, `wait`/health checks, `deletionPolicy`, `substituteFrom` removals, the `substitution.flux.home.arpa/disabled` opt-out, the `components.postgres/cnpg=init` label.                                                                                              |
+| `flux.cluster_defaults`                                                | `recon.cluster_defaults_changed`                                                                                      | `kubernetes/clusters/**` patches every Kustomization/HelmRelease; a changed or removed cluster-settings value changes every app that substitutes it (a new one changes nothing).                                                                                                                         |
+| `flux.components`                                                      | `recon.component_contract_broken`                                                                                     | `collect` works out, at base and head, the `${VAR}`s (no default) each used component needs that neither the ks.yaml's `substitute` nor cluster-settings provides. Newly missing: **risky**.                                                                                                             |
+| `storage.identity`                                                     | `data.volume_identity_changed`, `integrity.apply_rejected`, `data.recovery_path_changed`, `data.engine_major_upgrade` | `existingClaim`/`claimName`/`KOPIUR_CLAIM` pointed elsewhere; a size that shrinks or a storage class that changes (immutable on a PVC); controller type switched to/from StatefulSet; changes to backup objects (`ObjectStore`, `ScheduledBackup`, …) and recovery settings; a PostgreSQL major version. |
+| `availability.envelope`                                                | `avail.resource_envelope_changed`, `avail.capacity_reduced`, `avail.drain_blocked`, `ctx.resource_envelope`           | CPU/memory/ephemeral-storage requests and limits, replica counts (incl. CNPG `instances`, KEDA bounds), PDBs. A lower limit, a new limit, or a request/limit that at least doubles is a possible degradation; scaling to zero is established.                                                            |
+| `availability.netpol`                                                  | `avail.traffic_newly_restricted`, `ctx.networkpolicy_removed`                                                         | Adding a network policy (or enabling a chart's) is a possible restriction: the cluster has none, so the first one drops everything else. Removing one is context.                                                                                                                                        |
+| `crd.lifecycle`                                                        | `compat.crd_*`, `lifecycle.crd_*`, `lifecycle.release_reinstalled`, `ctx.crd_*`                                       | A served version dropped (**risky**), the storage version moved, `helm.sh/resource-policy: keep` removed, a new CRD (check no other release owns it), a HelmRelease removed while another is added. Description-only churn is nothing.                                                                   |
+| `security.rbac`                                                        | `sec.rbac_widened`                                                                                                    | New `*` verbs or resources, `escalate`/`bind`/`impersonate`, a `cluster-admin` binding, anonymous subjects: established escalation (**risky**). New access to Secrets: possible (review).                                                                                                                |
+| `security.privileges`                                                  | `sec.privilege_added`                                                                                                 | `privileged`, host namespaces, `allowPrivilegeEscalation`, root, added capabilities, hostPath, compose `network_mode: host`, the Docker socket: an obligation (review).                                                                                                                                  |
+| `security.exposure`                                                    | `sec.exposure_widened`                                                                                                | A route on `envoy-external`, a LoadBalancer Service, a Cloudflare tunnel hostname: an obligation (review). Whether it's unauthenticated is Jev's question; a yes is a mechanism (**risky**).                                                                                                             |
+| `security.secrets`                                                     | `sec.secret_material_in_git`                                                                                          | Secret-shaped strings on added lines (private keys with key material, tokens), and `kind: Secret` with literal values (not `op://`, templates or public keys).                                                                                                                                           |
+| `exec.surfaces`                                                        | `exec.*`, `ev.self_evaluation`, `ctx.runner_privileged`                                                               | Workflow steps or triggers (a pinned action bump alone is a dependency bump); `pull_request_target`/`workflow_run` (**risky**); new write permissions; CI scripts; Renovate automerge scope; lefthook, mise hooks/tasks (tool pins alone are not), agent hooks and MCP servers.                          |
+| `konflate.render`                                                      | see below                                                                                                             |                                                                                                                                                                                                                                                                                                          |
+| `evidence.unrendered`, `evidence.release_notes`, `evidence.invariants` | `ev.unrendered_surface`, `ev.release_notes_*`, `ctx.version_boundary`, `ctx.unrendered_surface`                       |                                                                                                                                                                                                                                                                                                          |
+
+### Konflate
+
+`collect` polls for a finished render of exactly the PR's head SHA. Only Konflate's structured fields are used; its free text is matched for infrastructure errors but never reaches the model.
+
+| Konflate                                                                          | v2                                                                                                                                                                                                             |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| unreachable, no URL                                                               | `ev.render_missing` (insufficient) **and** an outage: nothing is published                                                                                                                                     |
+| stale, not rendered                                                               | `ev.render_missing` (insufficient): evidence about this run, not an outage                                                                                                                                     |
+| render failure the PR caused                                                      | `integrity.render_failed` (**risky**)                                                                                                                                                                          |
+| failure in Konflate's environment (network, chart pull)                           | `ev.render_incomplete`, and a `dangling-dependson` on a resource that only looks removed because its render failed is the same gap (#175), not a finding                                                       |
+| `removed-pvc`, `removed-namespace`, `removed-crd`                                 | `data.volume_removed`, `lifecycle.namespace_removed`, `lifecycle.crd_removed`                                                                                                                                  |
+| `pvc-shrink`, `immutable-field` (non-Job)                                         | `integrity.apply_rejected`                                                                                                                                                                                     |
+| `immutable-field` on a Job                                                        | context (`ctx.helm_hook_recreated`) for a Helm hook Helm deletes and recreates (kube-prometheus-stack admission, Envoy Gateway certgen); otherwise a probable mechanism, or possible without the rendered diff |
+| `dangling-dependson`, `image-not-found`                                           | `integrity.dependency_unsatisfiable`, `integrity.image_unresolvable`                                                                                                                                           |
+| `removed-statefulset`                                                             | `lifecycle.resource_removed` with `data_loss`                                                                                                                                                                  |
+| `rbac-widened`, `privileged`, `replicas-zero`, `suspends`/`resumes`, `not-pruned` | `sec.rbac_widened` (possible), `sec.privilege_added`, `avail.capacity_reduced`, `recon.suspension_changed`, `recon.prune_changed`                                                                              |
+| `removed-networkpolicy`, `large-changeset`, `major-*-bump`                        | context                                                                                                                                                                                                        |
+| any other rule                                                                    | `ev.unknown_signal`: limited (review), or insufficient (uncertain) when Konflate calls it blocking                                                                                                             |
+
+### Release notes
+
+`collect` writes `release_notes.json`:
+
+1. Renovate's `### Release Notes`, split per version. A section only counts if it says something: tailscale's are all "Please refer to the changelog available at …". It also has to be about this package. Its heading link must be a release tag that names the package, or, for a container image only, any tag or changelog. Renovate gave plugin-barman-cloud's _chart_ 0.7.0 → 0.8.0 the _app's_ v0.8.0 notes, a year older and with an unrelated breaking change.
+2. Otherwise the GitHub releases between the two versions, from the repos in Renovate's update table and, for a chart, its org's `helm-charts` and `charts` monorepos. A tag must name the chart (`prometheus-smartctl-exporter-0.17.1`), and a bare `v1.2.3` only counts for an image, so a guessed repo can't produce wrong notes. Releases that all repeat one text (piraeus's chart description) don't count.
+3. Otherwise none.
+
+Versions go to Jev oldest first: when the notes don't fit, the newest are left out, not the ones right after the version running now. A version boundary (`type/major`, or `!:` in the title; Renovate's `!:` also marks 0.x minor bumps) with no usable notes is `ev.release_notes_missing`, and notes that only reach part of the range are `ev.release_notes_partial`: a bounded gap, so review.
+
+### Jev (`semantic.py`)
+
+[Jev](https://docs.typesafe.ai) (`jev-1.13.0`, pinned) is an analyst, not the classifier. It is asked narrow yes/no (`noul`) questions, and only when their subject is present in the diff or the render: the resource-envelope question only when requests or limits change, the network-policy question only when a policy is added, the CRD-schema question only when a CRD's schema (not just its descriptions) changes. What code can establish (change kind, reach) isn't asked; v1's `change_kind` and `blast_radius` are gone. A docs-only PR makes no call. A Renovate bump of one image asks three questions.
+
+| Area           | Questions                                                                                                                                                                                  |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| compatibility  | `breaking_notes`, `breaking_affects_config`, `forward_only_migration`, `setting_conflict` (against the repo's rules in `semantic.INVARIANTS`), `version_pair_split`, `crd_schema_narrowed` |
+| availability   | `resource_envelope_risk`, `reduces_availability`, `traffic_newly_restricted`, `startup_dependency_changed`                                                                                 |
+| data           | `data_loss_risk`, `stateful_identity_change`, `recovery_path_changed`, `forward_only_migration`                                                                                            |
+| security       | `widens_rbac`, `adds_privileges`, `widens_exposure`, `unauthenticated_external_exposure`                                                                                                   |
+| reconciliation | `structural_dependency_removed`, `component_contract_broken`, `cluster_defaults_changed`, `semantic_overlap`                                                                               |
+| intent         | `description_matches`, `unexplained_change` (human PRs only: a Renovate title only names the version), `manipulation_attempt`                                                              |
+
+An answer ≥ 0.70 is a **probable** finding, ≤ 0.20 is **ruled out** (recorded as evidence), strictly between 0.35 and 0.65 is **indecisive** (`ev.model_indecisive`: missing evidence, so uncertain), and the rest is a **possible** finding. Jev can add findings; it can never remove or lower a deterministic one. RBAC and privilege answers are review-level obligations only, because the deterministic parser owns those facts.
+
+**Breaking changes** keep v1's logic, as typed findings: breaking notes whose broken setting this repo's `config` uses are `compat.breaking_change_applies` (integrity, probable: **risky**, plan the migration); breaking notes that don't touch the config are `compat.breaking_change_elsewhere` (review); unclear applicability is a possible finding (review), and uncertain if Jev is on the fence.
+
+**Manipulation.** The PR's title, body, diff and rendered YAML are untrusted, and every question says so. A `manipulation_attempt` yes invalidates Jev's evidence for the surfaces that call covered (`ev.manipulation_attempt`, insufficient): the PR can't be safe and is normally review + uncertain. It is not risky merely because the text exists; any finding Jev did raise stays.
 
 ## Security model
 
-- The trigger is `workflow_dispatch` with a PR number. It only runs for open, same-repo PRs; the job fetches the PR from the API and stops otherwise. The repo is private, so only push-access actors (you and the Renovate App) open PRs. To run on every PR again, switch the trigger back to `pull_request` on `main` (types `opened, synchronize, reopened, ready_for_review, edited`) and read the event from `$GITHUB_EVENT_PATH`.
-- The checkout is the **base** branch, so the classifier always comes from `main`. PR content is read as git objects (`git diff --no-ext-diff --no-textconv`, `git merge-tree`) and is never executed.
-- The job runs on the in-cluster `home-lab` runner, because Konflate is internal-only. That runner is cluster-admin, which is exactly why nothing from the PR runs.
-- Everything the PR author wrote is untrusted input to the model: the title, body, diff and the rendered YAML. Hard rules come only from Konflate's structured fields. `addressed_to_reviewer` is a prompt-injection tripwire, and a hit makes the PR risky.
-- What leaves the cluster: PR diffs and rendered manifests (hostnames, internal IPs) go to TypeSafe. Secrets are ExternalSecret references, so they don't.
+- **The repository is public** (`gh repo view qnimbus/home-lab --json visibility` says `PUBLIC`; v1's README said private). What follows from that:
+  - Anyone can open a PR from a fork, and forks can't be trusted. The job only classifies open PRs whose head is in this repository (checked in "Resolve PR"), so only push-access actors (the owner and the Renovate App) get classified, and `workflow_dispatch` itself needs write access.
+  - Secret material committed in a PR is already published when the PR is pushed; merging makes it permanent in `main`'s history. `sec.secret_material_in_git` is an established integrity finding (**risky**: rotate it) in a public repository and a review obligation in a private one. The visibility comes from the PR payload (`base.repo.visibility`), with `REPO_VISIBILITY` as the fallback and "public" as the default.
+  - Workflow artifacts of a public repository are downloadable by anyone signed in. `collect` scans the diff for secret-shaped strings before anything is cut and redacts them from `pr.diff`, `base_overlap.diff` and `config.json`; `secrets.json` records only the file and the kind. The same redaction is applied to everything sent to Jev.
+- The checkout is the **base** branch, so the classifier always comes from `main`, and a PR that changes it gets `ev.self_evaluation`. PR content is read as git objects only (`git diff --no-ext-diff --no-textconv`, `git merge-tree`, `git show`, `git ls-tree`, `git grep` against a commit) and is never executed or checked out.
+- The job runs on the in-cluster `home-lab` runner, because Konflate is internal-only. That runner is cluster-admin, which is exactly why nothing from the PR runs, and why workflow changes are a pre-merge execution surface in their own right.
+- What leaves the cluster: PR diffs and rendered manifests (hostnames, internal IPs), minus anything secret-shaped, go to TypeSafe. The API key is read from 1Password at `op://GitHub/jev/API_KEY` and only ever sent as the bearer token.
 
 ## Settings
 
-| Repo variable           | Default                                              | Meaning                                                                                                                     |
-| ----------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `PR_RISK_MODE`          | `shadow`                                             | `shadow`: job summary + artifact only. `labels`: also sync `risk/*` labels. `comment`: also a sticky comment.               |
-| `PR_RISK_RUNNER`        | `home-lab`                                           | Kept separate from `RUNNER`. On a GitHub-hosted runner Konflate is unreachable, so results are raw-diff-only and uncertain. |
-| `JEV_MODEL`             | `jev-1.13.0`                                         | Pinned, because thresholds are tuned per model version.                                                                     |
-| `KONFLATE_URL`          | `http://konflate.flux-system.svc.cluster.local:8080` |                                                                                                                             |
-| `KONFLATE_WAIT_SECONDS` | `480`                                                | How long to wait for Konflate to render the current head SHA.                                                               |
+| Repo variable           | Default                                              | Meaning                                                                                                             |
+| ----------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `PR_RISK_MODE`          | `shadow`                                             | `shadow`: job summary + artifact only. `labels`: also sync `risk/*` labels. `comment`: also a sticky comment.       |
+| `PR_RISK_RUNNER`        | `home-lab`                                           | Kept separate from `RUNNER`. On a GitHub-hosted runner Konflate is unreachable: an outage, so nothing is published. |
+| `JEV_MODEL`             | `jev-1.13.0`                                         | Pinned, because the answer bands (`semantic.THRESHOLDS`) are tuned per model version.                               |
+| `KONFLATE_URL`          | `http://konflate.flux-system.svc.cluster.local:8080` |                                                                                                                     |
+| `KONFLATE_WAIT_SECONDS` | `480`                                                | How long to wait for Konflate to render the current head SHA.                                                       |
 
-The Jev key is read from 1Password at `op://GitHub/jev/API_KEY`, using the same service account as the other workflows.
+Only `status: classified` results are published. `classify` exits 3 when Jev (needed by some surface) or Konflate (for a PR it should render) is down; the summary still shows what it would have said, and Publish is skipped.
+
+## Output
+
+`result.json` (schema `pr-risk/v2`, policy version in `policy`):
+
+```yaml
+schema: pr-risk/v2
+status: classified | unavailable
+classification: safe | review | risky
+uncertain: false
+rule: R1 | R2 | R3 | R4
+why: "findings to check: `avail.resource_envelope_changed`"
+dimensions: { reach: app, stakes: [availability], activation: [reconcile], reversibility: revert }
+surfaces: [{ id, paths, reach, stakes, activation, reversibility, rendered, evidence: { git: sufficient, … }, sufficiency }]
+findings: [{ id, code, kind, certainty, consequence, surface, evidence: [e-003], description }]
+evidence: [{ id, source, fact, surface, quality }]
+context: [{ code, detail, surface }]
+jev: { model, usage, errors, asked, answers }   # raw answers, for replay
+konflate: { state, head, rules, … }
+release_notes: { source, versions, reason }
+verdict, available                               # v1 names, kept while v1 CSVs are compared
+```
+
+The comment leads with the verdict and the rule that produced it, then a table of findings (surface, code, certainty, consequence), the missing evidence when uncertain, the context, and, folded, the evidence per surface and Jev's answers. No numeric level is shown as if it were a risk score.
 
 ## Running locally
 
@@ -104,27 +240,70 @@ python3 .github/scripts/pr-risk/pr_risk.py classify --input /tmp/run/pr-risk-<pr
   --jev-fixture /tmp/run/pr-risk-<pr>/result.json   # replays that run's Jev answers
 ```
 
-Questions a run wasn't asked have no recorded answer, so a replay after rewording or adding questions is only approximate.
+A replay only has answers to the questions that run asked. A question the new policy asks and the old run didn't is unanswered, which is `ev.model_indecisive`, so the replay says uncertain rather than guessing. v1 artifacts replay with their questions mapped to v2 names (`addressed_to_reviewer` → `manipulation_attempt`, `unexpected_changes` → `unexplained_change`, `crd_schema_change` → `crd_schema_narrowed`).
 
-## Calibration and rollout
+## Calibration
 
 `backtest.py` replays history.
 
-- `prs` mode covers merged PRs, reusing Konflate's renders, which it keeps.
-- `commits` mode covers direct commits on `main`, where most past incidents landed.
-- Positives come from git: reverted commits (strong), and `fix(...)` commits touching the same files within 48 h (weak).
-- The report prints a verdict × truth grid, recall, precision and every **false safe**.
+- `prs` mode covers merged PRs, reusing Konflate's renders, which it keeps (`git fetch origin '+refs/pull/*/head:refs/remotes/origin/pr/*'` first).
+- `commits` mode covers direct commits on `main`, where most past incidents landed. There's no render for those.
+- Positives come from git: reverted commits (strong), and `fix(...)` commits touching the same files within 48 h (weak, and noisy: much of this repo's history is iteration).
+- `--no-jev` answers every question with a clear no: the verdict from deterministic rules alone, which Jev can only raise. A false safe there is one only Jev can catch.
+- `--baseline <csv>` compares with an earlier run (v1's CSV, or a v2 run before a policy change).
+
+The report prints the verdict × truth grid, recall, precision and every **false safe** with its reach, context and gaps, then verdicts by reach and by finding source, findings by reason code, evidence gaps by code, uncertainty by surface, and the reason codes on positives.
 
 ```bash
 git fetch origin '+refs/pull/*/head:refs/remotes/origin/pr/*'
 TYPESAFE_API_KEY=$(op read op://GitHub/jev/API_KEY) \
   python3 .github/scripts/pr-risk/backtest.py prs --konflate-url https://konflate.cluster.vwn.io
+python3 .github/scripts/pr-risk/backtest.py commits --no-jev --baseline pr-risk-backtest-v1.csv
 ```
 
-Rollout:
+### Results so far (2026-09-30, policy 2.0, `--no-jev`)
 
-1. Shadow: read the job summaries for a few weeks next to Konflate's comment.
-2. `labels`: once the backtest shows no false safes.
-3. `comment`.
+Deterministic rules only, every Jev question answered no. Jev can only raise these verdicts.
 
-GitHub auto-merge isn't available here (no rulesets on this plan). If you ever want the verdict to gate anything, the lever is a check-run that fails on `risky`, because Renovate's automerge (`ignoreTests: false`) waits for checks.
+| Run                                      | safe | review | risky | strong positives flagged | false safe (strong) |
+| ---------------------------------------- | ---- | ------ | ----- | ------------------------ | ------------------- |
+| `commits`: all 1,112 direct commits      | 634  | 450    | 28    | 10/10                    | 0                   |
+| `prs`: 126 merged PRs (10 with a render) | 107  | 19     | 0     | 1/1                      | 0                   |
+
+Every strong positive is caught for a stated reason:
+
+- **Controller configuration** (`ev.unrendered_surface`, limited): the five Longhorn `storageNetwork` attempts, and Cilium's toFQDNs grace period (`6b68e8e`) and BGP layout (`0cf712a`).
+- **tuppr operations** (`ev.unrendered_surface`): the Kubernetes downgrade (`1b541a9`) and a kubelet bump (#11).
+- **A changed backup object** (`data.recovery_path_changed`): CNPG's Backblaze region (`bf62c46`).
+- **The resource envelope** (`avail.resource_envelope_changed`): paperless-ngx's memory limit going from 4Gi to 12Gi (`cf4bee2`), v1's one false safe.
+
+v1, with Jev, flagged 9 of the 10.
+
+I read every false safe. None of the 210 weak positives that stay safe (a non-Renovate `fix(...)` within 48 hours on the same files) points to a mechanism v2 misses; this history is mostly iteration. Checking the risky verdicts turned up false positives that are fixed and now covered by tests:
+
+- YAML examples in Markdown were read as manifests (`e45cdf0`).
+- `op://` Secret templates and PEM placeholders were read as secrets.
+- Envoy Gateway's certgen hook, which has no delete policy, was treated as an immutable-field failure (#184).
+- Chart pins in the bootstrap helmfile, and mise tool pins, were flagged.
+- Adding a namespace to `kubernetes/apps/kustomization.yaml` was flagged.
+
+What remains risky is mostly planned migrations and moves: storage-class switches, app renames and moves that reinstall a release, and new cluster-admin bindings.
+
+## Rollout
+
+1. **Shadow** (now): read the job summaries next to Konflate's comment. Run the live-Jev backtests (PR and commit modes) and read every false safe.
+2. **`labels`**: once no material historical incident is an unexplained false safe.
+3. **`comment`**.
+
+GitHub auto-merge isn't available here (no rulesets on this plan). If you ever want the verdict to gate anything, the lever is a dedicated check-run that fails on `risky` (Renovate's automerge, `ignoreTests: false`, waits for checks), not this advisory workflow failing.
+
+## Known gaps
+
+- **Not yet calibrated with live Jev.** The v2 backtests ran with `--no-jev`: no tokens spent, nothing sent out, and they show what the deterministic rules catch alone. The answer bands in `semantic.THRESHOLDS` come from v1, whose questions were broader; v2's questions are new text. Run the live backtest before `labels`.
+- **The YAML reader is indentation-based.** Flow mappings are read as one value, anchors and aliases aren't followed, block scalars' contents aren't seen as values, and Helm templating isn't evaluated. The render covers Flux surfaces; the raw-diff rules are a second pass, not a parser.
+- **Rendered resources are mapped to surfaces by name** (`Kind ns/name` → `ns/app`). A finding that can't be placed is judged at the PR's widest reach, which errs towards risky.
+- **Component contracts** are checked for components a changed ks.yaml uses and consumers of a changed component; a Kustomization with its own `substituteFrom` is skipped (what it provides can't be told from git), and nested components aren't followed.
+- **RBAC**: aggregated ClusterRoles, and bindings to broad roles other than `cluster-admin`, aren't recognised as escalation.
+- **Resource envelope**: the thresholds (any lower limit, a new limit, at least double) are judgement, not tuned; requests going down aren't flagged.
+- **Reserved codes**: `intent.bot_diff_out_of_shape`, `avail.writes_blocked` and `ev.stale_base` are in the taxonomy but nothing emits them yet.
+- **Konflate only keeps recent renders**: the PR backtest had fresh renders for 10 of 126 merged PRs; the rest were judged on the raw diff, as `ignored`.

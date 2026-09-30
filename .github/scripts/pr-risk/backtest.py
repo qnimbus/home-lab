@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
-"""Backtest pr_risk.py over history, to tune THRESHOLDS before labels are switched on.
+"""Backtest pr_risk.py over history, to calibrate the policy before labels are switched on.
 
 Runs locally (needs `gh` and git history; Jev needs TYPESAFE_API_KEY, else --no-jev):
 
     git fetch origin '+refs/pull/*/head:refs/remotes/origin/pr/*'   # merged PR heads
     python3 .github/scripts/pr-risk/backtest.py prs --konflate-url https://konflate.cluster.vwn.io
     python3 .github/scripts/pr-risk/backtest.py commits --since 2026-06-01
+    python3 .github/scripts/pr-risk/backtest.py commits --no-jev --baseline pr-risk-backtest-v1.csv
 
 Ground truth comes from git: an item is a strong positive when one of its commits was later
 reverted (`This reverts commit <sha>`, or a `revert(...)` / `fix(...): revert` commit touching the
 same files within 14 days), and a weak positive when a non-Renovate `fix(...)` commit touched the
-same files within 48 hours. Commits mode has no Konflate renders, so it judges without them. Everything else counts as negative. What matters most is false-safe: a positive
-labelled `safe`.
+same files within 48 hours. Commits mode has no Konflate renders, so it judges without them.
+Everything else counts as negative. What matters most is false-safe: a positive labelled `safe`.
+Read every one of them; don't tune the policy to recall alone.
+
+--no-jev answers every Jev question with a clear "no". What comes out is the verdict from
+deterministic rules alone, which Jev could only raise: a false safe there is one only Jev can
+catch.
 """
 
 from __future__ import annotations
@@ -24,7 +30,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -49,10 +55,6 @@ def history(ref: str) -> list[dict]:
             "body": body, "files": set(filter(None, files.split("\n"))),
         })  # fmt: skip
     return commits
-
-
-def app_dirs(files) -> set[str]:
-    return {"/".join(f.split("/")[:4]) for f in files if f.startswith("kubernetes/apps/") and f.count("/") >= 4}
 
 
 def ground_truth(commits: list[dict]) -> tuple[dict, list[dict]]:
@@ -83,7 +85,12 @@ def label_item(shas, when, files, strong, fixes) -> str:
     return ""
 
 
-def run_item(event, base, head, konflate_url, key, model) -> dict:
+def clean_jev(name, state, questions):
+    """--no-jev: every question answered with a clear no (and the description matching)."""
+    return {"model": "none (--no-jev)", "usage": {}, "answers": {q: {"type": "noul", "noul": 0.95 if q == "description_matches" else 0.0} for q in questions}}
+
+
+def run_item(event, base, head, konflate_url, key, model, no_jev=False) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp)
         p.collect(event, base, head, out, konflate_url, 0)
@@ -92,7 +99,7 @@ def run_item(event, base, head, konflate_url, key, model) -> dict:
         state = json.loads((out / "konflate.json").read_text())["state"]
         if not konflate_url or state == "not_rendered":
             (out / "konflate.json").write_text(json.dumps({"state": "ignored", "summary": {"reason": "backtest"}}))
-        return p.classify(out, key=key, model=model)
+        return p.classify(out, key=key, model=model, answer=clean_jev if no_jev else None)
 
 
 def main() -> None:
@@ -102,7 +109,8 @@ def main() -> None:
     ap.add_argument("--since", help="commits mode: only commits after this date (YYYY-MM-DD)")
     ap.add_argument("--ref", default="origin/main")
     ap.add_argument("--konflate-url", help="prs mode: reuse Konflate renders that still match the merged head")
-    ap.add_argument("--no-jev", action="store_true", help="deterministic signals only")
+    ap.add_argument("--no-jev", action="store_true", help="deterministic rules only (every Jev question answered no)")
+    ap.add_argument("--baseline", help="an earlier run's CSV (v1 or v2) to compare verdicts with")
     ap.add_argument("--out", default="pr-risk-backtest.csv")
     a = ap.parse_args()
 
@@ -126,7 +134,7 @@ def main() -> None:
                 "labels": [{"name": lbl["name"]} for lbl in pr["labels"]], "head": {"sha": pr["headRefOid"]},
             }}  # fmt: skip
             try:
-                r = run_item(event, pr["baseRefOid"], pr["headRefOid"], a.konflate_url, key, model)
+                r = run_item(event, pr["baseRefOid"], pr["headRefOid"], a.konflate_url, key, model, a.no_jev)
             except subprocess.CalledProcessError as e:
                 print(f"#{pr['number']}: skipped ({e.stderr.strip()[:100]}); fetch refs/pull/*/head first", file=sys.stderr)
                 continue
@@ -134,7 +142,7 @@ def main() -> None:
             files = sh("git", "diff", "--name-only", pr["baseRefOid"], pr["headRefOid"]).split("\n")
             when = datetime.fromisoformat(pr["mergedAt"].replace("Z", "+00:00"))
             rows.append(row(f"#{pr['number']}", pr["title"], r, label_item(set(shas), when, files, strong, fixes)))
-            print(f"#{pr['number']}: {r['verdict']}{' ?' if r['uncertain'] else ''}  {pr['title'][:70]}", file=sys.stderr)
+            print(f"#{pr['number']}: {tag(r)}  {pr['title'][:70]}", file=sys.stderr)
     else:
         since = datetime.fromisoformat(a.since).astimezone() if a.since else None
         todo = [c for c in commits if not since or c["date"] >= since][-a.limit :]
@@ -145,42 +153,67 @@ def main() -> None:
                 "labels": [], "head": {"sha": c["sha"]},
             }}  # fmt: skip
             try:
-                r = run_item(event, c["sha"] + "^", c["sha"], None, key, model)
+                r = run_item(event, c["sha"] + "^", c["sha"], None, key, model, a.no_jev)
             except subprocess.CalledProcessError:
                 continue  # root commit
             rows.append(row(c["sha"][:7], c["subject"], r, label_item({c["sha"]}, c["date"], c["files"], strong, fixes)))
-            print(f"{c['sha'][:7]}: {r['verdict']}{' ?' if r['uncertain'] else ''}  {c['subject'][:70]}", file=sys.stderr)
+            print(f"{c['sha'][:7]}: {tag(r)}  {c['subject'][:70]}", file=sys.stderr)
 
     with open(a.out, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]) if rows else ["id"])
         w.writeheader()
         w.writerows(rows)
-    report(rows)
+    report(rows, baseline(a.baseline) if a.baseline else None)
     print(f"\nwrote {a.out}")
 
 
+def tag(r: dict) -> str:
+    return f"{r['classification']}{' ?' if r['uncertain'] else ''} {r['rule']}"
+
+
 def row(ident, title, r, truth) -> dict:
+    """One CSV row. Findings are listed as code@certainty; `sources` is where the material
+    findings' evidence came from (git, render, model, release_notes, invariants)."""
+    evidence = {e["id"]: e for e in r["evidence"]}
+    material = [f for f in r["findings"] if f["kind"] != "evidence" and f["certainty"] != "ruled_out"]
+    gaps = [f for f in r["findings"] if f["kind"] == "evidence"]
+    sources = sorted({evidence[e]["source"] for f in material for e in f["evidence"] if e in evidence})
     return {
         "id": ident,
         "title": title,
-        "verdict": r["verdict"],
+        "schema": r.get("schema", "pr-risk/v1"),
+        "verdict": r["classification"],
         "uncertain": r["uncertain"],
+        "rule": r["rule"],
+        "status": r["status"],
         "truth": truth,
-        "change_kind": r.get("change_kind"),
-        "blast_radius": r.get("blast_radius"),
+        "reach": r["dimensions"]["reach"],
+        "stakes": " ".join(r["dimensions"]["stakes"]),
+        "reversibility": r["dimensions"]["reversibility"],
+        "findings": " ".join(sorted({f"{f['code']}@{f['certainty']}" for f in material})),
+        "gaps": " ".join(sorted({f["code"] for f in gaps})),
+        "context": " ".join(sorted({c["code"] for c in r["context"]})),
+        "sources": " ".join(sources),
+        "uncertain_surfaces": " ".join(s["id"] for s in r["surfaces"] if s["sufficiency"] == "insufficient"),
+        "limited_surfaces": " ".join(s["id"] for s in r["surfaces"] if s["sufficiency"] == "limited"),
         "konflate": r["konflate"].get("state"),
-        "signals": " | ".join(f"{s['source']}:{s['level']}:{s['reason']}" for s in r["signals"] if s["level"] or s["uncertain"]),
         "input_tokens": sum((u or {}).get("input_tokens", 0) for u in r["jev"]["usage"].values()),
     }
 
 
-def report(rows) -> None:
+def baseline(path: str) -> dict[str, str]:
+    with open(path, newline="") as f:
+        return {r["id"]: r["verdict"] for r in csv.DictReader(f)}
+
+
+def report(rows, base: dict[str, str] | None = None) -> None:
     n = len(rows)
     if not n:
         print("no items")
         return
-    grid = Counter((r["verdict"], r["truth"].split(":")[0] or "negative") for r in rows)
-    print(f"\n{n} items · uncertain {sum(r['uncertain'] for r in rows)} · tokens {sum(r['input_tokens'] for r in rows)}")
+    truth = lambda r: r["truth"].split(":")[0] or "negative"  # noqa: E731
+    grid = Counter((r["verdict"], truth(r)) for r in rows)
+    print(f"\n{n} items · uncertain {sum(r['uncertain'] in (True, 'True') for r in rows)} · tokens {sum(int(r['input_tokens']) for r in rows)}")
     print(f"{'':10}{'negative':>10}{'weak':>8}{'strong':>8}")
     for v in p.LEVELS:
         print(f"{v:10}" + "".join(f"{grid[(v, t)]:>{w}}" for t, w in (("negative", 10), ("weak", 8), ("strong", 8))))
@@ -191,8 +224,44 @@ def report(rows) -> None:
     print(f"\nrecall (review+ on positives): {len(caught)}/{len(positives)}")
     print(f"precision (positives among review+): {len(caught)}/{len(flagged)}")
     print(f"labelled safe: {sum(r['verdict'] == 'safe' for r in rows)}/{n}")
+
+    def table(title, key_fn, items=rows):
+        counts: dict[str, Counter] = defaultdict(Counter)
+        for r in items:
+            for k in key_fn(r):
+                counts[k][r["verdict"]] += 1
+        if not counts:
+            return
+        print(f"\n{title}")
+        for k, c in sorted(counts.items(), key=lambda kv: -sum(kv[1].values())):
+            print(f"  {k:44} " + "  ".join(f"{v} {c[v]:>3}" for v in p.LEVELS))
+
+    table("verdict by reach", lambda r: [r["reach"]])
+    table("verdict by finding source", lambda r: r["sources"].split() or ["(no finding)"])
+    table("findings by reason code (verdict of the items they appear in)", lambda r: [f.split("@")[0] for f in r["findings"].split()])
+    table("evidence gaps by code", lambda r: r["gaps"].split())
+    for what, col in (("uncertain", "uncertain_surfaces"), ("limited evidence", "limited_surfaces")):
+        unc = Counter(s for r in rows for s in r.get(col, "").split())
+        if unc:
+            print(f"\n{what} by surface")
+            for s, c in unc.most_common(20):
+                print(f"  {s:44} {c}")
+    pos_codes = Counter(f.split("@")[0] for r in positives for f in r["findings"].split())
+    if pos_codes:
+        print("\nreason codes on positives: " + ", ".join(f"{k} {v}" for k, v in pos_codes.most_common(12)))
     for r in false_safe:
         print(f"FALSE SAFE {r['id']}: {r['title'][:70]} ({r['truth']})")
+        print(f"    reach {r['reach']} · context [{r['context'] or '-'}] · gaps [{r['gaps'] or '-'}] · rule {r['rule']}")
+    if base:
+        moves = Counter((base[r["id"]], r["verdict"]) for r in rows if r["id"] in base)
+        if moves:
+            print("\nbaseline → this run")
+            print(f"{'':10}" + "".join(f"{v:>8}" for v in p.LEVELS))
+            for old in p.LEVELS:
+                print(f"{old:10}" + "".join(f"{moves[(old, new)]:>8}" for new in p.LEVELS))
+            changed = [r for r in rows if r["id"] in base and base[r["id"]] != r["verdict"]]
+            for r in changed[:40]:
+                print(f"  {r['id']}: {base[r['id']]} → {r['verdict']}  [{r['findings'] or r['gaps'] or '-'}]  {r['title'][:50]}")
 
 
 if __name__ == "__main__":
