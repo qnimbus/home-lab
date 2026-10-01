@@ -66,6 +66,9 @@ metadata:
   name: nas
 spec:
   targetNamespace: network
+  dependsOn:
+    - name: external-dns-cloudflare
+    - name: external-dns-unifi
   interval: 1h
   path: ./kubernetes/apps/network/external-services/nas
   prune: true

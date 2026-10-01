@@ -18,6 +18,8 @@ spec:
       - "${DOMAIN_PROXII}"
       - "${DOMAIN_IO}"
       - "home.arpa"
+    extraArgs:
+      - --label-filter=external-dns.home.arpa/public-only!=true
     fullnameOverride: *app
     logLevel: &logLevel info
     policy: sync
@@ -65,6 +67,7 @@ spec:
     sources:
       - gateway-httproute
       - service
+      - crd
     triggerLoopOnEvent: true
     txtOwnerId: k8s-internal
     txtPrefix: "k8s."

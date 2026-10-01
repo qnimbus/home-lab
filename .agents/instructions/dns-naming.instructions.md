@@ -49,11 +49,14 @@ registering a name there can't shadow an app.
 
 ### Where a device record lives
 
-- **In Git**, as an `ExternalName` Service under
-  `kubernetes/apps/network/external-services/`, published by
-  external-dns-unifi. This is the default for a device with a fixed address
-  (`nas`, `canon`). A record on the gateway that external-dns doesn't own is
-  then stale by definition.
+- **In Git**, as a `DNSEndpoint` under
+  `kubernetes/apps/network/external-services/` (see `nas`), published by
+  external-dns-unifi. This is the default for a device with a fixed address.
+  One object holds all of a host's interfaces. A record on the gateway that
+  external-dns doesn't own is then stale by definition. The older devices
+  there are `ExternalName` Services; don't copy that for a new one.
+- Its Flux Kustomization `dependsOn` `external-dns-unifi`, whose chart
+  installs the `DNSEndpoint` CRD.
 - **On the gateway**, for what external-dns can't express: each network's
   DNS domain (the table above is the record of what they should be), and
   the nodes' names, which are the "local DNS record" on each node's UniFi

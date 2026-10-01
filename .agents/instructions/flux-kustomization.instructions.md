@@ -39,6 +39,17 @@ Cluster`, etc.) whose CRD is installed by another app's Helm chart, when
   `Certificate` that finds no Secret makes cert-manager issue a new one
   from Let's Encrypt instead of adopting the copy restored from 1Password.
   The dependency closes that race on a fresh cluster.
+- **LAN-only `DNSEndpoint`s after the Cloudflare exclusion** (accepted
+  exception): a Kustomization holding a `DNSEndpoint` for a private address
+  (`network/nas`) depends on `external-dns-cloudflare` as well as
+  `external-dns-unifi`. Only the second is structural (the CRD).
+  external-dns-cloudflare reads every `DNSEndpoint`, and its
+  `excludeDomains` is all that keeps the record out of public DNS. A
+  dependent isn't applied until its dependency has applied the same Git
+  revision and is Ready, so a commit that adds a zone to the exclusion and
+  the first record under it can't publish the record before the exclusion
+  is running. Once published it would stay: the zone is excluded, so
+  external-dns no longer sees the record to delete it.
 
 ### Don't use it for
 

@@ -5,6 +5,8 @@ kind: DNSEndpoint
 metadata:
   name: cloudflare-tunnel
   namespace: network
+  labels:
+    external-dns.home.arpa/public-only: "true"
 spec:
   endpoints:
     - dnsName: "external.${DOMAIN_PROXII}"

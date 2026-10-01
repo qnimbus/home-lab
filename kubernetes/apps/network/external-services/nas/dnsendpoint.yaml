@@ -1,0 +1,20 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/externaldns.k8s.io/dnsendpoint_v1alpha1.json
+apiVersion: externaldns.k8s.io/v1alpha1
+kind: DNSEndpoint
+metadata:
+  name: nas
+spec:
+  endpoints:
+    - dnsName: "nas.lan.home.${DOMAIN_IO}"
+      recordType: A
+      targets:
+        - "${NAS_LAN_HOST}"
+    - dnsName: "nas.iot.home.${DOMAIN_IO}"
+      recordType: A
+      targets:
+        - "${NAS_IOT_HOST}"
+    - dnsName: "nas.storage.home.${DOMAIN_IO}"
+      recordType: A
+      targets:
+        - "${NAS_HOST}"
