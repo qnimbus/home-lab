@@ -16,7 +16,6 @@ spec:
       - "${DOMAIN_APP}"
       - "${DOMAIN_CASA}"
       - "${DOMAIN_IO}"
-      - "${DOMAIN_APPS}"
       - "${DOMAIN_PROXII}"
     env:
       - name: CF_API_TOKEN
@@ -24,6 +23,12 @@ spec:
           secretKeyRef:
             key: CF_API_TOKEN
             name: external-dns-cloudflare-secret
+    excludeDomains:
+      - "${DOMAIN_APPS}"
+      - "${DOMAIN_CLUSTER}"
+      - "home.${DOMAIN_IO}"
+      - "iot.${DOMAIN_IO}"
+      - "internal.${DOMAIN_PROXII}"
     extraArgs:
       - --cloudflare-dns-records-per-page=1000
       - --cloudflare-proxied

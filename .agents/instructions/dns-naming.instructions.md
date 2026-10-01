@@ -33,7 +33,9 @@ static records:
 - `<host>` is the role, not the product: `nas`, not `truenas`. The device's
   own hostname may differ; the role name is what manifests and docs use.
 - These names exist only on the UniFi gateway. `home.vwn.io` has no public
-  records, and nothing under it may get one.
+  records, and nothing under it may get one: external-dns-cloudflare
+  excludes it (`excludeDomains`), along with the other LAN-only zones. A new
+  LAN-only zone is added to that list.
 - No other private namespace: not `.internal`, not `home.arpa`, not a bare
   single-label name.
 - The wildcard certificates stop one level down (`*.vwn.io`,
