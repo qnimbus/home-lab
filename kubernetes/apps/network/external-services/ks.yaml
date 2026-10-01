@@ -6,6 +6,9 @@ metadata:
   name: canon
 spec:
   targetNamespace: network
+  dependsOn:
+    - name: external-dns-cloudflare
+    - name: external-dns-unifi
   interval: 1h
   path: ./kubernetes/apps/network/external-services/canon
   prune: true
@@ -21,6 +24,9 @@ metadata:
   name: wan-failover
 spec:
   targetNamespace: network
+  dependsOn:
+    - name: external-dns-cloudflare
+    - name: external-dns-unifi
   interval: 1h
   path: ./kubernetes/apps/network/external-services/wan-failover
   prune: true
@@ -36,6 +42,9 @@ metadata:
   name: adam
 spec:
   targetNamespace: network
+  dependsOn:
+    - name: external-dns-cloudflare
+    - name: external-dns-unifi
   interval: 1h
   path: ./kubernetes/apps/network/external-services/adam
   prune: true
@@ -51,6 +60,9 @@ metadata:
   name: anna
 spec:
   targetNamespace: network
+  dependsOn:
+    - name: external-dns-cloudflare
+    - name: external-dns-unifi
   interval: 1h
   path: ./kubernetes/apps/network/external-services/anna
   prune: true

@@ -53,10 +53,10 @@ registering a name there can't shadow an app.
   `kubernetes/apps/network/external-services/` (see `nas`), published by
   external-dns-unifi. This is the default for a device with a fixed address.
   One object holds all of a host's interfaces. A record on the gateway that
-  external-dns doesn't own is then stale by definition. The older devices
-  there are `ExternalName` Services; don't copy that for a new one.
+  external-dns doesn't own is then stale by definition.
 - Its Flux Kustomization `dependsOn` `external-dns-unifi`, whose chart
-  installs the `DNSEndpoint` CRD.
+  installs the `DNSEndpoint` CRD, and `external-dns-cloudflare`, whose
+  exclusion has to be running first (see `flux-kustomization`).
 - **On the gateway**, for what external-dns can't express: each network's
   DNS domain (the table above is the record of what they should be), and
   the nodes' names, which are the "local DNS record" on each node's UniFi
