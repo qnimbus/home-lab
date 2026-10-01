@@ -34,7 +34,7 @@ without write access.
 ## Verify
 
 ```sh
-ssh truenas_admin@truenas.lan.home.vwn.io 'sudo docker logs -f doco-cd'
+ssh truenas_admin@nas.lan.home.vwn.io 'sudo docker logs -f doco-cd'
 curl http://10.10.0.41:18080/v1/health
 curl -s http://10.10.0.41:9100/metrics | head
 curl -s http://10.10.0.41:9633/metrics | head

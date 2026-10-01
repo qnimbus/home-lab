@@ -2,4 +2,4 @@ all:
   children:
     nas:
       hosts:
-        truenas.lan.home.vwn.io: {}
+        nas.lan.home.vwn.io: {}

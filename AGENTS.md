@@ -5,6 +5,7 @@
 @.agents/instructions/external-secrets.instructions.md
 @.agents/instructions/renovate.instructions.md
 @.agents/instructions/yaml-schemas.instructions.md
+@.agents/instructions/dns-naming.instructions.md
 
 Reusable task skills (add-app, add-docker-app, ...) live in `.agents/skills/`; Claude Code discovers them through the `.claude/skills` symlink.
 
