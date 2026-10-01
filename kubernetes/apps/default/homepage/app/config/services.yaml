@@ -34,11 +34,11 @@
     - ColB:
         - Gateway:
             icon: "mdi-thermostat"
-            href: "http://gw-adam.iot.vwn.io"
+            href: "http://gw-adam.iot.home.${DOMAIN_IO}"
             description: "Plugwise Adam gateway"
         - Thermostat:
             icon: "mdi-thermostat"
-            href: "https://gw-anna.iot.vwn.io"
+            href: "https://gw-anna.iot.home.${DOMAIN_IO}"
             description: "Plugwise Anna thermostat & heating control"
 - RowA:
     - Infrastructure:

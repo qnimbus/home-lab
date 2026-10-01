@@ -6,6 +6,10 @@ metadata:
   name: adam
 spec:
   endpoints:
+    - dnsName: "gw-adam.iot.home.${DOMAIN_IO}"
+      recordType: A
+      targets:
+        - "${ADAM_IOT_HOST}"
     - dnsName: "gw-adam.iot.${DOMAIN_IO}"
       recordType: A
       targets:

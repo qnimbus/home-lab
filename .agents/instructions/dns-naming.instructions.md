@@ -85,8 +85,12 @@ tooling that runs outside the cluster (`ansible/inventory.yaml`, ssh).
 Existing names that predate it. Don't copy them; move them when the app is
 touched anyway.
 
-- `canon`, `gw-adam`, `gw-anna`, `smtp-relay` under `iot.${DOMAIN_IO}`
-  rather than `iot.home.vwn.io`.
+- `smtp-relay.iot.${DOMAIN_IO}` rather than `iot.home.vwn.io`
+  (`kubernetes/apps/mail/smtp-relay`). IoT devices are configured with that
+  name by hand, so moving it means reconfiguring them.
+- `canon`, `gw-adam` and `gw-anna` are on the scheme, and still answer on
+  their old `iot.${DOMAIN_IO}` names as a second record in the same
+  `DNSEndpoint`. Drop the old record once nothing uses it.
 - `plex.${DOMAIN_APPS}`: a LAN-only Service outside `${DOMAIN_CLUSTER}`,
   and the only name `${DOMAIN_APPS}` carries.
 - `flux-webhook` and `konflate-webhook` under `${DOMAIN_IO}`: WAN-facing,
