@@ -1,22 +1,19 @@
 # DNS naming
 
-Which domain a new hostname goes under. Three patterns, by what the name
-points at:
+Which zone a new hostname goes under: decided by what answers at the
+address, and which network that address is on.
 
-| Points at                                           | Pattern                        | Example                   |
-| --------------------------------------------------- | ------------------------------ | ------------------------- |
-| A device, or one of its interfaces                  | `<host>.<network>.home.vwn.io` | `nas.storage.home.vwn.io` |
-| What the cluster serves on its own network, VLAN 60 | `<app>.${DOMAIN_CLUSTER}`      | `grafana.cluster.vwn.io`  |
-| A cluster app, reachable from WAN                   | `<app>.${DOMAIN_APP}`          | `konflate.vwn.app`        |
+| The name points at                               | Zone                    | Example                      |
+| ------------------------------------------------ | ----------------------- | ---------------------------- |
+| A device, or one of its interfaces               | `<network>.home.vwn.io` | `nas.storage.home.vwn.io`    |
+| An HTTPRoute on `envoy-internal`                 | `${DOMAIN_CLUSTER}`     | `grafana.cluster.vwn.io`     |
+| A LoadBalancer address on VLAN 60                | `${DOMAIN_CLUSTER}`     | `smtp-relay.cluster.vwn.io`  |
+| A LoadBalancer address on any other network      | `<network>.home.vwn.io` | `smtp-relay.iot.home.vwn.io` |
+| An HTTPRoute on `envoy-external` (WAN-reachable) | `${DOMAIN_APP}`         | `konflate.vwn.app`           |
 
-A cluster service's address on any other network takes the device pattern
-(see [Apps and services](#apps-and-services-domain_cluster-and-domain_app)).
+In manifests, `home.vwn.io` is written `home.${DOMAIN_IO}`.
 
-## Devices: `<host>.<network>.home.vwn.io`
-
-The zone says which network the address is on. `<network>` is the UniFi
-network's own DNS domain, so DHCP clients land in the same zone as the
-static records:
+## Networks
 
 | Network (VLAN)   | Subnet        | Zone                      |
 | ---------------- | ------------- | ------------------------- |
@@ -31,100 +28,79 @@ static records:
 | Management (100) | 10.100.0.0/24 | `mgmt.home.vwn.io`        |
 | Storage (200)    | 10.200.0.0/24 | `storage.home.vwn.io`     |
 
-- A host on several networks gets one name per interface, same `<host>`:
-  `nas.lan.home.vwn.io`, `nas.iot.home.vwn.io`, `nas.storage.home.vwn.io`.
-- `<host>` is the role, not the product: `nas`, not `truenas`. The device's
-  own hostname may differ; the role name is what manifests and docs use.
-- These names exist only on the UniFi gateway. `home.vwn.io` has no public
-  records, and nothing under it may get one: external-dns-cloudflare
-  excludes it (`excludeDomains`), along with the other LAN-only zones. A new
-  LAN-only zone is added to that list.
-- No other private namespace: not `.internal`, not `home.arpa`, not a bare
-  single-label name.
-- The wildcard certificates stop one level down (`*.vwn.io`,
-  `*.cluster.vwn.io`), so none covers a device name. A device UI that needs
-  TLS goes behind the gateway as an app (`external-services`), under the app
-  pattern.
+Each zone is that UniFi network's DNS domain, so DHCP clients land in it
+too. The setting lives on the gateway, not in Git; this table is the record
+of what it should be.
 
-Cluster nodes are devices: `talos-cp-01.k8s.home.vwn.io`. `k8s.home.vwn.io`
-is for the machines on VLAN 60 and `cluster.vwn.io` for what the cluster
-serves from it, so a host registering a name can't shadow an app.
+## Rules
 
-### Where a device record lives
-
-- **In Git**, as a `DNSEndpoint` under
-  `kubernetes/apps/network/external-services/` (see `nas`), published by
-  external-dns-unifi. This is the default for a device with a fixed address.
-  One object holds all of a host's interfaces. A record on the gateway that
-  external-dns doesn't own is then stale by definition.
-- Its Flux Kustomization `dependsOn` `external-dns-unifi`, whose chart
-  installs the `DNSEndpoint` CRD, and `external-dns-cloudflare`, whose
-  exclusion has to be running first (see `flux-kustomization`).
-- **On the gateway**, for what external-dns can't express: each network's
-  DNS domain (the table above is the record of what they should be), and
-  the nodes' names, which are the "local DNS record" on each node's UniFi
-  client entry. A network's domain only names DHCP clients; it doesn't
-  rename a client that has its own record.
-
-## Apps and services: `${DOMAIN_CLUSTER}` and `${DOMAIN_APP}`
-
-What the cluster serves is named by where its address is, not by the app:
-
-| The name points at                                   | Zone                    | Example                      |
-| ---------------------------------------------------- | ----------------------- | ---------------------------- |
-| An HTTPRoute on `envoy-internal`                     | `${DOMAIN_CLUSTER}`     | `grafana.cluster.vwn.io`     |
-| A LoadBalancer address on VLAN 60 (10.60.0.0/24)     | `${DOMAIN_CLUSTER}`     | `smtp-relay.cluster.vwn.io`  |
-| A LoadBalancer address on any other network          | `<network>.home.vwn.io` | `smtp-relay.iot.home.vwn.io` |
-| An HTTPRoute on `envoy-external`, reachable from WAN | `${DOMAIN_APP}`         | `konflate.vwn.app`           |
-
-- VLAN 60 carries two zones, split by what answers. A machine on it (a
-  node) is a device: `k8s.home.vwn.io`. An address the cluster hands out
+- **VLAN 60 has two zones, split by what answers.** A machine on it is a
+  device: `talos-cp-01.k8s.home.vwn.io`. An address the cluster hands out
   from it (a gateway, a LoadBalancer Service) is a service:
-  `${DOMAIN_CLUSTER}`. So `10.60.0.240` is `smtp-relay.cluster.vwn.io`, never
+  `${DOMAIN_CLUSTER}`. `10.60.0.240` is `smtp-relay.cluster.vwn.io`, never
   `smtp-relay.k8s.home.vwn.io`.
-- A Service with addresses on two networks gets one name per address, as a
-  multi-homed host does. `smtp-relay` holds `10.60.0.240` and, for the
-  printer, `10.30.0.240` on the IOT network.
-- The VLAN 60 name comes from the Service's own
-  `external-dns.kubernetes.io/hostname` annotation. A name for an address on
-  another network can't: every hostname on a Service is published against
-  every one of its addresses, and `target` pins them all to one. It is a
-  `DNSEndpoint` next to the app, in the app's namespace, not under
-  `external-services`: the record belongs to the Service and goes when the
-  app does. The app's Kustomization takes the same two `dependsOn` entries
-  as a device's, with `namespace: network`.
-- Nothing reachable from the WAN goes under `${DOMAIN_CLUSTER}`: it sits two
-  levels under `vwn.io` and Cloudflare's Universal SSL covers one (see
-  `kubernetes/apps/network/README.md`). external-dns-cloudflare excludes the
-  zone, so such a route would get no public record at all.
+- **One name per address, same `<host>`.** A host or Service on several
+  networks gets a name in each network's zone: `nas.lan`, `nas.iot` and
+  `nas.storage` under `home.vwn.io`.
+- **`<host>` is the role, not the product:** `nas`, not `truenas`.
+- **No other private namespace:** not `.internal`, not `home.arpa`, not a
+  bare single-label name.
+- **Only `${DOMAIN_APP}` is for WAN-reachable names.** external-dns-cloudflare
+  excludes the LAN-only zones (`excludeDomains`: `${DOMAIN_CLUSTER}`,
+  `${DOMAIN_APPS}`, `home.${DOMAIN_IO}`, `iot.${DOMAIN_IO}`,
+  `internal.${DOMAIN_PROXII}`), so a route under one gets no public record.
+- **No wildcard certificate covers a device name.** A device UI that needs
+  TLS goes behind the gateway as an app, under `${DOMAIN_CLUSTER}`.
+- **Mounts, scrape targets and probes stay on IPs** (`${NAS_HOST}`,
+  `${NAS_LAN_HOST}`). A mount by name makes storage depend on the gateway's
+  DNS. Names are for people and for tooling outside the cluster.
 
-## Mounts and probes stay on IPs
+## Declaring a record
 
-`${NAS_HOST}` and `${NAS_LAN_HOST}` are addresses, and stay that way in NFS
-and SMB mounts, scrape targets and probes. A mount by name makes storage
-depend on the gateway's DNS being up. The names are for people and for
-tooling that runs outside the cluster (`ansible/inventory.yaml`, ssh).
+- **A route, or a LoadBalancer address on VLAN 60:** the HTTPRoute's
+  hostname, or `external-dns.kubernetes.io/hostname` on the Service.
+- **A device:** a `DNSEndpoint` in
+  `kubernetes/apps/network/external-services/<host>/`, one object for all of
+  the host's interfaces (see `nas`).
+- **A Service's address on another network:** a `DNSEndpoint` next to the
+  app, in its namespace (see `mail/smtp-relay`). The annotation can't do it:
+  every hostname on a Service is published against every one of its
+  addresses, and `target` pins them all to one.
+- **A Kustomization holding such a `DNSEndpoint`** `dependsOn`
+  `external-dns-unifi` and `external-dns-cloudflare` (in `network`); see
+  `flux-kustomization`.
+- **A new LAN-only zone** goes on external-dns-cloudflare's `excludeDomains`
+  before anything is named under it. Both instances read every
+  `DNSEndpoint`; the exclusion is all that keeps a private address out of
+  public DNS.
+- **A `DNSEndpoint` meant for Cloudflare only** carries
+  `external-dns.home.arpa/public-only: "true"`, which external-dns-unifi
+  filters out (see the tunnel alias in `network/cloudflare-tunnel`).
+- **Renaming:** add the new name and keep the old one as a second record in
+  the same `DNSEndpoint` until nothing uses it.
+- **On the gateway only:** the network domains above, and the nodes' names
+  (the "local DNS record" on each node's UniFi client entry). Any other
+  record there that external-dns doesn't own is stale.
 
 ## Not yet on the scheme
 
-Existing names that predate it. Don't copy them; move them when the app is
-touched anyway.
+Don't copy these; move them when the app is touched anyway.
 
-- `canon`, `gw-adam`, `gw-anna` and `smtp-relay` are on the scheme, and
-  still answer on their old `iot.${DOMAIN_IO}` names as a second record in
-  the same `DNSEndpoint`. Drop the old record once nothing uses it. For
-  `smtp-relay` that means once the printer, which is configured with the old
-  name by hand, has been pointed at the new one.
-- `plex.${DOMAIN_APPS}`: a LAN-only Service outside `${DOMAIN_CLUSTER}`,
+- `canon`, `gw-adam`, `gw-anna` and `smtp-relay` still answer on their old
+  `iot.${DOMAIN_IO}` names as a second record. For `smtp-relay`, drop it
+  once the printer is reconfigured.
+- `canon` is a product name; the role is `printer`.
+- `plex.${DOMAIN_APPS}`: a VLAN 60 LoadBalancer outside `${DOMAIN_CLUSTER}`,
   and the only name `${DOMAIN_APPS}` carries.
-- `flux-webhook` and `konflate-webhook` under `${DOMAIN_IO}`: WAN-facing,
+- `flux-webhook` and `konflate-webhook` under `${DOMAIN_IO}`: WAN-reachable,
   so they belong under `${DOMAIN_APP}`. Moving them means updating the
-  webhook URL on the GitHub side too.
-- `udm.${DOMAIN_APP}`, `guest.unifi.${DOMAIN_APP}`: devices under the public
-  app domain.
-- `wan-failover.${DOMAIN_CLUSTER}` and `mobilerouter.lan.home.vwn.io`: both
-  192.168.8.1, on neither network.
-- `kube-vip.home.arpa` in `kubernetes/talos/cluster.yaml.j2`.
-- `${DOMAIN_CASA}` and `${DOMAIN_PROXII}` have no pattern. `${DOMAIN_PROXII}`
-  carries the two gateway targets only; `${DOMAIN_CASA}` is wired
-  (certificate, tunnel, DNS filters) and unused.
+  webhook URL on the GitHub side.
+- `udm.${DOMAIN_APP}` (homepage links to it): a device under the public app
+  domain.
+- `wan-failover.${DOMAIN_CLUSTER}`: 192.168.8.1 is neither a cluster address
+  nor on a network above.
+- `kube-vip.home.arpa` in `kubernetes/talos/cluster.yaml.j2`, and the unused
+  `home.arpa` in external-dns-unifi's `domainFilters`.
+- `external` and `internal.${DOMAIN_PROXII}`, the gateways' own names, and
+  `${DOMAIN_CASA}`, which is wired (certificate, tunnel, DNS filters) and
+  unused: neither domain has a pattern.
