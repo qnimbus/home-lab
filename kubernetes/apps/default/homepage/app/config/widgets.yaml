@@ -1,6 +1,6 @@
 ---
 - unifi_console:
-    url: "https://udm.${DOMAIN_APP}"
+    url: "https://gateway.lan.home.${DOMAIN_IO}"
     key: "{{HOMEPAGE_VAR_UNIFI_API_KEY}}" # required if using API key instead of username/password
 - kubernetes:
     cluster:

@@ -61,12 +61,12 @@
             siteMonitor: "http://router.wan-failover.home.${DOMAIN_IO}"
     - Unifi:
         - UniFi Network:
-            href: https://udm.${DOMAIN_APP}/network
+            href: https://gateway.lan.home.${DOMAIN_IO}/network
             icon: si-ubiquiti.svg-#0559C9
             description: UniFi SkyNet Site
-            siteMonitor: "https://udm.${DOMAIN_APP}"
+            siteMonitor: "https://gateway.lan.home.${DOMAIN_IO}"
         - UniFi Protect:
-            href: https://udm.${DOMAIN_APP}/protect
+            href: https://gateway.lan.home.${DOMAIN_IO}/protect
             icon: si-ubiquiti.svg-#DDDDDD
             description: UniFi Protect
-            siteMonitor: "https://udm.${DOMAIN_APP}"
+            siteMonitor: "https://gateway.lan.home.${DOMAIN_IO}"

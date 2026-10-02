@@ -6,6 +6,14 @@ metadata:
   name: udm
 spec:
   endpoints:
+    - dnsName: "gateway.lan.home.${DOMAIN_IO}"
+      recordType: A
+      targets:
+        - "10.10.0.1"
+    - dnsName: "portal.guest.home.${DOMAIN_IO}"
+      recordType: A
+      targets:
+        - "192.168.1.1"
     - dnsName: "udm.${DOMAIN_APP}"
       recordType: A
       targets:
