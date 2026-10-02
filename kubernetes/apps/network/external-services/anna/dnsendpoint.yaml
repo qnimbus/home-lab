@@ -10,7 +10,3 @@ spec:
       recordType: A
       targets:
         - "${ANNA_IOT_HOST}"
-    - dnsName: "gw-anna.iot.${DOMAIN_IO}"
-      recordType: A
-      targets:
-        - "${ANNA_IOT_HOST}"

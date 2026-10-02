@@ -93,9 +93,9 @@ of what it should be.
 
 Don't copy these; move them when the app is touched anyway.
 
-- `printer` (as `canon`), `gw-adam`, `gw-anna` and `smtp-relay` still answer
-  on their old `iot.${DOMAIN_IO}` names as a second record. For
-  `smtp-relay`, drop it once the printer is reconfigured.
+- `printer` (as `canon`) and `smtp-relay` still answer on their old
+  `iot.${DOMAIN_IO}` names as a second record. For `smtp-relay`, drop it
+  once the printer is reconfigured.
 - `plex.${DOMAIN_APPS}`: a VLAN 60 LoadBalancer outside `${DOMAIN_CLUSTER}`,
   and the only name `${DOMAIN_APPS}` carries.
 - `flux-webhook` and `konflate-webhook` under `${DOMAIN_IO}`: WAN-reachable,
