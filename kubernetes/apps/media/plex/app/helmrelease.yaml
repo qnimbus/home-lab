@@ -166,7 +166,7 @@ spec:
           # serviceSelector-scoped to this Service) — see docs/QA.md. `target` pins
           # plex.${DOMAIN_APPS} to the mgmt IP only; without it, both of this Service's
           # ingress IPs would publish as separate A records under the same name (same
-          # trap smtp-relay hit first — see service-iot-dns.yaml in that app for the
+          # trap smtp-relay hit first — see dnsendpoint.yaml in that app for the
           # IOT-side-hostname alternative, not needed here since Plex clients get the
           # IOT IP from PLEX_ADVERTISE_URL/plex.tv, not DNS).
           lbipam.cilium.io/ips: "${LB_IP_PLEX},${LB_IP_PLEX_IOT}"

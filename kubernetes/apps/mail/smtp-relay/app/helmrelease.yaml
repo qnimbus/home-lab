@@ -100,12 +100,12 @@ spec:
         # visibility in maddy's own logs on the (now harmless) cross-node-forward path.
         externalTrafficPolicy: Cluster
         annotations:
-          # external-dns-unifi watches plain Services (sources: [gateway-httproute, service]).
+          # external-dns-unifi watches plain Services (sources include `service`).
           # `target` pins this hostname to the mgmt-side IP only — without it, both of this
           # Service's ingress IPs (mgmt + IOT, see lbipam.cilium.io/ips below) would publish
           # as separate A records under the same name, and a client resolving it could get
-          # handed either one. The IOT-side name (smtp-relay.iot.${DOMAIN_IO}) is published
-          # separately by the smtp-relay-iot ExternalName Service (service-iot-dns.yaml).
+          # handed either one. The IOT-side name (smtp-relay.iot.home.${DOMAIN_IO}) is
+          # published separately by the smtp-relay-iot DNSEndpoint (dnsendpoint.yaml).
           external-dns.kubernetes.io/hostname: "smtp-relay.${DOMAIN_CLUSTER}"
           external-dns.kubernetes.io/target: "10.60.0.240"
           # Pin both LB IPs explicitly: mgmt (default pool, matches the target above) and

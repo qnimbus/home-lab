@@ -6,6 +6,11 @@ metadata:
   name: &app smtp-relay
 spec:
   targetNamespace: mail
+  dependsOn:
+    - name: external-dns-cloudflare
+      namespace: network
+    - name: external-dns-unifi
+      namespace: network
   interval: 1h
   path: ./kubernetes/apps/mail/smtp-relay/app
   prune: true

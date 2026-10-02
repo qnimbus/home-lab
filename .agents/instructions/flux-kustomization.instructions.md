@@ -41,9 +41,8 @@ Cluster`, etc.) whose CRD is installed by another app's Helm chart, when
   The dependency closes that race on a fresh cluster.
 - **LAN-only `DNSEndpoint`s after the Cloudflare exclusion** (accepted
   exception): a Kustomization holding a `DNSEndpoint` for a private address
-  (the devices in `network/external-services`) depends on
-  `external-dns-cloudflare` as well as
-  `external-dns-unifi`. Only the second is structural (the CRD).
+  (the devices in `network/external-services`, `mail/smtp-relay`) depends
+  on `external-dns-cloudflare` as well as `external-dns-unifi`. Only the second is structural (the CRD).
   external-dns-cloudflare reads every `DNSEndpoint`, and its
   `excludeDomains` is all that keeps the record out of public DNS. A
   dependent isn't applied until its dependency has applied the same Git

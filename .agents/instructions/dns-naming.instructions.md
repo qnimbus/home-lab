@@ -71,7 +71,11 @@ registering a name there can't shadow an app.
   `${DOMAIN_CLUSTER}`: it sits two levels under `vwn.io` and Cloudflare's
   Universal SSL covers one (see `kubernetes/apps/network/README.md`).
 - A Service with an address on a device network (the IOT-side
-  `smtp-relay` VIP) is named for that network, as a device would be.
+  `smtp-relay` VIP) is named for that network, as a device would be. Its
+  `DNSEndpoint` lives with the app, in the app's namespace, not under
+  `external-services`: the record belongs to the Service and goes when the
+  app does. The app's Kustomization takes the same two `dependsOn` entries,
+  with `namespace: network`.
 
 ## Mounts and probes stay on IPs
 
@@ -85,12 +89,11 @@ tooling that runs outside the cluster (`ansible/inventory.yaml`, ssh).
 Existing names that predate it. Don't copy them; move them when the app is
 touched anyway.
 
-- `smtp-relay.iot.${DOMAIN_IO}` rather than `iot.home.vwn.io`
-  (`kubernetes/apps/mail/smtp-relay`). IoT devices are configured with that
-  name by hand, so moving it means reconfiguring them.
-- `canon`, `gw-adam` and `gw-anna` are on the scheme, and still answer on
-  their old `iot.${DOMAIN_IO}` names as a second record in the same
-  `DNSEndpoint`. Drop the old record once nothing uses it.
+- `canon`, `gw-adam`, `gw-anna` and `smtp-relay` are on the scheme, and
+  still answer on their old `iot.${DOMAIN_IO}` names as a second record in
+  the same `DNSEndpoint`. Drop the old record once nothing uses it. For
+  `smtp-relay` that means once the printer, which is configured with the old
+  name by hand, has been pointed at the new one.
 - `plex.${DOMAIN_APPS}`: a LAN-only Service outside `${DOMAIN_CLUSTER}`,
   and the only name `${DOMAIN_APPS}` carries.
 - `flux-webhook` and `konflate-webhook` under `${DOMAIN_IO}`: WAN-facing,
