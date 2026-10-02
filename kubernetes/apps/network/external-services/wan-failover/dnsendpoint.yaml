@@ -6,11 +6,7 @@ metadata:
   name: wan-failover
 spec:
   endpoints:
-    - dnsName: "wan-failover.${DOMAIN_CLUSTER}"
-      recordType: A
-      targets:
-        - "${WAN_FAILOVER_HOST}"
-    - dnsName: "mobilerouter.lan.home.${DOMAIN_IO}"
+    - dnsName: "router.wan-failover.home.${DOMAIN_IO}"
       recordType: A
       targets:
         - "${WAN_FAILOVER_HOST}"

@@ -15,22 +15,28 @@ In manifests, `home.vwn.io` is written `home.${DOMAIN_IO}`.
 
 ## Networks
 
-| Network (VLAN)   | Subnet        | Zone                      |
-| ---------------- | ------------- | ------------------------- |
-| SkyNet (10)      | 10.10.0.0/24  | `lan.home.vwn.io`         |
-| Guest (20)       | 10.20.0.0/24  | `guest.home.vwn.io`       |
-| IOT (30)         | 10.30.0.0/24  | `iot.home.vwn.io`         |
-| IOT Offline (40) | 10.40.0.0/24  | `iot-offline.home.vwn.io` |
-| Protect (50)     | 10.50.0.0/24  | `protect.home.vwn.io`     |
-| Kubernetes (60)  | 10.60.0.0/24  | `k8s.home.vwn.io`         |
-| DMZ (70)         | 10.70.0.0/24  | `dmz.home.vwn.io`         |
-| Kids (90)        | 10.90.0.0/24  | `kids.home.vwn.io`        |
-| Management (100) | 10.100.0.0/24 | `mgmt.home.vwn.io`        |
-| Storage (200)    | 10.200.0.0/24 | `storage.home.vwn.io`     |
+| Network (VLAN)   | Subnet         | Zone                       |
+| ---------------- | -------------- | -------------------------- |
+| SkyNet (10)      | 10.10.0.0/24   | `lan.home.vwn.io`          |
+| Guest (20)       | 10.20.0.0/24   | `guest.home.vwn.io`        |
+| IOT (30)         | 10.30.0.0/24   | `iot.home.vwn.io`          |
+| IOT Offline (40) | 10.40.0.0/24   | `iot-offline.home.vwn.io`  |
+| Protect (50)     | 10.50.0.0/24   | `protect.home.vwn.io`      |
+| Kubernetes (60)  | 10.60.0.0/24   | `k8s.home.vwn.io`          |
+| DMZ (70)         | 10.70.0.0/24   | `dmz.home.vwn.io`          |
+| Kids (90)        | 10.90.0.0/24   | `kids.home.vwn.io`         |
+| Management (100) | 10.100.0.0/24  | `mgmt.home.vwn.io`         |
+| Storage (200)    | 10.200.0.0/24  | `storage.home.vwn.io`      |
+| WAN 2 uplink     | 192.168.8.0/24 | `wan-failover.home.vwn.io` |
 
 Each zone is that UniFi network's DNS domain, so DHCP clients land in it
 too. The setting lives on the gateway, not in Git; this table is the record
 of what it should be.
+
+`wan-failover` is the exception: the mobile router's own subnet, where the
+gateway is a DHCP client on its second WAN port. It is not a UniFi network
+and must not become one (the subnet would then sit on two interfaces). It
+holds one name, `router.wan-failover.home.vwn.io`.
 
 ## Rules
 
@@ -89,6 +95,17 @@ of what it should be.
   queued, each cycle, until it is fixed. Before declaring a device, check
   its UniFi client entry and clear a local DNS record of the same name.
 
+## Deliberate exceptions
+
+`udm.${DOMAIN_APP}` and `guest.unifi.${DOMAIN_APP}` are the gateway: a device
+under the public app domain, on purpose. The gateway holds its own Let's
+Encrypt certificate for `udm.vwn.app` and `*.unifi.vwn.app`, and the guest
+portal is configured with the second name. Its UI must not sit behind the
+cluster's gateway either: it is what you need when the cluster is down.
+`${DOMAIN_APP}` is published to Cloudflare, so both hosts are in
+`excludeDomains` by name. Any other device name under a published domain
+needs its own entry there, in the same commit.
+
 ## Not yet on the scheme
 
 Don't copy these; move them when the app is touched anyway.
@@ -101,12 +118,6 @@ Don't copy these; move them when the app is touched anyway.
 - `flux-webhook` and `konflate-webhook` under `${DOMAIN_IO}`: WAN-reachable,
   so they belong under `${DOMAIN_APP}`. Moving them means updating the
   webhook URL on the GitHub side.
-- `udm.${DOMAIN_APP}` and `guest.unifi.${DOMAIN_APP}`: the gateway, a device
-  under the public app domain. `${DOMAIN_APP}` isn't excluded from
-  Cloudflare, so these two hosts are, by name. A device name under a
-  published domain needs its own `excludeDomains` entry in the same commit.
-- `wan-failover.${DOMAIN_CLUSTER}` and `mobilerouter.lan.home.vwn.io`, the
-  same router: 192.168.8.1 is neither a cluster address nor on the LAN.
 - `kube-vip.home.arpa` in `kubernetes/talos/cluster.yaml.j2`.
 - `external` and `internal.${DOMAIN_PROXII}`, the gateways' own names, and
   `${DOMAIN_CASA}`, which is wired (certificate, tunnel, DNS filters) and

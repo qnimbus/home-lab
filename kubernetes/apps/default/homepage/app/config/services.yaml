@@ -56,9 +56,9 @@
             # Plain http, not https: this hostname bypasses Envoy Gateway entirely (DNS points
             # straight at the router's LAN IP — see network/external-services/wan-failover), and the
             # router only serves plain HTTP with no TLS termination in front of it.
-            href: "http://wan-failover.${DOMAIN_CLUSTER}"
+            href: "http://router.wan-failover.home.${DOMAIN_IO}"
             description: "Failover link status"
-            siteMonitor: "http://wan-failover.${DOMAIN_CLUSTER}"
+            siteMonitor: "http://router.wan-failover.home.${DOMAIN_IO}"
     - Unifi:
         - UniFi Network:
             href: https://udm.${DOMAIN_APP}/network
