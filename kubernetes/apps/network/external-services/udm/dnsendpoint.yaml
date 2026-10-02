@@ -3,14 +3,14 @@
 apiVersion: externaldns.k8s.io/v1alpha1
 kind: DNSEndpoint
 metadata:
-  name: wan-failover
+  name: udm
 spec:
   endpoints:
-    - dnsName: "wan-failover.${DOMAIN_CLUSTER}"
+    - dnsName: "udm.${DOMAIN_APP}"
       recordType: A
       targets:
-        - "${WAN_FAILOVER_HOST}"
-    - dnsName: "mobilerouter.lan.home.${DOMAIN_IO}"
+        - "10.10.0.1"
+    - dnsName: "guest.unifi.${DOMAIN_APP}"
       recordType: A
       targets:
-        - "${WAN_FAILOVER_HOST}"
+        - "192.168.1.1"

@@ -78,8 +78,10 @@ of what it should be.
   filters out (see the tunnel alias in `network/cloudflare-tunnel`).
 - **Renaming:** add the new name and keep the old one as a second record in
   the same `DNSEndpoint` until nothing uses it.
-- **On the gateway only:** the network domains above, and the nodes' names
-  (the "local DNS record" on each node's UniFi client entry). Any other
+- **On the gateway only:** the network domains above, the nodes' names (the
+  "local DNS record" on each node's UniFi client entry), and the bare alias
+  `unifi`. A single-label name can't go through external-dns: its ownership
+  record (`k8s.cname-unifi`) falls outside every domain filter. Any other
   record there that external-dns doesn't own is stale.
 - **One source per name.** The gateway refuses a record whose name a client
   entry's local DNS record already holds (`Overlaps with Device Local DNS`),
@@ -99,10 +101,12 @@ Don't copy these; move them when the app is touched anyway.
 - `flux-webhook` and `konflate-webhook` under `${DOMAIN_IO}`: WAN-reachable,
   so they belong under `${DOMAIN_APP}`. Moving them means updating the
   webhook URL on the GitHub side.
-- `udm.${DOMAIN_APP}` (homepage links to it): a device under the public app
-  domain.
-- `wan-failover.${DOMAIN_CLUSTER}`: 192.168.8.1 is neither a cluster address
-  nor on a network above.
+- `udm.${DOMAIN_APP}` and `guest.unifi.${DOMAIN_APP}`: the gateway, a device
+  under the public app domain. `${DOMAIN_APP}` isn't excluded from
+  Cloudflare, so these two hosts are, by name. A device name under a
+  published domain needs its own `excludeDomains` entry in the same commit.
+- `wan-failover.${DOMAIN_CLUSTER}` and `mobilerouter.lan.home.vwn.io`, the
+  same router: 192.168.8.1 is neither a cluster address nor on the LAN.
 - `kube-vip.home.arpa` in `kubernetes/talos/cluster.yaml.j2`.
 - `external` and `internal.${DOMAIN_PROXII}`, the gateways' own names, and
   `${DOMAIN_CASA}`, which is wired (certificate, tunnel, DNS filters) and

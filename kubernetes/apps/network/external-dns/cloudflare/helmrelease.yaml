@@ -29,6 +29,8 @@ spec:
       - "home.${DOMAIN_IO}"
       - "iot.${DOMAIN_IO}"
       - "internal.${DOMAIN_PROXII}"
+      - "udm.${DOMAIN_APP}"
+      - "guest.unifi.${DOMAIN_APP}"
     extraArgs:
       - --cloudflare-dns-records-per-page=1000
       - --cloudflare-proxied
