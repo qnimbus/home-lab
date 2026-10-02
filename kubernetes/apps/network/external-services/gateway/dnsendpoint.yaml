@@ -3,7 +3,7 @@
 apiVersion: externaldns.k8s.io/v1alpha1
 kind: DNSEndpoint
 metadata:
-  name: udm
+  name: gateway
 spec:
   endpoints:
     - dnsName: "gateway.lan.home.${DOMAIN_IO}"
