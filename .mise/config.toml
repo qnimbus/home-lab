@@ -10,7 +10,7 @@ pypi.uvx = true
 
 [plugins]
 # krew = "https://github.com/soupglasses/mise-krew"
-krew = "https://github.com/soupglasses/mise-krew#a1da38e9253d3714ebe1f3ca6c4a7a132c112147" # Temporary pin for view-secret fix: https://github.com/soupglasses/mise-krew/pull/15
+krew = "https://github.com/soupglasses/mise-krew#a1da38e9253d3714ebe1f3ca6c4a7a132c112147" # Temp pin for view-secret fix: https://github.com/soupglasses/mise-krew/pull/15
 
 [tools]
 "1password-cli" = "2.39.0"
