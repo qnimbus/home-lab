@@ -56,7 +56,11 @@ holds one name, `router.wan-failover.home.vwn.io`.
   `${DOMAIN_APPS}`, `home.${DOMAIN_IO}`, `iot.${DOMAIN_IO}`,
   `internal.${DOMAIN_PROXII}`), so a route under one gets no public record.
 - **No wildcard certificate covers a device name.** A device UI that needs
-  TLS goes behind the gateway as an app, under `${DOMAIN_CLUSTER}`.
+  TLS goes behind the gateway as an app, under `${DOMAIN_CLUSTER}`. The UDM
+  is the exception: `gateway.lan.home.vwn.io` and `portal.guest.home.vwn.io`
+  carry certificates the UDM issues itself (see
+  `kubernetes/apps/network/README.md`), because its UI has to work when the
+  cluster is down.
 - **Mounts, scrape targets and probes stay on IPs** (`${NAS_HOST}`,
   `${NAS_LAN_HOST}`). A mount by name makes storage depend on the gateway's
   DNS. Names are for people and for tooling outside the cluster.
@@ -84,31 +88,23 @@ holds one name, `router.wan-failover.home.vwn.io`.
   filters out (see the tunnel alias in `network/cloudflare-tunnel`).
 - **Renaming:** add the new name and keep the old one as a second record in
   the same `DNSEndpoint` until nothing uses it.
-- **On the gateway only:** the network domains above, the nodes' names (the
-  "local DNS record" on each node's UniFi client entry), and the bare alias
-  `unifi`. A single-label name can't go through external-dns: its ownership
-  record (`k8s.cname-unifi`) falls outside every domain filter. Any other
-  record there that external-dns doesn't own is stale.
+- **On the gateway only:** the network domains above, and the nodes' names
+  (the "local DNS record" on each node's UniFi client entry). Any other
+  record there that external-dns doesn't own is stale. A single-label name
+  can't go through external-dns at all: its ownership record
+  (`k8s.cname-<name>`) falls outside every domain filter.
 - **One source per name.** The gateway refuses a record whose name a client
   entry's local DNS record already holds (`Overlaps with Device Local DNS`),
   and that one failure stops every other change external-dns-unifi has
   queued, each cycle, until it is fixed. Before declaring a device, check
   its UniFi client entry and clear a local DNS record of the same name.
 
-## Deliberate exceptions
-
-`udm.${DOMAIN_APP}` and `guest.unifi.${DOMAIN_APP}` are the gateway: a device
-under the public app domain, on purpose. The gateway holds its own Let's
-Encrypt certificate for `udm.vwn.app` and `*.unifi.vwn.app`, and the guest
-portal is configured with the second name. Its UI must not sit behind the
-cluster's gateway either: it is what you need when the cluster is down.
-`${DOMAIN_APP}` is published to Cloudflare, so both hosts are in
-`excludeDomains` by name. Any other device name under a published domain
-needs its own entry there, in the same commit.
-
 ## Not yet on the scheme
 
 Don't copy these; move them when the app is touched anyway.
+
+- `portal.guest.home.vwn.io` points at 192.168.1.1, the gateway's address on
+  the Default network, not on the guest network its zone names.
 
 - `printer` (as `canon`) and `smtp-relay` still answer on their old
   `iot.${DOMAIN_IO}` names as a second record. For `smtp-relay`, drop it

@@ -14,11 +14,3 @@ spec:
       recordType: A
       targets:
         - "192.168.1.1"
-    - dnsName: "udm.${DOMAIN_APP}"
-      recordType: A
-      targets:
-        - "10.10.0.1"
-    - dnsName: "guest.unifi.${DOMAIN_APP}"
-      recordType: A
-      targets:
-        - "192.168.1.1"
