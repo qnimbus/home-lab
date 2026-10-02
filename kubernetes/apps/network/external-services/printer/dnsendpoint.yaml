@@ -3,10 +3,10 @@
 apiVersion: externaldns.k8s.io/v1alpha1
 kind: DNSEndpoint
 metadata:
-  name: canon
+  name: printer
 spec:
   endpoints:
-    - dnsName: "canon.iot.home.${DOMAIN_IO}"
+    - dnsName: "printer.iot.home.${DOMAIN_IO}"
       recordType: A
       targets:
         - "${PRINTER_IOT_HOST}"

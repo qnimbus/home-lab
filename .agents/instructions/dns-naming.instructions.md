@@ -81,15 +81,19 @@ of what it should be.
 - **On the gateway only:** the network domains above, and the nodes' names
   (the "local DNS record" on each node's UniFi client entry). Any other
   record there that external-dns doesn't own is stale.
+- **One source per name.** The gateway refuses a record whose name a client
+  entry's local DNS record already holds (`Overlaps with Device Local DNS`),
+  and that one failure stops every other change external-dns-unifi has
+  queued, each cycle, until it is fixed. Before declaring a device, check
+  its UniFi client entry and clear a local DNS record of the same name.
 
 ## Not yet on the scheme
 
 Don't copy these; move them when the app is touched anyway.
 
-- `canon`, `gw-adam`, `gw-anna` and `smtp-relay` still answer on their old
-  `iot.${DOMAIN_IO}` names as a second record. For `smtp-relay`, drop it
-  once the printer is reconfigured.
-- `canon` is a product name; the role is `printer`.
+- `printer` (as `canon`), `gw-adam`, `gw-anna` and `smtp-relay` still answer
+  on their old `iot.${DOMAIN_IO}` names as a second record. For
+  `smtp-relay`, drop it once the printer is reconfigured.
 - `plex.${DOMAIN_APPS}`: a VLAN 60 LoadBalancer outside `${DOMAIN_CLUSTER}`,
   and the only name `${DOMAIN_APPS}` carries.
 - `flux-webhook` and `konflate-webhook` under `${DOMAIN_IO}`: WAN-reachable,
@@ -99,8 +103,7 @@ Don't copy these; move them when the app is touched anyway.
   domain.
 - `wan-failover.${DOMAIN_CLUSTER}`: 192.168.8.1 is neither a cluster address
   nor on a network above.
-- `kube-vip.home.arpa` in `kubernetes/talos/cluster.yaml.j2`, and the unused
-  `home.arpa` in external-dns-unifi's `domainFilters`.
+- `kube-vip.home.arpa` in `kubernetes/talos/cluster.yaml.j2`.
 - `external` and `internal.${DOMAIN_PROXII}`, the gateways' own names, and
   `${DOMAIN_CASA}`, which is wired (certificate, tunnel, DNS filters) and
   unused: neither domain has a pattern.
