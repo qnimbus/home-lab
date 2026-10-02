@@ -3,11 +3,14 @@
 Which domain a new hostname goes under. Three patterns, by what the name
 points at:
 
-| Points at                          | Pattern                        | Example                   |
-| ---------------------------------- | ------------------------------ | ------------------------- |
-| A device, or one of its interfaces | `<host>.<network>.home.vwn.io` | `nas.storage.home.vwn.io` |
-| A cluster app or service, LAN-only | `<app>.${DOMAIN_CLUSTER}`      | `grafana.cluster.vwn.io`  |
-| A cluster app, reachable from WAN  | `<app>.${DOMAIN_APP}`          | `konflate.vwn.app`        |
+| Points at                                           | Pattern                        | Example                   |
+| --------------------------------------------------- | ------------------------------ | ------------------------- |
+| A device, or one of its interfaces                  | `<host>.<network>.home.vwn.io` | `nas.storage.home.vwn.io` |
+| What the cluster serves on its own network, VLAN 60 | `<app>.${DOMAIN_CLUSTER}`      | `grafana.cluster.vwn.io`  |
+| A cluster app, reachable from WAN                   | `<app>.${DOMAIN_APP}`          | `konflate.vwn.app`        |
+
+A cluster service's address on any other network takes the device pattern
+(see [Apps and services](#apps-and-services-domain_cluster-and-domain_app)).
 
 ## Devices: `<host>.<network>.home.vwn.io`
 
@@ -43,9 +46,9 @@ static records:
   TLS goes behind the gateway as an app (`external-services`), under the app
   pattern.
 
-Cluster nodes are devices: `talos-cp-01.k8s.home.vwn.io`. `cluster.vwn.io`
-is for what the cluster serves, not for the machines on VLAN 60, so a host
-registering a name there can't shadow an app.
+Cluster nodes are devices: `talos-cp-01.k8s.home.vwn.io`. `k8s.home.vwn.io`
+is for the machines on VLAN 60 and `cluster.vwn.io` for what the cluster
+serves from it, so a host registering a name can't shadow an app.
 
 ### Where a device record lives
 
@@ -65,17 +68,35 @@ registering a name there can't shadow an app.
 
 ## Apps and services: `${DOMAIN_CLUSTER}` and `${DOMAIN_APP}`
 
-- LAN-only HTTPRoutes and LoadBalancer Services go under
-  `${DOMAIN_CLUSTER}`.
-- Anything reachable from the WAN goes under `${DOMAIN_APP}`. Not
-  `${DOMAIN_CLUSTER}`: it sits two levels under `vwn.io` and Cloudflare's
-  Universal SSL covers one (see `kubernetes/apps/network/README.md`).
-- A Service with an address on a device network (the IOT-side
-  `smtp-relay` VIP) is named for that network, as a device would be. Its
-  `DNSEndpoint` lives with the app, in the app's namespace, not under
+What the cluster serves is named by where its address is, not by the app:
+
+| The name points at                                   | Zone                    | Example                      |
+| ---------------------------------------------------- | ----------------------- | ---------------------------- |
+| An HTTPRoute on `envoy-internal`                     | `${DOMAIN_CLUSTER}`     | `grafana.cluster.vwn.io`     |
+| A LoadBalancer address on VLAN 60 (10.60.0.0/24)     | `${DOMAIN_CLUSTER}`     | `smtp-relay.cluster.vwn.io`  |
+| A LoadBalancer address on any other network          | `<network>.home.vwn.io` | `smtp-relay.iot.home.vwn.io` |
+| An HTTPRoute on `envoy-external`, reachable from WAN | `${DOMAIN_APP}`         | `konflate.vwn.app`           |
+
+- VLAN 60 carries two zones, split by what answers. A machine on it (a
+  node) is a device: `k8s.home.vwn.io`. An address the cluster hands out
+  from it (a gateway, a LoadBalancer Service) is a service:
+  `${DOMAIN_CLUSTER}`. So `10.60.0.240` is `smtp-relay.cluster.vwn.io`, never
+  `smtp-relay.k8s.home.vwn.io`.
+- A Service with addresses on two networks gets one name per address, as a
+  multi-homed host does. `smtp-relay` holds `10.60.0.240` and, for the
+  printer, `10.30.0.240` on the IOT network.
+- The VLAN 60 name comes from the Service's own
+  `external-dns.kubernetes.io/hostname` annotation. A name for an address on
+  another network can't: every hostname on a Service is published against
+  every one of its addresses, and `target` pins them all to one. It is a
+  `DNSEndpoint` next to the app, in the app's namespace, not under
   `external-services`: the record belongs to the Service and goes when the
-  app does. The app's Kustomization takes the same two `dependsOn` entries,
-  with `namespace: network`.
+  app does. The app's Kustomization takes the same two `dependsOn` entries
+  as a device's, with `namespace: network`.
+- Nothing reachable from the WAN goes under `${DOMAIN_CLUSTER}`: it sits two
+  levels under `vwn.io` and Cloudflare's Universal SSL covers one (see
+  `kubernetes/apps/network/README.md`). external-dns-cloudflare excludes the
+  zone, so such a route would get no public record at all.
 
 ## Mounts and probes stay on IPs
 
