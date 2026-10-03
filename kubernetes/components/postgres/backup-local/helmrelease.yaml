@@ -81,7 +81,7 @@ spec:
     persistence:
       backups:
         type: nfs
-        path: /mnt/tank/Cluster/backup
+        path: /mnt/tank/Cluster/backup/apps/postgres-local
         server: "${NAS_HOST}"
         globalMounts:
           - path: /backups
