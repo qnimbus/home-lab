@@ -11,4 +11,4 @@ spec:
   interval: 1h
   valuesFrom:
     - kind: ConfigMap
-      name: onepassword-connect-helm-values
+      name: onepassword-connect-values

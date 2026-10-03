@@ -7,7 +7,7 @@
     - Storage:
         - TrueNAS:
             icon: "mdi-nas"
-            href: "https://truenas.${DOMAIN_CLUSTER}"
+            href: "https://nas.lan.home.vwn.io"
             description: "NAS storage & NFS/iSCSI targets"
             # Plain HTTP straight to the NAS, not the https:// href above: TrueNAS's UI answers a
             # plain-HTTP request with an absolute http:// redirect, and homepage's server-side fetch
@@ -15,7 +15,7 @@
             # href, so only siteMonitor needs routing around it. Direct to the host rather than an
             # in-cluster Service because there no longer is one: the route now uses an Envoy Gateway
             # Backend (network/external-services/truenas/backend.yaml), which has no ClusterIP.
-            siteMonitor: "http://${NAS_LAN_HOST}:8080"
+            siteMonitor: "http://nas.lan.home.vwn.io:8080"
 - Home Automation:
     - ColA:
         - Home Assistant:

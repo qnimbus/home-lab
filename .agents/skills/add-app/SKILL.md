@@ -117,7 +117,7 @@ resources:
 
 ```yaml
 configMapGenerator:
-  - name: <app>-configmap
+  - name: <app>-config
     files:
       - config.yaml=./resources/config.yaml
 generatorOptions:
@@ -125,6 +125,8 @@ generatorOptions:
   annotations:
     kustomize.toolkit.fluxcd.io/substitute: disabled
 ```
+
+Name a generated ConfigMap that holds app config `<app>-config` (not `-configmap`); one that holds Helm values for `valuesFrom` is `<app>-values`. Only the `-values` kind gets the `reconcile.fluxcd.io/watch: "Enabled"` label: helm-controller reacts to it for ConfigMaps a HelmRelease references in `valuesFrom`, and ignores it on a mounted one, where Reloader does the restart.
 
 ### app/ocirepository.yaml
 
@@ -239,7 +241,7 @@ Config file mount (pairs with configMapGenerator):
 persistence:
   config:
     type: configMap
-    name: <app>-configmap
+    name: <app>-config
     globalMounts:
       - path: /config/config.yaml
         subPath: config.yaml

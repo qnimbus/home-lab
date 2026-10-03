@@ -22,6 +22,8 @@ Whenever asked to sort these files, follow these instructions:
 
 - Any `resources` block (container resources in a manifest, chart values, a CRD's `resources` field such as kopiur's `moverDefaults`): `requests` before `limits`.
 
+- An ExternalSecret's `spec.data` entries: `secretKey` before `remoteRef`. A `PushSecret`'s `spec.data[].match` mirrors that order (`secretKey`, then `remoteRef`), so the two read the same way.
+
 - An `OCIRepository`'s `spec.verify`: `provider` before `matchOIDCIdentity`.
 
 - A Flux `Kustomization`'s `spec` (`ks.yaml`): `targetNamespace` first, then the rest alphabetically, then `healthChecks` and `healthCheckExprs` last, in that order. The health checks say when the rest counts as ready, so they close the spec, with the expressions that refine them directly after.
