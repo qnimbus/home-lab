@@ -16,7 +16,8 @@ spec:
   mover:
     cache:
       # Kopia's local metadata cache kept off replicated storage — local-disk only.
-      capacity: "${KOPIUR_CACHE_CAPACITY:=${KOPIUR_CAPACITY:=5Gi}}"
+      # Sized on its own, not after the volume: see the README.
+      capacity: "${KOPIUR_CACHE_CAPACITY:=5Gi}"
       mode: Persistent
       storageClassName: "${KOPIUR_CACHE_STORAGECLASS:=openebs-hostpath}"
     securityContext:

@@ -79,7 +79,7 @@ spec:
 
 Do not add `commonMetadata` or `timeout` — both were dropped as boilerplate; the app-template chart sets `app.kubernetes.io/*` labels on the workloads, and `timeout` falls back to the Flux default.
 
-**If the app has persistence**, add these to `spec` (components use `${APP}` and `${KOPIUR_*}` substitutions — see `kubernetes/components/kopiur/backup/` for all knobs and their defaults):
+**If the app has persistence**, add these to `spec` (components use `${APP}` and `${KOPIUR_*}` substitutions — see `kubernetes/components/kopiur/README.md` for all knobs and their defaults):
 
 ```yaml
 components:
