@@ -109,12 +109,10 @@ Don't copy these; move them when the app is touched anyway.
 - `printer` (as `canon`) and `smtp-relay` still answer on their old
   `iot.${DOMAIN_IO}` names as a second record. For `smtp-relay`, drop it
   once the printer is reconfigured.
-- `plex.${DOMAIN_APPS}`: a VLAN 60 LoadBalancer outside `${DOMAIN_CLUSTER}`,
-  and the only name `${DOMAIN_APPS}` carries.
 - `flux-webhook` and `konflate-webhook` under `${DOMAIN_IO}`: WAN-reachable,
   so they belong under `${DOMAIN_APP}`. Moving them means updating the
   webhook URL on the GitHub side.
 - `kube-vip.home.arpa` in `kubernetes/talos/cluster.yaml.j2`.
 - `external` and `internal.${DOMAIN_PROXII}`, the gateways' own names, and
-  `${DOMAIN_CASA}`, which is wired (certificate, tunnel, DNS filters) and
-  unused: neither domain has a pattern.
+  `${DOMAIN_CASA}` and `${DOMAIN_APPS}`, which are wired (certificate,
+  tunnel, DNS filters) and unused: none of these domains has a pattern.
