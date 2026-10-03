@@ -41,7 +41,7 @@ spec:
     # `osd require-osd-release tentacle` itself once every OSD reports 20.x.
     cephImage:
       repository: quay.io/ceph/ceph
-      tag: v20.2.4
+      tag: v21.1.1
     monitoring:
       enabled: true
       createPrometheusRules: true
