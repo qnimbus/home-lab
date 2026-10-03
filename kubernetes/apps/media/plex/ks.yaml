@@ -9,14 +9,17 @@ spec:
   components:
     - ../../../../components/gpu
     - ../../../../components/kopiur/backup
+  dependsOn:
+    - name: rook-ceph-cluster
+      namespace: rook-ceph
+    - name: intel-gpu-resource-driver
+      namespace: system
   interval: 1h
   path: ./kubernetes/apps/media/plex/app
   postBuild:
     substitute:
       APP: *app
       APP_SUBDOMAIN: *app
-      # The live cache claim, from when the cache followed KOPIUR_CAPACITY.
-      # openebs-hostpath can't resize it: see components/kopiur/README.md.
       KOPIUR_CACHE_CAPACITY: 20Gi
       KOPIUR_CAPACITY: 20Gi
   prune: true
@@ -24,13 +27,6 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    - name: rook-ceph-cluster
-      namespace: rook-ceph
-    # Provides the gpu.intel.com DeviceClass and the DRA kubelet plugin the
-    # components/gpu ResourceClaimTemplate above resolves against.
-    - name: intel-gpu-resource-driver
-      namespace: system
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease

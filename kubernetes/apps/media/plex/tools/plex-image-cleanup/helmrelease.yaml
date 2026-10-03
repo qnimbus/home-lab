@@ -11,7 +11,6 @@ spec:
   interval: 1h
   values:
     defaultPodOptions:
-      # The plex config PVC is RWO: the job has to land on the node Plex runs on.
       affinity:
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -23,9 +22,9 @@ spec:
                       - plex
               topologyKey: kubernetes.io/hostname
       securityContext:
+        runAsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
-        runAsGroup: 1000
     controllers:
       plex-image-cleanup:
         type: cronjob

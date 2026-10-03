@@ -5,26 +5,30 @@ kind: HelmRelease
 metadata:
   name: plex
 spec:
+  chartRef:
+    kind: OCIRepository
+    name: plex
   interval: 1h
-  # KEDA's nfs-scaler ScaledObject (app/scaledobject.yaml) manages replicas via its own
-  # HPA once the NAS's NFS export goes unreachable. Without this, Flux's drift detection
-  # reverts it back to the chart's desired replica count on the next reconcile/drift
-  # check, undoing scale-to-zero within the hour (same reasoning as paperless's and
-  # open-webui's helmrelease.yaml).
   driftDetection:
     ignore:
       - paths: ["/spec/replicas"]
         target:
           kind: Deployment
-  chartRef:
-    kind: OCIRepository
-    name: plex
   values:
+    defaultPodOptions:
+      resourceClaims:
+        - name: gpu
+          resourceClaimTemplateName: "${APP}-gpu"
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: "OnRootMismatch"
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
     controllers:
       plex:
         annotations:
           reloader.stakater.com/auto: "true"
-        # Required: /config is an RWO ceph-block PVC.
         strategy: Recreate
         containers:
           app:
@@ -32,27 +36,6 @@ spec:
               repository: ghcr.io/home-operations/plex
               tag: 1.43.4.10903@sha256:fdc6fe82bc7d8acd08fc0aa581fcb76722803ba5905e2537135a697347dd6149
             env:
-              TZ: "${CLUSTER_TIMEZONE}"
-              # Cluster-local Service URL: fast direct path for other in-cluster pods
-              # (a future *arr stack, say) — bypasses Envoy entirely. Plain HTTP is fine
-              # because secureConnections=Preferred (see PLEX_PREFERENCE_8) allows it;
-              # the probes and plex-image-cleanup rely on that too.
-              # Dedicated LoadBalancer IP (below) also gets a plain-HTTP candidate here,
-              # matching bykaj's own pattern — connecting via raw IP over HTTPS would hit
-              # a cert hostname mismatch (Plex's self-signed cert covers its advertised
-              # hostnames, not the bare IP), so plain HTTP sidesteps that entirely; it's
-              # LAN-only traffic so that's an acceptable tradeoff.
-              # ${LB_IP_PLEX_IOT} candidate: IOT clients (e.g. a Google TV streamer on
-              # 10.30.0.0/24) can't route to 10.60.0.0/24 at all — the UniFi gateway
-              # blocks IOT-initiated cross-VLAN traffic by design — so without this,
-              # plex.tv's "resources" list has no address an IOT device can actually
-              # reach. Confirmed 2026-08-24. See docs/QA.md.
-              # ${DOMAIN_TAILSCALE} candidate: the Tailscale Ingress below terminates its
-              # own TLS via the operator's built-in `tailscale cert` provisioning (no
-              # cert-manager involved) — HTTPS is correct here, unlike the plain-HTTP
-              # candidates above.
-              # ${DOMAIN_APP} candidate: the WAN path, through the Cloudflare Tunnel
-              # and envoy-external (the plex-public route in httproute.yaml).
               PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_APP}:443,https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://${LB_IP_PLEX_IOT}:32400,https://${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}:443,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
               PLEX_NO_AUTH_NETWORKS: "${LAN_CIDR},${POD_CIDR},${SERVICE_CIDR},${TAILSCALE_CIDR}"
               PLEX_PREFERENCE_1: "AllowMediaDeletion=0"
@@ -63,22 +46,22 @@ spec:
               PLEX_PREFERENCE_6: "RelayEnabled=0"
               PLEX_PREFERENCE_7: "sendCrashReports=0"
               PLEX_PREFERENCE_8: "secureConnections=1"
+              TZ: "${CLUSTER_TIMEZONE}"
             envFrom:
               - secretRef:
                   name: plex-secret
             probes:
-              # /identity is Plex's unauthenticated health/discovery endpoint.
               liveness: &probes
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 3
                   httpGet:
                     path: /identity
                     port: &port 32400
                   initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 1
-                  failureThreshold: 3
               readiness: *probes
               startup:
                 enabled: true
@@ -95,44 +78,14 @@ spec:
                 memory: 8Gi
             securityContext:
               allowPrivilegeEscalation: false
-              # Everything Plex writes lands on /config or the scratch emptyDir below.
               readOnlyRootFilesystem: true
               capabilities:
                 drop: ["ALL"]
-    defaultPodOptions:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
-        fsGroupChangePolicy: "OnRootMismatch"
-      # DRA resolves scheduling directly against real device inventory (no manual
-      # node label needed) — cp-01 (AMD Ryzen, no Intel iGPU) is naturally excluded
-      # since it advertises no gpu.intel.com device.
-      resourceClaims:
-        - name: gpu
-          resourceClaimTemplateName: "${APP}-gpu"
-    # Tailscale Ingress — gives the user's own tailnet devices a stable HTTPS hostname
-    # (${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}) without depending on the mgmt-LAN
-    # subnet route at all. Complements, doesn't replace, the LoadBalancer IPs above:
-    # this works even for a tailnet device with no LAN/IOT reachability whatsoever
-    # (e.g. off-network). No extra tailscale-operator config was needed — the `tailscale`
-    # IngressClass has existed since the operator was first deployed (confirmed live via
-    # `kubectl get ingressclass`, 2026-08-24); an earlier assumption here that Ingress
-    # mode required separate operator setup was wrong. TLS is provisioned automatically
-    # by the operator via Tailscale's own `tailscale cert` (Let's Encrypt through
-    # Tailscale, not cert-manager) — requires "HTTPS Certificates" to be enabled for
-    # this tailnet in the Tailscale admin console; verify there if the Ingress never
-    # reaches Ready.
     ingress:
       ts:
-        className: tailscale
-        # Scopes this proxy's tailnet ACL grants to Plex specifically, instead of the
-        # operator's cluster-wide default (tag:k8s — shared with every other operator-
-        # managed proxy, e.g. the subnet router). Tags don't retag an already-exposed
-        # proxy in place — recreating the StatefulSet is required after this lands.
         annotations:
           tailscale.com/tags: "tag:plex"
+        className: tailscale
         hosts:
           - host: &host ${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}
             paths:
@@ -143,48 +96,17 @@ spec:
         tls:
           - hosts:
               - *host
-    service:
-      app:
-        controller: plex
-        type: LoadBalancer
-        annotations:
-          # Pin both LB IPs explicitly: mgmt (default pool) and IOT (pool-iot-plex,
-          # serviceSelector-scoped to this Service) — see docs/QA.md. Neither has a
-          # DNS name: Plex clients get both from PLEX_ADVERTISE_URL/plex.tv.
-          lbipam.cilium.io/ips: "${LB_IP_PLEX},${LB_IP_PLEX_IOT}"
-        # Deliberately NOT externalTrafficPolicy: Local. Cilium's L2 announcement is
-        # documented as incompatible with it (cilium/cilium#27800, upstream docs):
-        # leader election for the announcing node is unaware of endpoint placement, so
-        # the node that wins ARP for LB_IP_PLEX can easily differ from whichever of the
-        # 4 GPU-labeled nodes Plex's pod actually lands on — confirmed live 2026-08-24
-        # (lease holder was talos-worker-02, pod was on talos-cp-02: every external
-        # connection got refused, since a Local-policy node with no local endpoint
-        # correctly declines rather than forwarding). Cluster (the default, so this
-        # field is just omitted) always routes to a healthy backend regardless of which
-        # node receives the traffic, at the cost of not preserving the real client IP —
-        # a trade worth making here, since that IP-preservation benefit was unconfirmed
-        # to even fix Plex's own LAN/WAN connection labeling in the first place (see
-        # docs/QA.md → Media, the interface-adjacency finding).
-        ports:
-          http:
-            port: *port
     persistence:
       config:
         existingClaim: "${KOPIUR_CLAIM:=${APP}}"
         globalMounts:
           - path: /config
-      # Native in-tree NFS volume (no PVC/StorageClass) — deliberately not the dynamic nfs
-      # StorageClass, which provisions/deletes a per-PVC subdirectory and would be wrong
-      # for a persistent, hand-managed media library.
       media:
         type: nfs
-        server: "${NAS_HOST}"
         path: /mnt/tank/Media
+        server: "${NAS_HOST}"
         globalMounts:
           - path: /mnt/media
-      # Plex's own scheduled database backups (ButlerDatabaseBackupPath), kept off
-      # the cluster. The export squashes every client to kubernetes (3001), which owns
-      # the folder.
       backups:
         type: nfs
         path: /mnt/tank/Cluster/backup
@@ -192,9 +114,6 @@ spec:
         globalMounts:
           - path: /mnt/backups
             subPath: apps/plex
-      # Bounded scratch space for transcode segments, logs and /tmp — disk-backed rather
-      # than tmpfs since the smallest worker nodes have only 32GB RAM shared with other
-      # workloads, and node disks are already NVMe.
       scratch:
         type: emptyDir
         sizeLimit: 20Gi
@@ -207,3 +126,12 @@ spec:
                 subPath: transcode
               - path: /tmp
                 subPath: tmp
+    service:
+      app:
+        type: LoadBalancer
+        annotations:
+          lbipam.cilium.io/ips: "${LB_IP_PLEX},${LB_IP_PLEX_IOT}"
+        controller: plex
+        ports:
+          http:
+            port: *port

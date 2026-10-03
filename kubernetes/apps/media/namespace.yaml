@@ -7,6 +7,4 @@ metadata:
   annotations:
     kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
-    # Required for the components/gpu ResourceClaimTemplate's adminAccess:
-    # true (plex's DRA GPU claim) to be admitted in this namespace.
     resource.kubernetes.io/admin-access: "true"
