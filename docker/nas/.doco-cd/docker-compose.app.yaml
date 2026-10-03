@@ -12,7 +12,7 @@ secrets:
 services:
   app:
     container_name: doco-cd
-    image: ghcr.io/kimdre/doco-cd:0.115.0
+    image: ghcr.io/kimdre/doco-cd:0.123.0
     restart: unless-stopped
     # Only talks to the Docker API over the bind-mounted socket; the daemon (not
     # this container) performs privileged operations, so it needs no capabilities.
