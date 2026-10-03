@@ -153,6 +153,7 @@ CODES = _codes(
 # Context codes: informational, never escalate. They can decide which checks run.
 CONTEXT_CODES = {
     "ctx.version_boundary": "Crosses a major or 0.x minor version boundary",
+    "ctx.release_notes_unlisted": "A package named like a GitHub repo that REPO_PACKAGES doesn't list, so its releases weren't looked up",
     "ctx.crd_touched": "Touches CustomResourceDefinitions",
     "ctx.base_overlap": "Files also changed on the base branch",
     "ctx.large_changeset": "Large changeset",

@@ -187,7 +187,7 @@ class TestReleaseNoteSources(unittest.TestCase):
                "([source](https://redirect.github.com/cloudnative-pg/charts)) | minor | `0.28.2` → `0.29.1` |")  # fmt: skip
         notes = p.gather_release_notes(renovate_meta(row), get=one_page(*releases))
         self.assertEqual(notes["source"], "github")
-        self.assertNotIn("back to", notes["reason"])  # saw 0.28.2, so the range is complete
+        self.assertFalse(notes["partial"])  # saw 0.28.2, so the range is complete
         self.assertEqual([s["version"] for s in notes["sections"]], ["cloudnative-pg-v0.28.3", "cloudnative-pg-v0.29.0", "cloudnative-pg-v0.29.1"])
 
     def test_chart_ignores_app_tags(self):
@@ -229,18 +229,24 @@ class TestReleaseNoteSources(unittest.TestCase):
                                   "coredns/coredns)) | patch | `1.48.1` → `1.48.2` |")  # fmt: skip
         releases = {"/repos/coredns/helm/releases": [[{"tag_name": "coredns-1.48.2", "body": "feat: add optional autoscaler replicas"},
                                                       {"tag_name": "coredns-1.48.1", "body": "Bump to CoreDNS 1.14.7"}]]}  # fmt: skip
-        sections, reason = p.github_release_sections(u, get=lambda path: releases.get(path, []))
+        sections, reason, partial = p.github_release_sections(u, get=lambda path: releases.get(path, []))
         self.assertEqual([s["version"] for s in sections], ["coredns-1.48.2"])
         self.assertEqual(reason, "GitHub releases of coredns/helm")
 
-    def test_unlinked_package_is_its_own_repo_when_named_like_one(self):
+    def test_unlinked_package_is_its_own_repo_when_listed(self):
         (u,) = p.renovate_updates("| Package | Update | Change |\n|---|---|---|\n| siderolabs/talos | patch | `v1.14.1` → `v1.14.2` |")
         self.assertEqual((u["package"], u["repos"], u["to"]), ("siderolabs/talos", [], "v1.14.2"))
         self.assertEqual(p.candidate_repos(u), ["siderolabs/talos"])
         releases = {"/repos/siderolabs/talos/releases": [[{"tag_name": "v1.14.2", "body": "Fixes a kubelet restart loop on upgrade"},
                                                           {"tag_name": "v1.14.1", "body": "older"}]]}  # fmt: skip
-        sections, reason = p.github_release_sections(u, get=lambda path: releases.get(path, []))
+        sections, reason, partial = p.github_release_sections(u, get=lambda path: releases.get(path, []))
         self.assertEqual(([s["version"] for s in sections], reason), (["v1.14.2"], "GitHub releases of siderolabs/talos"))
+        # a Docker Hub image is named like a repo, but its namespace is not a GitHub owner
+        (u,) = p.renovate_updates("| traefik/whoami | patch | `v1.11.0` → `v1.11.1` |")
+        self.assertEqual(p.candidate_repos(u), [])
+        notes = p.gather_release_notes(renovate_meta("| traefik/whoami | patch | `v1.11.0` → `v1.11.1` |"), get=lambda path: self.fail("looked up"))
+        self.assertEqual((notes["source"], notes["unlisted"]), ("none", ["traefik/whoami"]))
+        self.assertIn("not in REPO_PACKAGES", notes["reason"])
         # a registry path is not a repo: only the org's chart repos are guessed
         (u,) = p.renovate_updates("| ghcr.io/home-operations/charts-mirror/ceph-csi-drivers | minor | `1.0.5` → `1.1.0` |")
         self.assertEqual(p.candidate_repos(u), ["home-operations/helm-charts", "home-operations/charts", "home-operations/helm"])
@@ -254,12 +260,15 @@ class TestReleaseNoteSources(unittest.TestCase):
                 yield page
 
         u = {"package": "ghcr.io/o/charts/x", "repos": ["o/helm-charts"], "type": "minor", "from": "1.1.0", "to": "1.3.0"}
-        sections, reason = p.github_release_sections(u, get)
+        sections, reason, partial = p.github_release_sections(u, get)
         self.assertEqual([s["version"] for s in sections], ["x-1.2.0", "x-1.3.0"])
         self.assertEqual(len(seen), 2)
         u["from"] = "0.9.0"  # older than every page: the range may be incomplete, and says so
         seen.clear()
-        self.assertIn("back to x-1.0.0 only", p.github_release_sections(u, get)[1])
+        self.assertFalse(partial)  # 1.1.0 was seen: the range is complete
+        _, reason, partial = p.github_release_sections(u, get)
+        self.assertIn("back to x-1.0.0 only", reason)
+        self.assertTrue(partial)
 
     def test_image_uses_bare_tags(self):
         row = "| [ghcr.io/kashalls/external-dns-unifi-webhook](https://redirect.github.com/kashalls/external-dns-unifi-webhook) | minor | `v0.8.2` → `v0.9.0` |"

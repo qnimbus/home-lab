@@ -676,7 +676,11 @@ def substantive(text: str) -> bool:
 RENOVATE_ROW = re.compile(  # the package is a link, or plain text when Renovate has no homepage for it
     r"(?m)^\|\s*(?:\[([^\]]+)\]\(([^)]+)\)|([^\s|\[][^|]*?))(?:\s*\(\[source\]\(([^)]+)\)\))?\s*\|\s*(\w+)\s*\|\s*`([^`]+)`\s*→\s*`([^`]+)`\s*\|"
 )
-BARE_REPO = re.compile(r"^[\w-]+/[\w.-]+$")  # owner/repo: no registry host (those have a dot) and no deeper path
+# Packages Renovate names by their GitHub repo and links nothing for (`depName=` in a
+# `# renovate:` comment). Listed, not matched by shape: a Docker Hub image (`traefik/whoami`,
+# `fireflyiii/core`) looks the same, and its namespace is not a GitHub owner.
+REPO_PACKAGES = {"siderolabs/talos", "fluxcd/flux2"}
+BARE_REPO = re.compile(r"^[\w-]+/[\w.-]+$")  # the shape only: an unlisted one is reported, not looked up
 GITHUB_REPO = re.compile(r"^https://(?:redirect\.)?github\.com/([\w.-]+/[\w.-]+?)(?:\.git)?/?(?:[#?].*)?$")
 TAG_VERSION = re.compile(r"(.*?)(v?\d+(?:\.\d+)+)")
 
@@ -721,9 +725,9 @@ def candidate_repos(update: dict) -> list[str]:
     Renovate often links the app's repo for a chart (prometheus-community's charts link
     smartctl_exporter, not helm-charts). A wrong guess costs a lookup, never wrong notes:
     tag_version() only accepts tags that name the chart. A package Renovate links nothing for
-    is its own repo when it is named like one (`siderolabs/talos`)."""
+    is its own repo when REPO_PACKAGES lists it (`siderolabs/talos`)."""
     repos = list(update["repos"])
-    if not repos and BARE_REPO.match(update["package"]):
+    if not repos and update["package"] in REPO_PACKAGES:
         repos.append(update["package"])
     m = re.match(r"^[^/]+/([\w.-]+)/(?:charts|helm-charts|charts-mirror)/", update["package"])
     if m and is_chart(update["package"]):
@@ -731,16 +735,18 @@ def candidate_repos(update: dict) -> list[str]:
     return list(dict.fromkeys(repos))
 
 
-def github_release_sections(update: dict, get=None) -> tuple[list[dict], str]:
+def github_release_sections(update: dict, get=None) -> tuple[list[dict], str, bool]:
     """Releases in (from, to] from the first candidate repo that has a matching release for
-    `to`, oldest first, with the reason when none qualify."""
+    `to`, oldest first, with the reason when none qualify. The third value is whether the range
+    is incomplete: the listing ended (or hit the page limit) before a release at or below
+    `from` was seen, so versions right after the running one may be missing."""
     get = get or github_pages
     lo, hi = vkey(update["from"]), vkey(update["to"])
     if not (lo and hi) or lo >= hi:
-        return [], f"{update['from']} → {update['to']} isn't a version range"
+        return [], f"{update['from']} → {update['to']} isn't a version range", False
     repos = candidate_repos(update)
     if not repos:
-        return [], "no GitHub repo to look in"
+        return [], "no GitHub repo to look in", False
     for repo in repos:
         found, reached_from = [], False
         for page in get(f"/repos/{repo}/releases"):
@@ -759,12 +765,12 @@ def github_release_sections(update: dict, get=None) -> tuple[list[dict], str]:
         sections = [s for _, s in sorted(found, key=lambda x: x[0])]
         bodies = {s["text"].split("\n", 2)[-1] for s in sections}
         if len(sections) > 1 and len(bodies) == 1:
-            return [], f"{repo}'s releases repeat one text, not a changelog"
+            return [], f"{repo}'s releases repeat one text, not a changelog", False
         if not any(substantive(s["text"]) for s in sections):
-            return [], f"{repo}'s releases only point elsewhere"
+            return [], f"{repo}'s releases only point elsewhere", False
         partial = "" if reached_from else f", back to {sections[0]['version']} only"
-        return sections, f"GitHub releases of {repo}{partial}"
-    return [], "no release tagged for this package in " + ", ".join(repos)
+        return sections, f"GitHub releases of {repo}{partial}", not reached_from
+    return [], "no release tagged for this package in " + ", ".join(repos), False
 
 
 def github_pages(path: str, pages: int = 10):
@@ -809,8 +815,11 @@ def trusted_section(section: dict, updates: list[dict]) -> bool:
 
 
 def gather_release_notes(meta: dict, get=None) -> dict:
-    """{source: renovate | github | none, sections (oldest first), reason}. Renovate's notes win
-    when a version has substance; otherwise each updated package's GitHub releases are tried."""
+    """{source: renovate | github | none, sections (oldest first), reason, unlisted}. Renovate's
+    notes win when a version has substance; otherwise each updated package's GitHub releases are
+    tried. `partial`: some package's fetched releases don't reach back to its `from` version
+    (see github_release_sections). `unlisted`: packages without notes that are named like a GitHub repo, link nothing and
+    aren't in REPO_PACKAGES, so nobody looked (ctx.release_notes_unlisted says what to do)."""
     if meta.get("author_kind") != "renovate":
         return {"source": "none", "sections": [], "reason": "not a Renovate PR"}
     updates = renovate_updates(meta.get("body") or "")
@@ -822,14 +831,18 @@ def gather_release_notes(meta: dict, get=None) -> dict:
         why = "Renovate's notes are the app's releases, not the chart's"
     else:
         why = "Renovate's notes only point elsewhere" if sections else "Renovate found no release notes"
-    fetched, reasons = [], []
+    fetched, reasons, unlisted, partial = [], [], [], False
     for update in updates:
-        got, reason = github_release_sections(update, get)
+        got, reason, short = github_release_sections(update, get)
         fetched += got
+        partial |= short
+        if not got and not candidate_repos(update) and BARE_REPO.match(update["package"]):
+            unlisted.append(update["package"])
+            reason += " (named like a repo, not in REPO_PACKAGES)"
         reasons.append(f"{update['package'].rsplit('/', 1)[-1]}: {reason}")
     if fetched:
-        return {"source": "github", "sections": fetched, "reason": f"{why}; " + "; ".join(reasons)}
-    return {"source": "none", "sections": [], "reason": f"{why}; " + ("; ".join(reasons) or "no update table")}
+        return {"source": "github", "sections": fetched, "reason": f"{why}; " + "; ".join(reasons), "unlisted": unlisted, "partial": partial}
+    return {"source": "none", "sections": [], "reason": f"{why}; " + ("; ".join(reasons) or "no update table"), "unlisted": unlisted}
 
 
 def budget_notes(sections: list[dict], total: int, per_version: int) -> tuple[str, bool]:
@@ -1051,12 +1064,17 @@ def classify(d: Path, *, key: str | None, model: str, fixture: dict | None = Non
     jev = {"model": None, "usage": {}, "errors": {}, "answers": {}, "asked": {n: sorted(qs) for n, (_, qs) in jobs.items()}}
     # For the comment: each question as worded for this PR (breaking_notes is about `description`
     # when there are no notes) and the size of each input field. The full payload is `requests`.
+    # A call that failed (no key, Jev down) answered nothing: it isn't listed as sent, and its
+    # payload in `requests` carries the error instead.
+    failed = {n: err for n, (_, _, err) in results.items() if err}
     jev["sent"] = {
         n: {"fields": {k: chars(v) for k, v in sent.get(n, {}).items()}, "questions": {q: spec["instructions"]["question"] for q, spec in qs.items()}}
         for n, (_, qs) in jobs.items()
+        if n not in failed
     }
     if requests is not None:
-        requests.update({n: {"model": model, "state": sent.get(n), "questions": qs} for n, (_, qs) in jobs.items()})
+        requests.update({n: {"model": model, "state": sent.get(n), "questions": qs, **({"error": failed[n]} if n in failed else {})}
+                         for n, (_, qs) in jobs.items()})  # fmt: skip
     for name, (resp, cut, err) in results.items():
         call = jobs[name][0]
         if err:
@@ -1102,7 +1120,7 @@ def classify(d: Path, *, key: str | None, model: str, fixture: dict | None = Non
         "konflate": kinfo,
         "jev": jev,
         "release_notes": {"source": notes["source"], "versions": [s["version"] for s in notes["sections"]], "reason": notes["reason"],
-                          "sent": (sent.get("raw") or {}).get("release_notes", "")},  # fmt: skip
+                          "sent": "" if "raw" in failed else (sent.get("raw") or {}).get("release_notes", "")},  # fmt: skip
         "thresholds": THRESHOLDS,
         "seconds": round(time.monotonic() - t0, 2),
         # v1 names, kept while backtest CSVs and dashboards from before v2 are compared.
@@ -1230,7 +1248,8 @@ def cmd_classify(a) -> None:
         result["run_url"] = "{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}".format(**os.environ)
     comment = render_comment(result)
     (d / "result.json").write_text(json.dumps(result, indent=2))
-    (d / "jev_request.json").write_text(json.dumps(requests, indent=2, ensure_ascii=False))
+    if fixture is None:  # a replay sends nothing: the run's own record of what was sent stays
+        (d / "jev_request.json").write_text(json.dumps(requests, indent=2, ensure_ascii=False))
     (d / "comment.md").write_text(comment)
     if a.dry_run:
         print(comment)

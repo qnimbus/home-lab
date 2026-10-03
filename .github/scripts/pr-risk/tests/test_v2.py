@@ -215,7 +215,8 @@ class TestReview(Assertions):
         self.verdict(r, "review", rule="R3")
         self.assertEqual(codes(r), {"ev.release_notes_missing"})
         self.assertEqual(r["surfaces"][0]["evidence"]["release_notes"], "limited")
-        self.assertEqual(r["jev"]["asked"], {"raw": ["breaking_notes", "description_matches", "manipulation_attempt"]})
+        # no notes on a Renovate PR: breaking_notes has nothing to read, so it isn't asked (#202)
+        self.assertEqual(r["jev"]["asked"], {"raw": ["description_matches", "manipulation_attempt"]})
 
     def test_breaking_change_elsewhere(self):
         body = RENOVATE_NOTES.format(notes="- BREAKING: `other.setting` was removed")
@@ -273,7 +274,18 @@ class TestReview(Assertions):
                  "reason": "Renovate found no release notes; foo: GitHub releases of foo/foo, back to v1.5.0 only"}  # fmt: skip
         r = Scenario(DIGEST_BUMP, title="feat(container)!: update foo (1.0 ➔ 2.0)", labels=["type/major"], author="renovate", notes=notes).run()
         self.verdict(r, "review")
+        self.assertIn("ev.release_notes_partial", codes(r))  # a bundle from before `partial`: the phrase
+        r = Scenario(DIGEST_BUMP, title="feat(container)!: update foo (1.0 ➔ 2.0)", labels=["type/major"], author="renovate",
+                     notes={**notes, "reason": "r", "partial": True}).run()  # fmt: skip
         self.assertIn("ev.release_notes_partial", codes(r))
+
+    def test_complete_notes_after_pointer_only_ones_are_not_partial(self):
+        # "only" in the reason is about Renovate's notes, not about the range the lookup covered
+        notes = {"source": "github", "sections": [{"version": "v2.0.0", "text": "### v2.0.0\n\n- feat: add a new thing"}], "partial": False,
+                 "reason": "Renovate's notes only point elsewhere; foo: GitHub releases of foo/foo"}  # fmt: skip
+        r = Scenario(DIGEST_BUMP, title="feat(container)!: update foo (1.0 ➔ 2.0)", labels=["type/major"], author="renovate", notes=notes).run()
+        self.verdict(r, "safe")
+        self.assertNotIn("ev.release_notes_partial", codes(r))
 
 
 # ── Risky ────────────────────────────────────────────────────────────────────────────────────
@@ -978,11 +990,33 @@ class TestRegistryAndSchema(unittest.TestCase):
         self.assertRegex(md, r"Jev `raw` input, in characters: .*`release_notes` \d+")
         self.assertIn("````text\n### foo-1.1.0", md)  # fenced past the notes' own ``` so @someone isn't pinged
         self.assertIn("`jev_request.json` in the `pr-risk-999` artifact of [this run](https://github.com/o/r/actions/runs/1)", md)
-        # without notes the same question is about the description, and the comment says so
-        md = p.render_comment(Scenario(DIGEST_BUMP, author="renovate", notes={"source": "none", "sections": [], "reason": "nothing found"}).run())
+        # without notes a Renovate PR isn't asked: its description is only the update table (#202)
+        none = {"source": "none", "sections": [], "reason": "nothing found"}
+        r = Scenario(DIGEST_BUMP, author="renovate", notes=none).run()
+        self.assertNotIn("breaking_notes", r["jev"]["asked"]["raw"])
+        self.assertNotIn("breaking_notes", r["jev"]["answers"]["raw"])
+        md = p.render_comment(r)
         self.assertIn("Release notes: none (nothing found)", md)
-        self.assertIn("| raw | `breaking_notes` | `description` mentions a breaking change", md)
         self.assertNotIn("Release notes as sent to Jev", md)
+        # a repo-shaped package nobody looked up: the comment says what to do, and it stays context
+        r = Scenario(DIGEST_BUMP, author="renovate", notes={**none, "unlisted": ["foo/bar"]}).run()
+        self.assertIn("- `ctx.release_notes_unlisted`: No release notes were looked up for `foo/bar`", p.render_comment(r))
+        self.assertNotIn("ctx.release_notes_unlisted", codes(r))
+        # a call that failed sent nothing the comment should show as sent
+        s = Scenario(DIGEST_BUMP, author="renovate", notes=notes)
+        requests = {}
+        try:
+            r = p.classify(s.dir, key=None, model="jev-test", requests=requests)
+        finally:
+            shutil.rmtree(s.dir)
+        md = p.render_comment(r)
+        self.assertEqual((r["jev"]["sent"], r["release_notes"]["sent"]), ({}, ""))
+        self.assertNotIn("as sent to Jev", md)
+        self.assertNotIn("jev_request.json", md)
+        self.assertEqual(requests["raw"]["error"], "TYPESAFE_API_KEY not set")
+        # a human's description can say something, so there the question is about it
+        md = p.render_comment(Scenario(DIGEST_BUMP).run())
+        self.assertIn("| raw | `breaking_notes` | `description` mentions a breaking change", md)
 
     def test_comment(self):
         r = Scenario(DIGEST_BUMP, konflate=konflate_fresh(warnings=[{"level": "caution", "rule": "replicas-zero", "resource": "Deployment default/whoami"}])).run()

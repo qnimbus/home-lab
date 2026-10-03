@@ -187,8 +187,12 @@ def plan(f: Facts, *, has_notes: bool, has_config: bool, has_base_changes: bool,
     model = f.model_surfaces
     calls = []
     if model:
-        q: dict[str, set[str]] = {"manipulation_attempt": set(model), "description_matches": set(model), "breaking_notes": set(model)}
+        q: dict[str, set[str]] = {"manipulation_attempt": set(model), "description_matches": set(model)}
         scoped = {
+            # Without notes the question is about `description`. A Renovate description is only
+            # its update table, so the answer would be a "no" about nothing, recorded as evidence
+            # (#202). A human's description can say something, so it is still asked there.
+            "breaking_notes": set(model) if has_notes or human else set(),
             "breaking_affects_config": set(model) if has_notes and has_config else set(),
             "forward_only_migration": set(model) if has_notes else p.get("stateful_version", set()),
             "version_pair_split": p.get("paired", set()),

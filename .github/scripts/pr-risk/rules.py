@@ -1281,7 +1281,8 @@ def may_break(meta) -> str | None:
     return None
 
 
-@rule("evidence.release_notes", "release_notes", ["ev.release_notes_missing", "ev.release_notes_partial", "ctx.version_boundary"])
+@rule("evidence.release_notes", "release_notes",
+      ["ev.release_notes_missing", "ev.release_notes_partial", "ctx.version_boundary", "ctx.release_notes_unlisted"])  # fmt: skip
 def evidence_release_notes(f: Facts, a: Assessment) -> None:
     """A version boundary isn't a finding: the release notes decide (Jev's breaking_notes and
     breaking_affects_config). Without notes that say anything, someone has to read the
@@ -1290,13 +1291,19 @@ def evidence_release_notes(f: Facts, a: Assessment) -> None:
     targets = [s.id for s in f.surfaces if s.reach != "none"]
     why = may_break(f.meta)
     versions = ", ".join(s["version"] for s in notes.get("sections", [])[:6])
+    for package in notes.get("unlisted") or []:
+        # Maintenance, not risk: a Docker Hub image is named the same way, so it isn't guessed.
+        a.note("ctx.release_notes_unlisted", f"No release notes were looked up for `{package}`. If github.com/{package} is where it is released, "
+               "add it to `REPO_PACKAGES` in `.github/scripts/pr-risk/pr_risk.py`.")  # fmt: skip
     if why:
         a.note("ctx.version_boundary", why)
         if not notes.get("sections"):
             a.gap("ev.release_notes_missing", "release_notes", targets, "limited",
                   f"{why} and no usable release notes ({notes.get('reason')}): check the upstream changelog.")  # fmt: skip
             return
-        if "only" in (notes.get("reason") or ""):
+        # A fact from the lookup, not a word in the reason ("Renovate's notes only point
+        # elsewhere" has complete notes). Bundles from before `partial` only have the phrase.
+        if notes.get("partial", ", back to " in (notes.get("reason") or "")):
             a.gap("ev.release_notes_partial", "release_notes", targets, "limited",
                   f"{why}; the release notes cover part of the range ({notes.get('reason')}): check the rest of the changelog.")  # fmt: skip
             return
