@@ -21,3 +21,74 @@ spec:
     - backendRefs:
         - name: plex
           port: 32400
+      filters:
+        - requestHeaderModifier:
+            set:
+              # Plex closes idle keep-alive connections after 20s unless this is
+              # set, so Envoy owns the pool.
+              - name: X-Plex-Http-Pipeline
+                value: infinite
+          type: RequestHeaderModifier
+    # External subtitles fail behind a proxy when Range is forwarded:
+    # https://forums.plex.tv/t/external-srt-subtitles-are-not-working-w-reverse-proxy/886540
+    - backendRefs:
+        - name: plex
+          port: 32400
+      filters:
+        - requestHeaderModifier:
+            remove:
+              - Range
+            set:
+              - name: X-Plex-Http-Pipeline
+                value: infinite
+          type: RequestHeaderModifier
+      matches:
+        - path:
+            type: PathPrefix
+            value: /library/streams
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/gateway.networking.k8s.io/httproute_v1.json
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: plex-public
+spec:
+  hostnames:
+    - "plex.${DOMAIN_APP}"
+  parentRefs:
+    - name: envoy-external
+      namespace: network
+      sectionName: https
+  # Same two rules as the internal route, plus X-Forwarded-For. Plex matches
+  # PLEX_NO_AUTH_NETWORKS against the first X-Forwarded-For entry, which a WAN
+  # client controls (Cloudflare appends to it). Pinning it to a TEST-NET address
+  # means nothing on this route is ever let in without a token.
+  rules:
+    - backendRefs:
+        - name: plex
+          port: 32400
+      filters:
+        - requestHeaderModifier:
+            set:
+              - name: X-Forwarded-For
+                value: 192.0.2.1
+              - name: X-Plex-Http-Pipeline
+                value: infinite
+          type: RequestHeaderModifier
+    - backendRefs:
+        - name: plex
+          port: 32400
+      filters:
+        - requestHeaderModifier:
+            remove:
+              - Range
+            set:
+              - name: X-Forwarded-For
+                value: 192.0.2.1
+              - name: X-Plex-Http-Pipeline
+                value: infinite
+          type: RequestHeaderModifier
+      matches:
+        - path:
+            type: PathPrefix
+            value: /library/streams

@@ -22,6 +22,8 @@ spec:
   values:
     controllers:
       plex:
+        annotations:
+          reloader.stakater.com/auto: "true"
         # Required: /config is an RWO ceph-block PVC.
         strategy: Recreate
         containers:
@@ -33,16 +35,14 @@ spec:
               TZ: "${CLUSTER_TIMEZONE}"
               # Cluster-local Service URL: fast direct path for other in-cluster pods
               # (a future *arr stack, say) — bypasses Envoy entirely. Plain HTTP is fine
-              # now that secureConnections=Preferred (see PLEX_PREFERENCE_7) allows it.
+              # because secureConnections=Preferred (see PLEX_PREFERENCE_8) allows it;
+              # the probes and plex-image-cleanup rely on that too.
               # Dedicated LoadBalancer IP (below) also gets a plain-HTTP candidate here,
               # matching bykaj's own pattern — connecting via raw IP over HTTPS would hit
               # a cert hostname mismatch (Plex's self-signed cert covers its advertised
               # hostnames, not the bare IP), so plain HTTP sidesteps that entirely; it's
               # LAN-only traffic so that's an acceptable tradeoff.
-              # Dropped bykaj's original ${DOMAIN_APPS} candidate (https://...:443 via
-              # envoy-external) — deliberately internal-only, no public route exists for
-              # that to be functional. But plex.${DOMAIN_APPS} *is* now a real, working
-              # hostname via a different path: external-dns-unifi publishes it straight
+              # plex.${DOMAIN_APPS} is not a route: external-dns-unifi publishes it straight
               # at the LoadBalancer IP below (see service.app.annotations), so it gets
               # its own plain-HTTP:32400 candidate here, same reasoning as the raw IP.
               # ${LB_IP_PLEX_IOT} candidate: IOT clients (e.g. a Google TV streamer on
@@ -54,63 +54,52 @@ spec:
               # own TLS via the operator's built-in `tailscale cert` provisioning (no
               # cert-manager involved) — HTTPS is correct here, unlike the plain-HTTP
               # candidates above.
-              PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://${LB_IP_PLEX_IOT}:32400,http://plex.${DOMAIN_APPS}:32400,https://${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}:443,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
+              # ${DOMAIN_APP} candidate: the WAN path, through the Cloudflare Tunnel
+              # and envoy-external (the plex-public route in httproute.yaml).
+              PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_APP}:443,https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://${LB_IP_PLEX_IOT}:32400,http://plex.${DOMAIN_APPS}:32400,https://${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}:443,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
               PLEX_NO_AUTH_NETWORKS: "${LAN_CIDR},${POD_CIDR},${SERVICE_CIDR},${TAILSCALE_CIDR}"
               PLEX_PREFERENCE_1: "AllowMediaDeletion=0"
               PLEX_PREFERENCE_2: "EnableIPv6=0"
               PLEX_PREFERENCE_3: "FriendlyName=SkyNet Plex"
               PLEX_PREFERENCE_4: "LanNetworksBandwidth=${LAN_CIDR}"
-              PLEX_PREFERENCE_5: "RelayEnabled=0"
-              PLEX_PREFERENCE_6: "sendCrashReports=0"
-              PLEX_PREFERENCE_7: "secureConnections=1"
-              PLEX_PREFERENCE_8: "logDebug=0"
+              PLEX_PREFERENCE_5: "ButlerDatabaseBackupPath=/mnt/backups"
+              PLEX_PREFERENCE_6: "RelayEnabled=0"
+              PLEX_PREFERENCE_7: "sendCrashReports=0"
+              PLEX_PREFERENCE_8: "secureConnections=1"
+            envFrom:
+              - secretRef:
+                  name: plex-secret
             probes:
-              # /identity is Plex's unauthenticated health/discovery endpoint. scheme:
-              # HTTPS is required — PMS rejects every plaintext non-loopback connection
-              # with "secure connections are required" (confirmed via debug logs), which
-              # includes kubelet's own probe traffic (sourced from the node IP, not the
-              # pod). Loopback is exempt from this check, which is why exec'ing in and
-              # curling 127.0.0.1 always worked while the probe never did. Kubernetes'
-              # httpGet probe with scheme: HTTPS does not validate the server certificate,
-              # so PMS's self-signed cert needs no extra configuration here.
-              # startupProbe gates liveness/readiness until first pass — needed because
-              # first-boot library scanning/metadata indexing against a populated NFS
-              # library can take well past a minute, and liveness alone (with no startup
-              # gate) kills PMS mid-scan before it ever finishes, causing a permanent
-              # restart loop. periodSeconds x failureThreshold = 10m budget.
-              startup:
-                enabled: true
-                custom: true
-                spec:
-                  httpGet:
-                    path: /identity
-                    port: &port 32400
-                    scheme: HTTPS
-                  periodSeconds: 10
-                  timeoutSeconds: 5
-                  failureThreshold: 60
+              # /identity is Plex's unauthenticated health/discovery endpoint.
               liveness: &probes
                 enabled: true
                 custom: true
                 spec:
                   httpGet:
                     path: /identity
-                    port: *port
-                    scheme: HTTPS
+                    port: &port 32400
+                  initialDelaySeconds: 0
                   periodSeconds: 10
-                  timeoutSeconds: 5
-                  failureThreshold: 6
+                  timeoutSeconds: 1
+                  failureThreshold: 3
               readiness: *probes
+              startup:
+                enabled: true
+                spec:
+                  failureThreshold: 30
+                  periodSeconds: 10
             resources:
               claims:
                 - name: gpu
               requests:
-                cpu: 100m
-                memory: 1Gi
+                cpu: 20m
+                memory: 2Gi
               limits:
-                memory: 4Gi
+                memory: 8Gi
             securityContext:
               allowPrivilegeEscalation: false
+              # Everything Plex writes lands on /config or the scratch emptyDir below.
+              readOnlyRootFilesystem: true
               capabilities:
                 drop: ["ALL"]
     defaultPodOptions:
@@ -202,11 +191,28 @@ spec:
         path: /mnt/tank/Media
         globalMounts:
           - path: /mnt/media
-      # Bounded scratch space for transcode segments — disk-backed rather than tmpfs
-      # since the smallest worker nodes have only 32GB RAM shared with other workloads,
-      # and node disks are already NVMe.
-      transcode:
+      # Plex's own scheduled database backups (ButlerDatabaseBackupPath), kept off
+      # the cluster. The export squashes every client to kubernetes (3001), which owns
+      # the folder.
+      backups:
+        type: nfs
+        path: /mnt/tank/Cluster/backup
+        server: "${NAS_HOST}"
+        globalMounts:
+          - path: /mnt/backups
+            subPath: apps/plex
+      # Bounded scratch space for transcode segments, logs and /tmp — disk-backed rather
+      # than tmpfs since the smallest worker nodes have only 32GB RAM shared with other
+      # workloads, and node disks are already NVMe.
+      scratch:
         type: emptyDir
         sizeLimit: 20Gi
-        globalMounts:
-          - path: /transcode
+        advancedMounts:
+          plex:
+            app:
+              - path: /config/Library/Application Support/Plex Media Server/Logs
+                subPath: logs
+              - path: /transcode
+                subPath: transcode
+              - path: /tmp
+                subPath: tmp

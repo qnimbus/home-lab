@@ -15,6 +15,9 @@ spec:
     substitute:
       APP: *app
       APP_SUBDOMAIN: *app
+      # The live cache claim, from when the cache followed KOPIUR_CAPACITY.
+      # openebs-hostpath can't resize it: see components/kopiur/README.md.
+      KOPIUR_CACHE_CAPACITY: 20Gi
       KOPIUR_CAPACITY: 20Gi
   prune: true
   sourceRef:
@@ -32,4 +35,24 @@ spec:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
       name: *app
+      namespace: media
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: plex-tools
+spec:
+  targetNamespace: media
+  interval: 1h
+  path: ./kubernetes/apps/media/plex/tools
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: plex-image-cleanup
       namespace: media
