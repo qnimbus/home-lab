@@ -12,10 +12,8 @@
             # Plain HTTP straight to the NAS, not the https:// href above: TrueNAS's UI answers a
             # plain-HTTP request with an absolute http:// redirect, and homepage's server-side fetch
             # (undici) refuses to follow a https->http downgrade — browsers tolerate it fine on the
-            # href, so only siteMonitor needs routing around it. Direct to the host rather than an
-            # in-cluster Service because there no longer is one: the route now uses an Envoy Gateway
-            # Backend (network/external-services/truenas/backend.yaml), which has no ClusterIP.
-            siteMonitor: "http://nas.lan.home.vwn.io:8080"
+            # href, so only siteMonitor needs routing around it.
+            siteMonitor: "https://nas.lan.home.vwn.io"
 - Home Automation:
     - ColA:
         - Home Assistant:
