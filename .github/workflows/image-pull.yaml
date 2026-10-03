@@ -34,11 +34,9 @@ jobs:
           persist-credentials: false
 
       - name: Install flate
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: $/.github/actions/setup-mise
         with:
-          install_args: github:home-operations/flate
-          minimum_release_age: "24h" # see validate.yaml
-          cache: false # GitHub cache restores can stall off-GitHub (see pull); one small binary isn't worth it
+          tools: github:home-operations/flate
 
       # flate renders the base branch and the PR and emits only the images the PR adds.
       - name: Extract Images
@@ -90,7 +88,7 @@ jobs:
           SEGMENT_DOWNLOAD_TIMEOUT_MINS: "1" # default 10; the step timeout is the real bound
         with:
           install_args: talos # not the `talosctl` alias, so the .mise/config.toml pin applies
-          minimum_release_age: "24h" # see validate.yaml
+          minimum_release_age: "24h" # see .github/actions/setup-mise
 
       # Version parsed from .mise/config.toml; $GITHUB_PATH is prepended, so this beats a
       # half-initialised mise shim from the cancelled step.

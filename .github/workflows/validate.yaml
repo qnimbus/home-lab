@@ -21,15 +21,27 @@ jobs:
         with:
           persist-credentials: false
 
+      # A lockfile can only have been broken by a change under .mise/, so only those runs are
+      # strict about it. Everywhere else an unusable lockfile is a warning: a new mise release
+      # that rejects an old entry must not turn unrelated runs red. If the comparison fails
+      # (a force-push can orphan `before`), assume .mise/ changed.
+      - name: Did this change touch .mise/?
+        id: mise-changed
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          changed=$(gh api "repos/${GITHUB_REPOSITORY}/compare/${BASE}...${HEAD}" \
+            --jq '[.files[].filename | select(startswith(".mise/"))] | length > 0') || changed=true
+          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+
       # Tool versions come from .mise/config.toml.
       - name: Install flux, flux-schema, kustomize, lefthook + uv
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: $/.github/actions/setup-mise
         with:
-          install_args: flux2 github:fluxcd/flux-schema kustomize lefthook uv
-          # Soak window on the mise binary itself: mise.jdx.dev/VERSION can advertise a release
-          # before its GitHub assets exist (2026-09-08: every run failed on `curl: (22)`).
-          # Preferred over a hard `version` pin that nothing would keep up to date.
-          minimum_release_age: "24h"
+          tools: flux2 github:fluxcd/flux-schema kustomize lefthook uv
+          strict: ${{ steps.mise-changed.outputs.changed }}
 
       # Vendored flux-schema script (online catalog). -E fills Flux ${VAR}s with placeholders so
       # pattern-checked fields pass; the excluded dirs aren't Kubernetes manifests.

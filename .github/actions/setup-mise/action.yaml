@@ -1,0 +1,39 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-action.json
+name: Setup mise
+description: >-
+  Installs mise and the given tools at the versions in .mise/config.toml. A lockfile this mise
+  can't use falls back to an unlocked install with a warning, unless `strict` is set.
+
+inputs:
+  tools:
+    description: Space-separated tools to install, as for `mise install`.
+    required: true
+  strict:
+    description: >-
+      "true" fails on any lockfile problem and checks that every tool in .mise/config.toml is
+      locked. For runs whose change touches .mise/, where a broken lockfile has to be loud.
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # install: false, because install.sh has to read mise's output to tell a lockfile problem
+    # from a checksum mismatch. That leaves nothing for the action's cache to hold, and a
+    # restore can stall on the in-cluster runner, so the cache is off.
+    - name: Install mise
+      uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      with:
+        cache: false
+        install: false
+        # Soak window on the mise binary itself: mise.jdx.dev/VERSION can advertise a release
+        # before its GitHub assets exist (2026-09-08: every run failed on `curl: (22)`).
+        # Preferred over a hard `version` pin: Renovate would open a PR per mise release.
+        minimum_release_age: "24h"
+
+    - name: Install tools
+      shell: bash
+      env:
+        STRICT: ${{ inputs.strict }}
+        TOOLS: ${{ inputs.tools }}
+      run: '"$GITHUB_ACTION_PATH/install.sh"'

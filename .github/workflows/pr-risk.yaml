@@ -83,11 +83,9 @@ jobs:
           TYPESAFE_API_KEY: op://GitHub/jev/API_KEY
 
       - name: Install uv
-        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        uses: $/.github/actions/setup-mise # from the base branch, like everything else here
         with:
-          install_args: uv
-          minimum_release_age: "24h" # see validate.yaml
-          cache: false # see image-pull.yaml
+          tools: uv
 
       - name: Collect
         id: collect
