@@ -9,12 +9,10 @@ pre-commit:
     - merge
     - rebase
   commands:
+    # mise lock runs in the same command, after mise fmt, so it never reads a
+    # config.toml the formatter is halfway through rewriting: it would see no
+    # tools, prune every entry from the lockfile and still exit 0.
     format-mise:
-      glob: ".mise/config.toml"
-      run: mise fmt
-      stage_fixed: true
-
-    mise-lock:
       glob:
         - ".mise.toml"
         - ".mise/config.toml"
@@ -22,7 +20,11 @@ pre-commit:
       # set from an existing lockfile (including for newly added tools), so this
       # only decides the bootstrap case where no lockfile exists yet — without it
       # a fresh lock would pick up musl and windows entries nothing here installs.
-      run: mise lock -p linux-x64,linux-arm64,macos-arm64 && git add .mise/mise.lock
+      run: >-
+        mise fmt &&
+        mise lock -p linux-x64,linux-arm64,macos-arm64 &&
+        git add .mise/mise.lock
+      stage_fixed: true
 
     format-markdown:
       glob:
