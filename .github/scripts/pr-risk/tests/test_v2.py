@@ -961,6 +961,29 @@ class TestRegistryAndSchema(unittest.TestCase):
             shutil.rmtree(d)
         self.assertIn("ev.manipulation_attempt", codes(r))
 
+    def test_comment_shows_what_jev_was_asked(self):
+        notes = {"source": "github", "reason": "GitHub releases of foo/helm",
+                 "sections": [{"version": "foo-1.1.0", "text": "### foo-1.1.0\n\nThanks @someone, see ```yaml\nx: 1\n```"}]}  # fmt: skip
+        requests = {}
+        s = Scenario(DIGEST_BUMP, author="renovate", notes=notes)
+        try:
+            r = p.classify(s.dir, key="k", model="jev-test", answer=Jev(), requests=requests)
+        finally:
+            shutil.rmtree(s.dir)
+        self.assertIn("@someone", requests["raw"]["state"]["release_notes"])
+        self.assertEqual(sorted(requests["raw"]), ["model", "questions", "state"])
+        md = p.render_comment({**r, "run_url": "https://github.com/o/r/actions/runs/1"})
+        self.assertIn("Release notes: github, foo-1.1.0 (GitHub releases of foo/helm)", md)
+        self.assertIn("| raw | `breaking_notes` | `release_notes` describe a breaking change", md)
+        self.assertRegex(md, r"Jev `raw` input, in characters: .*`release_notes` \d+")
+        self.assertIn("````text\n### foo-1.1.0", md)  # fenced past the notes' own ``` so @someone isn't pinged
+        self.assertIn("`jev_request.json` in the `pr-risk-999` artifact of [this run](https://github.com/o/r/actions/runs/1)", md)
+        # without notes the same question is about the description, and the comment says so
+        md = p.render_comment(Scenario(DIGEST_BUMP, author="renovate", notes={"source": "none", "sections": [], "reason": "nothing found"}).run())
+        self.assertIn("Release notes: none (nothing found)", md)
+        self.assertIn("| raw | `breaking_notes` | `description` mentions a breaking change", md)
+        self.assertNotIn("Release notes as sent to Jev", md)
+
     def test_comment(self):
         r = Scenario(DIGEST_BUMP, konflate=konflate_fresh(warnings=[{"level": "caution", "rule": "replicas-zero", "resource": "Deployment default/whoami"}])).run()
         md = p.render_comment(r)

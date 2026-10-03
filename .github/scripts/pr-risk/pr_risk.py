@@ -673,9 +673,10 @@ def substantive(text: str) -> bool:
     return False
 
 
-RENOVATE_ROW = re.compile(
-    r"(?m)^\|\s*\[([^\]]+)\]\(([^)]+)\)(?:\s*\(\[source\]\(([^)]+)\)\))?\s*\|\s*(\w+)\s*\|\s*`([^`]+)`\s*→\s*`([^`]+)`\s*\|"
+RENOVATE_ROW = re.compile(  # the package is a link, or plain text when Renovate has no homepage for it
+    r"(?m)^\|\s*(?:\[([^\]]+)\]\(([^)]+)\)|([^\s|\[][^|]*?))(?:\s*\(\[source\]\(([^)]+)\)\))?\s*\|\s*(\w+)\s*\|\s*`([^`]+)`\s*→\s*`([^`]+)`\s*\|"
 )
+BARE_REPO = re.compile(r"^[\w-]+/[\w.-]+$")  # owner/repo: no registry host (those have a dot) and no deeper path
 GITHUB_REPO = re.compile(r"^https://(?:redirect\.)?github\.com/([\w.-]+/[\w.-]+?)(?:\.git)?/?(?:[#?].*)?$")
 TAG_VERSION = re.compile(r"(.*?)(v?\d+(?:\.\d+)+)")
 
@@ -684,7 +685,8 @@ def renovate_updates(body: str) -> list[dict]:
     """The rows of Renovate's update table: package, GitHub repos it links, from, to."""
     out = []
     for m in RENOVATE_ROW.finditer(body or ""):
-        package, link, source, kind, old, new = m.groups()
+        linked, link, plain, source, kind, old, new = m.groups()
+        package = linked or plain
         repos = [g.group(1) for u in (link, source) if u and (g := GITHUB_REPO.match(u))]
         out.append({"package": package, "repos": list(dict.fromkeys(repos)), "type": kind, "from": old, "to": new})
     return out
@@ -718,11 +720,14 @@ def candidate_repos(update: dict) -> list[str]:
     """The repos Renovate's table links, then, for a chart, its org's usual chart monorepos:
     Renovate often links the app's repo for a chart (prometheus-community's charts link
     smartctl_exporter, not helm-charts). A wrong guess costs a lookup, never wrong notes:
-    tag_version() only accepts tags that name the chart."""
+    tag_version() only accepts tags that name the chart. A package Renovate links nothing for
+    is its own repo when it is named like one (`siderolabs/talos`)."""
     repos = list(update["repos"])
+    if not repos and BARE_REPO.match(update["package"]):
+        repos.append(update["package"])
     m = re.match(r"^[^/]+/([\w.-]+)/(?:charts|helm-charts|charts-mirror)/", update["package"])
     if m and is_chart(update["package"]):
-        repos += [f"{m.group(1)}/helm-charts", f"{m.group(1)}/charts"]
+        repos += [f"{m.group(1)}/helm-charts", f"{m.group(1)}/charts", f"{m.group(1)}/helm"]
     return list(dict.fromkeys(repos))
 
 
@@ -995,7 +1000,13 @@ def surface_texts(files: list[dict], diff: str, config: dict) -> dict[str, str]:
     return {k: "\n".join(v) for k, v in texts.items()}
 
 
-def classify(d: Path, *, key: str | None, model: str, fixture: dict | None = None, answer=None) -> dict:
+def chars(v) -> int:
+    return len(v) if isinstance(v, str) else len(json.dumps(v, ensure_ascii=False))
+
+
+def classify(d: Path, *, key: str | None, model: str, fixture: dict | None = None, answer=None, requests: dict | None = None) -> dict:
+    """`requests`, when given, is filled with each Jev call's payload as sent ({call: {model,
+    state, questions}}): cmd_classify writes it to jev_request.json."""
     t0 = time.monotonic()
     b = load_bundle(d)
     meta, files, konflate, kdiff, notes = b["meta"], b["files"], b["konflate"], b["kdiff"], b["notes"]
@@ -1023,14 +1034,29 @@ def classify(d: Path, *, key: str | None, model: str, fixture: dict | None = Non
         "rendered": lambda sc, q=None: rendered_state(meta, kinfo, kdiff, sc),
     }
     jobs = {c.name: (c, c.payload(bool(notes["sections"]))) for c in calls}
+    sent: dict[str, dict] = {}
+
+    def build(name, scale, questions):  # the last state built is the one sent (a 422 rebuilds it at half size)
+        state, cut = builders[name](scale, questions)
+        sent[name] = state
+        return state, cut
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         futures = {
-            n: pool.submit(ask, n, lambda sc, n=n, q=qs: builders[n](sc, q), qs, key=key, model=model, fixture=fixture, answer=answer)
+            n: pool.submit(ask, n, lambda sc, n=n, q=qs: build(n, sc, q), qs, key=key, model=model, fixture=fixture, answer=answer)
             for n, (c, qs) in jobs.items()
         }
         results = {n: fu.result() for n, fu in futures.items()}
 
     jev = {"model": None, "usage": {}, "errors": {}, "answers": {}, "asked": {n: sorted(qs) for n, (_, qs) in jobs.items()}}
+    # For the comment: each question as worded for this PR (breaking_notes is about `description`
+    # when there are no notes) and the size of each input field. The full payload is `requests`.
+    jev["sent"] = {
+        n: {"fields": {k: chars(v) for k, v in sent.get(n, {}).items()}, "questions": {q: spec["instructions"]["question"] for q, spec in qs.items()}}
+        for n, (_, qs) in jobs.items()
+    }
+    if requests is not None:
+        requests.update({n: {"model": model, "state": sent.get(n), "questions": qs} for n, (_, qs) in jobs.items()})
     for name, (resp, cut, err) in results.items():
         call = jobs[name][0]
         if err:
@@ -1075,7 +1101,8 @@ def classify(d: Path, *, key: str | None, model: str, fixture: dict | None = Non
         "rules_run": ran,
         "konflate": kinfo,
         "jev": jev,
-        "release_notes": {"source": notes["source"], "versions": [s["version"] for s in notes["sections"]], "reason": notes["reason"]},
+        "release_notes": {"source": notes["source"], "versions": [s["version"] for s in notes["sections"]], "reason": notes["reason"],
+                          "sent": (sent.get("raw") or {}).get("release_notes", "")},  # fmt: skip
         "thresholds": THRESHOLDS,
         "seconds": round(time.monotonic() - t0, 2),
         # v1 names, kept while backtest CSVs and dashboards from before v2 are compared.
@@ -1093,8 +1120,18 @@ EVIDENCE_COLUMNS = ["git", "render", "release_notes", "model"]
 QUALITY_MARK = {"sufficient": "✓", "limited": "◐ limited", "insufficient": "✗ insufficient"}
 
 
+NOTES_IN_COMMENT = 6_000  # characters of release notes shown in the comment; all of it is in jev_request.json
+
+
 def cell(s: str) -> str:
     return s.replace("|", "\\|").replace("\n", " ")
+
+
+def fenced(text: str) -> list[str]:
+    """Upstream text as a code block: shown, not rendered, so its @mentions notify nobody and
+    its markup can't pass for ours. The fence is longer than any backtick run inside."""
+    fence = "`" * max(3, 1 + max((len(m) for m in re.findall(r"`+", text)), default=0))
+    return [fence + "text", text, fence]
 
 
 def render_comment(r: dict) -> str:
@@ -1143,13 +1180,29 @@ def render_comment(r: dict) -> str:
         rows.append(f"| `{s['id']}` | {s['reach']} | {cols} |")
     details = ["<details><summary>Evidence by surface</summary>", "",
                "| Surface | Reach | Git | Render | Release notes | Jev |", "|---|---|---|---|---|---|", *rows, ""]  # fmt: skip
+    rn = r.get("release_notes") or {}
+    if rn.get("source"):
+        got = "none" if rn["source"] == "none" else f"{rn['source']}, {', '.join(rn.get('versions') or [])}"
+        details += [f"Release notes: {got} ({cell(rn.get('reason') or '')})", ""]
+    sent = r["jev"].get("sent") or {}  # absent in results from before it was recorded
+    for call, s in sent.items():
+        if s.get("fields"):
+            details += [f"Jev `{call}` input, in characters: " + " · ".join(f"`{k}` {n:,}" for k, n in s["fields"].items()), ""]
     answer_rows = []
     for call, answers in (r["jev"].get("answers") or {}).items():
         for q, ans in answers.items():
             val = ans.get("noul")
-            answer_rows.append(f"| {call} | `{q}` | {val:.2f} |" if isinstance(val, float) else f"| {call} | `{q}` | {val} |")
+            asked = cell((sent.get(call) or {}).get("questions", {}).get(q, ""))
+            answer_rows.append(f"| {call} | `{q}` | {asked} | {val:.2f} |" if isinstance(val, float) else f"| {call} | `{q}` | {asked} | {val} |")
     if answer_rows:
-        details += ["Jev answers (noul: 0 no, 1 yes):", "", "| call | question | answer |", "|---|---|---|", *answer_rows, ""]
+        details += ["Jev answers (noul: 0 no, 1 yes):", "", "| call | question | as asked | answer |", "|---|---|---|---|", *answer_rows, ""]
+    notes = rn.get("sent") or ""
+    if notes:
+        shown = notes if len(notes) <= NOTES_IN_COMMENT else notes[:NOTES_IN_COMMENT] + "\n… (cut here; Jev got all of it)"
+        details += [f"<details><summary>Release notes as sent to Jev ({len(notes):,} characters)</summary>", "", *fenced(shown), "", "</details>", ""]
+    if sent:
+        where = f"[this run]({r['run_url']})" if r.get("run_url") else "the run"
+        details += [f"The full request is `jev_request.json` in the `pr-risk-{r['number']}` artifact of {where}.", ""]
     details.append("</details>")
     out += details
 
@@ -1171,9 +1224,13 @@ def cmd_classify(a) -> None:
         fixture = {n: {"answers": ans, "model": fixture["jev"].get("model")} for n, ans in fixture["jev"]["answers"].items()}
     key = os.environ.get("TYPESAFE_API_KEY") or None
     model = os.environ.get("JEV_MODEL") or JEV_MODEL_DEFAULT
-    result = classify(d, key=key, model=model, fixture=fixture)
+    requests: dict = {}
+    result = classify(d, key=key, model=model, fixture=fixture, requests=requests)
+    if os.environ.get("GITHUB_RUN_ID"):
+        result["run_url"] = "{GITHUB_SERVER_URL}/{GITHUB_REPOSITORY}/actions/runs/{GITHUB_RUN_ID}".format(**os.environ)
     comment = render_comment(result)
     (d / "result.json").write_text(json.dumps(result, indent=2))
+    (d / "jev_request.json").write_text(json.dumps(requests, indent=2, ensure_ascii=False))
     (d / "comment.md").write_text(comment)
     if a.dry_run:
         print(comment)

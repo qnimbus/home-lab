@@ -221,7 +221,29 @@ class TestReleaseNoteSources(unittest.TestCase):
     def test_candidate_repos_guess_chart_monorepos(self):
         (u,) = p.renovate_updates("| [ghcr.io/prometheus-community/charts/prometheus-smartctl-exporter](https://redirect.github.com/"
                                   "prometheus-community/smartctl_exporter) | minor | `0.16.1` → `0.17.1` |")  # fmt: skip
-        self.assertEqual(p.candidate_repos(u), ["prometheus-community/smartctl_exporter", "prometheus-community/helm-charts", "prometheus-community/charts"])
+        self.assertEqual(p.candidate_repos(u), ["prometheus-community/smartctl_exporter", "prometheus-community/helm-charts", "prometheus-community/charts",
+                                                "prometheus-community/helm"])  # fmt: skip
+
+    def test_chart_released_from_the_orgs_helm_repo(self):
+        (u,) = p.renovate_updates("| [ghcr.io/coredns/charts/coredns](https://coredns.io) ([source](https://redirect.github.com/"
+                                  "coredns/coredns)) | patch | `1.48.1` → `1.48.2` |")  # fmt: skip
+        releases = {"/repos/coredns/helm/releases": [[{"tag_name": "coredns-1.48.2", "body": "feat: add optional autoscaler replicas"},
+                                                      {"tag_name": "coredns-1.48.1", "body": "Bump to CoreDNS 1.14.7"}]]}  # fmt: skip
+        sections, reason = p.github_release_sections(u, get=lambda path: releases.get(path, []))
+        self.assertEqual([s["version"] for s in sections], ["coredns-1.48.2"])
+        self.assertEqual(reason, "GitHub releases of coredns/helm")
+
+    def test_unlinked_package_is_its_own_repo_when_named_like_one(self):
+        (u,) = p.renovate_updates("| Package | Update | Change |\n|---|---|---|\n| siderolabs/talos | patch | `v1.14.1` → `v1.14.2` |")
+        self.assertEqual((u["package"], u["repos"], u["to"]), ("siderolabs/talos", [], "v1.14.2"))
+        self.assertEqual(p.candidate_repos(u), ["siderolabs/talos"])
+        releases = {"/repos/siderolabs/talos/releases": [[{"tag_name": "v1.14.2", "body": "Fixes a kubelet restart loop on upgrade"},
+                                                          {"tag_name": "v1.14.1", "body": "older"}]]}  # fmt: skip
+        sections, reason = p.github_release_sections(u, get=lambda path: releases.get(path, []))
+        self.assertEqual(([s["version"] for s in sections], reason), (["v1.14.2"], "GitHub releases of siderolabs/talos"))
+        # a registry path is not a repo: only the org's chart repos are guessed
+        (u,) = p.renovate_updates("| ghcr.io/home-operations/charts-mirror/ceph-csi-drivers | minor | `1.0.5` → `1.1.0` |")
+        self.assertEqual(p.candidate_repos(u), ["home-operations/helm-charts", "home-operations/charts", "home-operations/helm"])
 
     def test_paging_stops_once_from_is_reached(self):
         seen = []

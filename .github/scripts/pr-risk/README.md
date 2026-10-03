@@ -150,7 +150,7 @@ YAML is read line by line with its enclosing keys worked out from indentation (s
 `collect` writes `release_notes.json`:
 
 1. Renovate's `### Release Notes`, split per version. A section only counts if it says something: tailscale's are all "Please refer to the changelog available at …". It also has to be about this package. Its heading link must be a release tag that names the package, or, for a container image only, any tag or changelog. Renovate gave plugin-barman-cloud's _chart_ 0.7.0 → 0.8.0 the _app's_ v0.8.0 notes, a year older and with an unrelated breaking change.
-2. Otherwise the GitHub releases between the two versions, from the repos in Renovate's update table and, for a chart, its org's `helm-charts` and `charts` monorepos. A tag must name the chart (`prometheus-smartctl-exporter-0.17.1`), and a bare `v1.2.3` only counts for an image, so a guessed repo can't produce wrong notes. Releases that all repeat one text (piraeus's chart description) don't count.
+2. Otherwise the GitHub releases between the two versions, from the repos in Renovate's update table and, for a chart, its org's `helm-charts`, `charts` and `helm` repos. A package the table links nothing for is looked up as its own repo when it is named like one (`siderolabs/talos`). A tag must name the chart (`prometheus-smartctl-exporter-0.17.1`), and a bare `v1.2.3` only counts for an image, so a guessed repo can't produce wrong notes. Releases that all repeat one text (piraeus's chart description) don't count.
 3. Otherwise none.
 
 Versions go to Jev oldest first: when the notes don't fit, the newest are left out, not the ones right after the version running now. A version boundary (`type/major`, or `!:` in the title; Renovate's `!:` also marks 0.x minor bumps) with no usable notes is `ev.release_notes_missing`, and notes that only reach part of the range are `ev.release_notes_partial`: a bounded gap, so review.
@@ -197,7 +197,7 @@ An answer ≥ 0.70 is a **probable** finding, ≤ 0.20 is **ruled out** (recorde
 | `KONFLATE_URL`          | `http://konflate.flux-system.svc.cluster.local:8080` |                                                                                                                     |
 | `KONFLATE_WAIT_SECONDS` | `480`                                                | How long to wait for Konflate to render the current head SHA.                                                       |
 
-**Where to see why a PR got its label**: the run's job summary (Actions → PR Risk → the run) shows the full comment, in every mode; the `pr-risk-<n>` artifact has `result.json` and `comment.md`; in `comment` mode the same text is a sticky comment on the PR.
+**Where to see why a PR got its label**: the run's job summary (Actions → PR Risk → the run) shows the full comment, in every mode; the `pr-risk-<n>` artifact has `result.json`, `comment.md` and `jev_request.json` (each Jev call's payload as sent: state, questions, model); in `comment` mode the same text is a sticky comment on the PR.
 
 Only `status: classified` results are published. `classify` exits 3 when Jev (needed by some surface) or Konflate (for a PR it should render) is down; the summary still shows what it would have said, and Publish is skipped.
 
@@ -217,13 +217,14 @@ surfaces: [{ id, paths, reach, stakes, activation, reversibility, rendered, evid
 findings: [{ id, code, kind, certainty, consequence, surface, evidence: [e-003], description }]
 evidence: [{ id, source, fact, surface, quality }]
 context: [{ code, detail, surface }]
-jev: { model, usage, errors, asked, answers }   # raw answers, for replay
+jev: { model, usage, errors, asked, answers, sent }   # raw answers, for replay; sent: per call, field sizes and each question as worded
 konflate: { state, head, rules, … }
-release_notes: { source, versions, reason }
+release_notes: { source, versions, reason, sent }   # sent: the notes text Jev got
+run_url                                          # in Actions only
 verdict, available                               # v1 names, kept while v1 CSVs are compared
 ```
 
-The comment leads with the verdict and the rule that produced it, then a table of findings (surface, code, certainty, consequence), the missing evidence when uncertain, the context, and, folded, the evidence per surface and Jev's answers. No numeric level is shown as if it were a risk score.
+The comment leads with the verdict and the rule that produced it, then a table of findings (surface, code, certainty, consequence), the missing evidence when uncertain, the context, and, folded, the evidence per surface, where the release notes came from, the size of each field Jev got, its answers next to each question as it was worded for this PR (`breaking_notes` is asked about `description` when there are no notes), and the release notes as sent (the first 6,000 characters, as a code block so upstream's @mentions notify nobody). No numeric level is shown as if it were a risk score.
 
 ## Second opinion
 
