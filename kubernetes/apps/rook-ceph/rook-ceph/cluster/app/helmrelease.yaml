@@ -25,7 +25,7 @@ spec:
     # line (v1.19.x → Squid 19.2.3, v1.20.x → Tentacle 20.2.4), so leaving this
     # unset turns a Rook chart bump into an unreviewed Ceph *major* upgrade —
     # which is exactly what Renovate's rook-ceph-cluster v1.20 PR would have
-    # done. Ceph upgrades are their own Renovate PRs now (renovate.json5 pins
+    # done. Ceph upgrades are their own Renovate PRs now (.renovaterc.json5 pins
     # the allowed line); before merging a *major* one, read Rook's ceph-upgrade
     # guide and the Ceph release notes for that release.
     # The chart renders this into cephClusterSpec.cephVersion.image (and the

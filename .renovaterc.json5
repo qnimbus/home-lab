@@ -79,6 +79,16 @@
     // Allowed versions rules
     //
     {
+      // Ceph numbers release candidates x.1.z and stable releases x.2.z, so the
+      // minor is pinned too. The major is the newest one the pinned Rook operator
+      // supports (rook-ceph/rook-ceph/operator): raise it by hand, after the Rook
+      // bump that adds the next Ceph major
+      description: "Keep Ceph on stable 20.2.x (Tentacle)",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["quay.io/ceph/ceph"],
+      allowedVersions: "/^v?20\\.2\\.\\d+$/",
+    },
+    {
       description: "Keep PostgreSQL on version 18.x",
       matchDatasources: ["docker"],
       matchPackageNames: ["/postgresql/"],
