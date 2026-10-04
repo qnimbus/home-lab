@@ -13,6 +13,15 @@ config:
         preferred_ip_protocol: "ip4"
       prober: icmp
       timeout: 5s
+    smtp_banner:
+      prober: tcp
+      tcp:
+        preferred_ip_protocol: "ip4"
+        query_response:
+          - expect: "^220 "
+          - send: "QUIT\r"
+          - expect: "^221 "
+      timeout: 5s
     tcp_connect:
       prober: tcp
       tcp:

@@ -36,7 +36,7 @@ metadata:
   name: smtp-relay
 spec:
   interval: 30s
-  module: tcp_connect
+  module: smtp_banner
   prober:
     url: blackbox-exporter.observability.svc.cluster.local:9115
   targets:
