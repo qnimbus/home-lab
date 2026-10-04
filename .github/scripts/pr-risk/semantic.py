@@ -337,6 +337,15 @@ def breaking(f: Facts, a: Assessment, call: Call, nv: dict, eid) -> None:
         a.find("compat.breaking_change_applies", "probable", sid, tuple(ev),
                f"The release notes describe a breaking change in something this repo's config uses: plan the migration ({scores}).")  # fmt: skip
     elif ab == "no":
+        runs = exercised(f, scope)
+        for run in runs:
+            fact = f"{run['path']}: the PR's own run {run['run_id']} passed on this head, no job or step skipped"
+            ev.append(a.record("checks", fact, sid))
+            a.note("ctx.change_exercised", f"{fact} ({run.get('url') or 'no link'})", sid)
+        if runs:  # the notes were to be skimmed for what breaks here; the new version already ran here
+            a.find("compat.breaking_change_elsewhere", "ruled_out", sid, tuple(ev),
+                   f"The release notes describe a breaking change in nothing this repo's config uses, and the changed workflow passed with it ({scores}).")  # fmt: skip
+            return
         a.find("compat.breaking_change_elsewhere", "established", sid, tuple(ev),
                f"The release notes describe a breaking change, apparently in nothing this repo's config uses: skim them ({scores}).")  # fmt: skip
     else:
@@ -344,6 +353,22 @@ def breaking(f: Facts, a: Assessment, call: Call, nv: dict, eid) -> None:
                f"The release notes describe a breaking change; unclear whether this repo's config uses it ({scores}).")  # fmt: skip
         if ab == "indecisive":
             a.gap("ev.model_indecisive", "model", scope, "insufficient", f"Jev can't tell whether the breaking change touches this repo's config ({af:.2f}).")
+
+
+def exercised(f: Facts, scope) -> list[dict]:
+    """The runs that show the change working, or nothing. Only when workflows are all the PR's
+    notes are about, and every changed workflow file has a green run of the PR's own copy on
+    this head with no job or step skipped. A composite action has no run of its own, and a
+    skipped step may be the changed one: neither counts. Nor does a "no" Jev gave on a config
+    that was cut for size: the changed step's inputs may be in the part it didn't see."""
+    surface = f.by_id.get("ci:workflows")
+    if set(scope) != {"ci:workflows"} or surface is None or not f.config_complete:
+        return []
+    runs = {c.get("path"): c for c in f.checks}
+    out = [runs.get(path) for path in surface.paths]
+    if all(r and r.get("conclusion") == "success" and r.get("not_run") == [] for r in out):
+        return out
+    return []
 
 
 def short_q(spec: Q, call: Call) -> str:

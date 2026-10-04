@@ -210,10 +210,15 @@ def collect_git(base: str, head: str, out: Path) -> dict:
     }
 
 
+WORKFLOW_FILE = re.compile(r"\.github/(workflows|actions)/.+\.ya?ml\Z")
+ROOT_LISTING = "(repository root: file names)"
+
+
 def config_paths(files: list[dict]) -> list[str]:
     """The configuration each changed app runs with, so the model can tell whether a breaking
     change in the release notes touches a setting this repo uses. A Renovate bump changes the
-    version in ocirepository.yaml, but the values live in the sibling helmrelease.yaml."""
+    version in ocirepository.yaml, but the values live in the sibling helmrelease.yaml. An
+    action's configuration is its step's `with:` inputs, in the workflow file itself (#214)."""
     out = []
     for f in files:
         path = f["path"]
@@ -222,6 +227,8 @@ def config_paths(files: list[dict]) -> list[str]:
         if path.startswith("kubernetes/apps/"):
             out.append(path.rsplit("/", 1)[0] + "/helmrelease.yaml")
         if path.startswith(("kubernetes/", "docker/")) and not path.endswith(("ocirepository.yaml", "kustomization.yaml")):
+            out.append(path)
+        if WORKFLOW_FILE.match(path):
             out.append(path)
     return list(dict.fromkeys(out))
 
@@ -268,7 +275,70 @@ def collect_config(files: list[dict], head: str) -> dict[str, str]:
         for path in generator_files(kustomization or "", directory):
             if path not in config and (text := show(path)) is not None:
                 config[path] = text
+    # What an action reads besides its inputs: setup-node only caches when there is a
+    # package.json (#214). Names only, from the tree.
+    if any(WORKFLOW_FILE.match(path) for path in config):
+        tree = git("ls-tree", "--name-only", head, check=False)
+        if tree.returncode == 0:
+            config = {ROOT_LISTING: tree.stdout, **config}  # first: the size budget cuts from the end
     return config
+
+
+# ── Workflow runs ────────────────────────────────────────────────────────────────────────────
+# A workflow is a pre-merge surface: for a same-repo PR, GitHub has already run the PR's copy of
+# a changed workflow on the PR's head. That run is evidence about the change, when it finished
+# green and nothing in it was skipped (a skipped job or step may be the one that changed).
+
+WORKFLOW_RUN_FILE = re.compile(r"\.github/workflows/[^/]+\.ya?ml\Z")
+
+
+def collect_checks(files: list[dict], repo: str, head_sha: str, wait: float, *, get=None, sleep=time.sleep, now=time.monotonic) -> list[dict]:
+    """The latest pull_request run, on exactly `head_sha`, of each workflow file the PR changes:
+    [{path, run_id, url, status, conclusion, not_run}]. `not_run` lists the jobs and steps that
+    didn't succeed (skipped, mostly), or is None when the jobs couldn't be read. Waits up to
+    `wait` seconds for runs still in progress; this run itself is never one of them.
+
+    It only waits when the runs can be used (semantic.exercised): workflows are the PR's only
+    surface the model is asked about. Otherwise the wait would come on top of Konflate's, for
+    evidence nothing reads. A run that isn't listed gets one more poll, not the whole wait: a
+    workflow without a pull_request trigger never has one."""
+    paths = [f["path"] for f in files if f["status"] != "D" and WORKFLOW_RUN_FILE.match(f["path"]) and surface_id(f["path"]) == "ci:workflows"]
+    if not paths or not repo:
+        return []
+    defs = [classify_path(f["path"])[0] for f in files]
+    if any(sd.model_required and sd.id != "ci:workflows" for sd in defs):
+        wait = 0.0
+    get = get or github_get
+    own = os.environ.get("GITHUB_RUN_ID")
+    start, delay, polls = now(), 15.0, 0
+    while True:
+        body = get(f"/repos/{repo}/actions/runs?head_sha={head_sha}&event=pull_request&per_page=100")
+        polls += 1
+        runs: dict[str, dict] = {}
+        for r in (body or {}).get("workflow_runs") or []:  # newest first
+            if r.get("path") in paths and r.get("head_sha") == head_sha and str(r.get("id")) != own:
+                runs.setdefault(r["path"], r)
+        pending = [path for path, r in runs.items() if r.get("status") != "completed"]
+        if body is None:
+            pending = ["the run list (GitHub didn't answer)"]
+        elif not pending and polls == 1:
+            pending = [path for path in paths if path not in runs]
+        if not pending or now() - start + delay > wait:
+            break
+        log(f"checks: waiting for {', '.join(pending)}; retrying in {int(delay)}s")
+        sleep(delay)
+    out = []
+    for path, r in runs.items():
+        not_run = None
+        if r.get("conclusion") == "success":
+            jobs = get(f"/repos/{repo}/actions/runs/{r['id']}/jobs?per_page=100") or {}
+            listed = jobs.get("jobs")
+            if isinstance(listed, list) and len(listed) == jobs.get("total_count"):
+                not_run = [j.get("name") for j in listed if j.get("conclusion") != "success"]
+                not_run += [f"{j.get('name')} / {s.get('name')}" for j in listed for s in j.get("steps") or [] if s.get("conclusion") != "success"]
+        out.append({"path": path, "run_id": r["id"], "url": r.get("html_url"), "status": r.get("status"),
+                    "conclusion": r.get("conclusion"), "not_run": not_run})  # fmt: skip
+    return out
 
 
 # ── Component contracts ──────────────────────────────────────────────────────────────────────
@@ -419,10 +489,10 @@ def konflate_fetch(pr: int, head_sha: str, url: str, wait: float, *, sleep=time.
 
 def cmd_collect(a) -> None:
     event = json.loads(Path(a.event).read_text())
-    collect(event, a.base, a.head or event["pull_request"]["head"]["sha"], Path(a.out), a.konflate_url, a.konflate_wait)
+    collect(event, a.base, a.head or event["pull_request"]["head"]["sha"], Path(a.out), a.konflate_url, a.konflate_wait, a.checks_wait)
 
 
-def collect(event: dict, base: str, head: str, out: Path, konflate_url: str | None, konflate_wait: float) -> None:
+def collect(event: dict, base: str, head: str, out: Path, konflate_url: str | None, konflate_wait: float, checks_wait: float = 0.0) -> None:
     out.mkdir(parents=True, exist_ok=True)
     pr = event["pull_request"]
     facts = collect_git(base, head, out)
@@ -453,7 +523,10 @@ def collect(event: dict, base: str, head: str, out: Path, konflate_url: str | No
     (out / "konflate.json").write_text(json.dumps({"state": state, "summary": summary}, indent=2))
     if diff:
         (out / "konflate_diff.json").write_text(json.dumps(diff))
-    log(f"collected {len(files)} files; konflate {state}")
+    repo = ((pr.get("base") or {}).get("repo") or {}).get("full_name") or os.environ.get("GITHUB_REPOSITORY", "")
+    checks = collect_checks(files, repo, facts["head_sha"], checks_wait)
+    (out / "checks.json").write_text(json.dumps(checks, indent=2))
+    log(f"collected {len(files)} files; konflate {state}; {len(checks)} workflow run(s)")
 
 
 # ── Jev state ────────────────────────────────────────────────────────────────────────────────
@@ -773,14 +846,33 @@ def github_release_sections(update: dict, get=None) -> tuple[list[dict], str, bo
     return [], "no release tagged for this package in " + ", ".join(repos), False
 
 
-def github_pages(path: str, pages: int = 10):
-    """Yield the pages of a GitHub list, newest first for releases. The token (GITHUB_TOKEN or
-    GH_TOKEN) is optional: release lists are public, it only lifts the rate limit."""
-    api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
+def github_api() -> tuple[str, dict]:
+    """(API root, headers). The token (GITHUB_TOKEN or GH_TOKEN) is optional: what is read here
+    is public, it only lifts the rate limit."""
     headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    return os.environ.get("GITHUB_API_URL", "https://api.github.com"), headers
+
+
+def github_get(path: str) -> dict | None:
+    """One GitHub API object, or None when it can't be read."""
+    api, headers = github_api()
+    try:
+        status, _, body = http_json(f"{api}{path}", headers=headers, timeout=15)
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        log(f"github {path}: {e}")
+        return None
+    if status != 200 or not isinstance(body, dict):
+        log(f"github {path}: HTTP {status}")
+        return None
+    return body
+
+
+def github_pages(path: str, pages: int = 10):
+    """Yield the pages of a GitHub list, newest first for releases."""
+    api, headers = github_api()
     for page in range(1, pages + 1):
         try:
             status, _, body = http_json(f"{api}{path}?per_page=100&page={page}", headers=headers, timeout=15)
@@ -870,6 +962,11 @@ def budget_config(config: dict[str, str], total: int, per_file: int) -> str:
         out.append(text)
         used += len(text)
     return "\n".join(out)
+
+
+def config_fits(config: dict[str, str], total: int, per_file: int) -> bool:
+    """Whether budget_config sends all of it: no file cut, none left out."""
+    return all(len(text) <= per_file for text in config.values()) and sum(len(f"# {path}\n") + len(text) for path, text in config.items()) <= total
 
 
 def raw_state(meta, files, diff, base_diff, sections=(), config=None, scale=1.0, invariants=False) -> tuple[dict, list[str]]:
@@ -993,6 +1090,7 @@ def load_bundle(d: Path) -> dict:
         "config": read_json(d / "config.json", {}),
         "components": read_json(d / "components.json", []),
         "secrets": read_json(d / "secrets.json", []),
+        "checks": read_json(d / "checks.json", []),  # absent in bundles from before it was collected
     }
     # collect() writes release_notes.json; older bundles and fixtures fall back to the PR body
     notes = read_json(d / "release_notes.json")
@@ -1025,7 +1123,8 @@ def classify(d: Path, *, key: str | None, model: str, fixture: dict | None = Non
     meta, files, konflate, kdiff, notes = b["meta"], b["files"], b["konflate"], b["kdiff"], b["notes"]
     surfaces = build_surfaces(files, surface_texts(files, b["diff"], b["config"]))
     f = Facts(meta, files, b["overlap"], b["conflict"], konflate, kdiff, b["diff"], b["base_diff"], b["config"], notes,
-              b["components"], b["secrets"], surfaces)  # fmt: skip
+              b["components"], b["secrets"], surfaces, checks=b["checks"],
+              config_complete=config_fits({k: redact(v) for k, v in b["config"].items()}, BUDGET["config"], BUDGET["config_per_file"]))  # fmt: skip
     a = Assessment(surfaces)
     ran = rules.evaluate(f, a)
     rules.compute_presence(f)
@@ -1334,6 +1433,8 @@ def main(argv=None) -> None:
     c.add_argument("--out", required=True)
     c.add_argument("--konflate-url", default=os.environ.get("KONFLATE_URL", KONFLATE_URL_DEFAULT))
     c.add_argument("--konflate-wait", type=float, default=float(os.environ.get("KONFLATE_WAIT_SECONDS") or 480))
+    c.add_argument("--checks-wait", type=float, default=float(os.environ.get("CHECKS_WAIT_SECONDS") or 240),
+                   help="seconds to wait for the PR's own runs of the workflows it changes")  # fmt: skip
     k = sub.add_parser("classify")
     k.add_argument("--input", required=True)
     k.add_argument("--jev-fixture", help='canned Jev responses {"raw": {...}, "rendered": {...}}, or a result.json to replay; skips the API')

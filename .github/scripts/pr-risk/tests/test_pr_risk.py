@@ -92,12 +92,39 @@ class TestReleaseNotesAndConfig(unittest.TestCase):
             {"status": "M", "path": "docker/nas/00-exporters/docker-compose.yaml"},
             {"status": "D", "path": "kubernetes/apps/media/gone/app/helmrelease.yaml"},
             {"status": "M", "path": "kubernetes/apps/media/README.md"},
+            {"status": "M", "path": ".github/workflows/validate.yaml"},
+            {"status": "M", "path": ".github/actions/setup-mise/action.yaml"},
+            {"status": "M", "path": ".github/scripts/pr-risk/pr_risk.py"},
         ]
         self.assertEqual(p.config_paths(files), [
             "kubernetes/apps/observability/smartctl-exporter/app/helmrelease.yaml",
             "kubernetes/components/postgres/cluster.yaml",
             "docker/nas/00-exporters/docker-compose.yaml",
+            ".github/workflows/validate.yaml",
+            ".github/actions/setup-mise/action.yaml",
         ])  # fmt: skip
+
+    def test_workflow_config_214(self):
+        """#214: a setup-node major bump was collected with `config.json` = {}, so nothing could
+        say whether its breaking changes (automatic caching, npm auth) touch this repo. The
+        config of an action is its step's inputs, plus what it reads from the repository root."""
+        workflow = "      - uses: actions/setup-node@8207627 # v7.0.0\n        with:\n          node-version: \"24\"\n"
+
+        def fake_git(*args, check=True):
+            if args[0] == "ls-tree":
+                return mock.Mock(returncode=0, stdout=".github\n.mise\nREADME.md\nkubernetes\n")
+            known = args[1].endswith(":.github/workflows/validate.yaml")
+            return mock.Mock(returncode=0 if known else 128, stdout=workflow if known else "")
+
+        with mock.patch.object(p, "git", side_effect=fake_git):
+            config = p.collect_config([{"status": "M", "path": ".github/workflows/validate.yaml"}], "HEAD")
+            other = p.collect_config([{"status": "M", "path": "kubernetes/components/postgres/cluster.yaml"}], "HEAD")
+        self.assertEqual(config, {".github/workflows/validate.yaml": workflow, p.ROOT_LISTING: ".github\n.mise\nREADME.md\nkubernetes\n"})
+        self.assertNotIn(p.ROOT_LISTING, other)  # only an action reads the repository root
+        self.assertEqual(next(iter(config)), p.ROOT_LISTING)  # first, so the size budget never drops it
+        self.assertTrue(p.config_fits(config, 10_000, 5_000))
+        self.assertFalse(p.config_fits({"a": "x" * 5_001}, 10_000, 5_000))  # cut
+        self.assertFalse(p.config_fits({"a": "x" * 4_000, "b": "x" * 4_000, "c": "x" * 4_000}, 10_000, 5_000))  # one left out
 
     def test_generator_files_197(self):
         """#197: configarr's config is `resources/config.yml`, fed in by a configMapGenerator, so
@@ -444,6 +471,80 @@ class TestKonflateFetch(unittest.TestCase):
         with mock.patch.object(p, "http_json", side_effect=OSError("connection refused")):
             state, summary, _ = p.konflate_fetch(179, self.HEAD, "http://k", 60, sleep=lambda s: None)
         self.assertEqual(state, "unavailable")
+
+
+class TestCollectChecks(unittest.TestCase):
+    HEAD = "19d5bacfd0268bf3164862a1946532cfb9c87186"
+    FILES = [{"status": "M", "path": ".github/workflows/validate.yaml"}]
+
+    def run_checks(self, pages, jobs=None, files=None, wait=60):
+        clock, pages, asked = {"t": 0.0}, iter(pages), []
+
+        def get(path):
+            asked.append(path)
+            return jobs if "/jobs" in path else next(pages)
+
+        out = p.collect_checks(self.FILES if files is None else files, "o/r", self.HEAD, wait, get=get,
+                               sleep=lambda s: clock.__setitem__("t", clock["t"] + s), now=lambda: clock["t"])  # fmt: skip
+        return out, asked
+
+    def run_of(self, status="completed", conclusion="success", path=".github/workflows/validate.yaml", **kw):
+        return {"id": 7, "path": path, "head_sha": self.HEAD, "status": status, "conclusion": conclusion, "html_url": "https://x/7", **kw}
+
+    def jobs(self, *steps, job="success"):
+        return {"total_count": 1, "jobs": [{"name": "validate", "conclusion": job, "steps": [{"name": n, "conclusion": c} for n, c in steps]}]}
+
+    def test_waits_for_the_run_then_reads_its_steps(self):
+        pages = [{"workflow_runs": [self.run_of("in_progress", None)]}, {"workflow_runs": [self.run_of()]}]
+        out, asked = self.run_checks(pages, self.jobs(("Setup Node.js", "success"), ("Post Setup Node.js", "success")))
+        self.assertEqual(out, [{"path": ".github/workflows/validate.yaml", "run_id": 7, "url": "https://x/7", "status": "completed",
+                                "conclusion": "success", "not_run": []}])  # fmt: skip
+        self.assertIn(f"head_sha={self.HEAD}&event=pull_request", asked[0])
+
+    def test_skipped_steps_are_named(self):
+        out, _ = self.run_checks([{"workflow_runs": [self.run_of()]}], self.jobs(("Setup Node.js", "skipped"), ("Lint", "success")))
+        self.assertEqual(out[0]["not_run"], ["validate / Setup Node.js"])
+
+    def test_gives_up_on_a_run_that_stays_in_progress(self):
+        out, asked = self.run_checks([{"workflow_runs": [self.run_of("in_progress", None)]}] * 50, wait=30)
+        self.assertEqual((out[0]["conclusion"], out[0]["not_run"]), (None, None))
+        self.assertFalse(any("/jobs" in a for a in asked))
+
+    def test_only_this_head_and_only_changed_workflows(self):
+        runs = [self.run_of(head_sha="0" * 40), self.run_of(path=".github/workflows/labeler.yaml")]
+        self.assertEqual(self.run_checks([{"workflow_runs": runs}] * 2)[0], [])
+        self.assertEqual(self.run_checks([None] * 50, wait=30)[0], [])  # the API never answered
+
+    def test_no_call_without_a_changed_workflow(self):
+        files = [{"status": "M", "path": "kubernetes/apps/default/whoami/app/helmrelease.yaml"},
+                 {"status": "M", "path": ".github/actions/setup-mise/action.yaml"},  # a composite action has no run of its own
+                 {"status": "M", "path": ".github/workflows/pr-risk.yaml"},  # the classifier's own run is this one
+                 {"status": "D", "path": ".github/workflows/gone.yaml"}]  # fmt: skip
+        self.assertEqual(self.run_checks([], files=files), ([], []))
+
+    def test_no_wait_when_the_run_cannot_be_used(self):
+        """With an app in the PR nothing reads the run (semantic.exercised), and the wait would
+        stack on Konflate's 480 s inside a 15-minute job."""
+        files = self.FILES + [{"status": "M", "path": "kubernetes/apps/default/whoami/app/helmrelease.yaml"}]
+        out, asked = self.run_checks([{"workflow_runs": [self.run_of("in_progress", None)]}] * 50, files=files)
+        self.assertEqual((out[0]["status"], len(asked)), ("in_progress", 1))
+        docs = self.FILES + [{"status": "M", "path": "README.md"}]  # no model needed for docs: still waits
+        out, _ = self.run_checks([{"workflow_runs": [self.run_of("in_progress", None)]}, {"workflow_runs": [self.run_of()]}], self.jobs(), files=docs)
+        self.assertEqual(out[0]["not_run"], [])
+
+    def test_failed_poll_and_unlisted_run_are_retried(self):
+        done = {"workflow_runs": [self.run_of()]}
+        out, _ = self.run_checks([None, None, done], self.jobs())  # GitHub didn't answer: retried until the deadline
+        self.assertEqual(out[0]["conclusion"], "success")
+        out, _ = self.run_checks([{"workflow_runs": []}, done], self.jobs())  # not listed yet: one more poll
+        self.assertEqual(out[0]["conclusion"], "success")
+        out, asked = self.run_checks([{"workflow_runs": []}] * 50)  # a push-only workflow: two polls, not the whole wait
+        self.assertEqual((out, len(asked)), ([], 2))
+
+    def test_own_run_is_never_waited_for(self):
+        with mock.patch.dict(p.os.environ, {"GITHUB_RUN_ID": "7"}):
+            out, asked = self.run_checks([{"workflow_runs": [self.run_of("in_progress", None)]}] * 2)
+        self.assertEqual((out, len(asked)), ([], 2))  # not listed, as far as it can tell: one more poll, no more
 
 
 class TestDiffBudgets(unittest.TestCase):

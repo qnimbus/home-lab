@@ -231,6 +231,8 @@ class Facts:
     hunks: dict[str, list[Hunk]] = field(default_factory=dict)
     rendered: list[Hunk] = field(default_factory=list)
     presence: dict[str, set[str]] = field(default_factory=dict)  # what semantic questions are about
+    checks: list[dict] = field(default_factory=list)  # the PR's own runs of the workflows it changes
+    config_complete: bool = True  # the model gets all of `config`, nothing cut for size
 
     def __post_init__(self):
         self.hunks = parse_diff(self.diff)

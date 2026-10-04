@@ -11,7 +11,7 @@ import re
 from dataclasses import asdict, dataclass, field
 
 SCHEMA = "pr-risk/v2"
-POLICY_VERSION = "2.2"
+POLICY_VERSION = "2.3"
 
 # ── Context dimensions ───────────────────────────────────────────────────────────────────────
 
@@ -48,7 +48,7 @@ CONSEQUENCE = [
     "irreversible_state_change",
 ]
 SUFFICIENCY = ["sufficient", "limited", "insufficient"]  # ordered
-EVIDENCE_SOURCES = ["git", "render", "release_notes", "model", "invariants"]
+EVIDENCE_SOURCES = ["git", "render", "release_notes", "model", "invariants", "checks"]
 
 
 def worst_sufficiency(values) -> str:
@@ -163,6 +163,7 @@ CONTEXT_CODES = {
     "ctx.runner_privileged": "Runs on the cluster-admin in-cluster runner",
     "ctx.resource_envelope": "Resource requests/limits or replica counts change",
     "ctx.crd_added": "Adds a CustomResourceDefinition",
+    "ctx.change_exercised": "The PR's own run of a changed workflow passed on this head, with nothing skipped",
 }
 
 

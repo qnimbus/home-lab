@@ -96,7 +96,7 @@ Codes are defined in `taxonomy.py` (`CODES`, `CONTEXT_CODES`), and every rule de
 | execution    | `exec.pre_merge_privileged`, `workflow_privilege_widened`, `review_bypass_widened`, `workstation_hook_changed`                                                                                                                                                                                          |
 | intent       | `intent.unexplained_change`, `bot_diff_out_of_shape`                                                                                                                                                                                                                                                    |
 | evidence     | `ev.render_missing`, `render_incomplete`, `unrendered_surface`, `release_notes_missing`, `release_notes_partial`, `model_unavailable`, `model_indecisive`, `model_input_truncated`, `opaque_content`, `merge_result_unknown`, `stale_base`, `manipulation_attempt`, `self_evaluation`, `unknown_signal` |
-| context      | `ctx.version_boundary`, `release_notes_unlisted`, `crd_touched`, `crd_added`, `base_overlap`, `large_changeset`, `helm_hook_recreated`, `networkpolicy_removed`, `unrendered_surface`, `runner_privileged`, `resource_envelope`                                                                         |
+| context      | `ctx.version_boundary`, `release_notes_unlisted`, `crd_touched`, `crd_added`, `base_overlap`, `large_changeset`, `helm_hook_recreated`, `networkpolicy_removed`, `unrendered_surface`, `runner_privileged`, `resource_envelope`, `change_exercised`                                                     |
 
 Four codes extend the design's list: `compat.crd_conversion_changed` (a dropped conversion webhook isn't a narrowed schema, #171), `integrity.merge_conflict` (the design names the case but not the code), `compat.crd_storage_version_moved` (a storage-version move is an obligation, a dropped served version is a mechanism), and `ev.model_unavailable` (an outage, kept apart from `ev.model_indecisive`). `intent.bot_diff_out_of_shape`, `avail.writes_blocked` and `ev.stale_base` are reserved: nothing emits them yet.
 
@@ -155,6 +155,12 @@ YAML is read line by line with its enclosing keys worked out from indentation (s
 
 Versions go to Jev oldest first: when the notes don't fit, the newest are left out, not the ones right after the version running now. A version boundary (`type/major`, or `!:` in the title; Renovate's `!:` also marks 0.x minor bumps) with no usable notes is `ev.release_notes_missing`, and notes that only reach part of the range are `ev.release_notes_partial`: a bounded gap, so review. Part of the range means the GitHub release list ended, or hit the 1,000-release page limit, before a release at or below the old version was seen (`partial` in `release_notes.json`).
 
+### Workflow runs
+
+For a same-repo PR, GitHub runs the PR's own copy of a workflow it changes, on the PR's head. `collect` writes `checks.json`: for each changed file under `.github/workflows/`, the latest `pull_request` run on exactly the head SHA, with its conclusion and every job or step that didn't succeed (`not_run`). It waits up to `CHECKS_WAIT_SECONDS` for a run still in progress, since Validate and this workflow start together, and only when the run can be used: workflows are the PR's only surface Jev is asked about, so the wait never comes on top of Konflate's. A run that isn't listed gets one more poll (a workflow without a `pull_request` trigger never has one); a poll GitHub didn't answer is retried.
+
+A run counts as having **exercised the change** only when it is green and nothing in it was skipped, because a skipped job or step may be the changed one. It is used in one place: it discharges `compat.breaking_change_elsewhere` (below). A composite action under `.github/actions/` has no run of its own, and `pr-risk.yaml`'s run is this one, so neither is looked up.
+
 ### Jev (`semantic.py`)
 
 [Jev](https://docs.typesafe.ai) (`jev-1.13.0`, pinned) is an analyst, not the classifier. It is asked narrow yes/no (`noul`) questions, and only when their subject is present in the diff or the render: the resource-envelope question only when requests or limits change, the network-policy question only when a policy is added, the CRD-schema question only when a CRD's schema (not just its descriptions) changes. What code can establish (change kind, reach) isn't asked; v1's `change_kind` and `blast_radius` are gone. A docs-only PR makes no call. A Renovate bump of one image asks three questions.
@@ -172,6 +178,10 @@ An answer ≥ 0.70 is a **probable** finding, ≤ 0.20 is **ruled out** (recorde
 
 **Breaking changes** keep v1's logic, as typed findings: breaking notes whose broken setting this repo's `config` uses are `compat.breaking_change_applies` (integrity, probable: **risky**, plan the migration); breaking notes that don't touch the config are `compat.breaking_change_elsewhere` (review); unclear applicability is a possible finding (review), and uncertain if Jev is on the fence.
 
+`config` is what `collect` writes to `config.json`: an app's `helmrelease.yaml` and the files its generators read, a changed component or compose file, and, for a workflow or composite action, the file itself (an action's configuration is its step's `with:` inputs) plus the file names in the repository root, which is what tells Jev there is no `package.json` for setup-node to cache. Before #214 a workflow had no config, so `breaking_affects_config` wasn't asked and a major action bump could only say "there is no config to check it against".
+
+`compat.breaking_change_elsewhere` asks for the notes to be skimmed. When workflows are the only surface Jev was asked about and every changed workflow file's own run exercised the change (above), and `config` went to Jev whole (nothing cut for size), that check has been done: the finding is recorded as `ruled_out` with the run as `checks` evidence, a `ctx.change_exercised` line names the run, and the PR can be **safe** (policy 2.3). A run never lowers `compat.breaking_change_applies`: a break can be silent (a cache that is no longer restored), and a green run only shows the workflow didn't fail.
+
 **Manipulation.** The PR's title, body, diff and rendered YAML are untrusted, and every question says so. A `manipulation_attempt` yes invalidates Jev's evidence for the surfaces that call covered (`ev.manipulation_attempt`, insufficient): the PR can't be safe and is normally review + uncertain. It is not risky merely because the text exists; any finding Jev did raise stays.
 
 ## Security model
@@ -182,7 +192,7 @@ An answer ≥ 0.70 is a **probable** finding, ≤ 0.20 is **ruled out** (recorde
   - Secret material committed in a PR is already published when the PR is pushed; merging makes it permanent in `main`'s history. `sec.secret_material_in_git` is an established integrity finding (**risky**: rotate it) in a public repository and a review obligation in a private one. The visibility comes from the PR payload (`base.repo.visibility`), with `REPO_VISIBILITY` as the fallback and "public" as the default.
   - Workflow artifacts of a public repository are downloadable by anyone signed in, for 30 days. `collect` scans the diff for secret-shaped strings (private keys with key material, GitHub/AWS/Slack/1Password/API tokens, JWTs, age keys) before anything is cut, and redacts them from `pr.diff`, `base_overlap.diff`, `config.json` and the PR title and body. The same redaction is applied to everything sent to Jev.
   - `secrets.json` is that scan's result: a list of `{path, kind}` for each hit on an added line, never the value. It is `[]` for a normal PR. A non-empty list is what raises `sec.secret_material_in_git` (risky: rotate it), and it's kept because the redacted diff no longer shows what was found.
-  - The rest of the bundle is public already: the PR (title, body, diff), files at the PR's head, and Konflate's render, which Konflate also serves without auth. Konflate's service account can't read Secrets, so values Flux substitutes from Secrets (`CLOUDFLARE_TUNNEL_ID`, `TAILSCALE_USER`) never reach the render. No credential the workflow holds (the Jev key, the GitHub token) is written to the bundle.
+  - The rest of the bundle is public already: the PR (title, body, diff), files at the PR's head, and Konflate's render, which Konflate also serves without auth. Konflate's service account can't read Secrets, so values Flux substitutes from Secrets (`CLOUDFLARE_TUNNEL_ID`, `TAILSCALE_USER`) never reach the render. No credential the workflow holds (the Jev key, the GitHub token) is written to the bundle. `checks.json` holds run ids and step names, which anyone can read on a public repository; reading them is why the job has `actions: read`.
 - The checkout is the **base** branch, so the classifier always comes from `main`, and a PR that changes it gets `ev.self_evaluation`. PR content is read as git objects only (`git diff --no-ext-diff --no-textconv`, `git merge-tree`, `git show`, `git ls-tree`, `git grep` against a commit) and is never executed or checked out.
 - The job runs on the in-cluster `home-lab` runner, because Konflate is internal-only. That runner is cluster-admin, which is exactly why nothing from the PR runs, and why workflow changes are a pre-merge execution surface in their own right.
 - What leaves the cluster: PR diffs and rendered manifests (hostnames, internal IPs), minus anything secret-shaped, go to TypeSafe. The API key is read from 1Password at `op://GitHub/jev/API_KEY` and only ever sent as the bearer token.
@@ -196,6 +206,7 @@ An answer ≥ 0.70 is a **probable** finding, ≤ 0.20 is **ruled out** (recorde
 | `JEV_MODEL`             | `jev-1.13.0`                                         | Pinned, because the answer bands (`semantic.THRESHOLDS`) are tuned per model version.                               |
 | `KONFLATE_URL`          | `http://konflate.flux-system.svc.cluster.local:8080` |                                                                                                                     |
 | `KONFLATE_WAIT_SECONDS` | `480`                                                | How long to wait for Konflate to render the current head SHA.                                                       |
+| `CHECKS_WAIT_SECONDS`   | `240`                                                | How long to wait for the PR's own runs of the workflows it changes. Only a PR that changes one waits.               |
 
 **Where to see why a PR got its label**: the run's job summary (Actions → PR Risk → the run) shows the full comment, in every mode; the `pr-risk-<n>` artifact has `result.json`, `comment.md` and `jev_request.json` (each Jev call's payload as sent: state, questions, model; a call that failed has its `error` there and isn't shown as sent in the comment); in `comment` mode the same text is a sticky comment on the PR.
 
@@ -215,7 +226,7 @@ why: "findings to check: `avail.resource_envelope_changed`"
 dimensions: { reach: app, stakes: [availability], activation: [reconcile], reversibility: revert }
 surfaces: [{ id, paths, reach, stakes, activation, reversibility, rendered, evidence: { git: sufficient, … }, sufficiency }]
 findings: [{ id, code, kind, certainty, consequence, surface, evidence: [e-003], description }]
-evidence: [{ id, source, fact, surface, quality }]
+evidence: [{ id, source, fact, surface, quality }]   # source: git, render, release_notes, model, invariants, checks
 context: [{ code, detail, surface }]
 jev: { model, usage, errors, asked, answers, sent }   # raw answers, for replay; sent: per call, field sizes and each question as worded
 konflate: { state, head, rules, … }

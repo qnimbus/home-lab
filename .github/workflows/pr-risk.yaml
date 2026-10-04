@@ -41,6 +41,7 @@ jobs:
     runs-on: ${{ vars.PR_RISK_RUNNER || 'home-lab' }}
     timeout-minutes: 15
     permissions:
+      actions: read # the PR's own runs of the workflows it changes (checks.json)
       contents: read
       pull-requests: write # labels + the sticky comment
     steps:
@@ -92,6 +93,7 @@ jobs:
         continue-on-error: true
         env:
           BASE_REF: ${{ steps.pr.outputs.base-ref }}
+          CHECKS_WAIT_SECONDS: ${{ vars.CHECKS_WAIT_SECONDS || '240' }}
           # Release lists are public; the token only lifts the rate limit for the notes fallback.
           GITHUB_TOKEN: ${{ github.token }}
           KONFLATE_URL: ${{ vars.KONFLATE_URL || 'http://konflate.flux-system.svc.cluster.local:8080' }}

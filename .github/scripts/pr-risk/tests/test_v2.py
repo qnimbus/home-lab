@@ -106,7 +106,7 @@ class Jev:
 class Scenario:
     def __init__(self, *diffs, title="fix: tweak", body="", author="owner", labels=(), konflate="auto", kdiff=None,
                  conflict=False, overlap=(), base_diff="", notes=None, secrets=None, components=None, visibility="public",
-                 config=None, binary=(), commits=1):  # fmt: skip
+                 config=None, binary=(), commits=1, checks=None):  # fmt: skip
         self.dir = Path(tempfile.mkdtemp())
         diff = "".join(diffs)
         files = files_of(diff) + [{"status": "M", "path": b, "binary": True, "additions": 0, "deletions": 0} for b in binary]
@@ -124,6 +124,8 @@ class Scenario:
         w("config.json", config or {})
         w("components.json", components or [])
         w("secrets.json", secrets or [])
+        if checks is not None:
+            w("checks.json", checks)
         if base_diff:
             w("base_overlap.diff", base_diff)
         if kdiff is not None:
@@ -690,6 +692,93 @@ class TestRegressions(Assertions):
                                        ("ctx", "            required:"), ("add", "            - replicas")]  # fmt: skip
         self.assertEqual(rules.crd_narrowing(rules.render_hunks(crd_kdiff("CustomResourceDefinition x.example.io", required))),
                          ["`replicas` newly required"])  # fmt: skip
+
+    def action_bump_214(self, checks=None, config="auto", extra=""):
+        """#214 as collected: one pinned-SHA line in validate.yaml, v5.0.0 → v7.0.0 of
+        actions/setup-node, whose v6.0.0 notes list a breaking change (`breaking_notes` 0.82)."""
+        path = ".github/workflows/validate.yaml"
+        diff = mkdiff(path, """\
+      - name: Setup Node.js
+-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
++        uses: actions/setup-node@8207627860cc3a94a4e5ae0f1d9e2a0f4c7e5b6d # v7.0.0
+        with:
+          node-version: "24"
+""", header="jobs:")  # fmt: skip
+        notes = {"source": "renovate", "reason": "r", "sections": [
+            {"version": "v6.0.0", "text": "### v6.0.0\n\n**Breaking Changes**\n\n- Limit automatic caching to npm"},
+            {"version": "v7.0.0", "text": "### v7.0.0\n\n- Remove the dummy NODE_AUTH_TOKEN"}]}  # fmt: skip
+        if config == "auto":
+            config = {path: '      - uses: actions/setup-node@8207627 # v7.0.0\n        with:\n          node-version: "24"\n',
+                      p.ROOT_LISTING: ".github\n.mise\nREADME.md\nkubernetes\n"}  # fmt: skip
+        jev = Jev({"breaking_notes": 0.82, "breaking_affects_config": 0.05})
+        r = Scenario(diff + extra, title="feat(github-action)!: Update action actions/setup-node (v5.0.0 ➔ v7.0.0)", author="renovate",
+                     labels=["type/major"], notes=notes, config=config, checks=checks).run(jev)  # fmt: skip
+        return r, jev
+
+    RUN_214 = {"path": ".github/workflows/validate.yaml", "run_id": 37192392701, "url": "https://github.com/o/r/actions/runs/37192392701",
+               "status": "completed", "conclusion": "success", "not_run": []}  # fmt: skip
+
+    def test_action_bump_is_checked_against_its_inputs_214(self):
+        """Its workflow said "there is no config to check it against": `config.json` was {} for
+        a workflow, so `breaking_affects_config` was never asked. With the step's inputs and the
+        repository root in view it is, and the answer names the finding for what it is."""
+        r, jev = self.action_bump_214()
+        self.assertIn("breaking_affects_config", jev.asked["raw"])
+        self.assertIn('node-version: "24"', jev.states["raw"]["config"])
+        self.assertIn(p.ROOT_LISTING, jev.states["raw"]["config"])
+        self.verdict(r, "review", rule="R3")
+        self.assertEqual(codes(r), {"compat.breaking_change_elsewhere"})
+        # as it was collected before: not asked, and the vaguer finding
+        r, jev = self.action_bump_214(config={})
+        self.assertNotIn("breaking_affects_config", jev.asked["raw"])
+        self.assertEqual(codes(r, ("possible",)), {"compat.breaking_change_applies"})
+
+    def test_own_green_run_discharges_breaking_change_elsewhere_214(self):
+        """The Validate run on #214's head had already run setup-node v7, every step green. That
+        is the check the obligation asks for, so it is ruled out and recorded, not dropped."""
+        r, _ = self.action_bump_214(checks=[self.RUN_214])
+        self.verdict(r, "safe", rule="R4")
+        f = next(x for x in r["findings"] if x["code"] == "compat.breaking_change_elsewhere")
+        self.assertEqual(f["certainty"], "ruled_out")
+        self.assertIn("checks", {e["source"] for e in r["evidence"] if e["id"] in f["evidence"]})
+        self.assertEqual([c["code"] for c in r["context"] if c["code"] == "ctx.change_exercised"], ["ctx.change_exercised"])
+        self.assertIn("37192392701", p.render_comment(r))
+
+    def test_a_run_only_counts_when_it_ran_the_change_214(self):
+        for why, checks in {
+            "no run": [],
+            "failed": [{**self.RUN_214, "conclusion": "failure", "not_run": None}],
+            "still running": [{**self.RUN_214, "status": "in_progress", "conclusion": None, "not_run": None}],
+            "a step was skipped": [{**self.RUN_214, "not_run": ["validate / Setup Node.js"]}],
+            "jobs unreadable": [{**self.RUN_214, "not_run": None}],
+            "another workflow's run": [{**self.RUN_214, "path": ".github/workflows/labeler.yaml"}],
+        }.items():
+            r, _ = self.action_bump_214(checks=checks)
+            self.assertEqual((r["classification"], codes(r)), ("review", {"compat.breaking_change_elsewhere"}), why)
+        # a workflow too long to send whole: Jev's "no" may not have seen the changed step's inputs
+        long = {".github/workflows/validate.yaml": "x" * (p.BUDGET["config_per_file"] + 1)}
+        r, _ = self.action_bump_214(checks=[self.RUN_214], config=long)
+        self.assertEqual((r["classification"], codes(r)), ("review", {"compat.breaking_change_elsewhere"}))
+        # a composite action changed too: no run lists its steps
+        action = mkdiff(".github/actions/setup-mise/action.yaml", "-        uses: jdx/mise-action@v3.2.0\n+        uses: jdx/mise-action@v4.0.0")
+        r, _ = self.action_bump_214(checks=[self.RUN_214], extra=action)
+        self.verdict(r, "review", rule="R3")
+        # an app in the same PR: the notes may be about it, and no workflow run exercises an app
+        r, _ = self.action_bump_214(checks=[self.RUN_214], extra=DIGEST_BUMP)
+        self.assertIn("compat.breaking_change_elsewhere", codes(r, ("established",)))
+
+    def test_a_green_run_never_lowers_a_breaking_change_that_applies_214(self):
+        """A break can be silent (a cache that is no longer restored): a passing run says the
+        workflow didn't fail, not that nothing changed. Only "elsewhere" is discharged."""
+        r, _ = self.action_bump_214(checks=[self.RUN_214])
+        self.assertEqual(r["classification"], "safe")
+        for affects, expect in ((0.85, ("risky", "probable")), (0.30, ("review", "possible"))):
+            diff_r = Scenario(mkdiff(".github/workflows/validate.yaml", "-        uses: a/b@v5.0.0\n+        uses: a/b@v7.0.0"), author="renovate",
+                              notes={"source": "renovate", "reason": "r", "sections": [{"version": "v6.0.0", "text": "BREAKING: x"}]},
+                              config={".github/workflows/validate.yaml": "x"}, checks=[self.RUN_214],
+                              ).run(Jev({"breaking_notes": 0.9, "breaking_affects_config": affects}))  # fmt: skip
+            f = next(x for x in diff_r["findings"] if x["code"] == "compat.breaking_change_applies")
+            self.assertEqual((diff_r["classification"], f["certainty"]), expect)
 
     def test_weak_breaking_lean_is_no(self):
         """#35, #45, #80, #147, #160: `breaking_notes` 0.21-0.26 on chore-only notes."""
