@@ -4,6 +4,10 @@ Whenever asked to sort these files, follow these instructions:
 
 - **Default rule**: All fields and properties should be sorted alphabetically at every level of the YAML structure, regardless of how deeply nested they are, unless a specific override rule is provided below or in other applicable instructions files.
 
+- **`name` comes first in a list item.** When the items of a list are maps with a `name` key, `name` leads and the rest follows alphabetically, so each item opens with what it is (`- name: cilium`, then `localASN`, `peers`). The exception is an object reference (`apiVersion`, `kind`, `name`, `namespace`, as in a `healthChecks` entry), which keeps that order.
+
+- **Helm values files are left as they are, for now.** A `values.yaml` fed to a `configMapGenerator` isn't reordered: any change to it changes the ConfigMap's hash and triggers a `helm upgrade` of the release, for no functional gain.
+
 - **The `add-app` skill's templates take precedence** (`.agents/skills/add-app/SKILL.md`). Where a template orders keys differently from these rules, as in a container `securityContext` or an ExternalSecret's `spec` and `spec.target`, the template's order is the convention. That skill lists every such case.
 
 ## Override rules for Kubernetes related file types
@@ -23,6 +27,8 @@ Whenever asked to sort these files, follow these instructions:
 - Any `resources` block (container resources in a manifest, chart values, a CRD's `resources` field such as kopiur's `moverDefaults`): `requests` before `limits`.
 
 - An ExternalSecret's `spec.data` entries: `secretKey` before `remoteRef`. A `PushSecret`'s `spec.data[].match` mirrors that order (`secretKey`, then `remoteRef`), so the two read the same way.
+
+- An `OCIRepository`'s `spec.ref`: `tag` before `digest`. The tag is the version a reader looks for; the digest pins it.
 
 - An `OCIRepository`'s `spec.verify`: `provider` before `matchOIDCIdentity`.
 
