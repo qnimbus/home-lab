@@ -794,19 +794,21 @@ def is_chart(package: str) -> bool:
     return any(x in package for x in ("/charts/", "/charts-mirror/", "helm-charts", "/helm/"))
 
 
-def tag_version(tag: str, package: str) -> str | None:
+def tag_version(tag: str, package: str, bare: bool = False) -> str | None:
     """The version a release tag stands for, if the tag is about this package. A monorepo tag
     must name it (`snapshot-controller-5.3.0`, `cloudnative-pg-v0.29.1`). A bare `v1.2.3` only
     counts for a container image: for a chart it is the app's version, which is a different
     number line (plugin-barman-cloud's app has a v0.8.0 of its own, years before chart 0.8.0).
-    Wrong notes are worse than none: they can read as a confident "nothing breaking"."""
+    Wrong notes are worse than none: they can read as a confident "nothing breaking". `bare`
+    says the chart is known to share its app's number line (released_with_app), so a bare tag
+    is its own."""
     m = TAG_VERSION.fullmatch(tag)
     if not m:
         return None
     prefix, version = m.group(1).rstrip("-_/@"), m.group(2)
     if prefix:
         return version if prefix == package.rsplit("/", 1)[-1] else None
-    return None if is_chart(package) else version
+    return None if is_chart(package) and not bare else version
 
 
 def candidate_repos(update: dict) -> list[str]:
@@ -840,7 +842,7 @@ def github_release_sections(update: dict, get=None) -> tuple[list[dict], str, bo
         found, reached_from = [], False
         for page in get(f"/repos/{repo}/releases"):
             for rel in page:
-                v = tag_version(rel.get("tag_name") or "", update["package"])
+                v = tag_version(rel.get("tag_name") or "", update["package"], bare=update.get("app_repo") == repo)
                 if not v or not vkey(v) or rel.get("draft") or rel.get("prerelease"):
                     continue
                 if vkey(v) <= lo:
@@ -905,6 +907,7 @@ def github_pages(path: str, pages: int = 10):
 
 
 TAG_LINK = re.compile(r"/releases/tag/([^)\s#?]+)")
+TAG_REPO = re.compile(r"github\.com/([\w.-]+/[\w.-]+)/releases/tag/")
 
 
 def trusted_section(section: dict, updates: list[dict]) -> bool:
@@ -912,13 +915,17 @@ def trusted_section(section: dict, updates: list[dict]) -> bool:
     heading link with the same rule as the GitHub lookup. Renovate gave plugin-barman-cloud's
     chart 0.7.0 → 0.8.0 the app's v0.8.0 notes, a year older and with an unrelated breaking
     change; those link the app's CHANGELOG.md, and a changelog without a tag is only trusted
-    for a container image. Without a parsed update table there is nothing to judge by."""
+    for a container image. A chart released with its app (released_with_app) is the exception:
+    a bare tag in that app's repo is the chart's too. Without a parsed update table there is
+    nothing to judge by."""
     if not updates:
         return True
     m = TAG_LINK.search(section["text"].split("\n", 1)[0])
     if m:
         tag = urllib.parse.unquote(m.group(1))
-        return any(tag_version(tag, u["package"]) for u in updates)
+        linked = TAG_REPO.search(section["text"].split("\n", 1)[0])
+        repo = linked.group(1).lower() if linked else None
+        return any(tag_version(tag, u["package"], bare=repo is not None and (u.get("app_repo") or "").lower() == repo) for u in updates)
     return any(not is_chart(u["package"]) for u in updates)
 
 
@@ -965,6 +972,34 @@ IMAGE_VARIANT = re.compile(r"^(?:distroless-)?(.*?)(?:-distroless|-rootless)?$")
 GHCR_IMAGE = re.compile(r"^ghcr\.io/([\w.-]+/[\w.-]+)$")
 
 
+def image_repo(name: str) -> str | None:
+    m = GHCR_IMAGE.match(name)
+    return IMAGE_REPOS.get(name) or (m.group(1) if m else None)
+
+
+def image_range(img: dict) -> tuple[str, str]:
+    """An image change's from and to as plain versions, where the tags allow it."""
+    old, new = (IMAGE_VARIANT.match((img.get(k) or "").split("@")[0]).group(1) for k in ("from", "to"))
+    return old, new
+
+
+def released_with_app(updates: list[dict], images: list[dict] | None) -> None:
+    """Mark the charts that are released with their app, under the app's bare tags (`app_repo`).
+    flux-operator's chart 0.60.0 → 0.61.0 is the operator's v0.61.0, one release in one repo,
+    and tag_version() turned its notes away as the app's (#210). The render is what tells this
+    apart from #177: it moves an image over exactly the chart's versions, and that image's repo
+    is one Renovate links for the chart. A sibling chart without an image of its own
+    (flux-instance) qualifies the same way: same repo, same versions."""
+    for img in images or []:
+        old, new = image_range(img)
+        repo = image_repo(img.get("name") or "")
+        if not (repo and vkey(old) and vkey(new)):
+            continue
+        for u in updates:
+            if is_chart(u["package"]) and (u["from"].lstrip("v"), u["to"].lstrip("v")) == (old.lstrip("v"), new.lstrip("v")):
+                u["app_repo"] = next((r for r in u["repos"] if r.lower() == repo.lower()), u.get("app_repo"))
+
+
 def app_images(images: list[dict] | None, updates: list[dict]) -> list[dict]:
     """Konflate's image changes that cross a minor or major and that the PR's own notes can't
     be about: not a package in Renovate's table, and not on the chart's number line (a chart
@@ -976,7 +1011,7 @@ def app_images(images: list[dict] | None, updates: list[dict]) -> list[dict]:
     out: dict[tuple, dict] = {}
     for img in images or []:
         name = img.get("name") or ""
-        old, new = (IMAGE_VARIANT.match((img.get(k) or "").split("@")[0]).group(1) for k in ("from", "to"))
+        old, new = image_range(img)
         lo, hi = vkey(old), vkey(new)
         if not (lo and hi) or lo[:2] >= hi[:2] or name in packages or name in IMAGE_IGNORE or (old.lstrip("v"), new.lstrip("v")) in ranges:
             continue
@@ -991,8 +1026,7 @@ def image_release_notes(images: list[dict] | None, updates: list[dict], get=None
     sections, results = [], []
     for img in app_images(images, updates):
         short = img["name"].rsplit("/", 1)[-1]
-        m = GHCR_IMAGE.match(img["name"])
-        repo = IMAGE_REPOS.get(img["name"]) or (m.group(1) if m else None)
+        repo = image_repo(img["name"])
         if repo is None:
             got, reason, partial = [], "no GitHub repo known for it: add it to `IMAGE_REPOS` in `.github/scripts/pr-risk/pr_risk.py`", False
         else:
@@ -1010,7 +1044,7 @@ def gather_release_notes(meta: dict, get=None, images: list[dict] | None = None)
     """package_release_notes(), plus the releases of the images Konflate's render moves across a
     minor or major (`images`, Konflate's list). Adds `images`: one entry per such image, with
     `covered` false when its releases weren't found or don't reach back to the running one."""
-    notes = package_release_notes(meta, get)
+    notes = package_release_notes(meta, get, images)
     if meta.get("author_kind") != "renovate":
         return notes
     sections, results = image_release_notes(images, renovate_updates(meta.get("body") or ""), get)
@@ -1024,7 +1058,7 @@ def gather_release_notes(meta: dict, get=None, images: list[dict] | None = None)
     return notes
 
 
-def package_release_notes(meta: dict, get=None) -> dict:
+def package_release_notes(meta: dict, get=None, images: list[dict] | None = None) -> dict:
     """{source: renovate | github | none, sections (oldest first), reason, unlisted}. Renovate's
     notes win when a version has substance; otherwise each updated package's GitHub releases are
     tried. `partial`: some package's fetched releases don't reach back to its `from` version
@@ -1033,6 +1067,7 @@ def package_release_notes(meta: dict, get=None) -> dict:
     if meta.get("author_kind") != "renovate":
         return {"source": "none", "sections": [], "reason": "not a Renovate PR"}
     updates = renovate_updates(meta.get("body") or "")
+    released_with_app(updates, images)
     sections = note_sections(release_notes(meta.get("body") or "", "renovate"))
     trusted = [s for s in sections if trusted_section(s, updates)]
     if any(substantive(s["text"]) for s in trusted):

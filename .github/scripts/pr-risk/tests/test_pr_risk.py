@@ -338,6 +338,47 @@ class TestReleaseNoteSources(unittest.TestCase):
         self.assertIn("IMAGE_REPOS", notes["images"][0]["reason"])
         self.assertFalse(notes["images"][0]["covered"])
 
+    # #210: flux-operator's two charts, released with the operator under one bare tag in one repo.
+    ROWS_210 = "\n".join(
+        f"| [ghcr.io/controlplaneio-fluxcd/charts/{c}](https://fluxoperator.dev) "
+        "([source](https://redirect.github.com/controlplaneio-fluxcd/flux-operator)) | minor | `0.60.0` → `0.61.0` |"
+        for c in ("flux-instance", "flux-operator")
+    )
+    NOTES_210 = ("### [`v0.61.0`](https://redirect.github.com/controlplaneio-fluxcd/flux-operator/releases/tag/v0.61.0)\n\n"
+                 "- web: fix reusing http client when refreshing oidc provider")  # fmt: skip
+    IMAGE_210 = {"name": "ghcr.io/controlplaneio-fluxcd/flux-operator", "from": "v0.60.0", "to": "v0.61.0", "refs": ["Deployment flux-system/flux-operator"]}
+
+    def test_chart_released_with_its_app_keeps_the_apps_notes_210(self):
+        meta = renovate_meta(self.ROWS_210, self.NOTES_210)
+        notes = p.gather_release_notes(meta, get=lambda path: self.fail("looked up"), images=[self.IMAGE_210])
+        self.assertEqual((notes["source"], [s["version"] for s in notes["sections"]]), ("renovate", ["v0.61.0"]))
+        self.assertNotIn("images", notes)  # the image is on the chart's line: nothing more to fetch
+        # Without the render nothing says the chart shares its app's tags: as before.
+        self.assertEqual(p.gather_release_notes(meta, get=lambda path: [])["source"], "none")
+        # Renovate found no notes: the app's bare releases are the chart's, in the linked repo only.
+        asked = []
+
+        def get(path):
+            asked.append(path)
+            return [[rel("v0.61.0"), rel("v0.60.0")]]
+
+        notes = p.gather_release_notes(renovate_meta(self.ROWS_210), get=get, images=[self.IMAGE_210])
+        self.assertEqual((notes["source"], [s["version"] for s in notes["sections"]]), ("github", ["v0.61.0", "v0.61.0"]))
+        self.assertEqual(set(asked), {"/repos/controlplaneio-fluxcd/flux-operator/releases"})
+
+    def test_app_notes_stay_dropped_when_the_image_is_on_another_line_177(self):
+        row = ("| [ghcr.io/cloudnative-pg/charts/plugin-barman-cloud](https://cloudnative-pg.io) "
+               "([source](https://redirect.github.com/cloudnative-pg/plugin-barman-cloud)) | minor | `0.7.0` → `0.8.0` |")  # fmt: skip
+        app_notes = "### [`v0.8.0`](https://redirect.github.com/cloudnative-pg/plugin-barman-cloud/releases/tag/v0.8.0)\n\n- **rbac:** Resource names have been prefixed."
+        get = lambda path: []  # noqa: E731
+        for img in (
+            {"name": "ghcr.io/cloudnative-pg/plugin-barman-cloud", "from": "v0.14.0", "to": "v0.15.0"},  # the app's own line
+            {"name": "ghcr.io/someone/else", "from": "v0.7.0", "to": "v0.8.0"},  # the chart's versions, in a repo the chart doesn't link
+        ):
+            notes = p.gather_release_notes(renovate_meta(row, app_notes), get=get, images=[img])
+            self.assertEqual(notes["sections"], [], img)
+            self.assertIn("app's releases, not the chart's", notes["reason"])
+
     def test_build_variant_is_not_part_of_the_version(self):
         meta = renovate_meta(self.ROW_176, self.NOTES_176)
         get = one_page(rel("v3.15.0"), rel("v3.14.1"), rel("v3.14.0"))

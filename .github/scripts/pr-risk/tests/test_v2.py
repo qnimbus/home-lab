@@ -1014,6 +1014,35 @@ class TestRegressions(Assertions):
         self.assertIn("traffic_newly_restricted", jev.asked["raw"])
         self.assertIn("traffic_newly_restricted", jev.asked["rendered"])  # the rendered hit is the rendered call's
 
+    def test_chart_released_with_its_app_is_judged_on_the_apps_notes_210(self):
+        """#210: flux-operator 0.60.0 → 0.61.0 was review for missing notes that were in the PR
+        body. The chart and the operator are one release; the render shows it."""
+        rows = "\n".join(f"| [ghcr.io/controlplaneio-fluxcd/charts/{c}](https://fluxoperator.dev) "
+                         "([source](https://redirect.github.com/controlplaneio-fluxcd/flux-operator)) | minor | `0.60.0` → `0.61.0` |"
+                         for c in ("flux-instance", "flux-operator"))  # fmt: skip
+        body = ("| Package | Update | Change |\n|---|---|---|\n" + rows + "\n\n---\n\n### Release Notes\n\n<details>\n<summary>x</summary>\n\n"
+                "### [`v0.61.0`](https://redirect.github.com/controlplaneio-fluxcd/flux-operator/releases/tag/v0.61.0)\n\n"
+                "- web: fix reusing http client when refreshing oidc provider\n\n</details>\n\n---\n\n### Configuration\n\nstuff\n")  # fmt: skip
+        image = {"name": "ghcr.io/controlplaneio-fluxcd/flux-operator", "from": "v0.60.0", "to": "v0.61.0",
+                 "refs": ["Deployment flux-system/flux-operator"], "upstream": "found"}  # fmt: skip
+        diff = "".join(mkdiff(f"kubernetes/apps/flux-system/{c}/app/ocirepository.yaml", "  ref:\n-    tag: 0.60.0\n+    tag: 0.61.0", header="spec:")
+                       for c in ("flux-instance", "flux-operator"))  # fmt: skip
+        title = "feat(container)!: Update flux-operator group (0.60.0 ➔ 0.61.0)"
+
+        def run(images):
+            notes = p.gather_release_notes({"author_kind": "renovate", "body": body}, get=lambda path: [], images=images)
+            jev = Jev()
+            return Scenario(diff, title=title, body=body, author="renovate", labels=["type/minor"], konflate=konflate_fresh(images=images),
+                            notes=notes).run(jev), jev  # fmt: skip
+
+        r, jev = run([image])
+        self.verdict(r, "safe")
+        self.assertIn("breaking_notes", jev.asked["raw"])
+        self.assertIn("oidc provider", jev.states["raw"]["release_notes"])
+        r, _ = run([])  # nothing in the render ties the chart to the app's tags
+        self.verdict(r, "review")
+        self.assertIn("ev.release_notes_missing", codes(r))
+
 
 # ── Model boundaries ─────────────────────────────────────────────────────────────────────────
 
