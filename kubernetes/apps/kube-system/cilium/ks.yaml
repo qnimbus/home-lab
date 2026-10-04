@@ -8,9 +8,9 @@ metadata:
     substitution.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: kube-system
-  prune: true
   interval: 1h
   path: ./kubernetes/apps/kube-system/cilium/app
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -30,13 +30,13 @@ metadata:
     substitution.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: kube-system
-  wait: true
-  prune: true
+  dependsOn:
+    - name: cilium
   interval: 1h
   path: ./kubernetes/apps/kube-system/cilium/config
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    - name: cilium
+  wait: true

@@ -8,9 +8,9 @@ metadata:
     substitution.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: kube-system
-  prune: true
   interval: 1h
   path: ./kubernetes/apps/kube-system/coredns/app
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
