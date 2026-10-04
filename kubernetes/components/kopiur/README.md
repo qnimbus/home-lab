@@ -63,7 +63,7 @@ No `dependsOn` on kopiur: see the `add-app` skill.
 
 It used to default to `KOPIUR_CAPACITY`, which tied a volume that can grow (`ceph-block`) to one that can't (`openebs-hostpath` refuses expansion).
 
-**Changing `KOPIUR_CACHE_CAPACITY` does not touch an existing cache claim.** The operator only creates the claim when it is missing and never re-applies over it, so the new size takes effect the next time the claim is created. To apply it now, delete `kopiur-cache-<claim>` between runs: it is only a cache, and the next mover gets a fresh one. `media/plex` still has its 20Gi claim from before the default changed.
+**Changing `KOPIUR_CACHE_CAPACITY` does not touch an existing cache claim.** The operator only creates the claim when it is missing and never re-applies over it, so the new size takes effect the next time the claim is created. To apply it now, delete `kopiur-cache-<claim>` between runs: it is only a cache, and the next mover gets a fresh one.
 
 **Raising `KOPIUR_CAPACITY` does not resize a live volume.** The claim is labelled `kustomize.toolkit.fluxcd.io/ssa: IfNotPresent` (its `dataSourceRef` is immutable), so Flux never re-applies it. The new number only takes effect when the claim is next created. To grow the live one as well:
 
