@@ -62,5 +62,4 @@ curl -s -o /dev/null -w '%{http_code}\n' -H 'X-Forwarded-For: 10.10.0.50' \
 - **Preferences in Git are written on every start**, but removing one from Git doesn't unset it: the value stays in `Preferences.xml` on the config volume.
 - **Not `externalTrafficPolicy: Local`.** Both LoadBalancer addresses are announced over L2, not BGP, and Cilium picks the announcing node without regard to where the pod runs ([cilium#27800](https://github.com/cilium/cilium/issues/27800)). With `Local`, a node without the Plex pod refuses the connection. `Cluster` costs the real client IP on that path.
 - **The Tailscale Ingress needs "HTTPS Certificates" enabled** for the tailnet in the Tailscale admin console; check there if it never gets an address. Changing `tailscale.com/tags` doesn't retag a live proxy: delete its StatefulSet so the operator recreates it.
-- **The kopiur cache is pinned at 20Gi**, its live size, because the cache claim can't be resized. See [components/kopiur](../../components/kopiur/README.md#sizing).
 - **Cloudflare's terms restrict video over its CDN** outside its paid video products. The public route streams through the proxied tunnel anyway.

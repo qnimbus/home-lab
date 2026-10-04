@@ -12,15 +12,11 @@ spec:
   dependsOn:
     - name: rook-ceph-cluster
       namespace: rook-ceph
-    - name: intel-gpu-resource-driver
-      namespace: system
   interval: 1h
   path: ./kubernetes/apps/media/plex/app
   postBuild:
     substitute:
       APP: *app
-      APP_SUBDOMAIN: *app
-      KOPIUR_CACHE_CAPACITY: 20Gi
       KOPIUR_CAPACITY: 20Gi
   prune: true
   sourceRef:
