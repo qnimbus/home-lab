@@ -29,14 +29,13 @@ spec:
       plex:
         annotations:
           reloader.stakater.com/auto: "true"
-        strategy: Recreate
         containers:
           app:
             image:
               repository: ghcr.io/home-operations/plex
               tag: 1.43.4.10903@sha256:fdc6fe82bc7d8acd08fc0aa581fcb76722803ba5905e2537135a697347dd6149
             env:
-              PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_APP}:443,https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://${LB_IP_PLEX_IOT}:32400,https://${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}:443,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
+              PLEX_ADVERTISE_URL: "https://plex.${DOMAIN_APP}:443,https://plex.${DOMAIN_CLUSTER}:443,http://${LB_IP_PLEX}:32400,http://${LB_IP_PLEX_IOT}:32400,https://plex.${DOMAIN_TAILSCALE}:443,http://{{ .Release.Name }}.{{ .Release.Namespace }}.svc.cluster.local:32400"
               PLEX_NO_AUTH_NETWORKS: "${LAN_CIDR},${POD_CIDR},${SERVICE_CIDR},${TAILSCALE_CIDR}"
               PLEX_PREFERENCE_1: "AllowMediaDeletion=0"
               PLEX_PREFERENCE_2: "EnableIPv6=0"
@@ -87,7 +86,7 @@ spec:
           tailscale.com/tags: "tag:plex"
         className: tailscale
         hosts:
-          - host: &host ${APP_SUBDOMAIN:=${APP}}.${DOMAIN_TAILSCALE}
+          - host: &host plex.${DOMAIN_TAILSCALE}
             paths:
               - path: /
                 service:

@@ -28,7 +28,7 @@ The LoadBalancer addresses have no DNS name: clients learn them from plex.tv. Pl
 
 | Mount          | Where                                         | Why there                                                                             |
 | -------------- | --------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `/config`      | `ceph-block` claim from kopiur                | Backed up hourly. `strategy: Recreate` because the claim is `ReadWriteOnce`           |
+| `/config`      | `ceph-block` claim from kopiur                | Backed up hourly. `ReadWriteOnce`, which the chart's default `Recreate` strategy fits |
 | `/mnt/media`   | NFS, `/mnt/tank/Media`                        | A raw mount: the `nfs` StorageClass makes and deletes a folder per claim              |
 | `/mnt/backups` | NFS, `/mnt/tank/Cluster/backup` → `apps/plex` | Plex's own database backups (`ButlerDatabaseBackupPath`), outside the cluster         |
 | `scratch`      | 20Gi `emptyDir`                               | Transcodes, logs and `/tmp`. On disk, not in memory: the small nodes have 32GB of RAM |
