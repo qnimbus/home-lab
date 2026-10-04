@@ -310,5 +310,6 @@ Show the user the created files and get confirmation before committing. Commit s
 - **`readOnlyRootFilesystem: true` without a tmpfs** — apps that write to `/tmp` will crash; mount an emptyDir.
 - **Skipping the sorting conventions** — key order follows the templates above first, then `.agents/instructions/sorting.instructions.md` for anything they don't cover.
 - **Alphabetizing what the templates order differently** — e.g. moving `capabilities` before `readOnlyRootFilesystem`, or `dataFrom` to the top of an ExternalSecret. The template order is the convention, not a mistake to fix.
+- **Restating a chart default** — e.g. `strategy: Recreate` on an app-template controller. Leave it out unless something depends on it, and then say so in the namespace README (`.agents/instructions/helm-values.instructions.md`).
 - **Adding a NetworkPolicy/CiliumNetworkPolicy by default** — the cluster runs without them (see CLAUDE.md's "Network policies"); only add one if the user asks.
 - **Adding `wait`, `commonMetadata`, or `timeout` to `ks.yaml`** — all three are boilerplate now. Leave `wait` unset unless another Kustomization depends on this one and it has no `healthChecks` (then, and only then, `wait: true`).
