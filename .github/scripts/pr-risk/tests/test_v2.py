@@ -975,6 +975,30 @@ class TestRegressions(Assertions):
         r = Scenario(redacted, secrets=[{"path": path, "kind": "private_key"}]).run()
         self.assertIn("sec.secret_material_in_git", codes(r, {"established"}))
 
+    def test_private_key_body_is_redacted(self):
+        """The private-key pattern is the PEM header. Redacting only that left the key itself in
+        pr.diff, the artifact and what Jev is sent."""
+        path = "kubernetes/apps/default/whoami/app/secret.yaml"
+        body = ["MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7VJTUt9Us8cKj", "MzEfYyjiWA4R4/M2bS1GB4t7NXp98C3SC6dVMvDuictGeurT8jNbvJZHtCSuYEvu", "Ag=="]
+        block = "data:\n+  tls.key: |\n+    -----BEGIN RSA PRIVATE KEY-----\n" + "".join(f"+    {b}\n" for b in body) + "+    -----END RSA PRIVATE KEY-----\n+  after: kept"
+        diff = mkdiff(path, block, header="apiVersion: v1")
+        inline = mkdiff(path, 'data:\n+  key: "-----BEGIN PRIVATE KEY-----\\n' + "\\n".join(body) + '\\n-----END PRIVATE KEY-----\\n"\n+  after: kept', header="apiVersion: v1")
+        for d in (diff, inline):
+            out = rules.redact(d)
+            for b in body:
+                self.assertNotIn(b, out)
+            self.assertNotIn("END", out)
+            self.assertIn("[REDACTED:private_key]", out)
+            self.assertIn("+  after: kept", out)
+        jev = Jev()
+        r = Scenario(diff).run(jev)
+        self.assertIn("sec.secret_material_in_git", codes(r, {"established"}))
+        self.assertNotIn(body[0], json.dumps(jev.states))
+        self.assertNotIn(body[0], json.dumps(r))
+        # A header with no key after it takes nothing else with it.
+        doc = "+the file starts with -----BEGIN PRIVATE KEY-----\n+and then the documentation continues\n"
+        self.assertEqual(rules.redact(doc), "+the file starts with [REDACTED:private_key]\n+and then the documentation continues\n")
+
     def test_netpol_in_an_unplaced_rendered_resource(self):
         """A rendered resource that belongs to none of the PR's surfaces has no surface id. It
         went into the raw call's scope as None, next to a real id, and sorting the two raised

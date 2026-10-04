@@ -1041,8 +1041,19 @@ def literal_secret(value: str | None) -> bool:
     return bool(value) and not NOT_A_SECRET.search(value)
 
 
+# A PEM private key as one match: the header, the key material after it, and the footer. The
+# header pattern alone would leave the key itself in place. Between the parts: whitespace, a
+# diff's +/- at the start of a line, or the `\n` of a key written on one line.
+_PEM_GAP = r"(?:\\[nr]|\s|(?<=\n)[+-])*"
+_PEM_END = r"-----END (?:[A-Z]+ )*PRIVATE KEY-----"
+PEM_BLOCK = re.compile(
+    SECRET_PATTERNS["private_key"] + rf"(?:{_PEM_GAP}[A-Za-z0-9+/=]{{16,}})*(?:{_PEM_GAP}[A-Za-z0-9+/=]*{_PEM_GAP}{_PEM_END})?"
+)
+
+
 def redact(text: str) -> str:
-    return SECRET_RE.sub(lambda m: f"[REDACTED:{m.lastgroup}]", text or "")
+    text = PEM_BLOCK.sub("[REDACTED:private_key]", text or "")
+    return SECRET_RE.sub(lambda m: f"[REDACTED:{m.lastgroup}]", text)
 
 
 @rule("security.secrets", "git", ["sec.secret_material_in_git"])
