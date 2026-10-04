@@ -29,7 +29,7 @@ db-backup ns app:
     kubectl apply -f - <<EOF
     apiVersion: postgresql.cnpg.io/v1
     kind: Backup
-    metadata: { name: {{ app }}-postgres-manual, namespace: {{ ns }} }
+    metadata: { name: {{ app }}-postgres-manual-{{ datetime_utc('%Y%m%d%H%M%S') }}, namespace: {{ ns }} }
     spec: { cluster: { name: {{ app }}-postgres }, method: plugin, pluginConfiguration: { name: barman-cloud.cloudnative-pg.io } }
     EOF
 
