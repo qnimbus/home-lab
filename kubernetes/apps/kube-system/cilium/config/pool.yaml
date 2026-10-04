@@ -10,18 +10,6 @@ spec:
       stop: "10.60.0.249"
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumloadbalancerippool_v2.json
-# Single-IP pool reserved for kube-api only (serviceSelector below), so it can
-# never be auto-picked by an unpinned Service and can't collide with the
-# envoy-external/envoy-internal block in `pool`.
-#
-# Pinned to 10.60.0.2 — the same address as talos/controlplane.yaml.j2's
-# Layer2VIPConfig, not a separate IP. Talos's own VIP already ARPs this
-# address on the control-plane nodes from the moment Talos is up, independent
-# of Cilium/CNI; this Service exists so external-dns can publish a hostname
-# for it, and so BGP (once configured for this pool) can upgrade single-node
-# ARP failover into real ECMP across all 3 control planes for routed clients.
-# l2-policy below excludes this Service so Cilium never ARPs the same IP
-# itself and fights with Talos's own ownership of it.
 apiVersion: cilium.io/v2
 kind: CiliumLoadBalancerIPPool
 metadata:
@@ -35,10 +23,6 @@ spec:
       "io.kubernetes.service.name": kube-api
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumloadbalancerippool_v2.json
-# Single-IP pool reserved for smtp-relay's IOT-facing VIP only (serviceSelector below).
-# Announced via the tagged VLAN 30 sub-interface each node carries on its mgmt trunk NIC
-# (talos/talconfig.yaml) — gives the IOT-VLAN printer an in-segment path to smtp-relay
-# that never crosses the UniFi inter-VLAN firewall. See docs/QA.md.
 apiVersion: cilium.io/v2
 kind: CiliumLoadBalancerIPPool
 metadata:
@@ -52,10 +36,6 @@ spec:
       "io.kubernetes.service.name": smtp-relay
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumloadbalancerippool_v2.json
-# Single-IP pool reserved for Plex's IOT-facing VIP only (serviceSelector below). Same
-# rationale as pool-iot-smtp-relay above: a Google TV streamer on 10.30.0.0/24 can't route to
-# 10.60.0.0/24 at all (UniFi gateway blocks IOT-initiated cross-VLAN traffic by design),
-# so Plex needs an in-segment IOT-side VIP too. See docs/QA.md.
 apiVersion: cilium.io/v2
 kind: CiliumLoadBalancerIPPool
 metadata:

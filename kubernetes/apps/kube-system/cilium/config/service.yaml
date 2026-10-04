@@ -6,31 +6,15 @@ metadata:
   name: kube-api
   annotations:
     external-dns.kubernetes.io/hostname: kube-vip.cluster.vwn.io
-    # Pin to the dedicated pool-kube-api pool — keeps this Service out of the
-    # envoy-external/envoy-internal block (10.60.0.230/.231). 10.60.0.2 is the
-    # same address as talos/controlplane.yaml.j2's Layer2VIPConfig (see
-    # networks.yaml); no `target` override needed since the real LB IP now
-    # matches the desired DNS target.
     lbipam.cilium.io/ips: "10.60.0.2"
 spec:
-  type: LoadBalancer
-  # Cluster (not Local): kube-api is excluded from L2 announcement
-  # (networks.yaml — Talos's own Layer2VIPConfig already owns ARP for this
-  # IP) and has no BGP advertisement configured yet, so this setting doesn't
-  # currently affect how traffic reaches the VIP. Kept as Cluster rather than
-  # Local pending that: Cilium's L2-announcement leader election is unaware of
-  # service endpoints and can elect a node with no local kube-apiserver pod
-  # (e.g. a worker), silently black-holing all traffic to the VIP, which would
-  # bite if L2 scope ever changes back. loadBalancer.mode: dsr (cilium values)
-  # already preserves the real client IP under Cluster policy, so this loses
-  # nothing today. Documented Cilium incompatibility + fix:
-  # https://docs.cilium.io/en/stable/network/l2-announcements/
   externalTrafficPolicy: Cluster
-  selector:
-    k8s-app: kube-apiserver
-    tier: control-plane
   ports:
     - name: https
       port: 6443
       protocol: TCP
       targetPort: 6443
+  selector:
+    k8s-app: kube-apiserver
+    tier: control-plane
+  type: LoadBalancer

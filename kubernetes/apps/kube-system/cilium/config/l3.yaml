@@ -1,66 +1,40 @@
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumbgpclusterconfig_v2.json
-# BGP peering to the UDM Pro Max — see bgp.conf (same directory) for the
-# router-side FRR config this must match: local ASN 64514 here pairs with
-# `neighbor k8s remote-as 64514` there, peerASN 64513/peerAddress 10.60.0.1
-# pairs with `router bgp 64513` / `bgp router-id 10.60.0.1` there.
-#
-# Verified live before cutting L2 announcement for these Services (see
-# l2-policy in networks.yaml): all 5 sessions ESTABLISHED, 5-way ECMP installed in the
-# UDM's FIB, ~17s full recovery after killing one node's BGP session
-# outright, and real per-connection flow-hashing confirmed via varying
-# apiserver SANs across repeated connections (needs
-# net.ipv4.fib_multipath_hash_policy=1 on the UDM — see the ECMP flow
-# hashing section of ../../../../../kubernetes/bootstrap/README.md).
 apiVersion: cilium.io/v2
 kind: CiliumBGPClusterConfig
 metadata:
   name: bgp-cluster-config
 spec:
-  nodeSelector:
-    matchLabels:
-      kubernetes.io/os: linux
   bgpInstances:
     - name: cilium
       localASN: 64514
       peers:
         - name: udm
-          peerASN: 64513
           peerAddress: 10.60.0.1
+          peerASN: 64513
           peerConfigRef:
             name: bgp-peer-config
+  nodeSelector:
+    matchLabels:
+      kubernetes.io/os: linux
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumbgppeerconfig_v2.json
-# Fast timers (default is 180s hold / 60s keepalive) for quick failure
-# detection on VIP failover — matches bgp.conf's expectations, no equivalent
-# timer config needed on the FRR side (it accepts whatever the peer offers).
-# No neighbor password/authSecretRef yet — see bgp.conf's comment; add one
-# here (spec.authSecretRef, in the kube-system namespace per values.yaml's
-# bgpControlPlane.secretsNamespace default) if that hardening ever lands.
 apiVersion: cilium.io/v2
 kind: CiliumBGPPeerConfig
 metadata:
   name: bgp-peer-config
 spec:
+  families:
+    - advertisements:
+        matchLabels:
+          advertise: bgp
+      afi: ipv4
+      safi: unicast
   timers:
     holdTimeSeconds: 9
     keepAliveTimeSeconds: 3
-  families:
-    - afi: ipv4
-      safi: unicast
-      advertisements:
-        matchLabels:
-          advertise: bgp
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/cilium.io/ciliumbgpadvertisement_v2.json
-# Advertises every LoadBalancer Service's IP over BGP EXCEPT mail/media
-# (smtp-relay, plex) — the two IOT-facing VIPs that must stay L2-only
-# forever (see l2-policy in networks.yaml and the pool-iot-* comments in
-# pool.yaml: BGP can't replicate their VLAN-30-presence firewall bypass,
-# it's pure L3 routing). This mirrors l2-policy's exclusion in reverse, so
-# kube-api/envoy-external/envoy-internal (and any future LB Service outside
-# those two namespaces) get picked up automatically with no per-service
-# opt-in needed.
 apiVersion: cilium.io/v2
 kind: CiliumBGPAdvertisement
 metadata:
@@ -70,9 +44,9 @@ metadata:
 spec:
   advertisements:
     - advertisementType: Service
-      service:
-        addresses:
-          - LoadBalancerIP
       selector:
         matchExpressions:
           - { key: "io.kubernetes.service.namespace", operator: NotIn, values: ["mail", "media"] }
+      service:
+        addresses:
+          - LoadBalancerIP

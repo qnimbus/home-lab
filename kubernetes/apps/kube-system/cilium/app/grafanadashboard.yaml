@@ -1,21 +1,20 @@
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
-# Dashboard JSON ships in ConfigMaps rendered by the chart (dashboards / operator.dashboards).
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
   name: cilium-dashboard
 spec:
   allowCrossNamespaceImport: true
+  configMapRef:
+    key: cilium-dashboard.json
+    name: cilium-dashboard
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
-  configMapRef:
-    name: cilium-dashboard
-    key: cilium-dashboard.json
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
 apiVersion: grafana.integreatly.org/v1beta1
@@ -24,12 +23,12 @@ metadata:
   name: cilium-operator-dashboard
 spec:
   allowCrossNamespaceImport: true
+  configMapRef:
+    key: cilium-operator-dashboard.json
+    name: cilium-operator-dashboard
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
-  configMapRef:
-    name: cilium-operator-dashboard
-    key: cilium-operator-dashboard.json
