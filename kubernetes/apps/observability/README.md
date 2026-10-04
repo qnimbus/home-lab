@@ -6,7 +6,7 @@ Metrics, alerting, dashboards and logs for the cluster and the NAS. kube-prometh
 
 | App                                                                   | What it does                                                                                 | Notes                                                                                                    |
 | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| [kube-prometheus-stack](./kube-prometheus-stack/app/helm/values.yaml) | Prometheus, Alertmanager (3 replicas), node-exporter, kube-state-metrics                     | `prometheus.` / `alertmanager.${DOMAIN_CLUSTER}`; volumes on `ceph-block`                                |
+| [kube-prometheus-stack](./kube-prometheus-stack/app/helm/values.yaml) | Prometheus, replicated Alertmanager, node-exporter, kube-state-metrics                       | `prometheus.` / `alertmanager.${DOMAIN_CLUSTER}`; volumes on `ceph-block`                                |
 | grafana-operator                                                      | The operator (`grafana-operator`) and the Grafana it runs (`grafana-operator-instance`)      | `grafana.${DOMAIN_CLUSTER}`, anonymous read-only; admin password from the 1Password `grafana` item       |
 | victoria-logs                                                         | Single-node log store                                                                        | `victorialogs.${DOMAIN_CLUSTER}`; also takes syslog from the NAS                                         |
 | fluent-bit                                                            | DaemonSet shipping container logs to VictoriaLogs                                            |                                                                                                          |
@@ -24,11 +24,13 @@ Metrics, alerting, dashboards and logs for the cluster and the NAS. kube-prometh
 
 **Alerting.** Alertmanager's root config _is_ [alertmanagerconfig.yaml](./kube-prometheus-stack/app/alertmanagerconfig.yaml) (`alertmanagerConfiguration`), not a discovered sub-route. A discovered one would get the `OnNamespace` matcher, which only routes alerts whose `namespace` label is `observability`.
 
-| Severity           | Receiver            | Behaviour                                                                                             |
-| ------------------ | ------------------- | ----------------------------------------------------------------------------------------------------- |
-| `critical`         | `pushover-critical` | Emergency priority: Pushover repeats every 60s until acknowledged, for up to 1h. Resolves are silent. |
-| `warning`, `error` | `pushover`          | Normal push. `error` is the severity Flux's notification-controller uses (`components/alerts`).       |
-| anything else      | `null`              | `info`, `Watchdog`, `InfoInhibitor`                                                                   |
+| Severity           | Receiver            | Behaviour                                                                                         |
+| ------------------ | ------------------- | ------------------------------------------------------------------------------------------------- |
+| `critical`         | `pushover-critical` | Emergency priority: Pushover repeats every 60s until acknowledged, for up to 1h.                  |
+| `warning`, `error` | `pushover`          | High priority. `error` is the severity Flux's notification-controller uses (`components/alerts`). |
+| anything else      | `null`              | `info`, `Watchdog`, `InfoInhibitor`                                                               |
+
+Both receivers send the resolve at normal priority.
 
 A firing `critical` alert mutes the `warning` alert with the same `alertname` in the same namespace. Reserve `critical` for things worth being woken for; that's why `OomKilled` is a `warning`. The Pushover credentials come from the 1Password `alertmanager` item, which `system-upgrade/tuppr` also reuses.
 
@@ -52,7 +54,7 @@ A firing `critical` alert mutes the `warning` alert with the same `alertname` in
 
 ## Gotchas
 
-- **The namespace is PSA `privileged`** (the patch in [kustomization.yaml](./kustomization.yaml)): node-exporter needs hostNetwork, hostPID, host paths and hostPort `9100`, and smartctl-exporter runs privileged.
+- **The namespace is PSA `privileged`** (the labels in [namespace.yaml](./namespace.yaml)): node-exporter needs hostNetwork, hostPID, host paths and hostPort `9100`, and smartctl-exporter runs privileged.
 - **`instanceSelector` is immutable.** To change a dashboard's or datasource's selector, delete the object and let Flux recreate it; for chart-rendered ones, delete them, then `flux reconcile hr <name> --force`.
 - **Keep the datasource names and uids** (`Prometheus`/`prometheus`, `Alertmanager`/`alertmanager`, `VictoriaLogs`/`victoria-logs`). Dashboards map their inputs by name, and some hard-code the uid.
 - **The VictoriaLogs Grafana plugin is bumped by hand** in [grafanadatasource.yaml](./victoria-logs/app/grafanadatasource.yaml). Its releases are `v`-prefixed but the field must not be, so Renovate can't track it.
@@ -66,6 +68,6 @@ A firing `critical` alert mutes the `warning` alert with the same `alertname` in
 - **smtp-relay is probed through its in-cluster Service**, because its LoadBalancer only admits the printer's IP. Its module is `smtp_banner` (read the greeting, send `QUIT`, read the reply), not `tcp_connect`: maddy logs an error for every connection dropped without a `QUIT`. The Probes reach the exporter at `blackbox-exporter:9115`, a name that relies on its `fullnameOverride`. VictoriaLogs' `fullnameOverride` likewise keeps `victoria-logs-server`, which fluent-bit, the route and the datasource reference.
 - **The `/etc/nfsmount.conf` silence:** Talos writes that file through `machine.files`, and node-exporter reports it as a mountpoint, duplicating `CephNodeDiskspaceWarning`. The other three files in `silences/` are the inactive X520-fallback silences, deliberately left out of the kustomization. Re-add them if the VLAN-200 storage fallback ever returns.
 - **fluent-bit doesn't depend on victoria-logs**: its HTTP output retries until the server is up.
-- **The Prometheus, Alertmanager and VictoriaLogs routes carry a homepage `pod-selector`** because the charts' pod labels don't match the route names.
+- **The Prometheus, Alertmanager, VictoriaLogs and Grafana routes carry a homepage `pod-selector`** because the charts' pod labels don't match the route names.
 - **The Grafana image is rewritten to `mirror.gcr.io`** by [mutatingadmissionpolicy.yaml](./grafana-operator/instance/mutatingadmissionpolicy.yaml), to stay clear of Docker Hub rate limits.
 - **unpoller** scrapes every 2m because it only polls the controller that often. Two of its dashboards also declare a stray `DS_UNIFI_POLLER` input, mapped to Prometheus like the rest.
