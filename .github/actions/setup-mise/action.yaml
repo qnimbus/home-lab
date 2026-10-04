@@ -22,7 +22,7 @@ runs:
     # from a checksum mismatch. That leaves nothing for the action's cache to hold, and a
     # restore can stall on the in-cluster runner, so the cache is off.
     - name: Install mise
-      uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
       with:
         cache: false
         install: false
