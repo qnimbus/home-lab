@@ -1,35 +1,34 @@
 # Renovate conventions
 
-Prefer Renovate's built-in managers over manual `# renovate:
-datasource=...` annotations. `renovate.json5` already enables `flux`,
-`helm-values`, `kubernetes`, and `kustomize`, each scoped to
-`kubernetes/**/*.yaml`. These parse dependency versions directly from the
-manifest structure — no comment needed.
+Prefer Renovate's built-in managers over manual `# renovate:` comments.
+`.renovaterc.json5` enables `flux`, `helm-values`, `kubernetes` and
+`kustomize` for files under `kubernetes/` (each manager's
+`managerFilePatterns` gives its exact scope), next to Renovate's defaults
+such as `github-actions` and `docker-compose`. These read versions from the
+manifest structure, so no comment is needed.
 
-## Don't add a `# renovate:` comment to a field a native manager already covers
+## No `# renovate:` comment on a field a native manager covers
 
-Concretely: an `OCIRepository`/`HelmRelease`/`HelmRepository`/
-`GitRepository`'s version field (e.g. `spec.ref.tag`) is read natively by
-the `flux` manager from `spec.url` plus that field — a manual comment on
-top is redundant, and risks the custom regex manager (see below) detecting
-the same dependency a second time from the same line.
+An `OCIRepository`/`HelmRelease`/`GitRepository` version field (e.g.
+`spec.ref.tag`) is read by the `flux` manager from `spec.url` plus that
+field; an `image:` by `kubernetes` or `helm-values`. A comment on top makes
+the custom regex manager detect the same dependency a second time.
 
-## Reserve `# renovate: datasource=...` for files with no native manager
+## Where the comment does belong
 
-The custom regex manager (`.renovate/customManagers.json5`) exists
-specifically for cases Renovate has no built-in support for — e.g.
-`talos/talenv.yaml`, shell scripts, `.env` files, or a version string
-embedded in a `postBuild.substitute` value. Only add the comment there.
+On a version no native manager parses: `kubernetes/talos/version.yaml`,
+a version field of a custom resource (tuppr's `TalosUpgrade`), a
+non-image version inside a Helm values file (`distribution.version` of
+`flux-instance`), a shell script.
 
-## Before adding a new manual comment, check
+Use the existing format, on the line above the value:
 
-1. Does an already-enabled manager (`flux`, `helm-values`, `kubernetes`,
-   `kustomize`, or one of Renovate's other defaults, e.g.
-   `github-actions`/`docker-compose`) already parse this field natively?
-   Check `docs.renovatebot.com/modules/manager/<name>/` for what it
-   matches.
-2. If yes — leave the comment out; centralized/native tracking already
-   covers it.
-3. If no — add the comment, matching the existing
-   `# renovate: datasource=<ds> depName=<name>` format so
-   `.renovate/customManagers.json5` picks it up.
+```yaml
+# renovate: datasource=<datasource> depName=<name>
+```
+
+The regex manager that matches it is not defined in this repo. It comes from
+the `home-operations/renovate-presets` that `.renovaterc.json5` extends.
+
+If unsure whether a manager covers a field, check
+`docs.renovatebot.com/modules/manager/<name>/` before adding a comment.

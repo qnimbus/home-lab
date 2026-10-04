@@ -16,9 +16,9 @@ ready at runtime.
   (`ClusterIssuer`, `ScaledObject`, `Grafana`, a `postgresql.cnpg.io/v1
 Cluster`, etc.) whose CRD is installed by another app's Helm chart, when
   that CRD isn't already installed by the bootstrap pipeline's CRD-only
-  pre-install phase (a helmfile step that applies CRDs cluster-wide before
-  Flux ever reconciles). Check that phase's chart list first — if the CRD
-  is pre-installed, no `dependsOn` is needed at all.
+  pre-install phase (`bootstrap/kubernetes/helmfile/crds.yaml`, applied
+  before Flux ever reconciles). Check its chart list first — if the CRD is
+  pre-installed, no `dependsOn` is needed at all.
 - **An app's own two-stage split** (e.g. `tuppr` → `tuppr-upgrade`,
   `grafana-operator` → `grafana-operator-instance`): structure this as two
   `Kustomization` documents in one multi-doc `ks.yaml` file — the operator
@@ -27,12 +27,13 @@ Cluster`, etc.) whose CRD is installed by another app's Helm chart, when
   Kustomization before applying any of them, so the operator and its CRD
   instances can never share one Kustomization.
 - **The storage behind a PVC** (accepted exception): `rook-ceph-cluster`
-  for `ceph-block`, `csi-driver-nfs` for `nfs`. This is runtime ordering,
-  not structural (a PVC's dry-run doesn't need its StorageClass), but it's
-  kept deliberately: it keeps a fresh bootstrap from piling up `Pending`
-  PVCs and timed-out Helm installs while Ceph comes up. The cost is that a
-  not-Ready storage Kustomization also pauses reconciliation of its
-  dependents.
+  for `ceph-block`, `csi-driver-nfs` for `nfs`, `csi-driver-smb` for an SMB
+  volume (its Kustomization also creates the mount credentials). This is
+  runtime ordering, not structural (a PVC's dry-run doesn't need its
+  StorageClass), but it's kept deliberately: it keeps a fresh bootstrap
+  from piling up `Pending` PVCs and timed-out Helm installs while Ceph
+  comes up. The cost is that a not-Ready storage Kustomization also pauses
+  reconciliation of its dependents.
 - **Restoring certificates before cert-manager sees them** (accepted
   exception): `network/certificates-export` depends on
   `certificates-import` (`wait: true`). Also runtime ordering, but a

@@ -42,7 +42,8 @@ point manifests at them (`kubernetes-schemas.pages.dev`, datreeio, yannh).
   bjw-s's `main` rather than our pinned chart version, and its HelmRelease
   part can lag Flux by a field or two (`healthCheckExprs`,
   `postRenderStrategy`, `waitStrategy` today). If a release needs one of
-  those, fall back to the generic schema for that file.
+  those, use `https://schemas.clustrs.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json`
+  for that file.
 - Non-Kubernetes YAML keeps its own schemastore schema (GitHub workflows,
   helmfile, lefthook). Docker Compose files and Talos/Jinja templates get
   none.

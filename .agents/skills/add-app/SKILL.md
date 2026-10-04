@@ -20,6 +20,7 @@ Scaffolds `kubernetes/apps/<namespace>/<app>/` with a Flux Kustomization (`ks.ya
 | container `securityContext`  | `allowPrivilegeEscalation`, `readOnlyRootFilesystem`, `capabilities`     |
 | ExternalSecret `spec`        | `refreshInterval`, `secretStoreRef`, `target`, `dataFrom`                |
 | ExternalSecret `spec.target` | `name`, `creationPolicy` (only when not the default), `template`         |
+| HelmRelease `spec`           | `interval`, `chartRef`, then as in `sorting.instructions.md`             |
 | Flux Kustomization `spec`    | `targetNamespace`, alphabetical, then `healthChecks`, `healthCheckExprs` |
 
 Everything the templates don't cover follows `sorting.instructions.md`.
@@ -163,10 +164,10 @@ kind: HelmRelease
 metadata:
   name: <app>
 spec:
+  interval: 1h
   chartRef:
     kind: OCIRepository
     name: <app>
-  interval: 1h
   values:
     controllers:
       <app>:
@@ -274,18 +275,17 @@ spec:
     name: <app>-secret
     template:
       data:
-        SOME_ENV_VAR: "{{ .<app>_field_name }}"
-      engineVersion: v2
+        SOME_ENV_VAR: "{{ .<APP>_field_name }}"
   dataFrom:
     - extract:
         key: <1password-item>
       rewrite:
         - regexp:
             source: "(.*)"
-            target: "<app>_$1"
+            target: "<APP>_$1"
 ```
 
-Convention: `metadata.name` is `<app>`, the generated Secret is `<app>-secret`, and `dataFrom.extract` + `rewrite` prefixes 1Password fields for use in `template.data` (see wotcher for a multi-item example). The `.<prefix>_<field>` references must use the item's real field names (from Step 1) — a wrong field name renders an empty value with no error. If the field names weren't provided and you can't ask, insert `<FIXME: 1password field name>` placeholders and call them out.
+Convention: `metadata.name` is `<app>`, the generated Secret is `<app>-secret`, and `dataFrom.extract` + `rewrite` prefixes 1Password fields with the app's name in capitals (`<APP>` is `PLEX` for plex) for use in `template.data` (see wotcher for a multi-item example). The `.<APP>_<field>` references must use the item's real field names (from Step 1) — a wrong field name renders an empty value with no error. If the field names weren't provided and you can't ask, insert `<FIXME: 1password field name>` placeholders and call them out.
 
 ## Step 3: Register in the namespace kustomization
 

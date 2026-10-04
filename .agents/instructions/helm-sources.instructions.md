@@ -15,5 +15,5 @@ workflow for a `helm push` before concluding there is none.
 There are no classic `HelmRepository` sources: the centralized
 `kubernetes/flux/meta` and its `cluster-meta` Kustomization are gone, and
 the bootstrap helmfiles only read `ocirepository.yaml`. If a chart
-genuinely has no OCI build, raise it rather than adding a `HelmRepository`,
-since bootstrap can't install such a release.
+has no OCI build in either place, stop and ask the user rather than adding
+a `HelmRepository`, since bootstrap can't install such a release.

@@ -1,121 +1,68 @@
-# Sorting instructions for all yaml files
+# YAML key order
 
-Whenever asked to sort these files, follow these instructions:
+These rules apply to every key you write: a new file, or a key added to an
+existing file (put it where the rules place it). Don't move keys that are
+already there unless the user asks for the file to be sorted.
 
-- **Default rule**: All fields and properties should be sorted alphabetically at every level of the YAML structure, regardless of how deeply nested they are, unless a specific override rule is provided below or in other applicable instructions files.
+- **Default: alphabetical at every level**, however deeply nested, unless a
+  rule below or in another instructions file says otherwise.
+- **`name` comes first in a list item.** When the items of a list are maps
+  with a `name` key, `name` leads and the rest follows alphabetically, so
+  each item opens with what it is (`- name: cilium`, then `localASN`,
+  `peers`). The exception is an object reference (`apiVersion`, `kind`,
+  `name`, `namespace`, as in a `healthChecks` entry), which keeps that order.
+- **Never reorder a Helm values file**, even when asked to sort its folder.
+  This is a `values.yaml` fed to a `configMapGenerator`: any change to it
+  changes the ConfigMap's hash and triggers a `helm upgrade` of the
+  release, for no functional gain.
+- **YAML embedded in a string is never sorted** (e.g. a config file under
+  `configMap.data.*`).
+- **The `add-app` skill's templates take precedence**
+  (`.agents/skills/add-app/SKILL.md`). Where a template orders keys
+  differently, as in a container `securityContext` or an ExternalSecret's
+  `spec` and `spec.target`, the template's order is the convention. That
+  skill lists every such case.
 
-- **`name` comes first in a list item.** When the items of a list are maps with a `name` key, `name` leads and the rest follows alphabetically, so each item opens with what it is (`- name: cilium`, then `localASN`, `peers`). The exception is an object reference (`apiVersion`, `kind`, `name`, `namespace`, as in a `healthChecks` entry), which keeps that order.
+## Kubernetes manifests
 
-- **Helm values files are left as they are, for now.** A `values.yaml` fed to a `configMapGenerator` isn't reordered: any change to it changes the ConfigMap's hash and triggers a `helm upgrade` of the release, for no functional gain.
-
-- **The `add-app` skill's templates take precedence** (`.agents/skills/add-app/SKILL.md`). Where a template orders keys differently from these rules, as in a container `securityContext` or an ExternalSecret's `spec` and `spec.target`, the template's order is the convention. That skill lists every such case.
-
-## Override rules for Kubernetes related file types
-
-- Whenever they are present on the same level of a YAML structure, these fields should be sorted as follows:
-  - `apiVersion`
-  - `kind`
-  - `metadata`
-  - `spec`
-
-- The items within the `metadata` section should be sorted as follows:
-  - `name`
-  - `namespace`
-  - `annotations`
-  - `labels`
-
-- Any `resources` block (container resources in a manifest, chart values, a CRD's `resources` field such as kopiur's `moverDefaults`): `requests` before `limits`.
-
-- An ExternalSecret's `spec.data` entries: `secretKey` before `remoteRef`. A `PushSecret`'s `spec.data[].match` mirrors that order (`secretKey`, then `remoteRef`), so the two read the same way.
-
-- An `OCIRepository`'s `spec.ref`: `tag` before `digest`. The tag is the version a reader looks for; the digest pins it.
-
+- Top level: `apiVersion`, `kind`, `metadata`, `spec`.
+- `metadata`: `name`, `namespace`, `annotations`, `labels`.
+- Any `resources` block (container resources in a manifest, chart values, a
+  CRD field such as kopiur's `moverDefaults`): `requests` before `limits`.
+- An ExternalSecret's `spec.data` entries: `secretKey` before `remoteRef`.
+  A `PushSecret`'s `spec.data[].match` mirrors that order.
+- An `OCIRepository`'s `spec.ref`: `tag` before `digest`. The tag is the
+  version a reader looks for; the digest pins it.
 - An `OCIRepository`'s `spec.verify`: `provider` before `matchOIDCIdentity`.
+- A `HelmRelease`'s `spec`: `interval` first, then `chartRef`, then the rest
+  alphabetically. app-template releases refine this below.
+- A Flux `Kustomization`'s `spec` (`ks.yaml`): `targetNamespace` first, then
+  the rest alphabetically, then `healthChecks` and `healthCheckExprs` last,
+  in that order. The health checks say when the rest counts as ready, so
+  they close the spec.
 
-- A Flux `Kustomization`'s `spec` (`ks.yaml`): `targetNamespace` first, then the rest alphabetically, then `healthChecks` and `healthCheckExprs` last, in that order. The health checks say when the rest counts as ready, so they close the spec, with the expressions that refine them directly after.
+## HelmReleases on app-template
 
-## HelmReleases based on app-template
+Only for a HelmRelease whose sidecar `ocirepository.yaml` has a `url` of
+`oci://ghcr.io/bjw-s-labs/helm/app-template`. Check that first; other
+HelmReleases follow the rules above.
 
-This section gives instructions specifically for HelmReleases that are based on the `app-template` chart. These can be identified by the presence of a sidecar `ocirepository.yaml` file that references `oci://ghcr.io/bjw-s-labs/helm/app-template` in the `url` field.
+- `spec`: `interval`, `chartRef`, `dependsOn`, any other key alphabetically
+  (`driftDetection`, `install`, `postRenderers`, `upgrade`), `values` last.
+- `spec.values`: `defaultPodOptions` first, then alphabetical
+  (`controllers`, `persistence`, `route`, `service`).
+- Within every section under `spec.values`: `enabled` first, then the
+  section's "First" keys from the table (`annotations`, `labels` when the
+  section has no row), then the remaining keys alphabetically, then its
+  "Last" keys.
 
-### Sorting rules
+| Section                                          | First                                                                                  | Last                             |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------- | -------------------------------- |
+| `controllers.*`                                  | `type`, `annotations`, `labels`, controller-specific (`cronjob`, `statefulset`), `pod` | `initContainers`, `containers`   |
+| `controllers.*.containers.*`, `initContainers.*` | `image`                                                                                |                                  |
+| `service.*`                                      | `type`, `annotations`, `labels`                                                        |                                  |
+| `persistence.*`                                  | `type`, `annotations`, `labels`                                                        | `globalMounts`, `advancedMounts` |
 
-Whenever asked to sort these files, follow these instructions:
-
-- Whenever there is an `enabled` field, it should be the first field within its section, unless a more specific rule below dictates otherwise.
-
-- The items within the `spec` section should be sorted as follows:
-  - `chartRef`
-  - `interval`
-  - `dependsOn`
-  - `install`
-  - `upgrade`
-  - `values`
-
-- Items within the `spec.values` section should be sorted as follows:
-  - `defaultPodOptions` (if present)
-  - All sibling keys at the `spec.values` level should be sorted alphabetically (e.g., `controllers`, `persistence`, `route`, `service`)
-
-Note: Sibling keys within `persistence.*`, `service.*`, `route.*`, `configMaps.*`, etc. are NOT required to be sorted - only the keys within each individual item. For example, if `persistence` has `config`, `data`, and `tmpfs` as children, they can be in any order. Only the keys within `persistence.config`, `persistence.data`, etc. should be sorted.
-
-**Important:** The sorting rules apply to the HelmRelease structure itself. Do NOT sort arbitrary YAML content embedded within string fields (e.g., `configMap.data.*` values containing YAML configurations).
-
-### General pattern for section keys
-
-Unless a more specific rule applies, keys within any section should be ordered as:
-
-- `annotations` (if present)
-- `labels` (if present)
-- All other keys should be sorted alphabetically
-
-### Detailed sorting rules for nested sections
-
-- Items within the `spec.values.controllers.*` sections should be sorted as follows:
-  - `type` (if present, always first)
-  - `annotations` (if present)
-  - `labels` (if present)
-  - Controller-specific fields such as `cronjob` or `statefulset` (if present)
-  - `pod`
-  - Any other fields should be sorted alphabetically, except the following fields which should come last (and in this order):
-  - `initContainers` (if present)
-  - `containers` (if present)
-
-- Items within `spec.values.controllers.*.containers.*` sections should be sorted as follows:
-  - `image`
-  - Any other fields should be added next in alphabetical order.
-
-- Items within `spec.values.service.*` sections should be sorted as follows:
-  - `type` (if present)
-  - `annotations` (if present)
-  - `labels` (if present)
-  - Any other fields should be added next in alphabetical order.
-
-- Items within `persistence.*` sections should be sorted as follows:
-  - `type` (if present)
-  - `annotations` (if present)
-  - `labels` (if present)
-  - Any other fields should be sorted alphabetically, except the following fields which should come last (and in this order):
-  - `globalMounts` (if present)
-  - `advancedMounts` (if present)
-
-### Quick reference
-
-**Before sorting, verify the chart is app-template based:**
-
-1. Check for a sidecar `ocirepository.yaml` file
-2. Confirm the `url` field contains `oci://ghcr.io/bjw-s-labs/helm/app-template`
-3. If not app-template, do not apply these sorting rules
-
-**Decision tree for sorting HelmRelease fields:**
-
-```
-At spec.values level?
-  → Yes: defaultPodOptions first (if present), then alphabetical
-
-Within controllers.*.containers.* or .initContainers.*?
-  → Yes: image first, then alphabetical
-
-Within persistence.*, service.*, etc. siblings?
-  → No: Do not sort siblings (e.g., persistence.config vs persistence.data order doesn't matter)
-  → Yes: Sort keys within each item (type → annotations → labels → alphabetical)
-```
+The named items under `persistence`, `service`, `route`, `configMaps` and
+the like (`persistence.config`, `persistence.data`) may be in any order.
+Only the keys within each item are sorted.

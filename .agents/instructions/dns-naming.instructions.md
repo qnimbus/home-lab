@@ -96,16 +96,17 @@ holds one name, `router.wan-failover.home.vwn.io`.
 - **One source per name.** The gateway refuses a record whose name a client
   entry's local DNS record already holds (`Overlaps with Device Local DNS`),
   and that one failure stops every other change external-dns-unifi has
-  queued, each cycle, until it is fixed. Before declaring a device, check
-  its UniFi client entry and clear a local DNS record of the same name.
+  queued, each cycle, until it is fixed. Before declaring a device, ask the
+  user to clear any local DNS record of that name on its UniFi client entry
+  (it isn't visible from Git or the cluster).
 
 ## Not yet on the scheme
 
-Don't copy these; move them when the app is touched anyway.
+Don't copy these. When a task touches one of these apps, propose the move
+to the user; don't make it unasked, since most need a change outside Git.
 
 - `portal.guest.home.vwn.io` points at 192.168.1.1, the gateway's address on
   the Default network, not on the guest network its zone names.
-
 - `printer` (as `canon`) and `smtp-relay` still answer on their old
   `iot.${DOMAIN_IO}` names as a second record. For `smtp-relay`, drop it
   once the printer is reconfigured.
@@ -115,4 +116,5 @@ Don't copy these; move them when the app is touched anyway.
 - `kube-vip.home.arpa` in `kubernetes/talos/cluster.yaml.j2`.
 - `external` and `internal.${DOMAIN_PROXII}`, the gateways' own names, and
   `${DOMAIN_CASA}` and `${DOMAIN_APPS}`, which are wired (certificate,
-  tunnel, DNS filters) and unused: none of these domains has a pattern.
+  tunnel, DNS filters) and unused: no rule above covers these domains, so
+  put no new name under them.

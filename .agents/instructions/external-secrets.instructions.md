@@ -15,10 +15,10 @@ spec:
       rewrite:
         - regexp:
             source: (.*)
-            target: APP_$1 # adds APP_ prefix to every extracted field
+            target: <APP>_$1 # the app's name in capitals: PLEX_$1
 ```
 
-A 1Password field named `API_KEY` becomes `APP_API_KEY` in the Kubernetes
+A 1Password field named `API_KEY` becomes `PLEX_API_KEY` in the Kubernetes
 Secret. Name 1Password fields **without** the application prefix — the
 rewrite adds it.
 
@@ -32,20 +32,18 @@ prefix (or otherwise differ from the rewritten key names), add a
 spec:
   target:
     template:
-      engineVersion: v2 # required for {{ .KEY }} syntax
       data:
         EXPECTED_KEY_NAME: "{{ .PREFIXED_KEY }}"
 ```
 
 The template runs **after** the rewrite — reference keys by their
-post-rewrite names. Always set `engineVersion: v2`; the v1 default uses a
-different interpolation format and is deprecated.
+post-rewrite names. A wrong key renders an empty value with no error.
 
 ## Exception: discrete `data` + `remoteRef.property`
 
-`extract` pulls every field of an item and relies on `rewrite` to keep keys
-collision-free — overkill when an item's fields are already few, unique,
-and unambiguous. In that case, use the explicit form instead:
+Use explicit entries only when both hold: the Secret needs specific fields
+of an item rather than all of them, and each key must be the bare field
+name, with no prefix (as in `flux-system/flux-instance`):
 
 ```yaml
 spec:
@@ -56,6 +54,4 @@ spec:
         property: githubAppID
 ```
 
-Reach for `extract` + `rewrite` by default; drop to explicit
-`data`/`remoteRef` only when every field is already named individually and
-collision risk is a non-issue.
+In every other case use `extract` + `rewrite`.
