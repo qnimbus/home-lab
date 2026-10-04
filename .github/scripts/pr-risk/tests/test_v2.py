@@ -861,6 +861,70 @@ class TestRegressions(Assertions):
         # Without the rendered diff, nobody can tell: review.
         self.verdict(Scenario(diff, konflate=k).run(), "review")
 
+    CNPG_OCI = mkdiff("kubernetes/apps/database/cloudnative-pg/operator/app/ocirepository.yaml", "  ref:\n-    tag: 0.29.0\n+    tag: 0.29.1", header="spec:")
+    CNPG_TITLE = "fix(container): update image ghcr.io/cloudnative-pg/charts/cloudnative-pg (0.29.0 ➔ 0.29.1)"
+    CNPG_PARENT = "HelmRelease database/cloudnative-pg"
+
+    def test_crd_schema_text_is_not_a_recovery_setting_176(self):
+        """#176: clusters.postgresql.cnpg.io reworded a description under `bootstrap.recovery`.
+        A schema names the recovery keys without setting anything; a backup object still counts."""
+        rows = [("ctx", "              bootstrap:"), ("ctx", "                properties:"), ("ctx", "                  recovery:"),
+                ("del", "                    description: Bootstrap the cluster from a backup."),
+                ("add", "                    description: Bootstrap the cluster from a backup or from another cluster."),
+                ("ctx", "                    type: object")]  # fmt: skip
+        kdiff = crd_kdiff("CustomResourceDefinition clusters.postgresql.cnpg.io", rows, parent=self.CNPG_PARENT)
+        r = Scenario(self.CNPG_OCI, kdiff=kdiff, konflate=konflate_fresh(crds=1), title=self.CNPG_TITLE, author="renovate", notes=NO_NOTES).run()
+        self.verdict(r, "safe")
+        self.assertNotIn("data.recovery_path_changed", codes(r))
+        backup = {"diff": {"resources": [{"kind": "ScheduledBackup", "title": "ScheduledBackup default/paperless-postgres", "status": "changed",
+                  "parent": self.CNPG_PARENT, "unified": [{"kind": "del", "html": "  schedule: 0 33 0 * * *"}, {"kind": "add", "html": "  schedule: 0 33 1 * * *"}]}]}}  # fmt: skip
+        r = Scenario(self.CNPG_OCI, kdiff=backup, title=self.CNPG_TITLE, author="renovate", notes=NO_NOTES).run()
+        self.assertIn("data.recovery_path_changed", codes(r, {"possible"}))
+
+    def test_fence_sitting_on_a_capped_question_is_possible_176(self):
+        """#176: Jev said 0.60 on `crd_schema_narrowed`. A yes there is capped at possible
+        (review), so being unsure can't make the PR uncertain."""
+        rows = self.SCHEMA_HEAD + [("ctx", "              modulus:"), ("ctx", "                format: int64"), ("add", "                minimum: 0"),
+                                   ("ctx", "                type: integer")]  # fmt: skip
+        kdiff = crd_kdiff("CustomResourceDefinition poolers.postgresql.cnpg.io", rows, parent=self.CNPG_PARENT)
+        r = Scenario(self.CNPG_OCI, kdiff=kdiff, konflate=konflate_fresh(crds=1), title=self.CNPG_TITLE, author="renovate",
+                     notes=NO_NOTES).run(Jev({"crd_schema_narrowed": 0.60}))  # fmt: skip
+        self.verdict(r, "review", rule="R3")
+        self.assertIn("compat.crd_schema_narrowed", codes(r, {"possible"}))
+        self.assertNotIn("ev.model_indecisive", codes(r))
+
+    def test_chart_notes_do_not_cover_the_app_176(self):
+        """#176: the chart's notes were CI chores while the render moved the operator a minor.
+        Without that image's notes it is a bounded gap, whatever the chart's own version does."""
+        img = {"name": "ghcr.io/cloudnative-pg/cloudnative-pg", "from": "1.29.1", "to": "1.30.1", "refs": ["Deployment database/cloudnative-pg"]}
+        chart = {"version": "v0.29.1", "text": "### v0.29.1\n\n- ci: add cert manager to renovate"}
+        notes = {"source": "renovate", "sections": [chart], "reason": "r",
+                 "images": [{**img, "reason": "no release tagged for this package in cloudnative-pg/cloudnative-pg", "covered": False}]}  # fmt: skip
+        r = Scenario(self.CNPG_OCI, title=self.CNPG_TITLE, author="renovate", notes=notes).run()
+        self.verdict(r, "review", rule="R3")
+        gap = next(x for x in r["findings"] if x["code"] == "ev.release_notes_partial")
+        self.assertEqual(gap["surface"], "database/cloudnative-pg")
+        self.assertIn("1.29.1 → 1.30.1", gap["description"])
+        app = {"version": "cloudnative-pg v1.30.0", "text": "### cloudnative-pg v1.30.0\n\n- feat: a primary lease"}
+        notes = {"source": "renovate", "sections": [chart, app], "reason": "r", "images": [{**img, "reason": "GitHub releases", "covered": True}]}
+        jev = Jev()
+        r = Scenario(self.CNPG_OCI, title=self.CNPG_TITLE, author="renovate", notes=notes).run(jev)
+        self.verdict(r, "safe")
+        self.assertIn("a primary lease", jev.states["raw"]["release_notes"])
+
+    def test_operator_bump_names_what_it_restarts_176(self):
+        """#176: one changed image line in the operator's Deployment, and four databases restart.
+        The registry knows which operators do that; it is context, so a patch stays safe."""
+        img = lambda ns_name: [{"name": "ghcr.io/x/operator", "from": "1.29.2", "to": "1.29.3", "refs": [f"Deployment {ns_name}"], "upstream": "found"}]  # noqa: E731
+        r = Scenario(self.CNPG_OCI, konflate=konflate_fresh(images=img("database/cloudnative-pg")), title=self.CNPG_TITLE, author="renovate", notes=NO_NOTES).run()
+        self.verdict(r, "safe")
+        note = next(c for c in r["context"] if c["code"] == "ctx.operand_restart")
+        self.assertIn("every Postgres cluster", note["detail"])
+        self.assertEqual(note["surface"], "database/cloudnative-pg")
+        diff = mkdiff("kubernetes/apps/database/dragonfly/app/ocirepository.yaml", "  ref:\n-    tag: 1.7.0\n+    tag: 1.7.1", header="spec:")
+        r = Scenario(diff, konflate=konflate_fresh(images=img("database/dragonfly")), title="fix(container): update dragonfly", author="renovate", notes=NO_NOTES).run()
+        self.assertNotIn("ctx.operand_restart", {c["code"] for c in r["context"]})
+
 
 # ── Model boundaries ─────────────────────────────────────────────────────────────────────────
 

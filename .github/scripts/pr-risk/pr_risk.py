@@ -508,9 +508,6 @@ def collect(event: dict, base: str, head: str, out: Path, konflate_url: str | No
         **facts,
     }
     (out / "meta.json").write_text(json.dumps(meta, indent=2))
-    notes = gather_release_notes(meta)
-    (out / "release_notes.json").write_text(json.dumps(notes, indent=2))
-    log(f"release notes: {notes['source']}, {len(notes['sections'])} version(s) ({notes['reason']})")
 
     files = json.loads((out / "files.json").read_text())
     relevant = any(rendered_path(f["path"]) for f in files)
@@ -523,6 +520,10 @@ def collect(event: dict, base: str, head: str, out: Path, konflate_url: str | No
     (out / "konflate.json").write_text(json.dumps({"state": state, "summary": summary}, indent=2))
     if diff:
         (out / "konflate_diff.json").write_text(json.dumps(diff))
+    # After the render: it is what shows which images a chart bump moves.
+    notes = gather_release_notes(meta, images=(summary.get("diff") or {}).get("images") if state == "fresh" else None)
+    (out / "release_notes.json").write_text(json.dumps(notes, indent=2))
+    log(f"release notes: {notes['source']}, {len(notes['sections'])} version(s) ({notes['reason']})")
     repo = ((pr.get("base") or {}).get("repo") or {}).get("full_name") or os.environ.get("GITHUB_REPOSITORY", "")
     checks = collect_checks(files, repo, facts["head_sha"], checks_wait)
     (out / "checks.json").write_text(json.dumps(checks, indent=2))
@@ -906,7 +907,109 @@ def trusted_section(section: dict, updates: list[dict]) -> bool:
     return any(not is_chart(u["package"]) for u in updates)
 
 
-def gather_release_notes(meta: dict, get=None) -> dict:
+# A chart has two versions: its own, which Renovate tracks and whose notes it brings, and the
+# app's, which only the render shows. cloudnative-pg's chart 0.28.2 → 0.29.1 had notes about CI
+# and docs while the operator inside went 1.29.1 → 1.30.1 (#176). Such an image's own releases
+# are looked up too. This doesn't reopen #177 (Renovate's app notes for a chart, of the wrong
+# year): the range here is the rendered tags, so the notes are of what gets deployed.
+
+# The GitHub repo that releases an image, where the name doesn't say. `ghcr.io/<owner>/<name>`
+# needs no entry: its namespace is a GitHub owner, and a wrong guess finds no release for the
+# tag. Other registries' namespaces aren't owners (`quay.io/jetstack/…` is cert-manager/…).
+IMAGE_REPOS = {
+    "cr.fluentbit.io/fluent/fluent-bit": "fluent/fluent-bit",
+    "mirror.gcr.io/coredns/coredns": "coredns/coredns",
+    "quay.io/brancz/kube-rbac-proxy": "brancz/kube-rbac-proxy",
+    "quay.io/cephcsi/cephcsi": "ceph/ceph-csi",
+    "quay.io/prometheus-operator/prometheus-config-reloader": "prometheus-operator/prometheus-operator",
+    "quay.io/prometheus-operator/prometheus-operator": "prometheus-operator/prometheus-operator",
+    "quay.io/prometheus/alertmanager": "prometheus/alertmanager",
+    "docker.io/envoyproxy/envoy": "envoyproxy/envoy",
+    "quay.io/prometheus/blackbox-exporter": "prometheus/blackbox_exporter",
+    "quay.io/prometheus/node-exporter": "prometheus/node_exporter",
+    "quay.io/prometheus/prometheus": "prometheus/prometheus",
+    "quay.io/prometheuscommunity/smartctl-exporter": "prometheus-community/smartctl_exporter",
+    "registry.k8s.io/external-dns/external-dns": "kubernetes-sigs/external-dns",
+    "registry.k8s.io/kube-state-metrics/kube-state-metrics": "kubernetes/kube-state-metrics",
+    "registry.k8s.io/metrics-server/metrics-server": "kubernetes-sigs/metrics-server",
+    "registry.k8s.io/sig-storage/snapshot-controller": "kubernetes-csi/external-snapshotter",
+    "victoriametrics/victoria-logs": "VictoriaMetrics/VictoriaLogs",
+}
+# Images whose notes aren't worth a lookup or a gap: the CSI sidecars every storage chart bundles.
+# Their minors move with almost every driver bump, and their notes would crowd out the driver's.
+IMAGE_IGNORE = {
+    "registry.k8s.io/sig-storage/csi-attacher",
+    "registry.k8s.io/sig-storage/csi-node-driver-registrar",
+    "registry.k8s.io/sig-storage/csi-provisioner",
+    "registry.k8s.io/sig-storage/csi-resizer",
+    "registry.k8s.io/sig-storage/csi-snapshotter",
+    "registry.k8s.io/sig-storage/livenessprobe",
+}
+# A build variant around the version, not part of it: `v3.14.0-distroless`, `distroless-v1.39.1`.
+IMAGE_VARIANT = re.compile(r"^(?:distroless-)?(.*?)(?:-distroless|-rootless)?$")
+GHCR_IMAGE = re.compile(r"^ghcr\.io/([\w.-]+/[\w.-]+)$")
+
+
+def app_images(images: list[dict] | None, updates: list[dict]) -> list[dict]:
+    """Konflate's image changes that cross a minor or major and that the PR's own notes can't
+    be about: not a package in Renovate's table, and not on the chart's number line (a chart
+    released with its app, like cilium's, has the app's notes already), and not in
+    IMAGE_IGNORE. A known build variant is taken off the tag (IMAGE_VARIANT); a tag that still
+    isn't a plain version (`1.2.3-alpine`, a bare digest) can't be ranged and is left alone."""
+    packages = {u["package"] for u in updates}
+    ranges = {(u["from"].lstrip("v"), u["to"].lstrip("v")) for u in updates}
+    out: dict[tuple, dict] = {}
+    for img in images or []:
+        name = img.get("name") or ""
+        old, new = (IMAGE_VARIANT.match((img.get(k) or "").split("@")[0]).group(1) for k in ("from", "to"))
+        lo, hi = vkey(old), vkey(new)
+        if not (lo and hi) or lo[:2] >= hi[:2] or name in packages or name in IMAGE_IGNORE or (old.lstrip("v"), new.lstrip("v")) in ranges:
+            continue
+        out.setdefault((name, old, new), {"name": name, "from": old, "to": new, "refs": list(img.get("refs") or [])})
+    return list(out.values())
+
+
+def image_release_notes(images: list[dict] | None, updates: list[dict], get=None) -> tuple[list[dict], list[dict]]:
+    """(sections, images): the GitHub releases of each of app_images(), headed with the image's
+    name so they read apart from the chart's, and per image whether its range is `covered`.
+    Only the releases on a newer minor or major line than the running one are kept."""
+    sections, results = [], []
+    for img in app_images(images, updates):
+        short = img["name"].rsplit("/", 1)[-1]
+        m = GHCR_IMAGE.match(img["name"])
+        repo = IMAGE_REPOS.get(img["name"]) or (m.group(1) if m else None)
+        if repo is None:
+            got, reason, partial = [], "no GitHub repo known for it: add it to `IMAGE_REPOS` in `.github/scripts/pr-risk/pr_risk.py`", False
+        else:
+            got, reason, partial = github_release_sections({"package": img["name"], "repos": [repo], "from": img["from"], "to": img["to"]}, get)
+            # Not the later patches of the line that runs now (1.29.2, 1.29.3 next to 1.30.0):
+            # they are backports, and they'd use up the budget before the new line's notes.
+            line = vkey(img["from"])[:2]
+            got = [s for s in got if (vkey(tag_version(s["version"], img["name"]) or "") or line)[:2] > line]
+        sections += [{"version": f"{short} {s['version']}", "text": s["text"].replace("### ", f"### {short} ", 1)} for s in got]
+        results.append({**img, "reason": reason, "covered": bool(got) and not partial})
+    return sections, results
+
+
+def gather_release_notes(meta: dict, get=None, images: list[dict] | None = None) -> dict:
+    """package_release_notes(), plus the releases of the images Konflate's render moves across a
+    minor or major (`images`, Konflate's list). Adds `images`: one entry per such image, with
+    `covered` false when its releases weren't found or don't reach back to the running one."""
+    notes = package_release_notes(meta, get)
+    if meta.get("author_kind") != "renovate":
+        return notes
+    sections, results = image_release_notes(images, renovate_updates(meta.get("body") or ""), get)
+    if not results:
+        return notes
+    notes["images"] = results
+    notes["sections"] = notes["sections"] + sections
+    notes["reason"] += "; " + "; ".join(f"image {i['name'].rsplit('/', 1)[-1]} {i['from']} → {i['to']}: {i['reason']}" for i in results)
+    if sections and notes["source"] == "none":
+        notes["source"] = "github"
+    return notes
+
+
+def package_release_notes(meta: dict, get=None) -> dict:
     """{source: renovate | github | none, sections (oldest first), reason, unlisted}. Renovate's
     notes win when a version has substance; otherwise each updated package's GitHub releases are
     tried. `partial`: some package's fetched releases don't reach back to its `from` version

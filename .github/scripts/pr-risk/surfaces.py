@@ -28,6 +28,7 @@ class SurfaceDef:
     rendered: bool = False  # Konflate renders it (its filter keys on area/kubernetes, set from these paths)
     render_required: bool = False  # without a render, a human has to picture what merging does
     model_required: bool = True
+    operands: str = ""  # what restarts when this operator's image changes; a context line, never a finding
 
 
 def d(id, patterns, reach, stakes=(), activation=("reconcile",), **kw) -> SurfaceDef:
@@ -96,7 +97,11 @@ REGISTRY: list[SurfaceDef] = [
     app("{ns}/{app}", ["kubernetes/apps/flux-system/{flux-instance,flux-operator}/**"], "cluster", ("control_plane",)),
     app("{ns}/{app}", ["kubernetes/apps/actions-runner-system/{app}/**"], "cluster", ("credentials", "trust_boundary")),  # runners are cluster-admin
     # ── Shared platform services.
-    app("{ns}/{app}", ["kubernetes/apps/database/{cloudnative-pg,dragonfly}/**"], "shared", ("data", "availability", "control_plane")),
+    # In-place instance-manager updates are off, so a new operator image rolls every instance.
+    # Drop `operands` if ENABLE_INSTANCE_MANAGER_INPLACE_UPDATES is ever set.
+    app("{ns}/{app}", ["kubernetes/apps/database/cloudnative-pg/**"], "shared", ("data", "availability", "control_plane"),
+        operands="every Postgres cluster it manages (one instance each, so each is briefly down; avoid the backup windows)"),  # fmt: skip
+    app("{ns}/{app}", ["kubernetes/apps/database/dragonfly/**"], "shared", ("data", "availability", "control_plane")),
     app("{ns}/{app}", ["kubernetes/apps/observability/kube-prometheus-stack/**"], "shared", ("availability",)),
     app("{ns}/{app}", ["kubernetes/apps/system/{keda,reloader,intel-gpu-resource-driver}/**", "kubernetes/apps/kube-system/{app}/**"],
         "shared", ("availability",)),  # fmt: skip
@@ -178,7 +183,7 @@ def build_surfaces(files: list[dict], texts: dict[str, str] | None = None) -> li
         if sd.reach not in ("none",):
             stakes |= {s for s, rx in STAKE_HINTS.items() if rx.search(text)}
         out.append(Surface(sid, tuple(paths), sd.reach, frozenset(stakes), sd.activation, sd.reversibility,
-                           sd.rendered, sd.render_required, sd.model_required))  # fmt: skip
+                           sd.rendered, sd.render_required, sd.model_required, sd.operands))  # fmt: skip
     return out
 
 

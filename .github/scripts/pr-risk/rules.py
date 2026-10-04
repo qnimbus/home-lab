@@ -609,6 +609,10 @@ def storage_identity(f: Facts, a: Assessment) -> None:
                            f"{where} upgrades PostgreSQL {mo} → {mn}: the data directory is upgraded in place and a revert can't read it.")  # fmt: skip
         # Backup objects and recovery settings. Additions count too: bf62c46 only added a region
         # to CNPG's ObjectStore, and backups to Backblaze stopped (reverted next day).
+        # A CRD's schema names the same keys (`properties.bootstrap.properties.recovery`) without
+        # setting anything: #176 was a reworded description in clusters.postgresql.cnpg.io.
+        if h.kind == "CustomResourceDefinition":
+            continue
         backup_object = (h.kind or "") in BACKUP_KINDS or bool(BACKUP_KIND.search(f.config.get(h.path, "") + "\n" + h.text))
         for ln in h.lines:
             if ln.changed and not ln.blank and (backup_object or ln.key in RECOVERY_KEYS or ln.within(*RECOVERY_KEYS)):
@@ -674,6 +678,24 @@ def availability_envelope(f: Facts, a: Assessment) -> None:
 
 
 NETPOL_KINDS = {"NetworkPolicy", "CiliumNetworkPolicy", "CiliumClusterwideNetworkPolicy"}
+
+
+@rule("availability.operands", "konflate", ["ctx.operand_restart"], lambda f: any(s.operands for s in f.surfaces))
+def availability_operands(f: Facts, a: Assessment) -> None:
+    """An operator's new image renders as one changed line in its Deployment; what it then does
+    to the workloads it manages renders nowhere (#176: CNPG 1.29 → 1.30 restarted four
+    databases). The registry says which operators do this. Context, so a patch bump stays safe:
+    the line is there to pick the moment, not to ask for a review."""
+    if f.konflate.get("state") != "fresh":
+        return
+    for img in ((f.konflate.get("summary") or {}).get("diff") or {}).get("images") or []:
+        if not (img.get("from") and img.get("to")):
+            continue
+        for sid in dict.fromkeys(f.resource_sid(r) for r in img.get("refs") or []):
+            s = f.by_id.get(sid)
+            if s and s.operands:
+                a.note("ctx.operand_restart", f"`{img.get('name')}` {img['from']} → {img['to']}: rolling out the new operator restarts "
+                       f"{s.operands}. Merge at a quiet moment.", sid)  # fmt: skip
 
 
 @rule("availability.netpol", "git+konflate", ["avail.traffic_newly_restricted", "ctx.networkpolicy_removed"])
@@ -1288,7 +1310,8 @@ def may_break(meta) -> str | None:
 def evidence_release_notes(f: Facts, a: Assessment) -> None:
     """A version boundary isn't a finding: the release notes decide (Jev's breaking_notes and
     breaking_affects_config). Without notes that say anything, someone has to read the
-    upstream changelog, which is a bounded gap, not an unknown."""
+    upstream changelog, which is a bounded gap, not an unknown. The same goes for an image the
+    render moves across a minor or major when the notes are only the chart's."""
     notes = f.notes
     targets = [s.id for s in f.surfaces if s.reach != "none"]
     why = may_break(f.meta)
@@ -1297,6 +1320,14 @@ def evidence_release_notes(f: Facts, a: Assessment) -> None:
         # Maintenance, not risk: a Docker Hub image is named the same way, so it isn't guessed.
         a.note("ctx.release_notes_unlisted", f"No release notes were looked up for `{package}`. If github.com/{package} is where it is released, "
                "add it to `REPO_PACKAGES` in `.github/scripts/pr-risk/pr_risk.py`.")  # fmt: skip
+    # The chart's notes say nothing about the app inside it (#176: CI chores for the chart, an
+    # operator minor in the render). Its own boundary, whatever the chart's version does.
+    for img in notes.get("images") or []:
+        if not img.get("covered"):
+            on = [s for s in dict.fromkeys(f.resource_sid(r) for r in img.get("refs") or []) if s] or targets
+            a.gap("ev.release_notes_partial", "release_notes", on, "limited",
+                  f"The render moves `{img.get('name')}` {img.get('from')} → {img.get('to')}, and the release notes are the chart's "
+                  f"({img.get('reason')}): check that image's changelog.")  # fmt: skip
     if why:
         a.note("ctx.version_boundary", why)
         if not notes.get("sections"):
@@ -1311,6 +1342,8 @@ def evidence_release_notes(f: Facts, a: Assessment) -> None:
             return
     if notes.get("sections"):
         where = "GitHub releases" if notes.get("source") == "github" else "the PR"
+        if notes.get("source") != "github" and any(i.get("covered") for i in notes.get("images") or []):
+            where += " and GitHub releases"
         for sid in targets:
             a.record("release_notes", f"Release notes from {where}: {versions}", sid)
             a.set_quality(sid, "release_notes", "sufficient")

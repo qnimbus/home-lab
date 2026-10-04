@@ -11,7 +11,7 @@ import re
 from dataclasses import asdict, dataclass, field
 
 SCHEMA = "pr-risk/v2"
-POLICY_VERSION = "2.3"
+POLICY_VERSION = "2.4"
 
 # ── Context dimensions ───────────────────────────────────────────────────────────────────────
 
@@ -138,7 +138,7 @@ CODES = _codes(
     ("ev.render_incomplete", "evidence", "none", "The render is incomplete"),
     ("ev.unrendered_surface", "evidence", "none", "Nothing renders this surface"),
     ("ev.release_notes_missing", "evidence", "none", "No usable release notes across a version boundary"),
-    ("ev.release_notes_partial", "evidence", "none", "Release notes cover part of the version range"),
+    ("ev.release_notes_partial", "evidence", "none", "Release notes cover part of the version range, or the chart and not an image it deploys"),
     ("ev.model_unavailable", "evidence", "none", "Jev didn't answer"),
     ("ev.model_indecisive", "evidence", "none", "Jev's answer is on the fence"),
     ("ev.model_input_truncated", "evidence", "none", "Jev saw only part of the input"),
@@ -163,6 +163,7 @@ CONTEXT_CODES = {
     "ctx.runner_privileged": "Runs on the cluster-admin in-cluster runner",
     "ctx.resource_envelope": "Resource requests/limits or replica counts change",
     "ctx.crd_added": "Adds a CustomResourceDefinition",
+    "ctx.operand_restart": "An operator's image changes, and rolling it out restarts what the operator manages",
     "ctx.change_exercised": "The PR's own run of a changed workflow passed on this head, with nothing skipped",
 }
 
@@ -181,6 +182,7 @@ class Surface:
     rendered: bool  # Konflate renders it
     render_required: bool  # a render (or a stand-in) is needed to know what merging does
     model_required: bool
+    operands: str = ""  # what its operator restarts when the operator's own image changes
 
     def to_json(self) -> dict:
         return {

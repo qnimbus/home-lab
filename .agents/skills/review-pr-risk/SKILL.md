@@ -83,13 +83,15 @@ is a gap in the taxonomy worth reporting.
 ## Step 3: The workflow's result
 
 ```bash
-RUN=$(gh api "repos/qnimbus/home-lab/actions/artifacts?name=pr-risk-$PR" --jq '.artifacts[0].workflow_run.id')
+RUN=$(gh api "repos/qnimbus/home-lab/actions/artifacts?name=pr-risk-$PR" \
+  --jq "[.artifacts[] | select(.workflow_run.head_sha == \"$HEAD\")][0].workflow_run.id")
 gh run download "$RUN" --repo qnimbus/home-lab --name "pr-risk-$PR" --dir "/tmp/pr-risk-review-$PR"
 jq '{status, classification, uncertain, rule, why, head_sha, findings: [.findings[] | {code, certainty, surface, description}]}' \
   "/tmp/pr-risk-review-$PR/result.json"
 ```
 
-- If there's no artifact, or its `head_sha` isn't the PR's current head, the result is missing or
+- The artifact list isn't ordered by head: pick the run of `$HEAD`, as above. If there's none
+  (`RUN` is `null`), or `result.json`'s `head_sha` isn't the PR's current head, the result is missing or
   stale. Say so, and suggest `gh workflow run pr-risk.yaml -f pr=$PR` rather than triggering it
   yourself.
 - `comment.md` in the same folder is the scorecard; `jev.answers` has every model answer.

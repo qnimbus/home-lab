@@ -57,7 +57,7 @@ class Q:
     rendered: str | None = None  # the question in the rendered-diff call
     kind: str | None = None  # the kind a "yes" gets, when not the code's default
     consequence: str | None = None
-    capped: bool = False  # a "yes" is only possible: the deterministic rules own this fact
+    capped: bool = False  # a "yes" or an indecisive answer is only possible: the deterministic rules own this fact
 
 
 QUESTIONS = {
@@ -297,6 +297,11 @@ def interpret(f: Facts, a: Assessment, call: Call, resp: dict | None, err: str |
             a.find(spec.code, certainty, sid, (eid(q, sid),), f"Jev: {short_q(spec, call)} (`{q}` {v:.2f}).", kind=spec.kind, consequence=spec.consequence)
         elif b == "lean":
             a.find(spec.code, "possible", sid, (eid(q, sid),), f"Jev leans towards: {short_q(spec, call)} (`{q}` {v:.2f}).",
+                   kind=spec.kind, consequence=spec.consequence)  # fmt: skip
+        elif b == "indecisive" and spec.capped:
+            # The deterministic rules own this fact and found nothing: a yes would only be
+            # possible, so being unsure can't weigh more than that (#176, 0.60).
+            a.find(spec.code, "possible", sid, (eid(q, sid),), f"Jev can't tell whether {short_q(spec, call)} (`{q}` {v:.2f}).",
                    kind=spec.kind, consequence=spec.consequence)  # fmt: skip
         elif b == "indecisive":
             a.gap("ev.model_indecisive", "model", scope, "insufficient", f"Jev is on the fence about `{q}` ({v:.2f}).", fact=f"Jev {call.name} `{q}` = {v:.2f}")

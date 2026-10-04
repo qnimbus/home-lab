@@ -302,6 +302,66 @@ class TestReleaseNoteSources(unittest.TestCase):
         notes = p.gather_release_notes(renovate_meta(row), get=one_page(rel("v0.9.0"), rel("v0.8.3"), rel("v0.8.2")))
         self.assertEqual([s["version"] for s in notes["sections"]], ["v0.8.3", "v0.9.0"])
 
+    # #176: chart 0.28.2 → 0.29.1 with CI-chore notes, while the render moved the operator 1.29.1 → 1.30.1.
+    ROW_176 = ("| [ghcr.io/cloudnative-pg/charts/cloudnative-pg](https://redirect.github.com/cloudnative-pg/charts) | minor | `0.28.2` → `0.29.1` |")
+    NOTES_176 = "### [`v0.29.1`](https://redirect.github.com/cloudnative-pg/charts/releases/tag/cloudnative-pg-v0.29.1)\n\n- ci: add cert manager to renovate"
+    IMAGE_176 = {"name": "ghcr.io/cloudnative-pg/cloudnative-pg", "from": "1.29.1", "to": "1.30.1", "refs": ["Deployment database/cloudnative-pg"]}
+
+    def test_image_a_chart_deploys_gets_its_own_notes(self):
+        asked = []
+
+        def get(path):
+            asked.append(path)
+            return [[rel("v1.30.1"), rel("v1.29.3"), rel("v1.30.0"), rel("v1.29.2"), rel("v1.29.1")]]
+
+        notes = p.gather_release_notes(renovate_meta(self.ROW_176, self.NOTES_176), get=get, images=[self.IMAGE_176])
+        self.assertEqual(asked, ["/repos/cloudnative-pg/cloudnative-pg/releases"])  # the chart's notes came from Renovate
+        self.assertEqual(notes["source"], "renovate")
+        # the chart's notes, then the image's: the new line only, not the old line's later patches
+        self.assertEqual([s["version"] for s in notes["sections"]], ["v0.29.1", "cloudnative-pg v1.30.0", "cloudnative-pg v1.30.1"])
+        self.assertTrue(notes["sections"][1]["text"].startswith("### cloudnative-pg v1.30.0"))
+        self.assertEqual([(i["name"], i["covered"]) for i in notes["images"]], [(self.IMAGE_176["name"], True)])
+        self.assertIn("image cloudnative-pg 1.29.1 → 1.30.1: GitHub releases of cloudnative-pg/cloudnative-pg", notes["reason"])
+
+    def test_image_notes_that_cannot_be_found_are_not_covered(self):
+        meta = renovate_meta(self.ROW_176, self.NOTES_176)
+        notes = p.gather_release_notes(meta, get=one_page(rel("v1.29.1")), images=[self.IMAGE_176])
+        self.assertEqual([s["version"] for s in notes["sections"]], ["v0.29.1"])
+        self.assertFalse(notes["images"][0]["covered"])
+        # the range doesn't reach back to the running version: found, but not covered
+        notes = p.gather_release_notes(meta, get=one_page(rel("v1.30.1"), rel("v1.30.0")), images=[self.IMAGE_176])
+        self.assertEqual(len(notes["sections"]), 3)
+        self.assertFalse(notes["images"][0]["covered"])
+        # a registry whose namespace isn't a GitHub owner is listed, never guessed
+        quay = {"name": "quay.io/jetstack/cert-manager-controller", "from": "v1.18.0", "to": "v1.19.0", "refs": []}
+        notes = p.gather_release_notes(meta, get=lambda path: self.fail("looked up"), images=[quay])
+        self.assertIn("IMAGE_REPOS", notes["images"][0]["reason"])
+        self.assertFalse(notes["images"][0]["covered"])
+
+    def test_build_variant_is_not_part_of_the_version(self):
+        meta = renovate_meta(self.ROW_176, self.NOTES_176)
+        get = one_page(rel("v3.15.0"), rel("v3.14.1"), rel("v3.14.0"))
+        for old, new in (("v3.14.0-distroless", "v3.15.0-distroless"), ("distroless-v3.14.0", "distroless-v3.15.0@sha256:abc")):
+            notes = p.gather_release_notes(meta, get=get, images=[{"name": "quay.io/prometheus/prometheus", "from": old, "to": new}])
+            self.assertEqual([s["version"] for s in notes["sections"]], ["v0.29.1", "prometheus v3.15.0"], old)
+            self.assertEqual([(i["from"], i["to"], i["covered"]) for i in notes["images"]], [("v3.14.0", "v3.15.0", True)])
+
+    def test_images_the_notes_already_cover_are_not_looked_up(self):
+        get = lambda path: self.fail("looked up")  # noqa: E731
+        meta = renovate_meta(self.ROW_176, self.NOTES_176)
+        for img in (
+            {"name": "ghcr.io/cloudnative-pg/cloudnative-pg", "from": "1.30.0", "to": "1.30.1"},  # a patch
+            {"name": "ghcr.io/cloudnative-pg/cloudnative-pg", "from": "v0.28.2", "to": "v0.29.1"},  # the chart's number line: released together
+            {"name": "ghcr.io/cloudnative-pg/charts/cloudnative-pg", "from": "0.28.2", "to": "0.29.1"},  # the updated package itself
+            {"name": "docker.io/library/postgres", "from": "17.4-alpine", "to": "18.0-alpine"},  # not a plain version
+            {"name": "ghcr.io/x/y", "from": None, "to": "1.2.0"},  # new
+            {"name": "registry.k8s.io/sig-storage/csi-provisioner", "from": "v6.2.0", "to": "v6.3.0"},  # IMAGE_IGNORE: a CSI sidecar
+        ):
+            self.assertNotIn("images", p.gather_release_notes(meta, get=get, images=[img]), img)
+        self.assertNotIn("images", p.gather_release_notes(meta, get=get))  # a bundle collected without a render
+        owner = {"author_kind": "owner", "body": meta["body"]}
+        self.assertEqual(p.gather_release_notes(owner, get=get, images=[self.IMAGE_176])["source"], "none")
+
     def test_repeated_boilerplate_is_not_a_changelog(self):
         body = "Deploys a Snapshot Controller in a cluster. Snapshot Controllers are often bundled with the distribution."
         releases = [rel("snapshot-controller-5.3.0", body), rel("snapshot-controller-5.2.0", body), rel("snapshot-controller-5.1.1", body)]
