@@ -355,13 +355,15 @@ def required_vars(text: str) -> set[str]:
 
 
 def ks_documents(text: str) -> list[dict]:
-    """Per Kustomization document: its name, components, substituted keys, and whether it
-    brings its own substituteFrom (then what it provides can't be told from git)."""
+    """Per Kustomization document: its name, `spec.path` (what its components are relative to),
+    components, substituted keys, and whether it brings its own substituteFrom (then what it
+    provides can't be told from git)."""
     out = []
     for doc in re.split(r"(?m)^---\s*$", text):
         if "kind: Kustomization" not in doc or "kustomize.toolkit.fluxcd.io" not in doc:
             continue
         name = re.search(r"(?m)^  name:\s*(?:&\w+\s+)?(\S+)", doc)
+        path = re.search(r"(?m)^  path:\s*[\"']?([^\s\"'#]+)", doc)
         comps, subs, block = [], set(), None
         for line in doc.splitlines():
             indent = len(line) - len(line.lstrip())
@@ -376,7 +378,8 @@ def ks_documents(text: str) -> list[dict]:
                 subs.add(s.split(":", 1)[0])
             if s == "components:" or s == "substitute:":
                 block = (s[:-1], indent)
-        out.append({"name": name.group(1) if name else "?", "components": comps, "substitute": subs, "own_sources": "substituteFrom:" in doc})
+        out.append({"name": name.group(1) if name else "?", "path": path.group(1) if path else None, "components": comps, "substitute": subs,
+                    "own_sources": "substituteFrom:" in doc})  # fmt: skip
     return out
 
 
@@ -407,8 +410,9 @@ def collect_components(files: list[dict], base: str, head: str) -> list[dict]:
             per_rev[rev] = {d["name"]: d for d in ks_documents(text)} if text else {}
         for name, doc in per_rev[head].items():
             for comp in doc["components"]:
-                cdir = os.path.normpath(os.path.join(os.path.dirname(ks), comp))
-                entry = {"ks": ks, "doc": name, "component": cdir, "unknown": doc["own_sources"]}
+                # Relative to spec.path (the app/ directory), not to the ks.yaml that names it.
+                cdir = os.path.normpath(os.path.join(doc["path"] or "", comp))
+                entry = {"ks": ks, "doc": name, "component": cdir, "unknown": doc["own_sources"] or not doc["path"]}
                 for rev, key in ((head, "missing_head"), (base, "missing_base")):
                     d = per_rev[rev].get(name)
                     if d is None or comp not in d["components"]:
@@ -458,18 +462,29 @@ def konflate_fetch(pr: int, head_sha: str, url: str, wait: float, *, sleep=time.
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             return "unavailable", {"reason": f"Konflate unreachable: {e}"}, None
         if status == 200 and isinstance(body, dict):
-            rendered = ((body.get("diff") or {}).get("headSha") or (body.get("pr") or {}).get("headSha") or "")
+            # A render that ended in an error may carry no diff, so there `pr.headSha` (the head
+            # Konflate knows, not one it rendered) says which commit failed. Nowhere else.
+            failed = body.get("status") == "error" or bool(body.get("error"))
+            rendered = (body.get("diff") or {}).get("headSha") or ((body.get("pr") or {}).get("headSha") if failed else "") or ""
             if body.get("refreshError"):
                 last = "last refresh failed"
             elif len(rendered) >= 7 and head_sha.startswith(rendered):
-                diff = None
+                diff, ds = None, None
                 if body.get("status") == "ready":
-                    ds, _, dbody = http_json(f"{url}/api/prs/{pr}/diff", timeout=30)
+                    try:
+                        ds, _, dbody = http_json(f"{url}/api/prs/{pr}/diff", timeout=30)
+                    except (urllib.error.URLError, TimeoutError, OSError) as e:
+                        return "unavailable", {"reason": f"Konflate unreachable: {e}"}, None
                     diff = dbody if ds == 200 and isinstance(dbody, dict) else None
-                body["renderStatus"] = headers.get("X-Konflate-Render-Status") or headers.get(
-                    "x-konflate-render-status"
-                )
-                return "fresh", body, diff
+                # Fresh means the rendered diff is in hand, or the render failed and says so.
+                # Anything else leaves nothing to judge: counting it as a render would mark the
+                # evidence sufficient while every rendered rule looks at nothing.
+                if diff is not None or failed:
+                    body["renderStatus"] = headers.get("X-Konflate-Render-Status") or headers.get(
+                        "x-konflate-render-status"
+                    )
+                    return "fresh", body, diff
+                last = f"rendered diff answered {ds}" if ds else f"render is {body.get('status') or 'not ready'}"
             else:
                 last = f"render is of {rendered[:7] or '?'}, want {head_sha[:7]}"
         elif status == 202:

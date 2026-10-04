@@ -14,6 +14,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 FIX = HERE / "fixtures"
@@ -925,6 +927,69 @@ class TestRegressions(Assertions):
         r = Scenario(diff, konflate=konflate_fresh(images=img("database/dragonfly")), title="fix(container): update dragonfly", author="renovate", notes=NO_NOTES).run()
         self.assertNotIn("ctx.operand_restart", {c["code"] for c in r["context"]})
 
+    def test_components_resolve_against_spec_path(self):
+        """A component is relative to `spec.path` (the app/ directory), not to ks.yaml. Resolved
+        against the latter, every entry pointed at a directory that doesn't exist and was
+        `unknown`, so `recon.component_contract_broken` never fired on a collected bundle."""
+        ks = "kubernetes/apps/default/x/ks.yaml"
+        doc = ("apiVersion: kustomize.toolkit.fluxcd.io/v1\nkind: Kustomization\nmetadata:\n  name: &app x\nspec:\n  components:\n"
+               "    - ../../../../components/pg\n  path: ./kubernetes/apps/default/x/app\n  postBuild:\n    substitute:\n      APP: *app\n")  # fmt: skip
+        component = "name: ${APP}\nschedule: ${PG_SCHEDULE}\nsize: ${PG_SIZE:=1Gi}\n"
+        trees = {
+            "base": {ks: doc + "      PG_SCHEDULE: daily\n", "kubernetes/components/pg/cluster.yaml": component},
+            "head": {ks: doc, "kubernetes/components/pg/cluster.yaml": component},
+        }
+
+        def fake_git(*args, check=True):
+            if args[0] == "show":
+                rev, path = args[1].split(":", 1)
+                text = trees[rev].get(path)
+                return SimpleNamespace(stdout=text or "", returncode=0 if text is not None else 128)
+            if args[0] == "ls-tree":
+                rev, cdir = args[-1].split(":", 1)
+                names = [x[len(cdir) + 1 :] for x in trees[rev] if x.startswith(cdir + "/")]
+                return SimpleNamespace(stdout="\n".join(names), returncode=0 if names else 128)
+            return SimpleNamespace(stdout="", returncode=1)
+
+        with mock.patch.object(p, "git", side_effect=fake_git):
+            comps = p.collect_components([{"status": "M", "path": ks}], "base", "head")
+        self.assertEqual(comps, [{"ks": ks, "doc": "x", "component": "kubernetes/components/pg", "unknown": False,
+                                  "missing_head": ["PG_SCHEDULE"], "missing_base": []}])  # fmt: skip
+        diff = mkdiff(ks, "    substitute:\n      APP: *app\n-      PG_SCHEDULE: daily", header="spec:")
+        self.assertIn("recon.component_contract_broken", codes(Scenario(diff, components=comps).run()))
+        # No spec.path: nothing to resolve against, so the entry is unknown rather than guessed.
+        (no_path,) = p.ks_documents(doc.replace("  path: ./kubernetes/apps/default/x/app\n", ""))
+        self.assertIsNone(no_path["path"])
+
+    def test_redaction_marker_is_not_a_secret(self):
+        """collect exempts a bare PEM header (docs quote it) and then redacts the diff, which
+        turns the header into a marker. Reading markers back as secrets undid the exemption:
+        a doc line became `risk/risky`, "rotate it". secrets.json is the record instead."""
+        path = "kubernetes/apps/default/whoami/app/configmap.yaml"
+        raw = mkdiff(path, "data:\n+  note: a key starts with -----BEGIN PRIVATE KEY-----\n+  seen: '[REDACTED:github_token]'", header="apiVersion: v1")
+        self.assertEqual(rules.scan_secrets(raw), [])
+        redacted = rules.redact(raw)
+        self.assertIn("[REDACTED:private_key]", redacted)
+        self.assertNotIn("sec.secret_material_in_git", codes(Scenario(redacted).run()))
+        # What collect did find still raises it, from secrets.json, on the redacted diff.
+        r = Scenario(redacted, secrets=[{"path": path, "kind": "private_key"}]).run()
+        self.assertIn("sec.secret_material_in_git", codes(r, {"established"}))
+
+    def test_netpol_in_an_unplaced_rendered_resource(self):
+        """A rendered resource that belongs to none of the PR's surfaces has no surface id. It
+        went into the raw call's scope as None, next to a real id, and sorting the two raised
+        TypeError: classify died instead of reporting the policy."""
+        raw = mkdiff(APP_HR, "    networkPolicy:\n+      enabled: true", header="spec:")
+        other = mkdiff("kubernetes/apps/media/plex/app/helmrelease.yaml", "    foo:\n-      bar: 1\n+      bar: 2", header="spec:")
+        kdiff = {"diff": {"resources": [{"kind": "HelmRelease", "title": "HelmRelease elsewhere/thing", "status": "changed",
+                                         "parent": "Kustomization elsewhere/thing",
+                                         "unified": [{"kind": "ctx", "html": "    networkPolicy:"}, {"kind": "add", "html": "      enabled: true"}]}]}}  # fmt: skip
+        jev = Jev()
+        r = Scenario(raw, other, kdiff=kdiff).run(jev)
+        self.assertIn("avail.traffic_newly_restricted", codes(r))
+        self.assertIn("traffic_newly_restricted", jev.asked["raw"])
+        self.assertIn("traffic_newly_restricted", jev.asked["rendered"])  # the rendered hit is the rendered call's
+
 
 # ── Model boundaries ─────────────────────────────────────────────────────────────────────────
 
@@ -1203,6 +1268,7 @@ class TestRegistryAndSchema(unittest.TestCase):
         self.assertEqual(p.required_vars("${APP} ${X:=1} ${Y:=${APP}} $${ESCAPED} ${Z}"), {"APP", "Z"})
         (doc,) = p.ks_documents((HERE.parent.parent.parent.parent / "kubernetes/apps/default/paperless/ks.yaml").read_text())
         self.assertEqual(doc["name"], "paperless")
+        self.assertEqual(doc["path"], "./kubernetes/apps/default/paperless/app")
         self.assertIn("../../../../components/postgres", doc["components"])
         self.assertEqual(doc["substitute"], {"APP", "POSTGRES_BACKUP_SCHEDULE"})
         self.assertFalse(doc["own_sources"])

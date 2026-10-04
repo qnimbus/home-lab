@@ -722,7 +722,7 @@ def availability_netpol(f: Facts, a: Assessment) -> None:
             if ln.sign == "-" and netpol_kind:
                 a.note("ctx.networkpolicy_removed", h.path, sid)
             elif ln.sign == "+" and (netpol_kind or enabled):
-                f.presence.setdefault("netpol_raw", set()).add(sid)
+                f.presence.setdefault("netpol_rendered" if h.kind else "netpol_raw", set()).add(sid or "")
                 eid = a.record(src, f"{h.path}: +{ln.text.strip()}", sid)
                 a.find("avail.traffic_newly_restricted", "possible", sid, (eid,),
                        f"`{h.path}` adds a network policy: every other connection to the pods it selects is dropped.")  # fmt: skip
@@ -996,7 +996,6 @@ SECRET_PATTERNS = {
     "jwt": r"\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}",
 }
 SECRET_RE = re.compile("|".join(f"(?P<{k}>{v})" for k, v in SECRET_PATTERNS.items()))
-REDACTED = re.compile(r"\[REDACTED:(\w+)\]")
 
 
 KEY_MATERIAL = re.compile(r"^\+?\s*[\"']?[A-Za-z0-9+/=]{40,}")
@@ -1005,7 +1004,12 @@ KEY_MATERIAL = re.compile(r"^\+?\s*[\"']?[A-Za-z0-9+/=]{40,}")
 def scan_secrets(diff: str) -> list[dict]:
     """Secret-shaped strings on added lines, by file and kind; never the values. A PEM header
     only counts with key material after it: docs mention `-----BEGIN PRIVATE KEY-----` as an
-    example (eeab9c7, 1823ad3)."""
+    example (eeab9c7, 1823ad3).
+
+    Meant for the diff as git gives it. `redact` has no such exemption, and its
+    `[REDACTED:kind]` marker is not read back here: it says a pattern matched, not that this
+    function counted it, so reading it would undo the exemption (and flag a line that only
+    quotes a marker). For a redacted bundle, `secrets.json` is the record."""
     out, path = [], None
     raws = (diff or "").splitlines()
     for i, raw in enumerate(raws):
@@ -1024,8 +1028,6 @@ def scan_secrets(diff: str) -> list[dict]:
                 if not (KEY_MATERIAL.match(rest) or (following.startswith("+") and KEY_MATERIAL.match(following))):
                     continue
             out.append({"path": path, "kind": m.lastgroup})
-        for m in REDACTED.finditer(raw):
-            out.append({"path": path, "kind": m.group(1)})
     return [dict(t) for t in dict.fromkeys(tuple(sorted(x.items())) for x in out)]
 
 

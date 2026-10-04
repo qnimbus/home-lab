@@ -37,7 +37,7 @@ jobs:
     # manual run is checked in Resolve PR instead.
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}
     # Its own variable, not RUNNER: Konflate is only reachable in-cluster. On a GitHub-hosted
-    # runner the classifier still runs, raw-diff-only and flagged uncertain.
+    # runner a PR that renders Flux resources counts as a Konflate outage: nothing is published.
     runs-on: ${{ vars.PR_RISK_RUNNER || 'home-lab' }}
     timeout-minutes: 15
     permissions:
@@ -78,7 +78,7 @@ jobs:
       - name: Load Secrets
         id: load-secrets
         uses: 1password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1 # zizmor: ignore[unpinned-tools]
-        continue-on-error: true # no key: deterministic signals only, flagged uncertain
+        continue-on-error: true # no key: a Jev outage, classify exits 3 and nothing is published
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           TYPESAFE_API_KEY: op://GitHub/jev/API_KEY

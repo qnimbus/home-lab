@@ -491,13 +491,13 @@ class TestGlobsAndSurfaces(unittest.TestCase):
 class TestKonflateFetch(unittest.TestCase):
     HEAD = "fa8b5186bf82ba379efa242c6445f6ab668eea34"
 
-    def run_fetch(self, responses, wait=60):
+    def run_fetch(self, responses, wait=60, diff_status=200):
         clock = {"t": 0.0}
         calls = iter(responses)
 
         def fake_http(url, **kw):
             if url.endswith("/diff"):
-                return 200, {}, load("konflate_diff_179.json")
+                return diff_status, {}, load("konflate_diff_179.json") if diff_status == 200 else None
             return next(calls)
 
         with mock.patch.object(p, "http_json", side_effect=fake_http):
@@ -530,6 +530,42 @@ class TestKonflateFetch(unittest.TestCase):
     def test_unreachable(self):
         with mock.patch.object(p, "http_json", side_effect=OSError("connection refused")):
             state, summary, _ = p.konflate_fetch(179, self.HEAD, "http://k", 60, sleep=lambda s: None)
+        self.assertEqual(state, "unavailable")
+
+    def test_fresh_needs_the_rendered_diff(self):
+        """"fresh" marks the render evidence sufficient, so it takes the rendered diff in hand.
+        Without one the rendered rules look at nothing and a chart bump can come out safe."""
+        ok = load("konflate_summary_179.json")
+        state, summary, diff = self.run_fetch([(200, {}, ok)] * 50, wait=30, diff_status=500)
+        self.assertEqual((state, diff), ("stale", None))
+        self.assertIn("rendered diff answered 500", summary["reason"])
+        # A summary of the right head that isn't ready yet is still rendering.
+        pending = {**copy.deepcopy(ok), "status": "rendering"}
+        state, summary, _ = self.run_fetch([(200, {}, pending)] * 50, wait=30)
+        self.assertEqual(state, "stale")
+        self.assertIn("render is rendering", summary["reason"])
+        # pr.headSha is the head Konflate knows of, not one it rendered.
+        unrendered = copy.deepcopy(ok)
+        unrendered["diff"]["headSha"] = ""
+        state, _, _ = self.run_fetch([(200, {}, unrendered)] * 50, wait=30)
+        self.assertEqual(state, "stale")
+
+    def test_failed_render_is_fresh_without_a_diff(self):
+        """A render that ended in an error is an answer about this head (konflate.render reports
+        it), with no diff to fetch."""
+        failed = {"status": "error", "error": "kustomize build failed", "pr": {"headSha": self.HEAD}}
+        state, summary, diff = self.run_fetch([(200, {}, failed)])
+        self.assertEqual((state, diff), ("fresh", None))
+        self.assertEqual(summary["error"], "kustomize build failed")
+
+    def test_diff_unreachable(self):
+        def fake_http(url, **kw):
+            if url.endswith("/diff"):
+                raise OSError("connection reset")
+            return 200, {}, load("konflate_summary_179.json")
+
+        with mock.patch.object(p, "http_json", side_effect=fake_http):
+            state, _, _ = p.konflate_fetch(179, self.HEAD, "http://k", 60, sleep=lambda s: None)
         self.assertEqual(state, "unavailable")
 
 
