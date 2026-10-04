@@ -33,7 +33,7 @@ addresses:
 routes:
   - gateway: 10.60.0.1
 ---
-# IOT VLAN 30 — see cp-01's file / docs/QA.md for full rationale.
+# IOT VLAN 30 — see cp-01's file for the rationale.
 apiVersion: v1alpha1
 kind: VLANConfig
 name: eno1.30
@@ -47,7 +47,7 @@ apiVersion: v1alpha1
 kind: SysctlConfig
 params:
   net.ipv6.conf.eno1/30.disable_ipv6: "1"
-  # Experimental — see cp-02's file / docs/QA.md.
+  # Experimental — see cp-02's file.
   net.core.netdev_budget: "1000"
   net.core.netdev_budget_usecs: "16000"
 ---

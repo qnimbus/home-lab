@@ -109,7 +109,7 @@ spec:
           external-dns.kubernetes.io/hostname: "smtp-relay.${DOMAIN_CLUSTER}"
           external-dns.kubernetes.io/target: "10.60.0.240"
           # Pin both LB IPs explicitly: mgmt (default pool, matches the target above) and
-          # IOT (pool-iot-smtp-relay, serviceSelector-scoped to this Service) — see docs/QA.md.
+          # IOT (pool-iot-smtp-relay, serviceSelector-scoped to this Service).
           lbipam.cilium.io/ips: "10.60.0.240,10.30.0.240"
         # Restrict to the printer's known IP; widen when a second appliance needs this relay.
         # Enforced against the real client IP regardless of which of the two LB IPs (10.60.x

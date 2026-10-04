@@ -34,7 +34,7 @@ routes:
 ---
 # IOT VLAN 30 — tagged sub-interface on the mgmt trunk NIC. parent: must be the
 # raw interface name, never a LinkAliasConfig alias, or Cilium's BPF VLAN filter
-# overflows on a duplicate subinterface. Full rationale: docs/QA.md.
+# overflows on a duplicate subinterface.
 apiVersion: v1alpha1
 kind: VLANConfig
 name: enp4s0.30
@@ -103,5 +103,5 @@ machine:
     topology.kubernetes.io/zone: homelab-cp-01
   nodeAnnotations:
     # Rook can't see the storage-bond IP as the Node's K8s address — pins its
-    # mon bind IP explicitly. See docs/QA.md (Rook issue #14829).
+    # mon bind IP explicitly (Rook issue #14829).
     network.rook.io/mon-ip: "10.200.0.201"

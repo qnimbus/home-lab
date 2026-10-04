@@ -168,8 +168,8 @@ allowedKubernetesNamespaces:
   - system-upgrade
   - actions-runner-system
 ---
-# Control-plane-only ingress firewall rules. See cluster.yaml.j2 and docs/QA.md
-# for the shared design rationale.
+# Control-plane-only ingress firewall rules. See cluster.yaml.j2 for the shared
+# design rationale.
 apiVersion: v1alpha1
 kind: NetworkRuleConfig
 name: kube-apiserver-ingress

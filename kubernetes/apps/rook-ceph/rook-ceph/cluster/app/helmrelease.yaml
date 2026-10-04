@@ -210,7 +210,7 @@ spec:
       # all Ceph traffic off the management subnet. Was split (public on
       # 10.60.0.0/24, cluster on 10.200.0.0/24) at greenfield; moved after
       # CephNodeNetworkPacketDrops was root-caused to mgmt-NIC RX-ring
-      # exhaustion — see docs/QA.md and docs/ROADMAP.md.
+      # exhaustion.
       #
       # This value alone does not move already-running mons/OSDs — Rook only
       # applies a network change to a daemon on that daemon's next restart.

@@ -1,5 +1,4 @@
-# Documents applied to every node. See README.md for the rendering pipeline and
-# docs/QA.md for incident history behind the non-obvious settings below.
+# Documents applied to every node. See README.md for the rendering pipeline.
 ---
 version: v1alpha1
 machine:
@@ -119,7 +118,7 @@ params:
   # inotify: Flux/monitoring open thousands of watches; kernel default exhausts fast.
   fs.inotify.max_user_instances: "8192"
   fs.inotify.max_user_watches: "1048576"
-  # TCP buffers + BBR: sized for the 10GbE Ceph storage bond. See docs/QA.md.
+  # TCP buffers + BBR: sized for the 10GbE Ceph storage bond.
   net.core.rmem_max: "134217728"
   net.core.wmem_max: "134217728"
   net.ipv4.tcp_rmem: "4096 87380 134217728"
@@ -186,8 +185,7 @@ ntp:
     - time.google.com
 ---
 # Talos-native ingress firewall — closes an IOT-VLAN L2 exposure gap the network
-# firewall alone doesn't cover. NEVER add 10.30.0.0/24 to any rule here. Full
-# incident history (dates, alert names, affected consumers): docs/QA.md.
+# firewall alone doesn't cover. NEVER add 10.30.0.0/24 to any rule here.
 apiVersion: v1alpha1
 kind: NetworkRuleConfig
 name: kubelet-ingress
@@ -209,7 +207,7 @@ portSelector:
 ingress:
   - subnet: 10.60.0.0/24
   - subnet: 10.10.0.0/24
-  - subnet: 10.42.0.0/16   # in-cluster apid consumers (tuppr, actions-runner) — see docs/QA.md before narrowing
+  - subnet: 10.42.0.0/16   # in-cluster apid consumers (tuppr, actions-runner)
 ---
 apiVersion: v1alpha1
 kind: NetworkRuleConfig
