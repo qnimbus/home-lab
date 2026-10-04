@@ -89,6 +89,16 @@
       allowedVersions: "/^v?20\\.2\\.\\d+$/",
     },
     {
+      // The chart renders Driver/OperatorConfig CRs for the ceph-csi-operator
+      // that the rook-ceph chart bundles as a subchart, so it must not run ahead
+      // of it. The cap is that subchart's version (rook-ceph/rook-ceph/operator):
+      // raise it by hand, after the Rook bump that moves the subchart
+      description: "Keep ceph-csi-drivers at the ceph-csi-operator Rook bundles",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["ghcr.io/home-operations/charts-mirror/ceph-csi-drivers"],
+      allowedVersions: "<=1.0.4",
+    },
+    {
       description: "Keep PostgreSQL on version 18.x",
       matchDatasources: ["docker"],
       matchPackageNames: ["/postgresql/"],
