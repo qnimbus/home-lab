@@ -8,12 +8,12 @@ spec:
   inhibitRules:
     - equal: ["alertname", "namespace"]
       sourceMatch:
-        - matchType: "="
-          name: severity
+        - name: severity
+          matchType: "="
           value: critical
       targetMatch:
-        - matchType: "="
-          name: severity
+        - name: severity
+          matchType: "="
           value: warning
   receivers:
     - name: "null"
@@ -92,13 +92,13 @@ spec:
     repeatInterval: 12h
     routes:
       - matchers:
-          - matchType: "="
-            name: severity
+          - name: severity
+            matchType: "="
             value: critical
         receiver: pushover-critical
         repeatInterval: 1h
       - matchers:
-          - matchType: "=~"
-            name: severity
+          - name: severity
+            matchType: "=~"
             value: "warning|error"
         receiver: pushover

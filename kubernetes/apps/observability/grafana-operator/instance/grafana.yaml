@@ -35,7 +35,8 @@ spec:
       template:
         spec:
           containers:
-            - env:
+            - name: grafana
+              env:
                 - name: GF_SECURITY_ADMIN_PASSWORD
                   valueFrom:
                     secretKeyRef:
@@ -46,7 +47,6 @@ spec:
                     secretKeyRef:
                       key: GF_SECURITY_ADMIN_USER
                       name: grafana-secret
-              name: grafana
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true

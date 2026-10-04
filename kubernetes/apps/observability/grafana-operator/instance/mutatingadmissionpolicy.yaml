@@ -15,14 +15,14 @@ metadata:
 spec:
   failurePolicy: Fail
   matchConditions:
-    - expression: >-
+    - name: is-grafana-deployment
+      expression: >-
         object.metadata.name == "grafana-deployment"
-      name: is-grafana-deployment
-    - expression: >-
+    - name: has-docker-io-grafana-image
+      expression: >-
         object.spec.template.spec.containers.exists(c,
           c.image.startsWith("docker.io/grafana/")
         )
-      name: has-docker-io-grafana-image
   matchConstraints:
     resourceRules:
       - apiGroups:
