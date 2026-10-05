@@ -3,67 +3,70 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: &app waha
+  name: waha
 spec:
   interval: 1h
   chartRef:
     kind: OCIRepository
     name: waha
   values:
+    defaultPodOptions:
+      securityContext:
+        fsGroup: 65534
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
     controllers:
       waha:
         annotations:
           reloader.stakater.com/auto: "true"
-        type: deployment
-        replicas: 1
         revisionHistoryLimit: 1
-        strategy: Recreate
         containers:
           app:
             image:
               repository: docker.io/devlikeapro/waha
               tag: "gows-2026.8.2"
             env:
-              WHATSAPP_START_SESSION: "true"
-              WHATSAPP_RESTART_ALL_SESSIONS: "true"
-              WAHA_WORKER_RESTART_SESSIONS: "true"
-              WHATSAPP_FILES_LIFETIME: "180"
-              WHATSAPP_DEFAULT_ENGINE: "GOWS"
-              WHATSAPP_HOOK_EVENTS: "message,session.status"
-              WAHA_AUTO_START_DELAY_SECONDS: "5"
-              WAHA_LOG_FORMAT: "JSON"
-              WAHA_LOG_LEVEL: "info"
               TZ: "${CLUSTER_TIMEZONE}"
               WAHA_API_KEY:
                 valueFrom:
                   secretKeyRef:
-                    name: waha-secret
                     key: WAHA_API_KEY
-              WAHA_DASHBOARD_USERNAME:
-                valueFrom:
-                  secretKeyRef:
                     name: waha-secret
-                    key: WAHA_DASHBOARD_USERNAME
+              WAHA_AUTO_START_DELAY_SECONDS: "5"
               WAHA_DASHBOARD_PASSWORD:
                 valueFrom:
                   secretKeyRef:
-                    name: waha-secret
                     key: WAHA_DASHBOARD_PASSWORD
+                    name: waha-secret
+              WAHA_DASHBOARD_USERNAME:
+                valueFrom:
+                  secretKeyRef:
+                    key: WAHA_DASHBOARD_USERNAME
+                    name: waha-secret
+              WAHA_LOG_FORMAT: "JSON"
+              WAHA_LOG_LEVEL: "info"
+              WAHA_WORKER_RESTART_SESSIONS: "true"
+              WHATSAPP_DEFAULT_ENGINE: "GOWS"
+              WHATSAPP_FILES_LIFETIME: "180"
+              WHATSAPP_HOOK_EVENTS: "message,session.status"
               WHATSAPP_HOOK_HMAC_KEY:
                 valueFrom:
                   secretKeyRef:
-                    name: waha-secret
                     key: WHATSAPP_HOOK_HMAC_KEY
-              WHATSAPP_SWAGGER_USERNAME:
-                valueFrom:
-                  secretKeyRef:
                     name: waha-secret
-                    key: WHATSAPP_SWAGGER_USERNAME
+              WHATSAPP_RESTART_ALL_SESSIONS: "true"
+              WHATSAPP_START_SESSION: "true"
               WHATSAPP_SWAGGER_PASSWORD:
                 valueFrom:
                   secretKeyRef:
-                    name: waha-secret
                     key: WHATSAPP_SWAGGER_PASSWORD
+                    name: waha-secret
+              WHATSAPP_SWAGGER_USERNAME:
+                valueFrom:
+                  secretKeyRef:
+                    key: WHATSAPP_SWAGGER_USERNAME
+                    name: waha-secret
             lifecycle:
               postStart:
                 exec:
@@ -84,6 +87,7 @@ spec:
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 3
                   httpGet:
                     path: /ping
                     port: &port 3000
@@ -91,11 +95,11 @@ spec:
                   initialDelaySeconds: 30
                   periodSeconds: 30
                   timeoutSeconds: 5
-                  failureThreshold: 3
               readiness:
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 3
                   httpGet:
                     path: /ping
                     port: *port
@@ -103,7 +107,6 @@ spec:
                   initialDelaySeconds: 10
                   periodSeconds: 15
                   timeoutSeconds: 5
-                  failureThreshold: 3
             resources:
               requests:
                 cpu: 50m
@@ -114,17 +117,6 @@ spec:
               allowPrivilegeEscalation: false
               capabilities:
                 drop: ["ALL"]
-    defaultPodOptions:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 65534
-        runAsGroup: 65534
-        fsGroup: 65534
-    service:
-      app:
-        ports:
-          http:
-            port: *port
     persistence:
       waha-secrets:
         type: secret
@@ -133,7 +125,6 @@ spec:
           - path: /run/secrets/waha
             readOnly: true
       sessions:
-        type: persistentVolumeClaim
         existingClaim: "${KOPIUR_CLAIM:=${APP}}"
         globalMounts:
           - path: /app/.sessions
@@ -145,3 +136,8 @@ spec:
         type: emptyDir
         globalMounts:
           - path: /tmp
+    service:
+      app:
+        ports:
+          http:
+            port: *port
