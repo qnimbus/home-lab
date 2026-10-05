@@ -74,7 +74,7 @@ jobs:
       # container hook starts this step as its own pod instead. Only this step runs in the image;
       # the steps above stay on the runner, whose user owns the step-output files they write.
       - name: Run Renovate
-        uses: docker://ghcr.io/renovatebot/renovate:44.65.5@sha256:4e10f76a79f1c597f427f83c788a9f5b14a6295784c4cb68307b89b0a954abce
+        uses: docker://ghcr.io/renovatebot/renovate:44.133.0@sha256:05c512c35c764ef6a179e69c3b30567eca254d67f13a0143479fe3c84852c67a
         env:
           # The runner points HOME at /github/home, owned by the runner's user rather than the
           # image's (uid 12021); restore the image's own home, where containerbase keeps tools.
