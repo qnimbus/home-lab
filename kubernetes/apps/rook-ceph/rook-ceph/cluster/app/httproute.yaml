@@ -5,19 +5,19 @@ kind: HTTPRoute
 metadata:
   name: rook-ceph-dashboard
   annotations:
-    gethomepage.dev/enabled: "true"
-    gethomepage.dev/name: "Rook-Ceph"
     gethomepage.dev/description: "Cluster storage dashboard"
+    gethomepage.dev/enabled: "true"
     gethomepage.dev/group: "Storage"
     gethomepage.dev/icon: "mdi-harddisk"
+    gethomepage.dev/name: "Rook-Ceph"
     gethomepage.dev/pod-selector: "app.kubernetes.io/name=ceph-mgr"
 spec:
+  hostnames:
+    - "ceph.${DOMAIN_CLUSTER}"
   parentRefs:
     - name: envoy-internal
       namespace: network
       sectionName: https
-  hostnames:
-    - "ceph.${DOMAIN_CLUSTER}"
   rules:
     - backendRefs:
         - name: rook-ceph-mgr-dashboard

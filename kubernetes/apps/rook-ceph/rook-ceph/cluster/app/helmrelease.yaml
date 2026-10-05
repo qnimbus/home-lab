@@ -5,10 +5,10 @@ kind: HelmRelease
 metadata:
   name: rook-ceph-cluster
 spec:
+  interval: 1h
   chartRef:
     kind: OCIRepository
     name: rook-ceph-cluster
-  interval: 1h
   dependsOn:
     - name: rook-ceph-operator
     - name: ceph-csi-drivers

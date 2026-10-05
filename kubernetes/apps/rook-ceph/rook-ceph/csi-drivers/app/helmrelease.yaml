@@ -5,23 +5,23 @@ kind: HelmRelease
 metadata:
   name: ceph-csi-drivers
 spec:
+  interval: 1h
   chartRef:
     kind: OCIRepository
     name: ceph-csi-drivers
-  interval: 1h
-  releaseName: ceph-csi-drivers
   dependsOn:
     - name: rook-ceph-operator
   postRenderers:
     - kustomize:
         patches:
-          - target:
-              kind: Driver|OperatorConfig|ServiceAccount|ClusterRole|ClusterRoleBinding|Role|RoleBinding
-            patch: |
+          - patch: |
               - op: add
                 path: /metadata/annotations
                 value:
                   helm.sh/resource-policy: keep
+            target:
+              kind: Driver|OperatorConfig|ServiceAccount|ClusterRole|ClusterRoleBinding|Role|RoleBinding
+  releaseName: ceph-csi-drivers
   values:
     operatorConfig:
       namespace: rook-ceph

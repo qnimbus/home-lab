@@ -5,10 +5,10 @@ kind: HelmRelease
 metadata:
   name: rook-ceph-operator
 spec:
+  interval: 1h
   chartRef:
     kind: OCIRepository
     name: rook-ceph-operator
-  interval: 1h
   postRenderers:
     - kustomize:
         patches:
