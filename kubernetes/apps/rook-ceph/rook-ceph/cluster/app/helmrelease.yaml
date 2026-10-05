@@ -141,9 +141,9 @@ spec:
       - name: ceph-blockpool
         spec:
           failureDomain: host
-          # parameters:
-          #   compression_algorithm: zstd
-          #   compression_mode: aggressive
+          parameters:
+            compression_algorithm: zstd
+            compression_mode: passive
           replicated:
             size: 3
         storageClass:
