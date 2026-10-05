@@ -12,7 +12,7 @@ spec:
   ref:
     # Tracks the ceph-csi-operator release line, not Rook's — keep it at (or
     # below) the `ceph-csi-operator` subchart version bundled in the rook-ceph
-    # chart in use (v1.20.7 bundles 1.0.4), since the operator owns the CRDs.
+    # chart in use (v1.20.8 bundles 1.0.4), since the operator owns the CRDs.
     # Renovate is capped at that version (allowedVersions in .renovaterc.json5):
     # raise the cap and this tag by hand, after the Rook bump that moves the
     # subchart (`dependencies` in the rook-ceph chart's Chart.yaml).
