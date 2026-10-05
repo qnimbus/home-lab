@@ -35,8 +35,14 @@ diff "$TMP/out-with.yaml" "$TMP/out-without.yaml"
 No diff means the value is a default: remove it. Removing it changes nothing
 that is rendered, so the workload does not restart.
 
-Example: `strategy: Recreate` on an app-template controller. The chart
-already renders a Deployment with `Recreate`.
+Examples, both on app-template:
+
+- `strategy: Recreate` on a controller. The chart already renders a
+  Deployment with `Recreate`.
+- `service.<name>.controller` in a release with one controller. The chart
+  picks the only controller itself. With a second controller it stops
+  being a default: the render fails until every Service names its
+  controller.
 
 ## When to state a default anyway
 

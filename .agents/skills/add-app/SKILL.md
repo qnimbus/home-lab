@@ -169,15 +169,15 @@ spec:
     kind: OCIRepository
     name: <app>
   values:
+    defaultPodOptions:
+      securityContext:
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
     controllers:
       <app>:
         annotations:
           reloader.stakater.com/auto: "true"
-        pod:
-          securityContext:
-            runAsGroup: 1000
-            runAsNonRoot: true
-            runAsUser: 1000
         containers:
           app:
             image:
@@ -206,9 +206,9 @@ spec:
             port: <port>
 ```
 
-Adjust `runAsUser`/`runAsGroup` (and capabilities) to what the image requires; drop the pod `securityContext` only if the image genuinely can't run non-root. Plain image tags are fine — Renovate pins digests and manages updates.
+**The pod `securityContext` goes under `defaultPodOptions`**, not under `controllers.<app>.pod`. It then sits at the top of `values` and covers every controller of the release. Use `controllers.<app>.pod.securityContext` only for a controller that must differ from the others in the same release. Adjust `runAsUser`/`runAsGroup` (and capabilities) to what the image requires; drop the pod `securityContext` only if the image genuinely can't run non-root. Plain image tags are fine — Renovate pins digests and manages updates.
 
-**Optional value blocks** (top-level under `values`, alphabetical: `controllers`, `persistence`, `route`, `service`):
+**Optional value blocks** (top-level under `values`, after `defaultPodOptions`, alphabetical: `controllers`, `persistence`, `route`, `service`):
 
 Route (web UI/API):
 
@@ -222,7 +222,7 @@ route:
         namespace: network
 ```
 
-Persistence (pairs with the kopiur block in ks.yaml; also add `fsGroup: 1000` + `fsGroupChangePolicy: OnRootMismatch` to the pod securityContext):
+Persistence (pairs with the kopiur block in ks.yaml; also add `fsGroup: 1000` + `fsGroupChangePolicy: OnRootMismatch` to `defaultPodOptions.securityContext`):
 
 ```yaml
 persistence:
@@ -311,5 +311,6 @@ Show the user the created files and get confirmation before committing. Commit s
 - **Skipping the sorting conventions** — key order follows the templates above first, then `.agents/instructions/sorting.instructions.md` for anything they don't cover.
 - **Alphabetizing what the templates order differently** — e.g. moving `capabilities` before `readOnlyRootFilesystem`, or `dataFrom` to the top of an ExternalSecret. The template order is the convention, not a mistake to fix.
 - **Restating a chart default** — e.g. `strategy: Recreate` on an app-template controller. Leave it out unless something depends on it, and then say so in the namespace README (`.agents/instructions/helm-values.instructions.md`).
+- **Putting the pod `securityContext` under `controllers.<app>.pod`** — it goes under `defaultPodOptions`, at the top of `values`.
 - **Adding a NetworkPolicy/CiliumNetworkPolicy by default** — the cluster runs without them (see CLAUDE.md's "Network policies"); only add one if the user asks.
 - **Adding `wait`, `commonMetadata`, or `timeout` to `ks.yaml`** — all three are boilerplate now. Leave `wait` unset unless another Kustomization depends on this one and it has no `healthChecks` (then, and only then, `wait: true`).
