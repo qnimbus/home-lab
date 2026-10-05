@@ -5,7 +5,9 @@
 #   - e1000e: eno1 (mgmt, single onboard NIC — driver selector is unambiguous here)
 #   - ixgbe:  enp1s0f0          14:02:ec:6c:6c:7c  (storage bond)
 #   - ixgbe:  enp1s0f1          14:02:ec:6c:6c:7d  (storage bond)
-# Disk: CT1000P310SSD2 (Crucial P310) — system disk; Crucial CT2000T500SSD8 is Ceph OSD
+# Disks:
+#   - CT1000P310SSD2 (Crucial P310 1TB)   — system disk
+#   - CT2000T500SSD8 (Crucial T500 2TB)   — Ceph OSD
 ---
 apiVersion: v1alpha1
 kind: HostnameConfig

@@ -6,7 +6,9 @@
 #   - e1000e: eno1 (mgmt, single onboard NIC — driver selector is unambiguous here)
 #   - ixgbe:  enp1s0f0          b4:96:91:10:95:cc  (storage bond)
 #   - ixgbe:  enp1s0f1          b4:96:91:10:95:ce  (storage bond)
-# Disk: IRP-SSDPR-P44N-01T-30 (GoodRam IRDM PRO NANO) — system disk; Kingston SNV3S1000G is Ceph OSD
+# Disks:
+#   - IRP-SSDPR-P44N-01T-30 (GoodRam IRDM PRO NANO 1TB)  — system disk
+#   - CT2000P310SSD8 (Crucial P310 2TB)                  — Ceph OSD
 ---
 apiVersion: v1alpha1
 kind: HostnameConfig

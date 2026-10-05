@@ -5,7 +5,11 @@
 #   - igc:   enp4s0 (mgmt)   38:05:25:33:c9:74
 #   - i40e:  enp5s0f0np0     38:05:25:33:c9:75  (storage bond)
 #   - i40e:  enp5s0f1np1     38:05:25:33:c9:76  (storage bond)
-# Disk: nvme-KINGSTON_SNV3S1000G (serial required — cp-03 shares this drive model)
+# Disks:
+#   - KINGSTON SNV3S1000G (Kingston NV3 1TB)  — system disk; the selector also pins
+#     the serial, though the model alone is unique within this node
+#   - CT2000T500SSD8 (Crucial T500 2TB)       — Ceph OSD
+#   - YSR256GHLCA1-E5C-2 (256GB)              — not used by Talos or Ceph
 ---
 apiVersion: v1alpha1
 kind: HostnameConfig

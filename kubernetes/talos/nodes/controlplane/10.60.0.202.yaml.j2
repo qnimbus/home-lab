@@ -5,7 +5,10 @@
 #   - e1000e: eno1              6c:24:08:4b:3f:e1  (mgmt)
 #   - ixgbe:  enp2s0f0          90:e2:ba:e8:ea:64  (storage bond)
 #   - ixgbe:  enp2s0f1          90:e2:ba:e8:ea:65  (storage bond)
-# Disk: nvme-KINGSTON_SNV3S1000G (model alone is sufficient here — cp-01/cp-03 need serial)
+# Disks:
+#   - KINGSTON SNV3S1000G (Kingston NV3 1TB)  — system disk; selected by model,
+#     which is unique within this node
+#   - CT2000T500SSD8 (Crucial T500 2TB)       — Ceph OSD
 ---
 apiVersion: v1alpha1
 kind: HostnameConfig
