@@ -9,36 +9,11 @@ spec:
     kind: OCIRepository
     name: rook-ceph-cluster
   interval: 1h
-  # Ordering (rook-ceph → ceph-csi-drivers → rook-ceph-cluster, required on
-  # every upgrade) comes from the Kustomization-level dependsOn in
-  # ../../ks.yaml, not from the entries below — each app's OCIRepository lives
-  # inside its own Kustomization path, so a Renovate tag bump changes that
-  # Kustomization's tree and its wait: true health check genuinely re-polls
-  # the dependency HelmRelease's Ready condition on every upgrade.
   dependsOn:
     - name: rook-ceph-operator
     - name: ceph-csi-drivers
-  # The chart's CephCluster name + the operator namespace.
   values:
     operatorNamespace: rook-ceph
-    # Pinned on purpose. The chart's default Ceph image follows the Rook release
-    # line (v1.19.x → Squid 19.2.3, v1.20.x → Tentacle 20.2.4), so leaving this
-    # unset turns a Rook chart bump into an unreviewed Ceph *major* upgrade —
-    # which is exactly what Renovate's rook-ceph-cluster v1.20 PR would have
-    # done. Ceph upgrades are their own Renovate PRs now (.renovaterc.json5 pins
-    # the allowed line); before merging a *major* one, read Rook's ceph-upgrade
-    # guide and the Ceph release notes for that release.
-    # The chart renders this into cephClusterSpec.cephVersion.image (and the
-    # toolbox image) — do not also set cephVersion inside cephClusterSpec.
-    #
-    # History: v19.2.6 (2026-09-04) was the CVE-2025-30156 fix, landed together
-    # with the daemon keyGeneration bump under cephClusterSpec.security.cephx —
-    # keep those paired on any future bump Rook's cephx guide says needs a
-    # rotation. v20.2.4 Tentacle (2026-09-05): first Tentacle build with the
-    # same CVE fixes; 20.2.0 corrupts data with readAffinity (which we enable),
-    # 20.2.1–20.2.3 predate the CVE fixes. Prerequisite was disabling the
-    # `rook` mgr module (see cephClusterSpec.mgr.modules). Rook sets
-    # `osd require-osd-release tentacle` itself once every OSD reports 20.x.
     cephImage:
       repository: quay.io/ceph/ceph
       tag: v20.2.4
@@ -46,127 +21,41 @@ spec:
       enabled: true
       createPrometheusRules: true
       prometheusRuleOverrides:
-        # Stock ceph-mixin rule has no `for:`, so a single noisy 30s evaluation
-        # fires it — confirmed via two false positives (2026-07-02, 2026-07-09)
-        # that both landed within an hour of a fleet-wide node reboot: with only
-        # ~1h of post-boot node-exporter history feeding the 2-day trailing
-        # regression window, a normal small post-boot free-space dip extrapolates
-        # into a wildly steep (and wrong) predicted-fill slope. All 5 nodes sit at
-        # 12-27% disk usage with no real fill trend. `for: 5m` requires ~10
-        # consecutive bad evaluations (rule group evals every 30s), which neither
-        # incident would have cleared. The `node_boot_time_seconds` clause
-        # suppresses the alert directly for a node's first 30 minutes post-boot,
-        # targeting the actual root mechanism rather than just debouncing it.
         CephNodeDiskspaceWarning:
           for: 5m
           expr: |
             predict_linear(node_filesystem_free_bytes{device=~"/.*"}[2d], 3600 * 24 * 5)
               * on(cluster, instance) group_left(nodename) node_uname_info < 0
             and on(instance) (time() - node_boot_time_seconds > 1800)
-        # Same root problem as CephNodeDiskspaceWarning above: the stock rule has no
-        # `for:`, so a single noisy 30s evaluation fires it. This rule has no
-        # network-scoping either (device!="lo" only) — it fires on any NIC on any
-        # node.exporter host, including the plain 1GbE eno1 management NICs on
-        # cp-02/cp-03/worker-01/worker-02, not just Ceph's own storage bond.
-        # 5 occurrences over 2026-07-11..07-18, confirmed via the ALERTS{} series at
-        # the rule group's native 30s resolution: every single one was exactly one
-        # evaluation tick (never 2 consecutive), i.e. drops lasted <30-60s. Baseline
-        # on eno1 is ~200-1000 pkts/s with 0 drops; the bursts genuinely crossed the
-        # existing thresholds (up to ~2963 pkts/s / 24 drops/s, ~0.6-1.2% ratio) --
-        # this isn't a threshold-too-strict problem, it's a missing-debounce problem.
-        # `for: 1m` requires 3 consecutive bad evals (interval: 30s) and would have
-        # suppressed all 5 historical false-fires while still catching a genuinely
-        # sustained drop event (failing NIC, persistent congestion) within 60s.
         CephNodeNetworkPacketDrops:
           for: 1m
-    # Built-in toolbox pod — gives us the `ceph` CLI in-cluster for status,
-    # `ceph osd tree`, `ceph -s`, etc. Reach it with:
-    #   kubectl -n rook-ceph exec -it deploy/rook-ceph-tools -- ceph status
     toolbox:
       enabled: true
     cephClusterSpec:
-      # Governs device-wipe behavior only when the CephCluster is torn down (not
-      # day-to-day operation) — lets a rebuilt cluster reuse a device that still
-      # carries a stale bluestore signature from a prior cluster instead of Rook
-      # refusing to touch it.
       cleanupPolicy:
         wipeDevicesFromOtherClusters: true
       cephConfig:
         global:
-          # All three OSD drives are NVMe SSDs — enable background discard/TRIM
-          # so freed blocks are released back to the device.
           bdev_enable_discard: "true"
           bdev_async_discard_threads: "1"
-          # Warn earlier on low mon-store space (percent free).
           mon_data_avail_warn: "10"
-          # (Removed 2026-06-24) This suppressed POOL_NO_REDUNDANCY for the retired
-          # size=1 ceph-block-single pool — see the cephBlockPools note below. Default
-          # redundancy warning behaviour now applies; with no size=1 pool it never
-          # fires, so HEALTH_OK stays meaningful without the override.
         mon:
-          # Ceph's default: every mon mirrors every OTHER mon's Paxos-replicated
-          # cluster/audit-log event to its own stderr, so each event is logged
-          # 2-3x across the 3-mon fleet instead of once. Confirmed live via
-          # `ceph config show-with-defaults mon.a` (mon_cluster_log_to_stderr=true,
-          # source=default — not something Rook sets, Ceph's own compiled default).
-          # Disabling cuts mon container log volume ~2-3x. Cluster/audit history
-          # remains available via `ceph log last` / `ceph crash ls` / the dashboard
-          # (those read the Paxos-backed cluster log service, not stderr) — this
-          # only removes it from `kubectl logs` / VictoriaLogs.
           mon_cluster_log_to_stderr: "false"
         osd:
-          # Default is 3; bump to 5 for NVMe workloads where the disk is not
-          # the bottleneck and messenger threads can otherwise become the ceiling.
           ms_async_op_threads: "5"
-          # Default 600s: RocksDB dumps a full "DUMPING STATS" block (cumulative +
-          # interval write/WAL/compaction stats) to each OSD's log every 10 minutes.
-          # With 10 OSDs that's a multi-line block every ~minute cluster-wide, pure
-          # noise for day-to-day operation. The underlying counters are still
-          # exposed via the OSD perf/prometheus exporter either way.
-          #
-          # `rocksdb_stats_dump_period_sec` is NOT a real Ceph config key (confirmed
-          # via `ceph config get osd rocksdb_stats_dump_period_sec` -> ENOENT). It's
-          # a RocksDB-internal option and must be embedded inside
-          # bluestore_rocksdb_options — set via the _annex key so the base
-          # bluestore_rocksdb_options string (chart/Ceph default) is left untouched.
-          # The invalid key above was live for a while and put rook-ceph-operator in
-          # a failed-reconcile retry loop (~every 25-30s: set -> ENOENT -> delete ->
-          # retry) — worth fixing regardless, but re-measured mon/mgr log volume
-          # after this landed and the operator went idle: it wasn't a major
-          # contributor to steady-state volume. See mon_cluster_log_to_stderr below
-          # for the actual driver of mon container log volume.
           bluestore_rocksdb_options_annex: "stats_dump_period_sec=0"
         mgr:
-          # pg_autoscaler logs its _maybe_adjust/effective_target_ratio decision
-          # trace at INFO on every scheduler pass (~every 2s) — pure chatter with
-          # the cluster this small. "error" keeps actual pg_autoscaler warnings.
           mgr/pg_autoscaler/log_level: "error"
       crashCollector:
         disable: false
       csi:
-        # Prefer reading from a local OSD replica when one exists on the node —
-        # avoids a network hop for reads on host-networked OSDs.
         readAffinity:
           enabled: true
       dashboard:
         enabled: true
         ssl: false
-        # Feeds the dashboard's own embedded graphs (separate from the Grafana
-        # dashboards below) — without it they render blank.
         prometheusEndpoint: http://prometheus-operated.observability.svc.cluster.local:9090
       healthCheck:
-        # Ceph ≥ 19.2.6 raises these four as HEALTH_WARN for as long as any
-        # CephX key is still AES. Here that is by design: the CSI key must stay
-        # AES until the node kernel reaches 7.0 (see security.cephx.csi below),
-        # and KEYS_ALLOWED/KEYS_CREATABLE only clear once allowedCiphers is
-        # restricted to aes256k, which is impossible while any AES key exists.
-        # Rook's CVE-2025-30156 guide says to mute exactly these in that case.
-        # The mute lives in Ceph and is sticky: removing an entry here does NOT
-        # unmute it — flip the entry to `policy: unmute` (and keep it) once the
-        # CSI keys have moved to aes256k, so any stray AES key becomes visible
-        # again. The two HEALTH_ERR codes (AUTH_INSECURE_SERVICE_KEY_TYPE,
-        # AUTH_INSECURE_SERVICE_TICKETS) are deliberately not listed: they mean
-        # a core daemon key is still AES and must never be hidden.
         muteHealthWarning:
           AUTH_INSECURE_ROTATING_SERVICE_KEY_TYPE:
             policy: mute
@@ -178,52 +67,12 @@ spec:
             policy: mute
       mgr:
         modules:
-          # Disabled 2026-09-05 ahead of the Tentacle upgrade, per Rook's
-          # ceph-upgrade guide. Rook does NOT need this module to manage the
-          # cluster — it is the `ceph orch` backend, which only feeds a few
-          # dashboard pages (Hosts/Services/Inventory) and `ceph orch` / `ceph
-          # nfs cluster` CLI, none of which we use. On Ceph 20.2.3/20.2.4 the
-          # prometheus mgr module calls orch `node_proxy_fullreport` on every
-          # scrape, which the rook module does not implement, and the mgr
-          # records that as a module crash every ~15s forever (rook/rook#18124,
-          # tracker 79106; fix not yet in a Tentacle release). Rook 1.20.7
-          # force-disables it on 20.2.2–20.2.4 anyway; setting it here keeps
-          # Git honest and clears `ceph orch set backend` before the upgrade.
           - name: rook
             enabled: false
-          # Ceph enabled this by default at cluster creation (mgr_initial_modules
-          # on Squid = "restful iostat nfs"); Tentacle removed the module
-          # (CVE-2023-46136 in its deps; dashboard is the REST API now). Nothing
-          # uses it. Disabled before the upgrade so no dangling entry is left in
-          # the MgrMap. Rook keeps issuing `mgr module disable restful`, which is
-          # a no-op once the module is gone.
           - name: restful
             enabled: false
-          # Auto-tunes placement-group counts per pool — removes the classic
-          # "how many PGs?" guesswork. Strongly recommended for new clusters.
           - name: pg_autoscaler
             enabled: true
-      # --- public_network migrated onto the storage bond (2026-09-03) --------
-      # Both public_network (clients/CSI <-> mons,OSDs) and cluster_network
-      # (OSD<->OSD replication, heartbeat, backfill) now ride the same 2x10G
-      # LACP storage bond (bond-storage, 9000 MTU, 10.200.0.0/24), unifying
-      # all Ceph traffic off the management subnet. Was split (public on
-      # 10.60.0.0/24, cluster on 10.200.0.0/24) at greenfield; moved after
-      # CephNodeNetworkPacketDrops was root-caused to mgmt-NIC RX-ring
-      # exhaustion.
-      #
-      # This value alone does not move already-running mons/OSDs — Rook only
-      # applies a network change to a daemon on that daemon's next restart.
-      # Existing mons are failed over one at a time (imperative, not GitOps —
-      # see the session that landed this), and OSD pods are restarted per
-      # node, both tracked outside this file.
-      #
-      # The CSI controller plugin reaches the mons here via the Cilium pod
-      # network — bond-storage is an explicit device in kube-system/cilium's
-      # `devices:` config (added as the prerequisite for this change). The CSI
-      # node plugins are host-networked (always, under the ceph-csi-operator)
-      # and reach 10.200.0.0/24 straight from the host. Both are configured in
-      # the ceph-csi-drivers HelmRelease since Rook v1.20.
       network:
         provider: host
         addressRanges:
@@ -231,11 +80,6 @@ spec:
             - 10.200.0.0/24
           cluster:
             - 10.200.0.0/24
-      # Tolerate tuppr's per-node "about to upgrade" taint so mon/mgr keep
-      # running through a Talos node upgrade instead of being evicted —
-      # OSDs are pinned per-node/device anyway (storage.nodes below) and have
-      # nowhere else to go regardless, so PreferNoSchedule just discourages
-      # Rook from provisioning new ones there mid-upgrade.
       placement:
         all:
           tolerations:
@@ -248,48 +92,10 @@ spec:
               effect: PreferNoSchedule
       security:
         cephx:
-          # --- CVE-2025-30156 daemon key rotation (2026-09-04) ----------------
-          # Ceph ≥ 19.2.6 can issue AES256K service tickets, but the CVE is only
-          # closed once the core daemon keys (mon/mgr/osd, plus admin, crash
-          # collector and exporter) are themselves AES256K. Rook rotates them
-          # when keyGeneration is higher than status.cephx.<key>.keyGeneration
-          # (on 19.2.3: mon/mgr/osd/crash/exporter were 1, admin unset) and
-          # picks aes256k automatically on a capable Ceph — don't set
-          # daemon.keyType. Paired with the cephImage bump per Rook's CVE guide.
-          #
-          # What Rook actually does with both in one change (release-1.20
-          # cluster.go, setIsSafeToRotateCephxKeys — a Ceph-bug workaround):
-          #   1. rotation is disabled while any OSD still runs pre-AES256K Ceph;
-          #      mons, mgr and OSDs are rolled to 19.2.6 one at a time;
-          #   2. once the last OSD is on 19.2.6 the operator reloads its own
-          #      controller-manager in-process (log: "restarting rook operator";
-          #      the pod's restart count does NOT change);
-          #   3. the next reconcile rotates admin (another in-process reload)
-          #      → mon → crash/exporter → mgr → osd keys, restarting each daemon
-          #      set a second time. Rook drives the mon restart by *failing*
-          #      the reconcile on purpose ("triggering a new reconcile to
-          #      restart the mon daemons after mon cephx key rotation") — that
-          #      E-level log line is control flow, not a fault.
-          # From the first 19.2.6 daemon until step 3 finishes Ceph reports
-          # AUTH_INSECURE_SERVICE_KEY_TYPE / AUTH_INSECURE_SERVICE_TICKETS as
-          # HEALTH_ERR. Observed 2026-09-04: 10 minutes end to end (20:26 →
-          # 20:36 UTC) on this 5-node/10-OSD cluster. Fallout for that window:
-          #   - the cluster Kustomization's healthCheckExprs (ks.yaml) mark it
-          #     failed, so every Kustomization that dependsOn rook-ceph-cluster
-          #     stops taking new Git changes (running workloads are untouched);
-          #   - Flux's error Alert and Rook's CephHealthError rule both page.
-          # It clears on its own once status.cephx.*.keyGeneration reads 2 —
-          # don't loosen the expression or roll back for it. Rotating service
-          # tokens keep the old type ~2-3h longer (a muted warning, see
-          # healthCheck). Future rotations: bump keyGeneration, keep the policy.
           daemon:
             keyRotationPolicy: KeyGeneration
             keyGeneration: 2
           csi:
-            # AES256K CSI keys (the CVE-2025-30156 fix, Ceph ≥ 19.2.6/20.2.4)
-            # need Linux ≥ 7.0 on the nodes; Talos v1.13 ships 6.18, so CSI keys
-            # must stay AES. Chart default since v1.20, made explicit so a later
-            # key rotation cannot silently pick AES256K and break PVC mounts.
             keyType: aes
       resources:
         mgr:
@@ -311,66 +117,44 @@ spec:
           limits:
             memory: 4Gi
       storage:
-        # Never auto-consume disks — we name exactly one spare per node so the
-        # OS/system NVMe can never be picked up as an OSD by mistake.
         useAllNodes: false
         useAllDevices: false
         config:
-          # 2 OSDs per NVMe creates independent TCP flows between node pairs,
-          # allowing the LACP bond to distribute replication traffic across
-          # both 10GbE links instead of pinning to one.
           osdsPerDevice: "2"
-        # Devices are pinned by /dev/disk/by-id (stable across reboots). This
-        # matters because NVMe kernel enumeration is NOT consistent: on cp-01
-        # (MS-A2) the system disk is nvme0n1 and the OSD spare is nvme1n1 — the
-        # reverse of worker-01/worker-02. A kernel-name selector would be a data-loss footgun.
         nodes:
-          - name: talos-cp-01 # MS-A2 — Crucial T500 2TB (CT2000T500SSD8, S/N 2545543A2190)
+          - name: talos-cp-01
             devices:
               - name: /dev/disk/by-id/nvme-CT2000T500SSD8_2545543A2190
-          - name: talos-cp-02 # M90q #1 — Crucial T500 2TB (CT2000T500SSD8, S/N 25405348D601)
+          - name: talos-cp-02
             devices:
               - name: /dev/disk/by-id/nvme-CT2000T500SSD8_25405348D601
-          - name: talos-cp-03 # M90q #2 — Crucial T500 2TB (CT2000T500SSD8, S/N 254053487747)
+          - name: talos-cp-03
             devices:
               - name: /dev/disk/by-id/nvme-CT2000T500SSD8_254053487747
-          - name: talos-worker-01 # M920q #1 — Crucial P310 2TB (CT2000P310SSD8, S/N 252450B1A33B; DRAM-less)
+          - name: talos-worker-01
             devices:
               - name: /dev/disk/by-id/nvme-CT2000P310SSD8_252450B1A33B
-          - name: talos-worker-02 # M920q #2 — Crucial T500 2TB (CT2000T500SSD8, S/N 2545542DA3BA); replaced Kingston NV3 1TB 2026-06-25, now matches the other 4 nodes' OSD disk
+          - name: talos-worker-02
             devices:
               - name: /dev/disk/by-id/nvme-CT2000T500SSD8_2545542DA3BA
-    # Replicated RBD pool + its StorageClass. size=3 / failureDomain=host means
-    # one replica per node — full host-level redundancy (usable capacity is
-    # gated by the smallest host, ~1TB, until the cluster grows).
     cephBlockPools:
       - name: ceph-blockpool
         spec:
           failureDomain: host
-          replicated:
-            size: 3
-          # Pool-level compression, off for now (46 GiB stored of 9.1 TiB raw — not
-          # worth the OSD CPU). Applies live to all RBD images in the pool, existing
-          # PVCs included, but only to data written afterwards. `aggressive`, not
-          # `passive`: passive needs a compressible hint and librbd sends none.
           # parameters:
           #   compression_algorithm: zstd
           #   compression_mode: aggressive
+          replicated:
+            size: 3
         storageClass:
           enabled: true
           name: ceph-block
-          # No default StorageClass exists today; make replicated block the
-          # cluster default so unqualified PVCs land on redundant storage.
           isDefault: true
           reclaimPolicy: Delete
           allowVolumeExpansion: true
           volumeBindingMode: Immediate
           mountOptions: ["discard"]
           parameters:
-            # No compression_* keys: compression is a pool property, not a StorageClass
-            # parameter (see the commented `parameters` under this pool's spec), and
-            # StorageClass.parameters is immutable — adding keys here failed every Helm
-            # upgrade with "field is immutable" (2026-09-18).
             imageFormat: "2"
             imageFeatures: layering,fast-diff,object-map,deep-flatten,exclusive-lock
             csi.storage.k8s.io/provisioner-secret-name: rook-csi-rbd-provisioner
@@ -380,35 +164,6 @@ spec:
             csi.storage.k8s.io/node-stage-secret-name: rook-csi-rbd-node
             csi.storage.k8s.io/node-stage-secret-namespace: "{{ .Release.Namespace }}"
             csi.storage.k8s.io/fstype: ext4
-      # ─────────────────────────────────────────────────────────────────────────
-      # RETIRED 2026-06-24 — the size=1 `ceph-block-single` pool + StorageClass were
-      # removed permanently (prior config preserved in git history). Do not
-      # reintroduce a size=1 Ceph pool here.
-      #
-      # Why it's gone: a size=1 RBD pool is the worst of both worlds. It still pays
-      # Ceph's full cost — RADOS/network round-trip latency AND operational coupling
-      # — while discarding Ceph's only real benefit, redundancy. That coupling bit
-      # us: single-copy PGs made `ceph osd ok-to-stop <id>` return false for EVERY
-      # OSD, which jammed Rook's one-at-a-time OSD rolling updates (operator looped
-      # "aborting OSD provisioning after 20 minutes" every ~21min) and would have
-      # blocked all future OSD/Ceph upgrades on the same gate. The pool was empty
-      # (0 PVCs/PVs), so removal was lossless and restored ok-to-stop=true.
-      #
-      # What to use instead:
-      #   • Disposable / trivially-regenerable data → `openebs-hostpath` (LocalPV).
-      #     Node-local NVMe, no Ceph coupling, lower latency, and structurally
-      #     incapable of the ok-to-stop pathology above. This is the canonical
-      #     choice for throwaway single-node data.
-      #   • Data worth protecting → the size=3 `ceph-block` pool above.
-      #   • Best of all where the app can replicate itself → openebs-hostpath plus
-      #     app-layer redundancy (the CNPG pattern: Postgres streaming replication
-      #     + barman PITR on local disk).
-    # Backed by the rook-ceph.rbd.csi.ceph.com driver via the external-snapshotter
-    # (kubernetes/apps/system/snapshot-controller). Named explicitly rather than
-    # the chart's own default ("ceph-block" — identical to the ceph-block
-    # StorageClass name; distinct API kinds so no functional collision, but
-    # confusing in `kubectl get` output). Not the cluster-default snapshot
-    # class — consumers (e.g. backup tooling) reference it by name explicitly.
     cephBlockPoolsVolumeSnapshotClass:
       enabled: true
       name: ceph-block-snapshot

@@ -10,8 +10,6 @@ metadata:
     gethomepage.dev/description: "Cluster storage dashboard"
     gethomepage.dev/group: "Storage"
     gethomepage.dev/icon: "mdi-harddisk"
-    # Rook names mgr pods app.kubernetes.io/name=ceph-mgr, not rook-ceph-dashboard
-    # (this route's own name) — override the default guess.
     gethomepage.dev/pod-selector: "app.kubernetes.io/name=ceph-mgr"
 spec:
   parentRefs:

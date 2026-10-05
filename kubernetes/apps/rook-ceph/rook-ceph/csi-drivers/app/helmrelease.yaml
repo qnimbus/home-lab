@@ -9,25 +9,9 @@ spec:
     kind: OCIRepository
     name: ceph-csi-drivers
   interval: 1h
-  # Rook ≥ v1.19.5 stamps the Driver/OperatorConfig CRs it created with
-  # meta.helm.sh/release-name=ceph-csi-drivers (+ managed-by=Helm) so that
-  # exactly this release adopts them on first install instead of failing
-  # Helm's ownership check. Any other release name breaks the adoption.
   releaseName: ceph-csi-drivers
   dependsOn:
-    # Ordering comes from the Kustomization-level dependsOn in ../../ks.yaml,
-    # not from this entry — the OCIRepository lives inside this app's own
-    # Kustomization path (ocirepository.yaml), so a Renovate tag bump changes
-    # that Kustomization's tree and its wait: true health check genuinely
-    # re-polls the operator HelmRelease's Ready condition on every upgrade.
     - name: rook-ceph-operator
-  # The cluster-wide install remediation (retries: 1, remediateLastFailure)
-  # answers a failed install with `helm uninstall`. For this release that
-  # would delete the adopted Driver (the ceph-csi-operator then tears down the
-  # RBD node DaemonSet and provisioner) or, at best, the CSI RBAC (every
-  # provision/attach/resize/snapshot then 403s). Mark everything the chart
-  # renders as kept so a failed install leaves the running driver untouched; a
-  # later successful install re-adopts the resources by the same names.
   postRenderers:
     - kustomize:
         patches:
@@ -38,28 +22,15 @@ spec:
                 path: /metadata/annotations
                 value:
                   helm.sh/resource-policy: keep
-  # Rook v1.19 translated its old operator-ConfigMap CSI settings into these
-  # CRs; the values below reproduce what was live before the v1.20 migration
-  # wherever the chart default would otherwise change behaviour. The chart's
-  # own defaults are tuned for a standalone ceph-csi-operator, not for Rook —
-  # Rook's reference values.yaml (deploy/charts/ceph-csi-drivers/) is the base.
   values:
     operatorConfig:
       namespace: rook-ceph
       driverSpecDefaults:
-        # Sidecar/plugin images stay under the rook-ceph chart's control
-        # (its csi.* image values render this ConfigMap), so Rook keeps them at
-        # the versions it tested with and Renovate tracks them in one place.
-        # Without this the ceph-csi-operator uses its own built-in image list.
         imageSet:
           name: rook-csi-operator-image-set-configmap
-        # Was passed as --clustername to the plugins; only surfaces as volume
-        # metadata (enableMetadata is off), kept for parity with the old spec.
         clusterName: rook-ceph
         nodePlugin:
           priorityClassName: system-node-critical
-          # Rook's long-standing CSI defaults (CSI_RBD_PLUGIN_RESOURCE); the
-          # chart ships none, which would make the node plugin BestEffort.
           resources:
             plugin:
               requests:
@@ -75,7 +46,6 @@ spec:
                 memory: 256Mi
         controllerPlugin:
           priorityClassName: system-cluster-critical
-          # Rook's defaults (CSI_RBD_PROVISIONER_RESOURCE); see nodePlugin.
           resources:
             plugin:
               requests:
@@ -94,40 +64,15 @@ spec:
     drivers:
       rbd:
         enabled: true
-        # Must be <operator namespace>.rbd.csi.ceph.com — it is the provisioner
-        # name baked into the ceph-block StorageClass, the ceph-block-snapshot
-        # VolumeSnapshotClass and every existing PV. Renaming orphans them all.
         name: rook-ceph.rbd.csi.ceph.com
-        # Chart default for RBD is `none`, which drops the csi-snapshotter
-        # sidecar — snapshot-based PVC backups go through ceph-block-snapshot,
-        # which needs it. `volumeSnapshot` matches the sidecar that was
-        # live (no VolumeGroupSnapshot feature gate).
         snapshotPolicy: volumeSnapshot
-        # Chart default is 30s. Rook has always run the sidecars with
-        # --timeout=150s; RBD provisioning/resize on a busy cluster can exceed
-        # 30s and would surface as spurious failures.
         grpcTimeout: 150
-        # Chart default adds a logrotate sidecar + file logging on a hostPath,
-        # which takes CSI logs out of `kubectl logs` / VictoriaLogs. Keep stdout.
-        # Per driver on purpose: the chart always renders `log` on the Driver
-        # and the operator only falls back to driverSpecDefaults.log when the
-        # Driver has none, so a defaults-level switch would be dead config.
         log:
           rotation:
             enabled: false
-        # snapshotPolicy, grpcTimeout, log and the two fields below are always
-        # rendered on the Driver by the chart (from its own defaults), and the
-        # operator lets Driver fields win over driverSpecDefaults — so they only
-        # take effect when set here, not under operatorConfig.
         controllerPlugin:
           replicas: 2
-          # Stays on the pod network: it reaches the mons on 10.200.0.0/24
-          # through Cilium (bond-storage is a Cilium device). The node plugin
-          # is always host-networked by the operator — not configurable.
           hostNetwork: false
-      # Only RBD is in use. Each enabled driver deploys its own controller
-      # Deployment, node DaemonSet and RBAC — flip cephfs on together with a
-      # CephFilesystem, not before (and disable its log rotation as above).
       cephfs:
         enabled: false
       nfs:

@@ -9,9 +9,6 @@ spec:
   interval: 1h
   path: ./kubernetes/apps/rook-ceph/rook-ceph/operator/app
   prune: true
-  # wait until the operator HelmRelease is fully installed before the cluster
-  # Kustomization's dry-run runs — otherwise the CephCluster/CephBlockPool CRD
-  # types won't exist yet and the dry-run fails (operator+CRD-instance split).
   wait: true
   sourceRef:
     kind: GitRepository
@@ -33,19 +30,6 @@ spec:
   interval: 1h
   path: ./kubernetes/apps/rook-ceph/rook-ceph/csi-drivers/app
   prune: true
-  # Since Rook v1.20 the operator chart no longer deploys the CSI drivers; this
-  # chart owns the Driver/OperatorConfig CRs, CSI ServiceAccounts and RBAC.
-  # Upstream's required Helm order is rook-ceph → ceph-csi-drivers →
-  # rook-ceph-cluster. Each app's OCIRepository lives inside its own
-  # Kustomization path (operator/app, csi-drivers/app, cluster/app), so a
-  # Renovate tag bump changes that Kustomization's tree and its wait: true
-  # health check genuinely re-polls the dependency HelmRelease on every
-  # upgrade — the plain dependsOn on the HelmReleases (see csi-drivers/cluster
-  # helmrelease.yaml) is enough. The cluster Kustomization deliberately does
-  # *not* depend on this one at the Kustomization level — doing so would hold
-  # back the cluster HR's own spec (dependsOn, Ceph image pin) exactly when a
-  # tag bump needs it applied; the HelmRelease-level dependsOn: ceph-csi-drivers
-  # in cluster/app/helmrelease.yaml handles that ordering instead.
   wait: true
   sourceRef:
     kind: GitRepository
@@ -85,10 +69,6 @@ spec:
       kind: CephCluster
       name: rook-ceph
       namespace: rook-ceph
-  # A freshly-created cluster legitimately sits in HEALTH_WARN while it creates
-  # the initial pools/PGs and the OSDs peer. Treat WARN as healthy so Flux does
-  # not mark the Kustomization failed during normal bring-up; only HEALTH_ERR
-  # (or an absent status) is a real failure.
   healthCheckExprs:
     - apiVersion: ceph.rook.io/v1
       kind: CephCluster
