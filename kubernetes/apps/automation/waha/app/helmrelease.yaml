@@ -25,7 +25,7 @@ spec:
           app:
             image:
               repository: docker.io/devlikeapro/waha
-              tag: "gows-2026.8.2"
+              tag: gows-2026.8.2@sha256:23f2d002d262b54c711af02b5fe79b1948bbf31e6b64cf7776cd6bd2f7477b47
             env:
               TZ: "${CLUSTER_TIMEZONE}"
               WAHA_API_KEY:
