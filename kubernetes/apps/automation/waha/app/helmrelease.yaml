@@ -23,10 +23,7 @@ spec:
             image:
               repository: docker.io/devlikeapro/waha
               tag: "gows-2026.8.2"
-            # Secret keys injected individually so WAHA_API_KEY_PLAIN is excluded from the environment;
-            # the plain key is accessible only via the file mount at /run/secrets/waha (see persistence below).
             env:
-              # PLUS-only: these three vars are no-ops on CORE; session auto-start is handled by the postStart hook below
               WHATSAPP_START_SESSION: "true"
               WHATSAPP_RESTART_ALL_SESSIONS: "true"
               WAHA_WORKER_RESTART_SESSIONS: "true"
@@ -69,16 +66,6 @@ spec:
                     key: WHATSAPP_SWAGGER_PASSWORD
             lifecycle:
               postStart:
-                # WAHA CORE does not auto-start sessions on server restart; this hook replicates that behaviour.
-                # Runs concurrently with the app process; container stays in ContainerCreating until the hook exits,
-                # so the session is started before readiness probes ever fire.
-                # Step 1: POST /api/sessions/default/start — works cleanly on restart (session on PVC).
-                # Step 2: 404 means fresh PVC; fall back to POST /api/sessions to create+start.
-                # Start-first avoids the 422 "already exists" error log WAHA emits on every restart
-                # when the create endpoint is called first.
-                # "|| true" prevents a hook failure from triggering an unnecessary container restart.
-                # WAHA_API_KEY is a bcrypt hash; WAHA uses bcrypt-verify mode, so the hook sends the plain
-                # key read from the file mount — keeping it out of the process environment entirely.
                 exec:
                   command:
                     - /bin/sh
@@ -147,8 +134,6 @@ spec:
             readOnly: true
       sessions:
         type: persistentVolumeClaim
-        # The PVC comes from components/kopiur/backup (Flux-managed), not Helm. It is named
-        # after the app ("waha"), not after this "sessions" identifier.
         existingClaim: "${KOPIUR_CLAIM:=${APP}}"
         globalMounts:
           - path: /app/.sessions

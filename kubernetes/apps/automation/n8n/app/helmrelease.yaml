@@ -9,8 +9,6 @@ spec:
   chartRef:
     kind: OCIRepository
     name: n8n
-  # Placeholder so components/postgres's JSON6902 patch has an existing array to append to.
-  # (appends to /spec/dependsOn/-) — see kubernetes/components/postgres/kustomization.yaml.
   dependsOn: []
   values:
     controllers:
@@ -24,9 +22,6 @@ spec:
               repository: ghcr.io/n8n-io/n8n
               tag: 2.42.2@sha256:4867554ea7e90d996debeed6cdcdae676e66d949dbd0a05176b87792843d59f5
             env:
-              # --- Database: dedicated CNPG cluster (components/postgres), same namespace
-              # as this Deployment — NAME/USER/PASSWORD read from the generated
-              # n8n-postgres-app Secret rather than hardcoded or duplicated via ExternalSecret.
               DB_TYPE: "postgresdb"
               DB_POSTGRESDB_HOST: "${APP}-postgres-rw"
               DB_POSTGRESDB_PORT: "5432"
@@ -45,65 +40,29 @@ spec:
                   secretKeyRef:
                     name: n8n-postgres-app
                     key: password
-              # --- Core runtime config ---
               GENERIC_TIMEZONE: "${CLUSTER_TIMEZONE}"
               N8N_HOST: "n8n.${DOMAIN_CLUSTER}"
               N8N_PORT: &port 5678
               N8N_PROTOCOL: "https"
-              # Envoy Gateway terminates TLS in front of this pod and is the only hop —
-              # trusting exactly one proxy's X-Forwarded-* headers. Required for correct
-              # generated links/webhook URLs and secure-cookie behavior; wrong value here
-              # is a well-documented source of silent auth/redirect breakage upstream.
               N8N_PROXY_HOPS: "1"
-              # n8n derives generated URLs (editor "Test/Production URL" display, and the
-              # actual webhook routing base) from N8N_PROTOCOL/N8N_HOST/N8N_PORT and always
-              # appends the port verbatim — it doesn't special-case 443. Externally this is
-              # reachable on envoy-internal's standard https port (443), not the container's
-              # own listen port (5678) above, so N8N_WEBHOOK_URL overrides the generated base
-              # to match what's actually reachable.
               N8N_WEBHOOK_URL: "https://n8n.${DOMAIN_CLUSTER}/"
-              # Code nodes run in the `runners` sidecar (below), not in-process. It shares
-              # the pod network, so the broker's default 127.0.0.1:5679 listen address
-              # already reaches it and stays unexposed; N8N_RUNNERS_AUTH_TOKEN comes from
-              # n8n-secret via envFrom.
               N8N_RUNNERS_MODE: "external"
               N8N_NATIVE_PYTHON_RUNNER: "true"
-              # Pinned ahead of n8n's announced default changes (2.42 startup deprecation
-              # notice): keep the 5-minute runner timeout rather than the upcoming 1 minute;
-              # adopt the new, tighter defaults for the rest now. No community packages are
-              # installed, so unverified ones stay off.
               N8N_RUNNERS_TASK_TIMEOUT: &taskTimeout "300"
               N8N_UNVERIFIED_PACKAGES_ENABLED: "false"
-              N8N_COMPRESSION_NODE_MAX_DECOMPRESSED_SIZE_BYTES: "268435456" # 256 MiB
+              N8N_COMPRESSION_NODE_MAX_DECOMPRESSED_SIZE_BYTES: "268435456"
               N8N_COMPRESSION_NODE_MAX_ZIP_ENTRIES: "1000"
               N8N_DIAGNOSTICS_ENABLED: "false"
               N8N_HIDE_USAGE_PAGE: "true"
-              # fsGroup (below) already makes the mounted PVC group-writable; n8n's own
-              # startup permission enforcement on top of that is redundant and has been a
-              # source of boot-time false positives on some volume backends.
               N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "false"
-              # Execution history lives in Postgres and grows unbounded without pruning.
               EXECUTIONS_DATA_PRUNE: "true"
-              EXECUTIONS_DATA_MAX_AGE: "168" # 7 days, in hours
+              EXECUTIONS_DATA_MAX_AGE: "168"
               EXECUTIONS_DATA_PRUNE_MAX_COUNT: "50000"
-              # --- Outbound mail via the cluster's own smtp-relay (mail namespace) ---
-              # maddy's internal listener accepts unauthenticated mail from in-cluster
-              # callers (see kubernetes/apps/mail/smtp-relay) — loadBalancerSourceRanges
-              # only restricts its external LoadBalancer IPs, not ClusterIP traffic — so no
-              # SMTP credentials are needed here at all.
               N8N_EMAIL_MODE: "smtp"
               N8N_SMTP_HOST: "smtp-relay.mail.svc.cluster.local"
               N8N_SMTP_PORT: "25"
               N8N_SMTP_SSL: "false"
               N8N_SMTP_SENDER: "n8n <${MAIL_FROM_ADDRESS}>"
-              # V8's default old-space sizing looks at total host memory, not the
-              # container's cgroup limit — on this cluster that means V8 will happily
-              # grow toward host RAM (64GB+) instead of GC'ing under pressure, so the
-              # kernel OOM-kills the process with no heap error in the logs (observed
-              # 2026-08-24: clean logs, then OOMKilled after ~49h uptime). Capping
-              # old-space below the container memory limit makes V8 GC proactively and,
-              # if truly exhausted, throw a catchable/logged error instead of a silent
-              # SIGKILL. See https://docs.n8n.io/deploy/host-n8n/configure-n8n/scaling/fix-memory-issues
               NODE_OPTIONS: "--max-old-space-size=1536"
             envFrom:
               - secretRef:
@@ -136,17 +95,12 @@ spec:
               allowPrivilegeEscalation: false
               capabilities:
                 drop: ["ALL"]
-          # External task runner launcher (JS + Python). Its tag must match n8n's exactly;
-          # Renovate bumps both together (n8n group in .renovaterc.json5). Module
-          # allowlists stay at the image's /etc/n8n-task-runners.json defaults.
           runners:
             image:
               repository: ghcr.io/n8n-io/runners
               tag: 2.42.2@sha256:7c99d650ff125780ba1bd293bd95c8cf537bea77f16eb085bf79bca3a5e36ab5
             env:
               GENERIC_TIMEZONE: "${CLUSTER_TIMEZONE}"
-              # Only the token, not envFrom: the runner has no business seeing
-              # N8N_ENCRYPTION_KEY.
               N8N_RUNNERS_AUTH_TOKEN:
                 valueFrom:
                   secretKeyRef:
@@ -155,7 +109,6 @@ spec:
               N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT: "15"
               N8N_RUNNERS_TASK_BROKER_URI: "http://localhost:5679"
               N8N_RUNNERS_TASK_TIMEOUT: *taskTimeout
-              # Same cgroup-blind V8 heap sizing as the app container above.
               NODE_OPTIONS: "--max-old-space-size=768"
             probes:
               liveness: &runnerProbes
