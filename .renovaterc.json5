@@ -104,6 +104,15 @@
       matchPackageNames: ["/postgresql/"],
       allowedVersions: "<19",
     },
+    {
+      // WAHA tags carry the engine name as a prefix (gows-2026.4.3, noweb-2026.4.3),
+      // which docker versioning can't parse. Anchoring on gows- also keeps updates
+      // within the same engine
+      description: "WAHA: parse the version from the gows-YYYY.M.P tag",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["docker.io/devlikeapro/waha"],
+      versioning: "regex:^gows-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
+    },
     //
     // Auto-merge rules
     //
