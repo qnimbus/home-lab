@@ -182,7 +182,7 @@ spec:
           app:
             image:
               repository: <image-repo>
-              tag: <image-tag>
+              tag: <image-tag>@sha256:<digest>
             probes:
               liveness:
                 enabled: true
@@ -206,7 +206,13 @@ spec:
             port: <port>
 ```
 
-**The pod `securityContext` goes under `defaultPodOptions`**, not under `controllers.<app>.pod`. It then sits at the top of `values` and covers every controller of the release. Use `controllers.<app>.pod.securityContext` only for a controller that must differ from the others in the same release. Adjust `runAsUser`/`runAsGroup` (and capabilities) to what the image requires; drop the pod `securityContext` only if the image genuinely can't run non-root. Plain image tags are fine — Renovate pins digests and manages updates.
+**The pod `securityContext` goes under `defaultPodOptions`**, not under `controllers.<app>.pod`. It then sits at the top of `values` and covers every controller of the release. Use `controllers.<app>.pod.securityContext` only for a controller that must differ from the others in the same release. Adjust `runAsUser`/`runAsGroup` (and capabilities) to what the image requires; drop the pod `securityContext` only if the image genuinely can't run non-root.
+
+**Pin the image by digest**, in the `tag` value: `<image-tag>@sha256:<digest>`. Renovate keeps a digest current once it is there, updating tag and digest together, but it doesn't add one to a bare tag. Look the digest up, never write it from memory:
+
+```bash
+docker buildx imagetools inspect <image-repo>:<image-tag> --format '{{.Manifest.Digest}}'
+```
 
 **Optional value blocks** (top-level under `values`, after `defaultPodOptions`, alphabetical: `controllers`, `persistence`, `route`, `service`):
 
