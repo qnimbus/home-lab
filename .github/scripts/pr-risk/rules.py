@@ -233,6 +233,7 @@ class Facts:
     presence: dict[str, set[str]] = field(default_factory=dict)  # what semantic questions are about
     checks: list[dict] = field(default_factory=list)  # the PR's own runs of the workflows it changes
     config_complete: bool = True  # the model gets all of `config`, nothing cut for size
+    crd_objects: dict[str, list[dict]] | None = None  # per changed CRD, the objects of its kind in Git; None: not collected
 
     def __post_init__(self):
         self.hunks = parse_diff(self.diff)
@@ -765,13 +766,22 @@ SCHEMA_KEYWORDS = {"type", "properties", "items", "required", "enum", "default",
                    "x-kubernetes-preserve-unknown-fields", "x-kubernetes-int-or-string", "x-kubernetes-list-map-keys"}  # fmt: skip
 
 
-def crd_narrowing(hunks: list[Hunk]) -> list[str]:
+def property_path(keys: tuple[str, ...]) -> tuple[str, ...]:
+    """The property names on a schema line's key path, outermost first: the keys that follow a
+    `properties`. A hunk Konflate cut below the schema's root may open on a property whose
+    `properties` parent isn't shown (#216: `role`, `enum`), so there the first key counts too."""
+    cut = "openAPIV3Schema" not in keys
+    return tuple(k for i, k in enumerate(keys) if (keys[i - 1] == "properties" if i else cut and k not in SCHEMA_KEYWORDS))
+
+
+def crd_narrowings(hunks: list[Hunk]) -> list[tuple[str, tuple[str, ...]]]:
     """What in a CRD's rendered diff narrows the schema for objects that already exist: a
     property removed (#186: dragonfly's `networkPolicyEnabled`), a type changed, an enum value
     removed, or a `required` entry for a property that isn't itself new. New optional
     properties, whatever they require inside, narrow nothing (#192). Description text and the
-    conversion block don't count."""
-    out = []
+    conversion block don't count. Each comes with the path of the property it narrows, as far
+    as the hunk shows it."""
+    out: list[tuple[str, tuple[str, ...]]] = []
     # Konflate splits a big CRD at its fold markers, so a hunk can start below `properties:`
     # and a property's parent is unknown (#186). A removed key then counts as a property when
     # it isn't a schema keyword and its own children say `type:` or `properties:`; one whose
@@ -792,18 +802,50 @@ def crd_narrowing(hunks: list[Hunk]) -> list[str]:
                 for c in lines[i + 1 : i + 12] if c.sign == "-"
             )  # fmt: skip
             if under_properties or orphan:
-                out.append(f"property `{ln.key}` removed")
+                out.append((f"property `{ln.key}` removed", (*property_path(ln.keys), ln.key)))
         for ln in lines:
             if ln.sign == "-" and ln.key is None and ln.keys[-1:] == ("enum",) and (ln.keys, ln.value) not in added_items:
-                out.append(f"enum value `{ln.value}` removed")
+                out.append((f"enum value `{ln.value}` removed", property_path(ln.keys)))
             elif ln.sign == "+" and ln.key is None and ln.keys[-1:] == ("required",) and ln.value not in new_props \
                     and (ln.keys, ln.value) not in removed_items:  # fmt: skip
-                out.append(f"`{ln.value}` newly required")
+                out.append((f"`{ln.value}` newly required", (*property_path(ln.keys), ln.value or "")))
         kept = {id(ln) for ln in lines}
         for c in changes(Hunk(h.path, [ln for ln in h.lines if id(ln) in kept or ln.sign == " "])):
             if c.key == "type" and c.old and c.new and "properties" in c.keys:
-                out.append(f"type `{c.old}` → `{c.new}`")
+                out.append((f"type `{c.old}` → `{c.new}`", property_path(c.keys)))
     return list(dict.fromkeys(out))
+
+
+def crd_narrowing(hunks: list[Hunk]) -> list[str]:
+    return list(dict.fromkeys(what for what, _ in crd_narrowings(hunks)))
+
+
+def yaml_keys(text: str) -> set[str]:
+    """Every key a YAML text sets, at any depth."""
+    return {k for line in text.splitlines() if (m := KEY.match(line)) and (k := _clean(m.group(3)))}
+
+
+def kind_of(kind: str | None, plural: str) -> bool:
+    """Whether `kind` is the kind a CRD named `<plural>.<group>` defines."""
+    k = (kind or "").lower()
+    return bool(k) and plural in (k + "s", k + "es", k[:-1] + "ies")
+
+
+def crd_users(f: Facts, title: str, narrowed: list[tuple[str, tuple[str, ...]]]) -> list[str] | None:
+    """The objects of a CRD's kind that set a narrowed property: manifests in Git at the head
+    (`crd_objects`, from collect) and resources in the rendered diff. An object counts when it
+    has a key for every property name on the path, so a path the hunk only shows the end of
+    (`role`) matches more than it should, never less. None when it can't be told: the bundle
+    has no `crd_objects` for this CRD, or a narrowing has no path."""
+    name = title.split(" ", 1)[-1]
+    objects = (f.crd_objects or {}).get(name)
+    if objects is None or not all(path for _, path in narrowed):
+        return None
+    plural = name.split(".", 1)[0]
+    seen = [(o["path"], set(o["keys"])) for o in objects]
+    seen += [(h.path, {ln.key for ln in h.lines if ln.sign != "-" and ln.key}) for h in f.rendered
+             if h.status != "removed" and kind_of(h.kind, plural)]  # fmt: skip
+    return list(dict.fromkeys(path for path, keys in seen if any(keys.issuperset(p) for _, p in narrowed)))
 
 
 def in_kdiff(kdiff: dict | None, title: str) -> bool:
@@ -834,11 +876,21 @@ def crd_lifecycle(f: Facts, a: Assessment) -> None:
             a.find("lifecycle.crd_second_owner", "possible", sid, (eid,),
                    f"Adds `{title}`: check no other release already owns it (`kubectl get crd`), or two releases will take turns overwriting it.")  # fmt: skip
             continue
-        narrowed = crd_narrowing(hs)
-        if narrowed:
+        narrowings = crd_narrowings(hs)
+        if narrowings:
+            narrowed = list(dict.fromkeys(what for what, _ in narrowings))
+            users = crd_users(f, title, narrowings)
             eid = a.record("render", f"{title}: " + "; ".join(narrowed[:4]), sid)
-            a.find("compat.crd_schema_narrowed", "probable", sid, (eid,),
-                   f"`{title}` narrows its schema ({short(narrowed, 3)}): existing objects that use it can fail validation or lose the field.")  # fmt: skip
+            if users is None:
+                a.find("compat.crd_schema_narrowed", "probable", sid, (eid,),
+                       f"`{title}` narrows its schema ({short(narrowed, 3)}): existing objects that use it can fail validation or lose the field.")  # fmt: skip
+            elif users:
+                a.find("compat.crd_schema_narrowed", "probable", sid, (eid, a.record("git", f"{title}: {short(users)} sets a narrowed field", sid)),
+                       f"`{title}` narrows its schema ({short(narrowed, 3)}) and {short(users, 3)} sets a narrowed field: it can fail validation or lose the field.")  # fmt: skip
+            else:
+                a.find("compat.crd_schema_narrowed", "possible", sid, (eid, a.record("git", f"{title}: no object in Git or the rendered diff sets a narrowed field", sid)),
+                       f"`{title}` narrows its schema ({short(narrowed, 3)}). No object of this kind in Git or in the rendered diff sets a "
+                       "narrowed field: check that none created outside Git, or rendered by a chart and unchanged here, does.")  # fmt: skip
         dropped, moved_ = crd_versions(lines)
         if dropped:
             eid = a.record("render", f"{title}: a served version is removed", sid)

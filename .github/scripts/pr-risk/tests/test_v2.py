@@ -108,7 +108,7 @@ class Jev:
 class Scenario:
     def __init__(self, *diffs, title="fix: tweak", body="", author="owner", labels=(), konflate="auto", kdiff=None,
                  conflict=False, overlap=(), base_diff="", notes=None, secrets=None, components=None, visibility="public",
-                 config=None, binary=(), commits=1, checks=None):  # fmt: skip
+                 config=None, binary=(), commits=1, checks=None, crd_objects=None):  # fmt: skip
         self.dir = Path(tempfile.mkdtemp())
         diff = "".join(diffs)
         files = files_of(diff) + [{"status": "M", "path": b, "binary": True, "additions": 0, "deletions": 0} for b in binary]
@@ -128,6 +128,8 @@ class Scenario:
         w("secrets.json", secrets or [])
         if checks is not None:
             w("checks.json", checks)
+        if crd_objects is not None:
+            w("crd_objects.json", crd_objects)
         if base_diff:
             w("base_overlap.diff", base_diff)
         if kdiff is not None:
@@ -694,6 +696,113 @@ class TestRegressions(Assertions):
                                        ("ctx", "            required:"), ("add", "            - replicas")]  # fmt: skip
         self.assertEqual(rules.crd_narrowing(rules.render_hunks(crd_kdiff("CustomResourceDefinition x.example.io", required))),
                          ["`replicas` newly required"])  # fmt: skip
+
+    def test_narrowed_crd_nothing_here_uses_216(self):
+        """#216: kube-prometheus-stack 91 drops lowercase enum values under the ScrapeConfig
+        CRD's `hetznerSDConfigs[].role` and `openstackSDConfigs[].availability`. The repo's
+        ScrapeConfigs only set `staticConfigs`, so it's review, not risky. Konflate cut the
+        Hetzner hunk below `hetznerSDConfigs`: only `role` is known of that path."""
+        title = "CustomResourceDefinition scrapeconfigs.monitoring.coreos.com"
+        hetzner = [("ctx", "                    role:"), ("ctx", "                      enum:"), ("del", "                      - hcloud"),
+                   ("del", "                      - robot"), ("ctx", "                      - HCloud"), ("ctx", "                      - Robot")]  # fmt: skip
+        openstack = [("ctx", "              openstackSDConfigs:"), ("ctx", "                items:"), ("ctx", "                  properties:"),
+                     ("ctx", "                    availability:"), ("ctx", "                      enum:"), ("ctx", "                      - Public"),
+                     ("del", "                      - public")]  # fmt: skip
+        unified = [{"kind": k, "html": h} for k, h in hetzner] + [{"hunk": True, "fold": "g1", "count": 400}] + [{"kind": k, "html": h} for k, h in openstack]
+        kdiff = {"diff": {"resources": [{"kind": "CustomResourceDefinition", "title": title, "status": "changed",
+                                         "parent": "HelmRelease observability/kube-prometheus-stack", "unified": unified}]}}  # fmt: skip
+        self.assertEqual(rules.crd_narrowings(rules.render_hunks(kdiff)),
+                         [("enum value `hcloud` removed", ("role",)), ("enum value `robot` removed", ("role",)),
+                          ("enum value `public` removed", ("openstackSDConfigs", "availability"))])  # fmt: skip
+        diff = mkdiff("kubernetes/apps/observability/kube-prometheus-stack/app/ocirepository.yaml", "  ref:\n-    tag: 88.6.5\n+    tag: 91.9.0", header="spec:")
+        path = "kubernetes/apps/observability/kube-prometheus-stack/app/scrapeconfig-truenas.yaml"
+        static = {"path": path, "keys": ["apiVersion", "kind", "metadata", "name", "spec", "staticConfigs", "targets"]}
+        name = "scrapeconfigs.monitoring.coreos.com"
+
+        def run(crd_objects):
+            return Scenario(diff, kdiff=kdiff, konflate=konflate_fresh(crds=1), author="renovate", notes=NO_NOTES, crd_objects=crd_objects).run()
+
+        r = run({name: [static]})
+        self.verdict(r, "review")
+        self.assertIn("compat.crd_schema_narrowed", codes(r, {"possible"}))
+        self.assertNotIn("compat.crd_schema_narrowed", codes(r, {"probable", "established"}))
+        # A ScrapeConfig that does discover through Hetzner sets `role`.
+        r = run({name: [static, {"path": "kubernetes/apps/observability/x/app/scrapeconfig.yaml", "keys": ["hetznerSDConfigs", "role", "spec"]}]})
+        self.verdict(r, "risky")
+        self.assertIn("compat.crd_schema_narrowed", codes(r, {"probable"}))
+        self.assertIn("x/app/scrapeconfig.yaml", next(f["description"] for f in r["findings"] if f["code"] == "compat.crd_schema_narrowed"))
+        # Not collected (a bundle from before `crd_objects.json`), or not for this CRD: unknown, so probable as before.
+        for unknown in (None, {}):
+            self.verdict(run(unknown), "risky")
+        # An object of the kind that the chart renders, changed in this PR, counts as well.
+        rendered = {"kind": "ScrapeConfig", "title": "ScrapeConfig observability/hetzner", "status": "changed",
+                    "parent": "HelmRelease observability/kube-prometheus-stack",
+                    "unified": [{"kind": k, "html": h} for k, h in [("ctx", "spec:"), ("ctx", "  hetznerSDConfigs:"), ("ctx", "  - role: hcloud"),
+                                                                    ("add", "    port: 9100")]]}  # fmt: skip
+        both = {"diff": {"resources": kdiff["diff"]["resources"] + [rendered]}}
+        r = Scenario(diff, kdiff=both, konflate=konflate_fresh(crds=1), author="renovate", notes=NO_NOTES, crd_objects={name: [static]}).run()
+        self.assertIn("compat.crd_schema_narrowed", codes(r, {"probable"}))
+
+    def test_cut_crds_are_not_missing_evidence_216(self):
+        """#216: ten CRDs filled Jev's rendered input, so six ServiceMonitors and a Secret were
+        left out and the PR was uncertain. CRDs go in last, and a cut CRD is no gap: the
+        deterministic rule reads all of it, and Jev's answer on it is capped."""
+        additive = self.SCHEMA_HEAD + [("add", f"              field{i}:") for i in range(4000)]
+        crd = crd_kdiff("CustomResourceDefinition prometheuses.monitoring.coreos.com", additive, parent="HelmRelease observability/kube-prometheus-stack")
+        sm = {"kind": "ServiceMonitor", "title": "ServiceMonitor observability/kube-prometheus-stack-kubelet", "status": "changed",
+              "parent": "HelmRelease observability/kube-prometheus-stack",
+              "unified": [{"kind": "ctx", "html": "spec:"}, {"kind": "del", "html": "  bearerTokenFile: /var/run/secrets/token"}]}  # fmt: skip
+        kdiff = {"diff": {"resources": crd["diff"]["resources"] + [sm]}}
+        text, cut = p.budget_rendered(kdiff, p.BUDGET["rendered"], p.BUDGET["rendered_per_resource"])
+        self.assertEqual(cut, ["CustomResourceDefinition prometheuses.monitoring.coreos.com"])
+        self.assertLess(text.index("ServiceMonitor"), text.index("CustomResourceDefinition"))
+        diff = mkdiff("kubernetes/apps/observability/kube-prometheus-stack/app/ocirepository.yaml", "  ref:\n-    tag: 88.6.5\n+    tag: 91.9.0", header="spec:")
+        run = lambda k: Scenario(diff, kdiff=k, konflate=konflate_fresh(crds=1), author="renovate", notes=NO_NOTES).run()  # noqa: E731
+        self.assertNotIn("ev.model_input_truncated", codes(run(kdiff)))
+        # A resource over the per-resource cap goes in whole while everything but the CRDs fits.
+        rows = lambda n: sm["unified"] + [{"kind": "add", "html": f"  key{i}: {'x' * 60}"} for i in range(n)]  # noqa: E731
+        roomy = {"diff": {"resources": crd["diff"]["resources"] + [{**sm, "unified": rows(300)}]}}
+        self.assertEqual(p.budget_rendered(roomy, p.BUDGET["rendered"], p.BUDGET["rendered_per_resource"])[1], cut)
+        # Another kind that is cut is still a gap, and the CRD isn't named in it.
+        big = {**sm, "unified": rows(1200)}
+        r = run({"diff": {"resources": crd["diff"]["resources"] + [big]}})
+        gap = next(f["description"] for f in r["findings"] if f["code"] == "ev.model_input_truncated")
+        self.assertIn("ServiceMonitor", gap)
+        self.assertNotIn("CustomResourceDefinition", gap)
+        self.assertTrue(r["uncertain"])
+
+    def test_collect_crd_objects(self):
+        """The objects of a changed CRD's kind at the head: by API group and kind, one entry
+        per document, keys only. Added CRDs and other kinds of the group are left out."""
+        path = "kubernetes/apps/observability/kube-prometheus-stack/app/scrapeconfig-truenas.yaml"
+        tree = {
+            path: "---\n# yaml-language-server: $schema=x\napiVersion: monitoring.coreos.com/v1alpha1\nkind: ScrapeConfig\nmetadata:\n  name: a\n"
+                  "spec:\n  staticConfigs:\n    - targets: [\"${NAS_HOST}:9100\"]\n---\napiVersion: monitoring.coreos.com/v1\nkind: PrometheusRule\n"
+                  "spec:\n  groups: []\n",
+        }  # fmt: skip
+
+        def fake_git(*args, check=True):
+            if args[0] == "grep":
+                return SimpleNamespace(stdout="".join(f"head:{x}\n" for x, text in tree.items() if args[3] in text), returncode=0)
+            if args[0] == "show":
+                text = tree.get(args[1].split(":", 1)[1])
+                return SimpleNamespace(stdout=text or "", returncode=0 if text is not None else 128)
+            return SimpleNamespace(stdout="", returncode=1)
+
+        kdiff = {"diff": {"resources": [
+            {"kind": "CustomResourceDefinition", "title": "CustomResourceDefinition scrapeconfigs.monitoring.coreos.com", "status": "changed"},
+            {"kind": "CustomResourceDefinition", "title": "CustomResourceDefinition probes.monitoring.coreos.com", "status": "changed"},
+            {"kind": "CustomResourceDefinition", "title": "CustomResourceDefinition new.example.io", "status": "added"},
+            {"kind": "Deployment", "title": "Deployment observability/x", "status": "changed"},
+        ]}}  # fmt: skip
+        with mock.patch.object(p, "git", side_effect=fake_git):
+            got = p.collect_crd_objects(kdiff, "head")
+        self.assertEqual(got, {"scrapeconfigs.monitoring.coreos.com": [{"path": path, "keys": ["apiVersion", "kind", "metadata", "name", "spec",
+                                                                                               "staticConfigs", "targets"]}],
+                               "probes.monitoring.coreos.com": []})  # fmt: skip
+        self.assertTrue(all(rules.kind_of(k, pl) for k, pl in [("Prometheus", "prometheuses"), ("NetworkPolicy", "networkpolicies"),
+                                                                ("Dragonfly", "dragonflies"), ("ScrapeConfig", "scrapeconfigs")]))  # fmt: skip
+        self.assertFalse(rules.kind_of("Probe", "prometheuses"))
 
     def action_bump_214(self, checks=None, config="auto", extra=""):
         """#214 as collected: one pinned-SHA line in validate.yaml, v5.0.0 → v7.0.0 of

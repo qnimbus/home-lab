@@ -251,6 +251,11 @@ def interpret(f: Facts, a: Assessment, call: Call, resp: dict | None, err: str |
         return {}
     for sid in call.surfaces:
         a.set_quality(sid, "model", "sufficient")
+    # A cut CRD leaves nothing unassessed either, while the one question about CRDs is capped:
+    # rules.crd_lifecycle reads the whole render, and decides (#216: six cut CRDs, uncertain).
+    if QUESTIONS["crd_schema_narrowed"].capped:
+        crds = {h.path for h in f.rendered if h.kind == "CustomResourceDefinition"}
+        truncated = [t for t in truncated if t not in crds]
     # Only surfaces the model is needed for: a cut README leaves nothing unassessed.
     where = sorted({s for s in (f.hunk_sid_of(t) for t in truncated) if s in call.surfaces})
     if truncated and not any(f.hunk_sid_of(t) for t in truncated):

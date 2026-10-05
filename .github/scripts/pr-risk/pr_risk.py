@@ -78,8 +78,12 @@ LABELS = {"safe": "risk/safe", "review": "risk/review", "risky": "risk/risky"}
 UNCERTAIN_LABEL = "risk/uncertain"
 COMMENT_MARKER = "<!-- pr-risk -->"
 DROP_FROM_DIFF = ["**/*.lock", ".mise/mise.lock"]  # generated; noise for the model
+# What Jev's rendered input is filled with first when the diff doesn't fit. CRDs go last, after
+# the kinds not listed: `rules.crd_lifecycle` reads them whole and decides, and Jev's answer on
+# them is capped. First in line, #216's ten CRDs left no room for six ServiceMonitors and a
+# new Secret.
+RENDER_LAST = {"CustomResourceDefinition"}
 RENDER_PRIORITY = [
-    {"CustomResourceDefinition"},
     {"ClusterRole", "ClusterRoleBinding", "Role", "RoleBinding", "ServiceAccount"},
     {"PersistentVolumeClaim", "PersistentVolume", "StorageClass", "VolumeSnapshot", "VolumeSnapshotClass"},
     {"StatefulSet", "Deployment", "DaemonSet", "CronJob", "Job"},
@@ -383,6 +387,34 @@ def ks_documents(text: str) -> list[dict]:
     return out
 
 
+CRD_TITLE = re.compile(r"^CustomResourceDefinition (([^.\s]+)\.(\S+))$")
+
+
+def collect_crd_objects(kdiff: dict | None, head: str) -> dict[str, list[dict]]:
+    """For each CRD the render changes, the objects of its kind in Git at the head, with the
+    keys each sets (names only, no values). It is what tells a narrowed schema that breaks an
+    object here from one nothing here uses: #216 dropped enum values under `hetznerSDConfigs`
+    and `openstackSDConfigs`, and the repo's three ScrapeConfigs only set `staticConfigs`.
+    Objects a chart renders aren't in Git; the rule reads those from the rendered diff."""
+    out: dict[str, list[dict]] = {}
+    for r in ((kdiff or {}).get("diff") or {}).get("resources") or []:
+        m = CRD_TITLE.match(r.get("title") or "")
+        if not m or r.get("kind") != "CustomResourceDefinition" or r.get("status") != "changed":
+            continue
+        name, plural, group = m.groups()
+        api = re.compile(rf"(?m)^apiVersion:\s*[\"']?{re.escape(group)}/")
+        found = git("grep", "-l", "-F", f"apiVersion: {group}/", head, "--", "kubernetes", "bootstrap", check=False)
+        objects = out.setdefault(name, [])
+        for line in found.stdout.splitlines():
+            path = line.split(":", 1)[-1]
+            shown = git("show", f"{head}:{path}", check=False)
+            for doc in re.split(r"(?m)^---\s*$", shown.stdout if shown.returncode == 0 else ""):
+                kind = re.search(r"(?m)^kind:\s*(\S+)", doc)
+                if kind and api.search(doc) and rules.kind_of(kind.group(1).strip("\"'"), plural):
+                    objects.append({"path": path, "keys": sorted(rules.yaml_keys(doc))})
+    return out
+
+
 def collect_components(files: list[dict], base: str, head: str) -> list[dict]:
     def show(rev, path):
         r = git("show", f"{rev}:{path}", check=False)
@@ -535,6 +567,7 @@ def collect(event: dict, base: str, head: str, out: Path, konflate_url: str | No
     (out / "konflate.json").write_text(json.dumps({"state": state, "summary": summary}, indent=2))
     if diff:
         (out / "konflate_diff.json").write_text(json.dumps(diff))
+        (out / "crd_objects.json").write_text(json.dumps(collect_crd_objects(diff, head), indent=2))
     # After the render: it is what shows which images a chart bump moves.
     notes = gather_release_notes(meta, images=(summary.get("diff") or {}).get("images") if state == "fresh" else None)
     (out / "release_notes.json").write_text(json.dumps(notes, indent=2))
@@ -676,15 +709,22 @@ def budget_rendered(kdiff: dict | None, total: int, per_resource: int) -> tuple[
     resources = ((kdiff or {}).get("diff") or {}).get("resources") or []
 
     def rank(r):
+        if r.get("kind") in RENDER_LAST:
+            return len(RENDER_PRIORITY) + 1
         return next((i for i, kinds in enumerate(RENDER_PRIORITY) if r.get("kind") in kinds), len(RENDER_PRIORITY))
 
     # The per-resource cap only matters when everything doesn't fit: one big new CRD in an
     # otherwise small diff shouldn't be cut (tailscale-operator: 8.1k chars in a 10k diff).
+    # The same goes for everything ahead of the CRDs: when that fits, none of it is cut, and
+    # the CRDs share what is left (#216: a 27k PrometheusRule in 40k of non-CRD resources).
+    caps = {False: per_resource, True: per_resource}  # by "is in RENDER_LAST"
     if sum(len(render_resource(r, total)) + 1 for r in resources) <= total:
-        per_resource = total
+        caps = {False: total, True: total}
+    elif sum(len(render_resource(r, total)) + 1 for r in resources if r.get("kind") not in RENDER_LAST) <= total:
+        caps[False] = total
     out, used, cut = [], 0, []
     for r in sorted(resources, key=rank):
-        text = render_resource(r, per_resource) + "\n"
+        text = render_resource(r, caps[r.get("kind") in RENDER_LAST]) + "\n"
         if text.rstrip().endswith("(resource truncated)"):
             cut.append(r.get("title") or "?")
         if used + len(text) > total:
@@ -1244,6 +1284,7 @@ def load_bundle(d: Path) -> dict:
         "components": read_json(d / "components.json", []),
         "secrets": read_json(d / "secrets.json", []),
         "checks": read_json(d / "checks.json", []),  # absent in bundles from before it was collected
+        "crd_objects": read_json(d / "crd_objects.json"),  # absent likewise: a narrowed CRD then stays probable
     }
     # collect() writes release_notes.json; older bundles and fixtures fall back to the PR body
     notes = read_json(d / "release_notes.json")
@@ -1276,7 +1317,7 @@ def classify(d: Path, *, key: str | None, model: str, fixture: dict | None = Non
     meta, files, konflate, kdiff, notes = b["meta"], b["files"], b["konflate"], b["kdiff"], b["notes"]
     surfaces = build_surfaces(files, surface_texts(files, b["diff"], b["config"]))
     f = Facts(meta, files, b["overlap"], b["conflict"], konflate, kdiff, b["diff"], b["base_diff"], b["config"], notes,
-              b["components"], b["secrets"], surfaces, checks=b["checks"],
+              b["components"], b["secrets"], surfaces, checks=b["checks"], crd_objects=b["crd_objects"],
               config_complete=config_fits({k: redact(v) for k, v in b["config"].items()}, BUDGET["config"], BUDGET["config_per_file"]))  # fmt: skip
     a = Assessment(surfaces)
     ran = rules.evaluate(f, a)
