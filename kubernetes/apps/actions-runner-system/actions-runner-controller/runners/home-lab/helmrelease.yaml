@@ -8,6 +8,8 @@ spec:
   chartRef:
     kind: OCIRepository
     name: home-lab
+  dependsOn:
+    - name: actions-runner-controller
   interval: 1h
   values:
     containerMode:
