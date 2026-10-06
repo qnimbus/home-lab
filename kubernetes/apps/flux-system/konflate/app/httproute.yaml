@@ -5,7 +5,7 @@ kind: HTTPRoute
 metadata:
   name: konflate-webhook
 spec:
-  hostnames: ["${APP}-webhook.${DOMAIN_IO}"]
+  hostnames: ["${APP}-webhook.${DOMAIN_APP}", "${APP}-webhook.${DOMAIN_IO}"]
   parentRefs:
     - name: envoy-external
       namespace: network
