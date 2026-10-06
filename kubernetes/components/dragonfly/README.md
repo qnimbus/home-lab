@@ -33,4 +33,6 @@ For a password, also add `../../../../components/dragonfly/authentication`.
 
 ## Caveats
 
-- **No NetworkPolicy**, same as everywhere else (see `CLAUDE.md`). Operator v1.7.0 stopped generating a policy per instance, so the component no longer ships the `-allow-metrics` rule that opened port 9999 through it. Don't add it back: alone, that rule selects the pod and drops everything else, which made a new instance unreachable on 6379 and to the operator's own readiness check.
+- **No NetworkPolicy**, same as everywhere else (see `CLAUDE.md`). The operator generates none per instance, so the component ships no rule to open the metrics port through one. Don't add such a rule: alone, it selects the pod and drops everything else, which makes the instance unreachable on 6379 and to the operator's own readiness check.
+- **The HelmRelease must already have `spec.dependsOn`**, even if empty (`dependsOn: []`). The component's patch appends to that list and fails if it's missing.
+- The spread constraint counts the instances of every app together and spreads them evenly over the nodes (`DoNotSchedule`).

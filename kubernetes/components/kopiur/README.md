@@ -59,9 +59,7 @@ No `dependsOn` on kopiur: see the `add-app` skill.
 
 ## Sizing
 
-**The cache does not follow the volume.** `KOPIUR_CACHE_CAPACITY` is `5Gi` whatever `KOPIUR_CAPACITY` is. The cache holds what kopia has fetched from the repository (indexes and metadata on a backup, content blocks on a restore), not a copy of the volume, and `openebs-hostpath` doesn't enforce the size as a quota anyway. kopiur's docs give no sizing rule beyond "large repositories"; what bounds kopia's use is `contentCacheSizeMb`/`metadataCacheSizeMb`, which this component leaves at kopia's defaults. Raise the capacity only for a mover that actually runs out.
-
-It used to default to `KOPIUR_CAPACITY`, which tied a volume that can grow (`ceph-block`) to one that can't (`openebs-hostpath` refuses expansion).
+**The cache does not follow the volume.** `KOPIUR_CACHE_CAPACITY` is `5Gi` whatever `KOPIUR_CAPACITY` is. The cache holds what kopia has fetched from the repository (indexes and metadata on a backup, content blocks on a restore), not a copy of the volume, and `openebs-hostpath` doesn't enforce the size as a quota anyway. kopiur's docs give no sizing rule beyond "large repositories"; what bounds kopia's use is `contentCacheSizeMb`/`metadataCacheSizeMb`, which this component leaves at kopia's defaults. Raise the capacity only for a mover that actually runs out. It deliberately doesn't default to `KOPIUR_CAPACITY`: that would tie a volume that can grow (`ceph-block`) to one that can't (`openebs-hostpath` refuses expansion).
 
 **Changing `KOPIUR_CACHE_CAPACITY` does not touch an existing cache claim.** The operator only creates the claim when it is missing and never re-applies over it, so the new size takes effect the next time the claim is created. To apply it now, delete `kopiur-cache-<claim>` between runs: it is only a cache, and the next mover gets a fresh one.
 

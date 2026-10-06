@@ -19,7 +19,7 @@ Nothing to do. [`cluster-settings`](../cluster-settings/kustomization.yaml) pull
 
 ## Why one per namespace
 
-An `Alert`'s `eventSources` entry without a `namespace` only matches objects in the Alert's own namespace, and `namespace` has no wildcard; `name: "*"` only wildcards the name. The single `flux-system/flux-errors` Alert this replaced therefore never saw the Kustomizations and HelmReleases in any other namespace. Putting one Alert in each namespace covers everything without listing namespaces by hand.
+An `Alert`'s `eventSources` entry without a `namespace` only matches objects in the Alert's own namespace, and `namespace` has no wildcard; `name: "*"` only wildcards the name. A single Alert in `flux-system` would therefore never see the Kustomizations and HelmReleases in any other namespace. One Alert in each namespace covers everything without listing namespaces by hand.
 
 ## Gotchas
 

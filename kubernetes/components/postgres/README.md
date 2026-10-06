@@ -67,7 +67,7 @@ The app reads its connection from the CNPG-generated `${APP}-postgres-app` Secre
 The default is one instance rather than a fixed three instances with one sync replica for every app: that would give HA everywhere, but triple the pods and storage per app. The replica settings come in pairs:
 
 - **`POSTGRES_SYNC_REPLICAS: 1` with a single instance blocks every write forever**: no replica can ever confirm. Raise `POSTGRES_INSTANCES` first.
-- **`POSTGRES_ENABLE_PDB: "true"` with a single instance makes the node undrainable.** CNPG's primary PDB (`minAvailable: 1`) then allows zero evictions, and tuppr's Talos upgrades retry the drain in a loop, bouncing everything else on the node. The 2026-09-25 v1.14.1 run looped on talos-cp-01 until the default became `false`.
+- **`POSTGRES_ENABLE_PDB: "true"` with a single instance makes the node undrainable.** CNPG's primary PDB (`minAvailable: 1`) then allows zero evictions, and tuppr's Talos upgrades retry the drain in a loop, bouncing everything else on the node.
 
 | `POSTGRES_INSTANCES` | `POSTGRES_ENABLE_PDB` | During a node drain                                            |
 | -------------------- | --------------------- | -------------------------------------------------------------- |
@@ -90,7 +90,7 @@ A **brand-new database** has nothing to recover from, and `recovery` fails with 
 
 ## Renaming an app
 
-Every name, including the S3 path, derives from `${APP}`, so a rename creates a new, empty cluster and the data moves by dump and restore (done for `firefly-iii` → `firefly`):
+Every name, including the S3 path, derives from `${APP}`, so a rename creates a new, empty cluster and the data moves by dump and restore:
 
 1. Dump the old database: `just k8s database dump <ns> <old> "" <db>`.
 2. In the new `ks.yaml`, add the `init` label. If the app uses kopiur, pin `KOPIUR_CLAIM` to the old claim name: its snapshots are keyed on it, and a new name restores an empty volume.
@@ -104,16 +104,16 @@ Every name, including the S3 path, derives from `${APP}`, so a rename creates a 
      -n <ns> -l kustomize.toolkit.fluxcd.io/name=<old> -o name
    ```
 
-   A list of kinds misses whatever a component adds: the paperless rename left `components/dragonfly`'s PodMonitor behind. Objects an operator created carry no Flux label and go with their owner.
+   A hand-written list of kinds misses whatever a component adds, such as `components/dragonfly`'s PodMonitor. Objects an operator created carry no Flux label and go with their owner.
 
-7. To drop the `KOPIUR_CLAIM` pin later (done for both firefly and paperless), first check what the claim holds. An empty claim, or one with only derived data, can switch straight away, because the new claim starts empty. Real data has to be copied across first. The old claim isn't pruned (it's create-once), so delete it by hand. Its kopia snapshots and policies stay in the repository, because deleting a schedule defaults to `onScheduleDelete: Retain`. Delete them in the Kopia UI (`kopia.${DOMAIN_CLUSTER}`, see [system](../../apps/system/README.md)), or with the CLI from `nas-kopia-ui`'s pod:
+7. To drop the `KOPIUR_CLAIM` pin later, first check what the claim holds. An empty claim, or one with only derived data, can switch straight away, because the new claim starts empty. Real data has to be copied across first. The old claim isn't pruned (it's create-once), so delete it by hand. Its kopia snapshots and policies stay in the repository, because deleting a schedule defaults to `onScheduleDelete: Retain`. Delete them in the Kopia UI (`kopia.${DOMAIN_CLUSTER}`, see [system](../../apps/system/README.md)), or with the CLI from `nas-kopia-ui`'s pod:
 
    ```bash
    kubectl -n system exec deploy/nas-kopia-ui -- kopia snapshot delete --all-snapshots-for-source <claim>@<ns>:/pvc/<claim> --delete
    kubectl -n system exec deploy/nas-kopia-ui -- kopia policy delete <claim>@<ns>:/pvc/<claim> <claim>@<ns>
    ```
 
-   `<claim>` is the old pinned claim name, which is also the policy name kopia files it under: `paperless-ngx-config`, not `paperless-ngx`. The space comes back after the next full maintenance run and kopia's safety delay.
+   `<claim>` is the old pinned claim name, which is also the policy name kopia files it under: `<old>-config`, not `<old>`, if that was the claim's name. The space comes back after the next full maintenance run and kopia's safety delay.
 
 ## Backups
 
