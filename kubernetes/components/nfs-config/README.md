@@ -36,13 +36,12 @@ In the app's `ks.yaml`:
 spec:
   components:
     - ../../../../components/nfs-config
-  postBuild:
-    substitute:
-      APP: *app
-      NFS_CONFIG_CAPACITY: 5Gi # optional, defaults to 5Gi
   dependsOn:
     - name: csi-driver-nfs # provides the nfs StorageClass
       namespace: system
+  postBuild:
+    substitute:
+      APP: *app
 ```
 
 In the app's `helmrelease.yaml` (app-template):
@@ -50,19 +49,18 @@ In the app's `helmrelease.yaml` (app-template):
 ```yaml
 defaultPodOptions:
   securityContext:
-    runAsUser: 1000
-    runAsGroup: 1000
     fsGroup: 1000
     fsGroupChangePolicy: OnRootMismatch
-controllers:
-  <app>:
-    strategy: Recreate # the PVC is RWO
+    runAsGroup: 1000
+    runAsUser: 1000
 persistence:
   config:
     existingClaim: "${APP}-nfs-config"
     globalMounts:
       - path: /config
 ```
+
+The claim is `ReadWriteOnce`, which app-template's default `Recreate` strategy fits: don't switch the controller to `RollingUpdate`.
 
 | Variable              | Required | Default | Purpose                                 |
 | --------------------- | -------- | ------- | --------------------------------------- |
