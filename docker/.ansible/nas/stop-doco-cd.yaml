@@ -1,0 +1,21 @@
+---
+- name: Stop Doco-CD
+  hosts: nas
+  become: true
+  gather_facts: false
+  vars:
+    ansible_user: truenas_admin
+    ansible_python_interpreter: auto_silent
+
+  tasks:
+    - name: doco-cd
+      vars:
+        dococd_config_dir: /home/truenas_admin/.config/doco-cd
+      block:
+        - name: doco-cd | Stop
+          community.docker.docker_compose_v2:
+            project_src: "{{ dococd_config_dir }}"
+            files:
+              - docker-compose.yaml
+            state: stopped
+          when: not ansible_check_mode
