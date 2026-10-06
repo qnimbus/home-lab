@@ -21,6 +21,28 @@ spec:
       prowlarr:
         annotations:
           reloader.stakater.com/auto: "true"
+        initContainers:
+          migrate:
+            image:
+              repository: ghcr.io/home-operations/prowlarr
+              tag: 2.6.5.5623@sha256:6152751c3ea2e7751564f5952173d5e83eed0e09f3fabd2cb6bdb58690c39e2f
+            args:
+              - |
+                if [ -e /config/.migrated-from-nfs ]; then echo "already migrated"; exit 0; fi
+                find /config-old -mindepth 1 -maxdepth 1 ! -name lost+found -exec cp -R {} /config/ \;
+                touch /config/.migrated-from-nfs
+                echo "copied /config-old to /config"
+            command: ["/bin/sh", "-ec"]
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: ["ALL"]
         containers:
           app:
             image:
@@ -77,9 +99,23 @@ spec:
                 drop: ["ALL"]
     persistence:
       config:
-        existingClaim: "${APP}-nfs-config"
+        existingClaim: "${KOPIUR_CLAIM:=${APP}}"
         globalMounts:
           - path: /config
+      config-old:
+        existingClaim: "${APP}-nfs-config"
+        advancedMounts:
+          prowlarr:
+            migrate:
+              - path: /config-old
+                readOnly: true
+      backups:
+        type: nfs
+        path: /mnt/tank/Cluster/backup
+        server: "${NAS_HOST}"
+        globalMounts:
+          - path: /mnt/backups
+            subPath: apps/prowlarr
       logs:
         type: emptyDir
         globalMounts:

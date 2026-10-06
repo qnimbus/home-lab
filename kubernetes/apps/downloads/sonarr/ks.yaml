@@ -7,10 +7,13 @@ metadata:
 spec:
   targetNamespace: downloads
   components:
+    - ../../../../components/kopiur/backup
     - ../../../../components/nfs-config
   dependsOn:
     - name: csi-driver-nfs
       namespace: system
+    - name: rook-ceph-cluster
+      namespace: rook-ceph
   interval: 1h
   path: ./kubernetes/apps/downloads/sonarr/app
   postBuild:
