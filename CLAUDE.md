@@ -69,7 +69,7 @@ Each app lives at `kubernetes/apps/<namespace>/<app>/`. Scaffold a new one with 
     └── resources/             # optional — files wired in via configMapGenerator
 ```
 
-`kubernetes/components/` holds reusable kustomize components (`alerts`, `dragonfly`, `postgres`, `kopiur` and `nfs` have a README):
+`kubernetes/components/` holds reusable kustomize components, each with a README:
 
 - `cluster-settings`: the per-namespace wiring above; it also pulls in `alerts`.
 - `alerts`: a Flux `Provider` + `Alert` per namespace that sends Flux errors to Alertmanager. An `Alert` only sees its own namespace.

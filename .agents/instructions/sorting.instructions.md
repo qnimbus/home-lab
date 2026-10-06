@@ -28,6 +28,7 @@ sorted.
 | ExternalSecret `spec.data[]`                 | `secretKey`, `remoteRef` (a PushSecret's `spec.data[].match` mirrors it)                                     |
 | `kustomization.yaml` (Kustomize, not Flux)   | `apiVersion`, `kind`, `namespace`, `components`, `resources`, `configMapGenerator`, `generatorOptions`, rest |
 | PrometheusRule rule                          | `alert` or `record`, `expr`, `for`, `keep_firing_for`, `labels`, `annotations`                               |
+| ScaledObject `spec.triggers[]`               | `type`, rest                                                                                                 |
 | OCIRepository `spec.ref`                     | `tag`, `digest`                                                                                              |
 | OCIRepository `spec.verify`                  | `provider`, `matchOIDCIdentity`                                                                              |
 | HelmRelease `spec`                           | `interval`, `chartRef`, rest                                                                                 |
