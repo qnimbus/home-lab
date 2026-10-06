@@ -1,6 +1,6 @@
 # nfs-volume
 
-A Kustomize component that gives an app a dedicated volume on the NAS through the `nfs` StorageClass (csi-driver-nfs), not on Ceph. It was called `nfs-config` until 2026-10; nothing about it is specific to a `/config` directory.
+A Kustomize component that gives an app a dedicated volume on the NAS through the `nfs` StorageClass (csi-driver-nfs), not on Ceph.
 
 ## Use case
 
@@ -10,16 +10,16 @@ Use it for an app's own data when that data is:
 - **read-mostly**: settings and state that change now and then, not constantly, and no SQLite database the app keeps open (see [Not a good fit](#not-a-good-fit));
 - **rebuildable**: losing it means reconfiguring the app, not losing data you can't get back.
 
-For data like this, Ceph's replication, snapshots and backups cost more than they're worth. Each `ceph-block` volume also adds Ceph client traffic on the nodes. Moving volumes of this kind onto the NAS removed a confirmed trigger for `CephNodeNetworkPacketDrops` on the nodes with `e1000e` NICs.
+For data like this, Ceph's replication, snapshots and backups cost more than they're worth. Each `ceph-block` volume also adds Ceph client traffic on the nodes, which is a trigger for `CephNodeNetworkPacketDrops` on the nodes with `e1000e` NICs.
 
 This volume holds only the app's own state. Large shared data, such as a media library or download staging area, belongs on a raw `type: nfs` mount in the HelmRelease.
 
-The `downloads` apps were its first consumers and moved to `components/kopiur/backup` in 2026-10 after the freezes described below. Find what uses it now with `grep -rl components/nfs-volume kubernetes/apps --include=ks.yaml`.
+Find what uses it with `grep -rl components/nfs-volume kubernetes/apps --include=ks.yaml`.
 
 ### Not a good fit
 
 - **Write-heavy workloads**: databases with steady write traffic (use CNPG via `components/postgres`), caches and queues (use `components/dragonfly`), and apps that constantly append to logs or rewrite files. Every write is a network round trip to the NAS.
-- **An app with a live SQLite database, however small.** SQLite locks and unlocks its files on every transaction, and on NFS an unlock can block in the kernel (`nfs_iocounter_wait`) for 30 seconds or more while the mount itself answers in milliseconds. Sonarr was caught doing this on 2026-10-06: `/ping` hung for 32 seconds with a 27 MiB database, no NFS timeouts and an idle NAS. It surfaces as probe timeouts and restarts; size and write volume are not the cause.
+- **An app with a live SQLite database, however small.** SQLite locks and unlocks its files on every transaction, and on NFS an unlock can block in the kernel (`nfs_iocounter_wait`) for 30 seconds or more while the mount itself answers in milliseconds, with no NFS timeouts and an idle NAS. The app hangs with it, which surfaces as probe timeouts and restarts. The size of the database and its write volume make no difference.
 - **Data you can't lose**: this volume has no backups, and deleting the PVC deletes its data (see [Caveats](#caveats)).
 - **Performance-sensitive storage**: use `ceph-block`.
 
