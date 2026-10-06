@@ -275,7 +275,7 @@ spec:
           port: <port>
 ```
 
-A route is always its own `httproute.yaml`, never app-template's `route:` value. For a public app use `envoy-external` and `${DOMAIN_APP}` (`.agents/instructions/dns-naming.instructions.md`). `backendRefs` names the Service, which app-template calls `<app>` when the release has one.
+A route is always its own `httproute.yaml`, never app-template's `route:` value. That gives every app the same form whatever its chart (kube-prometheus-stack, forgejo and the `external-services` devices have routes too), applies a hostname or annotation change without a Helm upgrade, and lets the route point at a Service the release doesn't own, as the KEDA HTTP scaler apps do. For a public app use `envoy-external` and `${DOMAIN_APP}` (`.agents/instructions/dns-naming.instructions.md`). `backendRefs` names the Service, which app-template calls `<app>` when the release has one.
 
 ### app/externalsecret.yaml (only if secrets)
 

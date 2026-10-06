@@ -11,32 +11,14 @@ address, and which network that address is on.
 | A LoadBalancer address on any other network      | `<network>.home.vwn.io` | `smtp-relay.iot.home.vwn.io` |
 | An HTTPRoute on `envoy-external` (WAN-reachable) | `${DOMAIN_APP}`         | `konflate.vwn.app`           |
 
-In manifests, `home.vwn.io` is written `home.${DOMAIN_IO}`.
+In manifests, `home.vwn.io` is written `home.${DOMAIN_IO}`. `<network>` is
+one of `lan`, `guest`, `iot`, `iot-offline`, `protect`, `k8s`, `dmz`,
+`kids`, `mgmt`, `storage`.
 
-## Networks
-
-| Network (VLAN)   | Subnet         | Zone                       |
-| ---------------- | -------------- | -------------------------- |
-| SkyNet (10)      | 10.10.0.0/24   | `lan.home.vwn.io`          |
-| Guest (20)       | 10.20.0.0/24   | `guest.home.vwn.io`        |
-| IOT (30)         | 10.30.0.0/24   | `iot.home.vwn.io`          |
-| IOT Offline (40) | 10.40.0.0/24   | `iot-offline.home.vwn.io`  |
-| Protect (50)     | 10.50.0.0/24   | `protect.home.vwn.io`      |
-| Kubernetes (60)  | 10.60.0.0/24   | `k8s.home.vwn.io`          |
-| DMZ (70)         | 10.70.0.0/24   | `dmz.home.vwn.io`          |
-| Kids (90)        | 10.90.0.0/24   | `kids.home.vwn.io`         |
-| Management (100) | 10.100.0.0/24  | `mgmt.home.vwn.io`         |
-| Storage (200)    | 10.200.0.0/24  | `storage.home.vwn.io`      |
-| WAN 2 uplink     | 192.168.8.0/24 | `wan-failover.home.vwn.io` |
-
-Each zone is that UniFi network's DNS domain, so DHCP clients land in it
-too. The setting lives on the gateway, not in Git; this table is the record
-of what it should be.
-
-`wan-failover` is the exception: the mobile router's own subnet, where the
-gateway is a DHCP client on its second WAN port. It is not a UniFi network
-and must not become one (the subnet would then sit on two interfaces). It
-holds one name, `router.wan-failover.home.vwn.io`.
+**Before adding, renaming or removing a record, use the `dns-records`
+skill.** It has each network's subnet, how each kind of record is declared,
+and the existing names that predate this scheme. Some names in the repo
+break the rules below; don't copy one without checking it against them.
 
 ## Rules
 
@@ -55,6 +37,10 @@ holds one name, `router.wan-failover.home.vwn.io`.
   excludes the LAN-only zones (`excludeDomains`: `${DOMAIN_CLUSTER}`,
   `${DOMAIN_APPS}`, `home.${DOMAIN_IO}`, `iot.${DOMAIN_IO}`,
   `internal.${DOMAIN_PROXII}`), so a route under one gets no public record.
+- **A new LAN-only zone goes on that `excludeDomains` list before anything
+  is named under it.** Both external-dns instances read every
+  `DNSEndpoint`; the exclusion is all that keeps a private address out of
+  public DNS.
 - **No wildcard certificate covers a device name.** A device UI that needs
   TLS goes behind the gateway as an app, under `${DOMAIN_CLUSTER}`. The UDM
   is the exception: `gateway.lan.home.vwn.io` and `portal.guest.home.vwn.io`
@@ -64,57 +50,3 @@ holds one name, `router.wan-failover.home.vwn.io`.
 - **Mounts, scrape targets and probes stay on IPs** (`${NAS_HOST}`,
   `${NAS_LAN_HOST}`). A mount by name makes storage depend on the gateway's
   DNS. Names are for people and for tooling outside the cluster.
-
-## Declaring a record
-
-- **A route, or a LoadBalancer address on VLAN 60:** the HTTPRoute's
-  hostname, or `external-dns.kubernetes.io/hostname` on the Service.
-- **A device:** a `DNSEndpoint` in
-  `kubernetes/apps/network/external-services/<host>/`, one object for all of
-  the host's interfaces (see `nas`).
-- **A Service's address on another network:** a `DNSEndpoint` next to the
-  app, in its namespace (see `mail/smtp-relay`). The annotation can't do it:
-  every hostname on a Service is published against every one of its
-  addresses, and `target` pins them all to one.
-- **A Kustomization holding such a `DNSEndpoint`** `dependsOn`
-  `external-dns-unifi` and `external-dns-cloudflare` (in `network`); see
-  `flux-kustomization`.
-- **A new LAN-only zone** goes on external-dns-cloudflare's `excludeDomains`
-  before anything is named under it. Both instances read every
-  `DNSEndpoint`; the exclusion is all that keeps a private address out of
-  public DNS.
-- **A `DNSEndpoint` meant for Cloudflare only** carries
-  `external-dns.home.arpa/public-only: "true"`, which external-dns-unifi
-  filters out (see the tunnel alias in `network/cloudflare-tunnel`).
-- **Renaming:** add the new name and keep the old one as a second record in
-  the same `DNSEndpoint` until nothing uses it.
-- **On the gateway only:** the network domains above, and the nodes' names
-  (the "local DNS record" on each node's UniFi client entry). Any other
-  record there that external-dns doesn't own is stale. A single-label name
-  can't go through external-dns at all: its ownership record
-  (`k8s.cname-<name>`) falls outside every domain filter.
-- **One source per name.** The gateway refuses a record whose name a client
-  entry's local DNS record already holds (`Overlaps with Device Local DNS`),
-  and that one failure stops every other change external-dns-unifi has
-  queued, each cycle, until it is fixed. Before declaring a device, ask the
-  user to clear any local DNS record of that name on its UniFi client entry
-  (it isn't visible from Git or the cluster).
-
-## Not yet on the scheme
-
-Don't copy these. When a task touches one of these apps, propose the move
-to the user; don't make it unasked, since most need a change outside Git.
-
-- `portal.guest.home.vwn.io` points at 192.168.1.1, the gateway's address on
-  the Default network, not on the guest network its zone names.
-- `printer` (as `canon`) and `smtp-relay` still answer on their old
-  `iot.${DOMAIN_IO}` names as a second record. For `smtp-relay`, drop it
-  once the printer is reconfigured.
-- `flux-webhook` and `konflate-webhook` under `${DOMAIN_IO}`: WAN-reachable,
-  so they belong under `${DOMAIN_APP}`. Moving them means updating the
-  webhook URL on the GitHub side.
-- `kube-vip.home.arpa` in `kubernetes/talos/cluster.yaml.j2`.
-- `external` and `internal.${DOMAIN_PROXII}`, the gateways' own names, and
-  `${DOMAIN_CASA}` and `${DOMAIN_APPS}`, which are wired (certificate,
-  tunnel, DNS filters) and unused: no rule above covers these domains, so
-  put no new name under them.
