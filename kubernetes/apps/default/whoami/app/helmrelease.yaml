@@ -5,19 +5,20 @@ kind: HelmRelease
 metadata:
   name: whoami
 spec:
+  interval: 1h
   chartRef:
     kind: OCIRepository
     name: whoami
-  interval: 1h
   values:
     defaultPodOptions:
       securityContext:
-        fsGroup: 65534
         runAsGroup: 65534
         runAsNonRoot: true
         runAsUser: 65534
     controllers:
       whoami:
+        annotations:
+          reloader.stakater.com/auto: "true"
         containers:
           app:
             image:
@@ -25,6 +26,11 @@ spec:
               tag: v1.12.0@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
             env:
               WHOAMI_PORT_NUMBER: "8080"
+            probes:
+              liveness:
+                enabled: true
+              readiness:
+                enabled: true
             resources:
               requests:
                 cpu: 10m
@@ -33,11 +39,12 @@ spec:
                 memory: 64Mi
             securityContext:
               allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
               capabilities:
-                drop: ["ALL"]
+                drop:
+                  - ALL
     service:
       app:
-        controller: whoami
         ports:
           http:
             port: 80
