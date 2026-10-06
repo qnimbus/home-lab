@@ -51,6 +51,9 @@ runtime.
   `dependsOn: onepassword-store`). External Secrets Operator retries on its
   own; Flux's dry-run only needs the `ExternalSecret` CRD, not a synced
   store.
+- Waiting on the External Secrets webhook (`dependsOn: external-secrets`
+  for an app that ships an `ExternalSecret`). The dry-run fails while the
+  webhook isn't serving, and Flux retries until it is.
 - If a dependent genuinely can't tolerate the secret being briefly absent,
   move the `ExternalSecret` into an upstream Kustomization the dependent
   already depends on and gate it there (`wait: true`, or `healthChecks` as

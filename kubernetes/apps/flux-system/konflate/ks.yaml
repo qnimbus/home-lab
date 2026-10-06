@@ -6,9 +6,6 @@ metadata:
   name: &app konflate
 spec:
   targetNamespace: flux-system
-  dependsOn:
-    - name: external-secrets
-      namespace: external-secrets
   interval: 1h
   path: ./kubernetes/apps/flux-system/konflate/app
   postBuild:

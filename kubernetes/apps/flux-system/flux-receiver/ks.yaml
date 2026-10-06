@@ -6,9 +6,6 @@ metadata:
   name: &app flux-receiver
 spec:
   targetNamespace: flux-system
-  dependsOn:
-    - name: external-secrets
-      namespace: external-secrets
   healthChecks:
     - apiVersion: notification.toolkit.fluxcd.io/v1
       kind: Receiver

@@ -126,8 +126,10 @@ configMapGenerator:
 generatorOptions:
   disableNameSuffixHash: true
   annotations:
-    kustomize.toolkit.fluxcd.io/substitute: disabled
+    kustomize.toolkit.fluxcd.io/substitute: disabled # only if the files have their own ${...} syntax
 ```
+
+Flux substitutes `${VAR}` in a generated ConfigMap like anywhere else, and replaces a variable it doesn't know with nothing. Leave the annotation off when the config files use cluster variables (`${DOMAIN_CLUSTER}` and the like, as homepage's do). Add it when a file has `${...}` of its own that must reach the app untouched (a shell script, an app's own templating).
 
 Name a generated ConfigMap that holds app config `<app>-config` (not `-configmap`); one that holds Helm values for `valuesFrom` is `<app>-values`. Only the `-values` kind gets the `reconcile.fluxcd.io/watch: "Enabled"` label: helm-controller reacts to it for ConfigMaps a HelmRelease references in `valuesFrom`, and ignores it on a mounted one, where Reloader does the restart.
 
