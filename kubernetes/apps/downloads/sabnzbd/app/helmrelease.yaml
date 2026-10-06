@@ -32,18 +32,36 @@ spec:
               - secretRef:
                   name: sabnzbd-secret
             probes:
-              liveness: &probes
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  failureThreshold: 30
+                  httpGet:
+                    path: &path "/api?mode=version"
+                    port: &port 8080
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  failureThreshold: 6
+                  httpGet:
+                    path: *path
+                    port: *port
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+              readiness:
                 enabled: true
                 custom: true
                 spec:
                   failureThreshold: 3
                   httpGet:
-                    path: "/api?mode=version"
-                    port: 8080
-                  initialDelaySeconds: 0
+                    path: *path
+                    port: *port
                   periodSeconds: 10
-                  timeoutSeconds: 1
-              readiness: *probes
+                  timeoutSeconds: 5
             resources:
               requests:
                 cpu: 20m
