@@ -25,9 +25,9 @@ Find what uses it with `grep -rl components/nfs kubernetes/apps --include=ks.yam
 
 ## What it creates
 
-| Resource                | Name         | Details                                                                 |
-| ----------------------- | ------------ | ----------------------------------------------------------------------- |
-| `PersistentVolumeClaim` | `nfs-${APP}` | `ReadWriteOnce`, `storageClassName: nfs`, size `${NFS_VOLUME_CAPACITY}` |
+| Resource                | Name         | Details                                                          |
+| ----------------------- | ------------ | ---------------------------------------------------------------- |
+| `PersistentVolumeClaim` | `nfs-${APP}` | `ReadWriteOnce`, `storageClassName: nfs`, size `${NFS_CAPACITY}` |
 
 ## Usage
 
@@ -63,10 +63,10 @@ persistence:
 
 The claim is `ReadWriteOnce`, which app-template's default `Recreate` strategy fits: don't switch the controller to `RollingUpdate`.
 
-| Variable              | Required | Default | Purpose                                 |
-| --------------------- | -------- | ------- | --------------------------------------- |
-| `APP`                 | yes      | —       | PVC name prefix (`nfs-${APP}`)          |
-| `NFS_VOLUME_CAPACITY` | no       | `5Gi`   | Requested size (NFS doesn't enforce it) |
+| Variable       | Required | Default | Purpose                                 |
+| -------------- | -------- | ------- | --------------------------------------- |
+| `APP`          | yes      | —       | PVC name prefix (`nfs-${APP}`)          |
+| `NFS_CAPACITY` | no       | `5Gi`   | Requested size (NFS doesn't enforce it) |
 
 Run every consumer as `1000:1000`, so every directory on the NAS has the same owner.
 
