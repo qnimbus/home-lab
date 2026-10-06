@@ -1,4 +1,4 @@
-# nfs-volume
+# nfs
 
 A Kustomize component that gives an app a dedicated volume on the NAS through the `nfs` StorageClass (csi-driver-nfs), not on Ceph.
 
@@ -14,7 +14,7 @@ For data like this, Ceph's replication, snapshots and backups cost more than the
 
 This volume holds only the app's own state. Large shared data, such as a media library or download staging area, belongs on a raw `type: nfs` mount in the HelmRelease.
 
-Find what uses it with `grep -rl components/nfs-volume kubernetes/apps --include=ks.yaml`.
+Find what uses it with `grep -rl components/nfs kubernetes/apps --include=ks.yaml`.
 
 ### Not a good fit
 
@@ -27,7 +27,7 @@ Find what uses it with `grep -rl components/nfs-volume kubernetes/apps --include
 
 | Resource                | Name         | Details                                                                 |
 | ----------------------- | ------------ | ----------------------------------------------------------------------- |
-| `PersistentVolumeClaim` | `${APP}-nfs` | `ReadWriteOnce`, `storageClassName: nfs`, size `${NFS_VOLUME_CAPACITY}` |
+| `PersistentVolumeClaim` | `nfs-${APP}` | `ReadWriteOnce`, `storageClassName: nfs`, size `${NFS_VOLUME_CAPACITY}` |
 
 ## Usage
 
@@ -36,7 +36,7 @@ In the app's `ks.yaml`:
 ```yaml
 spec:
   components:
-    - ../../../../components/nfs-volume
+    - ../../../../components/nfs
   dependsOn:
     - name: csi-driver-nfs # provides the nfs StorageClass
       namespace: system
@@ -56,7 +56,7 @@ defaultPodOptions:
     runAsUser: 1000
 persistence:
   config:
-    existingClaim: "${APP}-nfs"
+    existingClaim: "nfs-${APP}"
     globalMounts:
       - path: /config
 ```
@@ -65,7 +65,7 @@ The claim is `ReadWriteOnce`, which app-template's default `Recreate` strategy f
 
 | Variable              | Required | Default | Purpose                                 |
 | --------------------- | -------- | ------- | --------------------------------------- |
-| `APP`                 | yes      | —       | PVC name prefix (`${APP}-nfs`)          |
+| `APP`                 | yes      | —       | PVC name prefix (`nfs-${APP}`)          |
 | `NFS_VOLUME_CAPACITY` | no       | `5Gi`   | Requested size (NFS doesn't enforce it) |
 
 Run every consumer as `1000:1000`, so every directory on the NAS has the same owner.
