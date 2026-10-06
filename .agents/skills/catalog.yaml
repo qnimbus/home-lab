@@ -1,3 +1,4 @@
+---
 apiVersion: agent.fluxcd.controlplane.io/v1
 kind: Catalog
 spec:

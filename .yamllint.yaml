@@ -1,6 +1,7 @@
 ---
 ignore: |
   *.sops.*
+  .agents/skills/catalog-lock.yaml
 
 extends: default
 

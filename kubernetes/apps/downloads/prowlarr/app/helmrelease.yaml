@@ -87,6 +87,8 @@ spec:
           http:
             port: 9696
     persistence:
+      # No media/downloads mount — Prowlarr only proxies indexer queries and talks to
+      # Sonarr/Radarr over their APIs, it never touches the filesystem.
       config:
         existingClaim: "${APP}-nfs-config"
         globalMounts:
@@ -100,5 +102,3 @@ spec:
         type: emptyDir
         globalMounts:
           - path: /config/logs
-      # No media/downloads mount — Prowlarr only proxies indexer queries and talks to
-      # Sonarr/Radarr over their APIs, it never touches the filesystem.
