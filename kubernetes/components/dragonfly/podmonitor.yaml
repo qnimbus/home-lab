@@ -5,10 +5,10 @@ kind: PodMonitor
 metadata:
   name: ${APP}-dragonfly
 spec:
+  fallbackScrapeProtocol: PrometheusText1.0.0
+  podMetricsEndpoints:
+    - port: admin
+  podTargetLabels: ["app"]
   selector:
     matchLabels:
       app: ${APP}-dragonfly
-  podTargetLabels: ["app"]
-  podMetricsEndpoints:
-    - port: admin
-  fallbackScrapeProtocol: PrometheusText1.0.0

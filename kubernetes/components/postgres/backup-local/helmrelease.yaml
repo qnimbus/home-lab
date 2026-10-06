@@ -5,10 +5,10 @@ kind: HelmRelease
 metadata:
   name: &name ${APP}-postgres-backup-local
 spec:
+  interval: 1h
   chartRef:
     kind: OCIRepository
     name: *name
-  interval: 1h
   dependsOn: []
   values:
     defaultPodOptions:

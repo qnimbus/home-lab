@@ -7,35 +7,27 @@ metadata:
   labels:
     reconcile.fluxcd.io/watch: "Enabled"
 data:
-  CLUSTER_TIMEZONE: "Europe/Amsterdam"
-  # Verified SES sending identity (see kubernetes/apps/mail/smtp-relay, whose upstream is
-  # AWS SES) — SES hard-rejects any From address outside a verified domain/identity, so
-  # this must stay in sync with whatever's actually verified in the SES console, not with
-  # DOMAIN_CLUSTER or any other in-cluster-only domain.
-  MAIL_FROM_ADDRESS: "noreply@bvw.email"
-  # Cluster domain names
-  DOMAIN_APP: "vwn.app"
-  DOMAIN_APPS: "apps.vwn.io"
-  DOMAIN_CASA: "vwn.casa"
-  DOMAIN_CLUSTER: "cluster.vwn.io"
-  DOMAIN_IO: "vwn.io"
-  DOMAIN_PROXII: "proxii.nl"
-  DOMAIN_TAILSCALE: "buri-ray.ts.net"
-  # Hosts
-  NAS_HOST: "10.200.0.41"
-  NAS_LAN_HOST: "10.10.0.41"
-  NAS_IOT_HOST: "10.30.0.41"
-  HOME_ASSISTANT_LAN_HOST: "10.10.0.21"
-  ADAM_IOT_HOST: "10.30.0.71"
-  ANNA_IOT_HOST: "10.30.0.72"
-  PRINTER_IOT_HOST: "10.30.0.51"
-  WAN_FAILOVER_HOST: "192.168.8.1"
-  # Network CIDRs
-  LAN_CIDR: 10.10.0.0/24
+  ADAM_IOT_HOST: 10.30.0.71
+  ANNA_IOT_HOST: 10.30.0.72
+  CLUSTER_TIMEZONE: Europe/Amsterdam
+  DOMAIN_APP: vwn.app
+  DOMAIN_APPS: apps.vwn.io
+  DOMAIN_CASA: vwn.casa
+  DOMAIN_CLUSTER: cluster.vwn.io
+  DOMAIN_IO: vwn.io
+  DOMAIN_PROXII: proxii.nl
+  DOMAIN_TAILSCALE: buri-ray.ts.net
+  HOME_ASSISTANT_LAN_HOST: 10.10.0.21
   IOT_CIDR: 10.30.0.0/24
-  POD_CIDR: 10.42.0.0/16
-  SERVICE_CIDR: 10.43.0.0/16
-  TAILSCALE_CIDR: 100.64.0.0/10 # Tailscale's own standard CGNAT range for tailnet client IPs (documented, provider-wide constant — not specific to this tailnet)
-  # Reserved IPs for LoadBalancer services
+  LAN_CIDR: 10.10.0.0/24
   LB_IP_PLEX: 10.60.0.233
   LB_IP_PLEX_IOT: 10.30.0.234
+  MAIL_FROM_ADDRESS: noreply@bvw.email
+  NAS_HOST: 10.200.0.41
+  NAS_IOT_HOST: 10.30.0.41
+  NAS_LAN_HOST: 10.10.0.41
+  POD_CIDR: 10.42.0.0/16
+  PRINTER_IOT_HOST: 10.30.0.51
+  SERVICE_CIDR: 10.43.0.0/16
+  TAILSCALE_CIDR: 100.64.0.0/10
+  WAN_FAILOVER_HOST: 192.168.8.1

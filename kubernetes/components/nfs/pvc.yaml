@@ -7,7 +7,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: nfs
   resources:
     requests:
       storage: "${NFS_VOLUME_CAPACITY:=5Gi}"
+  storageClassName: nfs

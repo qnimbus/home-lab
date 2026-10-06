@@ -3,12 +3,8 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: "${KOPIUR_CLAIM:-${APP}}"
+  name: "${KOPIUR_CLAIM:=${APP}}"
   labels:
-    # Create-once: dataSourceRef is immutable, so Flux never re-applies an existing
-    # claim (including ones that predate kopiur). It only creates missing ones — a
-    # new app, or a rebuilt cluster — and those get filled from the latest backup.
-    # Keep the claim declared: dropping it from the Kustomization lets Flux prune it.
     kustomize.toolkit.fluxcd.io/ssa: IfNotPresent
 spec:
   accessModes:
@@ -16,7 +12,7 @@ spec:
   dataSourceRef:
     apiGroup: kopiur.home-operations.com
     kind: Restore
-    name: "${KOPIUR_CLAIM:-${APP}}"
+    name: "${KOPIUR_CLAIM:=${APP}}"
   resources:
     requests:
       storage: "${KOPIUR_CAPACITY:=5Gi}"

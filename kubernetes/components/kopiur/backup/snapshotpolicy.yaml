@@ -3,20 +3,15 @@
 apiVersion: kopiur.home-operations.com/v1alpha1
 kind: SnapshotPolicy
 metadata:
-  name: "${KOPIUR_CLAIM:-${APP}}"
+  name: "${KOPIUR_CLAIM:=${APP}}"
 spec:
   compression:
     compressor: zstd
-  # Snapshot needs a CSI VolumeSnapshotClass for the PVC's driver (ceph-block has
-  # one). For storage without snapshot support (openebs-hostpath, nfs, static
-  # PVs) set KOPIUR_COPYMETHOD: Direct, which reads the live volume instead.
   copyMethod: "${KOPIUR_COPYMETHOD:=Snapshot}"
   credentialProjection:
     enabled: true
   mover:
     cache:
-      # Kopia's local metadata cache kept off replicated storage — local-disk only.
-      # Sized on its own, not after the volume: see the README.
       capacity: "${KOPIUR_CACHE_CAPACITY:=5Gi}"
       mode: Persistent
       storageClassName: "${KOPIUR_CACHE_STORAGECLASS:=openebs-hostpath}"
@@ -33,7 +28,7 @@ spec:
     keepWeekly: 4
   sources:
     - pvc:
-        name: "${KOPIUR_CLAIM:-${APP}}"
+        name: "${KOPIUR_CLAIM:=${APP}}"
   upload:
     maxParallelFileReads: 2
   volumeSnapshotClassName: "${KOPIUR_SNAPSHOTCLASS:=ceph-block-snapshot}"

@@ -5,21 +5,13 @@ kind: ScaledObject
 metadata:
   name: ${APP}
 spec:
+  cooldownPeriod: 1800
+  maxReplicaCount: 1
+  minReplicaCount: 0
   scaleTargetRef:
     name: ${APP}
-  # Scaled to 0, the app has no pods, so homepage's pod-status lookup reports "not
-  # found" (amber dot) and logs an error on every refresh. Consumers set
-  # `gethomepage.dev/external: "true"` on their HTTPRoute to skip that lookup; not
-  # `siteMonitor`, whose requests pass the interceptor and wake the app.
-  minReplicaCount: 0
-  maxReplicaCount: 1
-  # Idle window before scaling to 0 once request activity stops. Consumers of this
-  # component are human-triggered, on-demand tools, not services other workloads
-  # depend on staying warm, so a generous window avoids reloading on every short
-  # pause. Tune in the component if the assumption stops holding for a consumer.
-  cooldownPeriod: 1800
   triggers:
     - type: external-push
       metadata:
-        scalerAddress: keda-add-ons-http-external-scaler.system:9090
         interceptorRoute: ${APP}
+        scalerAddress: keda-add-ons-http-external-scaler.system:9090
