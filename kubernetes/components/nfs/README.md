@@ -65,7 +65,7 @@ The claim is `ReadWriteOnce`, which app-template's default `Recreate` strategy f
 
 | Variable       | Required | Default | Purpose                                 |
 | -------------- | -------- | ------- | --------------------------------------- |
-| `APP`          | yes      | —       | PVC name prefix (`nfs-${APP}`)          |
+| `APP`          | yes      | —       | PVC name suffix (`nfs-${APP}`)          |
 | `NFS_CAPACITY` | no       | `5Gi`   | Requested size (NFS doesn't enforce it) |
 
 Run every consumer as `1000:1000`, so every directory on the NAS has the same owner.
