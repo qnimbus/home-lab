@@ -7,18 +7,19 @@ A Kustomize component that gives an app a dedicated `/config` PVC on the NAS thr
 Use it for an app's own **`/config` directory** when that data is:
 
 - **small**, a few GiB at most;
-- **read-mostly**: settings, a small SQLite database and state that changes now and then, not constantly;
+- **read-mostly**: settings and state that change now and then, not constantly, and no SQLite database the app keeps open (see [Not a good fit](#not-a-good-fit));
 - **rebuildable**: losing it means reconfiguring the app, not losing data you can't get back.
 
 For data like this, Ceph's replication, snapshots and backups cost more than they're worth. Each `ceph-block` volume also adds Ceph client traffic on the nodes. Moving this kind of `/config` onto the NAS removed a confirmed trigger for `CephNodeNetworkPacketDrops` on the nodes with `e1000e` NICs.
 
 This PVC holds only the app's own state. Large shared data, such as a media library or download staging area, belongs on a raw `type: nfs` mount in the HelmRelease.
 
-Any app whose `/config` fits this profile can use the component. The current consumers are the `downloads` apps `prowlarr`, `radarr`, `sabnzbd` and `sonarr`. They're a typical fit: a handful of settings and a small SQLite database, all of it rebuildable.
+Any app whose `/config` fits this profile can use the component. The current consumers are the `downloads` apps `prowlarr`, `radarr`, `sabnzbd` and `sonarr`. Sabnzbd is a typical fit: a handful of settings, all rebuildable. The other three are not, and are here only until their storage is decided.
 
 ### Not a good fit
 
 - **Write-heavy workloads**: databases with steady write traffic (use CNPG via `components/postgres`), caches and queues (use `components/dragonfly`), and apps that constantly append to logs or rewrite files. Every write is a network round trip to the NAS. SQLite locking over NFS is fragile and slow under load, and the latency surfaces as probe timeouts and restarts.
+- **An app with a live SQLite database, however small.** SQLite locks and unlocks its files on every transaction, and on NFS an unlock can block in the kernel (`nfs_iocounter_wait`) for 30 seconds or more while the mount itself answers in milliseconds. Sonarr was caught doing this on 2026-10-06: `/ping` hung for 32 seconds with a 27 MiB database, no NFS timeouts and an idle NAS. That is what fails the probes of Prowlarr, Radarr and Sonarr; size and write volume are not the cause.
 - **Data you can't lose**: this volume has no backups, and deleting the PVC deletes its data (see [Caveats](#caveats)).
 - **Performance-sensitive storage**: use `ceph-block`.
 
