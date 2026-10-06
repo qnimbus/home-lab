@@ -64,7 +64,7 @@ The sources of truth are `.agents/instructions/*.md`, `CLAUDE.md`, and `add-app`
 
 **Namespace**
 
-- `kustomization.yaml` lists every `*/ks.yaml` in the folder, with no dangling entries. The `namespace:` field and the `components/cluster-settings` component are present, and `./namespace.yaml` is listed first in `resources`, except in `flux-system`: its Namespace comes from bootstrap, and a `namespace.yaml` would put it under Flux's management. Don't add one there. `namespace.yaml` keeps `kustomize.toolkit.fluxcd.io/prune: disabled`.
+- `kustomization.yaml` lists every `*/ks.yaml` in the folder, with no dangling entries. The `namespace:` field and the `components/cluster-settings` component are present, and `./namespace.yaml` is listed first in `resources`, except in `flux-system`, which has none (see `CLAUDE.md`). `namespace.yaml` keeps `kustomize.toolkit.fluxcd.io/prune: disabled`.
 - Each `ks.yaml` has a `spec.path` that matches its own directory and an explicit `spec.targetNamespace` (the folder's namespace unless it deliberately deploys elsewhere). It has no `wait: false`, `commonMetadata` or `timeout`, and has `wait: true` only when something depends on it and it has no `healthChecks`. `dependsOn` is structural only (`flux-kustomization.instructions.md`) and every target exists. `postBuild.substitute.APP` is set when `components` is used, and `healthCheckExprs` is paired with `healthChecks`.
 - Every `app/kustomization.yaml` references files that exist, and every manifest in `app/` is referenced. Report orphans: they're often dormant resources.
 - Sources, secrets and Renovate comments follow `helm-sources`, `external-secrets` and `renovate` instructions. There's no NetworkPolicy.
@@ -117,6 +117,8 @@ When the folder's majority disagrees with a documented convention, or two conven
 
 ## Step 5: Strip and verify
 
+Run `strip` only once the README is written: it removes the comments from the working tree.
+
 ```bash
 python3 $S/comments.py strip $D             # full-line + inline comments; [embedded] ones by hand
 python3 $S/comments.py list $D              # only intentional [embedded] lines may remain
@@ -142,11 +144,3 @@ For a component, `render.sh` renders only the resources it adds, not its patches
 - **Conventions to decide**: divergences worth documenting or rejecting (per `AGENTS.md`).
 
 Don't commit unless asked. If asked: `docs(<folder>): add README and move inline comments` (split out `fix`/`refactor` commits for Step 3 changes). Never push.
-
-## Common mistakes
-
-- **Stripping before reading.** Once `strip` has run the comments are gone from the working tree. Harvest first.
-- **Turning every comment into README prose.** Most comments that restate a field just get deleted. A README longer than the manifests means something went wrong.
-- **Treating `[embedded]` as safe to ignore.** Kustomize `patch:` blocks are manifests. Handle them by hand.
-- **Rewriting a curated README from scratch.** Existing READMEs hold hard-won warnings. Tighten, don't replace.
-- **Silently "fixing" convention divergences** that change behaviour (`dependsOn`, `wait`, `targetNamespace`). Report and ask.

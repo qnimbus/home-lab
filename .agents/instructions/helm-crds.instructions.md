@@ -24,9 +24,7 @@ to `Skip`.
 ## Rule: templated CRDs carry `helm.sh/resource-policy: keep`
 
 `keep` stops Helm deleting the CRD on uninstall, or when the chart stops
-rendering it. It doesn't stop updates. Some charts add it themselves;
-otherwise set it through a chart value (as `keda` does) or a post-renderer
-(as `keda-add-ons-http` does).
+rendering it. It doesn't stop updates. The skill has the ways to add it.
 
 A templated CRD without `keep` that isn't listed under the exceptions below
 is a defect: add `keep` when you find one, in the same change.

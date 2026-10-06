@@ -39,29 +39,25 @@ runtime.
   (`network/external-services`, `mail/smtp-relay`) depends on
   `external-dns-unifi` (structural: the CRD) and on
   `external-dns-cloudflare`, whose `excludeDomains` is all that keeps the
-  record out of public DNS. A dependent isn't applied until its dependency
-  has applied the same Git revision and is Ready, so a commit that adds a
-  zone to the exclusion and the first record under it can't publish the
-  record first. Once published it would stay: the zone is excluded, so
-  external-dns no longer sees the record to delete it.
+  record out of public DNS. A commit that adds a zone to the exclusion and
+  the first record under it then can't publish the record first. Once
+  published it would stay: external-dns no longer sees an excluded zone's
+  records to delete them.
 
 ### Don't use it for
 
-- Waiting on a `ClusterSecretStore`/`ExternalSecret` backend to sync (e.g.
-  `dependsOn: onepassword-store`). External Secrets Operator retries on its
-  own; Flux's dry-run only needs the `ExternalSecret` CRD, not a synced
-  store.
-- Waiting on the External Secrets webhook (`dependsOn: external-secrets`
-  for an app that ships an `ExternalSecret`). The dry-run fails while the
-  webhook isn't serving, and Flux retries until it is.
+- Waiting on External Secrets: neither `dependsOn: onepassword-store` for
+  the store to sync, nor `dependsOn: external-secrets` for the webhook. The
+  operator retries a store on its own, and Flux retries a dry-run that fails
+  while the webhook isn't serving. The dry-run itself only needs the
+  `ExternalSecret` CRD.
 - If a dependent genuinely can't tolerate the secret being briefly absent,
   move the `ExternalSecret` into an upstream Kustomization the dependent
   already depends on and gate it there (`wait: true`, or `healthChecks` as
-  `grafana-operator` does for `grafana`), rather than adding a dependency
-  purely for secret timing. Example: `rook-ceph-dashboard-password`'s
-  `ExternalSecret` lives in the Rook operator's Kustomization
-  (`wait: true`), not the CephCluster one that reads it. Only when no such
-  upstream Kustomization exists, skip the dependency entirely.
+  `grafana-operator` does for `grafana`). Example:
+  `rook-ceph-dashboard-password`'s `ExternalSecret` lives in the Rook
+  operator's Kustomization, not the CephCluster one that reads it. When no
+  such upstream Kustomization exists, skip the dependency entirely.
 
 ## `commonMetadata.labels: {app.kubernetes.io/name: *app}`: don't add
 

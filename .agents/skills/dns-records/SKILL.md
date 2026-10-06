@@ -33,7 +33,6 @@ Each zone is that UniFi network's DNS domain, so DHCP clients land in it too. Th
 - **A device:** a `DNSEndpoint` in `kubernetes/apps/network/external-services/<host>/`, one object for all of the host's interfaces (see `nas`).
 - **A Service's address on another network:** a `DNSEndpoint` next to the app, in its namespace (see `mail/smtp-relay`). The annotation can't do it: every hostname on a Service is published against every one of its addresses, and `target` pins them all to one.
 - **A Kustomization holding such a `DNSEndpoint`** `dependsOn` `external-dns-unifi` and `external-dns-cloudflare` (in `network`); see `flux-kustomization`.
-- **A new LAN-only zone** goes on external-dns-cloudflare's `excludeDomains` before anything is named under it. Both instances read every `DNSEndpoint`; the exclusion is all that keeps a private address out of public DNS.
 - **A `DNSEndpoint` meant for Cloudflare only** carries `external-dns.home.arpa/public-only: "true"`, which external-dns-unifi filters out (see the tunnel alias in `network/cloudflare-tunnel`).
 - **Renaming:** add the new name and keep the old one as a second record in the same `DNSEndpoint` until nothing uses it.
 - **On the gateway only:** the network domains above, and the nodes' names (the "local DNS record" on each node's UniFi client entry). Any other record there that external-dns doesn't own is stale. A single-label name can't go through external-dns at all: its ownership record (`k8s.cname-<name>`) falls outside every domain filter.

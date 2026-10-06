@@ -67,7 +67,7 @@ grep -rl "drift-detection.flux.home.arpa/disabled" kubernetes/apps --include="*.
 # Legacy HelmRepository + chart.spec pattern vs OCIRepository/chartRef (the preferred pattern)
 grep -rl "kind: HelmRepository" kubernetes 2>/dev/null
 
-# ks.yaml boilerplate this repo has deliberately dropped — see add-app skill's Common mistakes
+# ks.yaml boilerplate this repo has deliberately dropped — see add-app's ks.yaml section
 grep -rn "^  wait: false\|commonMetadata:\|^  timeout:" kubernetes/apps/*/*/ks.yaml
 ```
 
@@ -125,8 +125,7 @@ Before writing up anything as a new gap, check whether it's already a documented
 
 - `CLAUDE.md`: e.g. no NetworkPolicies by design, the `flux-system` namespace-component exception,
   the cluster-apps defaults and their opt-out labels.
-- `.agents/instructions/*.md` and the sibling skills' **Common mistakes** lists (`add-app`,
-  `tidy-folder`).
+- `.agents/instructions/*.md` and `add-app`'s **Common mistakes** list.
 - Folder READMEs, which record per-area trade-offs (`find kubernetes -name README.md`), e.g.
   `components/postgres` (single instance, PDB off) and `apps/system-upgrade` (tuppr's
   `dependsOn` on kube-prometheus-stack).
@@ -152,21 +151,10 @@ End with a short, ranked "Suggested improvements" list — 3-5 items max, each t
 ordered by actual impact for a single-tenant homelab (a real security/data-loss gap before a
 cosmetic labeling gap).
 
-## Common mistakes (repo-specific false positives to avoid)
+## False positives to avoid
 
-- **Flagging `generatorOptions.disableNameSuffixHash: true` as a missing-rollout-trigger bug.**
-  This repo deliberately mounts config via `configMapGenerator` without a hash suffix, and
-  compensates with `reloader.stakater.com/auto: "true"` triggering the pod restart instead — see
-  `.agents/skills/add-app/SKILL.md`. Intentional, not an oversight.
-- **Flagging missing `wait`/`commonMetadata`/`timeout` in `ks.yaml`.** All three were deliberately
-  dropped as boilerplate (see `add-app`'s Common mistakes) — their _absence_ is the convention.
-- **Treating zero `NetworkPolicy`s as a gap.** It's a documented decision (CLAUDE.md § Network
-  policies). Low cosign coverage is informational too, since not every upstream signs charts.
-- **Grading `grep -rl "controllers:"` results as exhaustive.** It only catches app-template
-  HelmReleases; a HelmRelease with a different values schema (`cilium`, CRD operators, etc.)
-  missing the same field is not comparable and shouldn't be silently folded into the same count.
-- **Treating this as a live-cluster check.** Nothing here touches the cluster — `kubectl`,
-  `kubeconform`, and `grep` against files on disk only. Use `check-cluster-health` for runtime
-  state (Ready conditions, pod health, actual Ceph status).
-- **Writing findings into files.** This skill reports in chat only. `docs/` and `ops/` are
-  retired; don't recreate an audit document there.
+- **`generatorOptions.disableNameSuffixHash: true` is not a missing rollout trigger.** Config is
+  mounted without a hash suffix on purpose; `reloader.stakater.com/auto: "true"` restarts the pod
+  instead (see `add-app`).
+- **Absent `wait`/`commonMetadata`/`timeout` in `ks.yaml` is the convention** (see `add-app`'s
+  `ks.yaml` section), not a gap.
