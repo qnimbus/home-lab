@@ -19,7 +19,7 @@ services:
       HTTP_PORT: 8880
       LOG_LEVEL: info
       POLL_CONFIG: |
-        - url: git@github.com:qnimbus/home-lab.git
+        - url: https://github.com/qnimbus/home-lab.git
           reference: refs/heads/main
           interval: 3600
       SECRET_PROVIDER: 1password
