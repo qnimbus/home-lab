@@ -28,6 +28,7 @@ services:
       TZ: Europe/Amsterdam
     ports:
       - 8880:8880
+      - 9120:9120
     secrets:
       - op_token
       - api_secret
