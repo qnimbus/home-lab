@@ -8,10 +8,7 @@ spec:
   targetNamespace: downloads
   components:
     - ../../../../components/kopiur/backup
-    - ../../../../components/nfs-config
   dependsOn:
-    - name: csi-driver-nfs
-      namespace: system
     - name: rook-ceph-cluster
       namespace: rook-ceph
   interval: 1h
@@ -19,7 +16,6 @@ spec:
   postBuild:
     substitute:
       APP: *app
-      NFS_CONFIG_CAPACITY: 2Gi
   prune: true
   sourceRef:
     kind: GitRepository

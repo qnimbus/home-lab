@@ -68,10 +68,10 @@ The claim is `ReadWriteOnce`, which app-template's default `Recreate` strategy f
 | `APP`                 | yes      | —       | PVC name prefix (`${APP}-nfs-config`)   |
 | `NFS_CONFIG_CAPACITY` | no       | `5Gi`   | Requested size (NFS doesn't enforce it) |
 
-All current consumers run as `1000:1000`, including Prowlarr, which has no media mount. That way every `/config` directory on the NAS has the same owner.
+Run every consumer as `1000:1000`, so every `/config` directory on the NAS has the same owner.
 
 ## Caveats
 
 - **No backups.** Nothing snapshots or backs up these PVCs. Only use this component for data you can rebuild.
 - **Deleting the PVC deletes the data.** The `nfs` StorageClass uses `reclaimPolicy: Delete`, so removing the PVC (for example by dropping the component or pruning the app) also deletes its subdirectory under `/mnt/tank/Cluster/k8s-nfs-csi` on the NAS.
-- **Keep the write-heavy parts off the PVC.** Even in an app that fits, move frequently written paths onto node-local storage. For example, Prowlarr, Radarr and Sonarr mount `/config/logs` as an `emptyDir` so their constant log appends never reach NFS. If an app's main working set is write-heavy, don't use this component.
+- **Keep the write-heavy parts off the PVC.** Even in an app that fits, move frequently written paths onto node-local storage. For example, mount a log directory as an `emptyDir` so constant log appends never reach NFS. If an app's main working set is write-heavy, don't use this component.
