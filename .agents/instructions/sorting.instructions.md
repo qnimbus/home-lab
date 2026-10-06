@@ -7,10 +7,10 @@ already there unless the user asks for the file to be sorted.
 - **Default: alphabetical at every level**, however deeply nested, unless a
   rule below or in another instructions file says otherwise.
 - **`name` comes first in a list item.** When the items of a list are maps
-  with a `name` key, `name` leads and the rest follows alphabetically, so
-  each item opens with what it is (`- name: cilium`, then `localASN`,
-  `peers`). The exception is an object reference (`apiVersion`, `kind`,
-  `name`, `namespace`, as in a `healthChecks` entry), which keeps that order.
+  with a `name` key, `name` leads and the rest follows alphabetically
+  (`- name: cilium`, then `localASN`, `peers`). The exception is an object
+  reference (`apiVersion`, `kind`, `name`, `namespace`, as in a
+  `healthChecks` entry), which keeps that order.
 - **Never reorder a Helm values file**, even when asked to sort its folder.
   This is a `values.yaml` fed to a `configMapGenerator`: any change to it
   changes the ConfigMap's hash and triggers a `helm upgrade` of the
@@ -31,15 +31,13 @@ already there unless the user asks for the file to be sorted.
   CRD field such as kopiur's `moverDefaults`): `requests` before `limits`.
 - An ExternalSecret's `spec.data` entries: `secretKey` before `remoteRef`.
   A `PushSecret`'s `spec.data[].match` mirrors that order.
-- An `OCIRepository`'s `spec.ref`: `tag` before `digest`. The tag is the
-  version a reader looks for; the digest pins it.
+- An `OCIRepository`'s `spec.ref`: `tag` before `digest`.
 - An `OCIRepository`'s `spec.verify`: `provider` before `matchOIDCIdentity`.
 - A `HelmRelease`'s `spec`: `interval` first, then `chartRef`, then the rest
   alphabetically. app-template releases refine this below.
 - A Flux `Kustomization`'s `spec` (`ks.yaml`): `targetNamespace` first, then
   the rest alphabetically, then `healthChecks` and `healthCheckExprs` last,
-  in that order. The health checks say when the rest counts as ready, so
-  they close the spec.
+  in that order.
 
 ## HelmReleases on app-template
 

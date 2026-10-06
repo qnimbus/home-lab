@@ -3,10 +3,8 @@
 A HelmRelease's `spec.values` holds only what differs from the chart's
 defaults. A value that equals the default is left out.
 
-Why: a restated default reads as a decision. The next reader has to work
-out whether it matters, and it keeps overriding the chart after upstream
-changes the default for a good reason. A short `values` block also shows at
-a glance what is particular to this app.
+Why: a restated default reads as a decision, and it keeps overriding the
+chart after upstream changes the default.
 
 The same goes for the other layers a manifest inherits from:
 

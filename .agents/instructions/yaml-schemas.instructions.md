@@ -13,11 +13,10 @@ kind: <Kind>
 ## Where the schemas come from
 
 `schemas.clustrs.dev` is published from this cluster by
-`kubernetes/apps/system/crd-schema-publisher` (Cloudflare Pages project
-`schemas`). It holds every installed CRD at the version the cluster actually
-serves, plus the Kubernetes built-ins. Third-party catalogs lag installed
-versions and miss kinds we use (kopiur, KEDA, some Gateway API), so don't
-point manifests at them (`kubernetes-schemas.pages.dev`, datreeio, yannh).
+`kubernetes/apps/system/crd-schema-publisher`: every installed CRD at the
+version the cluster serves, plus the Kubernetes built-ins. Don't point
+manifests at third-party catalogs (`kubernetes-schemas.pages.dev`,
+datreeio, yannh): they lag installed versions and miss kinds we use.
 
 ## Building the URL
 
@@ -37,13 +36,12 @@ point manifests at them (`kubernetes-schemas.pages.dev`, datreeio, yannh).
 - HelmReleases on the app-template chart (sidecar `ocirepository.yaml`
   pointing at `oci://ghcr.io/bjw-s-labs/helm/app-template`) use bjw-s's
   `https://raw.githubusercontent.com/bjw-s-labs/helm-charts/main/charts/other/app-template/schemas/helmrelease-helm-v2.schema.json`,
-  as the `add-app` template does. It validates `spec.values` against the
-  chart's values schema, which the generic one leaves free-form. It tracks
-  bjw-s's `main` rather than our pinned chart version, and its HelmRelease
-  part can lag Flux by a field or two (`healthCheckExprs`,
-  `postRenderStrategy`, `waitStrategy` today). If a release needs one of
-  those, use `https://schemas.clustrs.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json`
-  for that file.
+  which validates `spec.values` against the chart's values schema (the
+  generic one leaves it free-form). It tracks bjw-s's `main`, not our
+  pinned chart version, and its HelmRelease part lags Flux
+  (`healthCheckExprs`, `postRenderStrategy`, `waitStrategy` today). A
+  release that needs one of those uses
+  `https://schemas.clustrs.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json`.
 - Non-Kubernetes YAML keeps its own schemastore schema (GitHub workflows,
   helmfile, lefthook). Docker Compose files and Talos/Jinja templates get
   none.
