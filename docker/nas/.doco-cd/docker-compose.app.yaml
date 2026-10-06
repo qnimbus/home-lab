@@ -1,56 +1,37 @@
 ---
-# doco-cd itself. Not managed by doco-cd (it can't redeploy itself): `just bootstrap nas`
-# copies this file to /home/truenas_admin/.config/doco-cd/docker-compose.yaml, writes the
-# secret files next to it from 1Password and starts it. After merging a doco-cd version bump,
-# re-run `just bootstrap nas` — `just docker reconcile-nas` only restarts the container.
+# This file is not managed by doco-cd because it can't manage itself
 
 secrets:
   op_token:
     file: /home/truenas_admin/.config/doco-cd/op_token
-  ssh_private_key:
-    file: /home/truenas_admin/.config/doco-cd/ssh_private_key
+  api_secret:
+    file: /home/truenas_admin/.config/doco-cd/api_secret
+  webhook_secret:
+    file: /home/truenas_admin/.config/doco-cd/webhook_secret
 services:
   app:
     container_name: doco-cd
-    image: ghcr.io/kimdre/doco-cd:0.123.0
+    image: ghcr.io/kimdre/doco-cd:0.123.0@sha256:11b474122ed530614cbe4cb8390f94b646d3fc8ba40d74c0f0b7f55a8ca719f8
     restart: unless-stopped
-    # Only talks to the Docker API over the bind-mounted socket; the daemon (not
-    # this container) performs privileged operations, so it needs no capabilities.
-    # The secret files are root-owned for the same reason: without DAC_OVERRIDE,
-    # root in the container can only read files it owns.
-    cap_drop:
-      - ALL
     environment:
+      API_SECRET_FILE: /run/secrets/api_secret
       DEPLOY_CONFIG_BASE_DIR: ./docker/nas/
-      # 18080, not the 8080 default: avoids colliding with other self-hosted
-      # apps' common default port on this host.
-      HTTP_PORT: 18080
+      HTTP_PORT: 8880
       LOG_LEVEL: info
-      # The repo is private: pulled over SSH with a read-only GitHub deploy key.
       POLL_CONFIG: |
         - url: git@github.com:qnimbus/home-lab.git
           reference: refs/heads/main
-          interval: 500
-      # No WEBHOOK_SECRET/API_SECRET: polling only and the REST API is unused —
-      # both endpoints stay disabled by omission.
+          interval: 3600
       SECRET_PROVIDER: 1password
       SECRET_PROVIDER_ACCESS_TOKEN_FILE: /run/secrets/op_token
-      SSH_PRIVATE_KEY_FILE: /run/secrets/ssh_private_key
+      WEBHOOK_SECRET_FILE: /run/secrets/webhook_secret
       TZ: Europe/Amsterdam
     ports:
-      # Bound to the management LAN IP only (10.10.0.41 = NAS_LAN_HOST), not
-      # 0.0.0.0 — keeps the health/API listener off the storage VLAN
-      # (10.200.0.0/24) entirely, not just unreachable from the internet.
-      - "10.10.0.41:18080:18080"
-      # Prometheus metrics (doco_cd_*), same LAN-IP-only rationale as above. Published
-      # because /v1/health only reports process liveness, not reconciliation success —
-      # doco-cd answered "healthy" for hours on 2026-09-02 while every poll was failing
-      # and no TrueNAS stack was being reconciled. These metrics are what makes that
-      # visible; scraped by kube-prometheus-stack (scrapeconfig-truenas.yaml).
-      - "10.10.0.41:9120:9120"
+      - 8880:8880
     secrets:
       - op_token
-      - ssh_private_key
+      - api_secret
+      - webhook_secret
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - data:/data

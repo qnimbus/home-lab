@@ -16,8 +16,12 @@
       delegate_to: localhost
       become: false
       loop:
-        - homelab/doco-cd/OP_SERVICE_ACCOUNT_TOKEN
-        - homelab/doco-cd/SSH_PRIVATE_KEY
+        - key: homelab/doco-cd/OP_SERVICE_ACCOUNT_TOKEN
+          var: doco_op_service_account_token
+        - key: homelab/doco-cd/WEBHOOK_SECRET
+          var: doco_webhook_secret
+        - key: homelab/doco-cd/API_SECRET
+          var: doco_api_secret
       check_mode: false
       changed_when: false
       no_log: true
@@ -25,8 +29,9 @@
 
     - name: Set secret facts
       ansible.builtin.set_fact:
-        doco_op_token: "{{ secrets_raw.results[0].stdout }}"
-        doco_ssh_private_key: "{{ secrets_raw.results[1].stdout }}"
+        doco_op_service_account_token: "{{ secrets_raw.results[0].stdout }}"
+        doco_webhook_secret: "{{ secrets_raw.results[1].stdout }}"
+        doco_api_secret: "{{ secrets_raw.results[2].stdout }}"
       no_log: true
 
     - name: doco-cd
@@ -63,9 +68,11 @@
           no_log: true
           loop:
             - name: op_token
-              content: "{{ doco_op_token }}"
-            - name: ssh_private_key
-              content: "{{ doco_ssh_private_key }}"
+              content: "{{ doco_op_service_account_token }}"
+            - name: webhook_secret
+              content: "{{ doco_webhook_secret }}"
+            - name: api_secret
+              content: "{{ doco_api_secret }}"
 
         - name: doco-cd | Run docker-compose
           community.docker.docker_compose_v2:
