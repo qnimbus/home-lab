@@ -179,7 +179,7 @@ spec:
     controllers:
       <app>:
         annotations:
-          reloader.stakater.com/auto: "true"
+          reloader.stakater.com/auto: "true" # only if the pod reads a Secret or ConfigMap
         containers:
           app:
             image:
@@ -326,7 +326,7 @@ Show the user the created files and get confirmation before committing. Commit s
 
 - **Copying a chart version or image tag from this skill or memory** — always read the current version from the repo (Step 2 command) and upstream.
 - **Using volsync** — this repo migrated to kopiur; `components/volsync` no longer exists.
-- **Forgetting `reloader.stakater.com/auto`** — without it, secret/config changes don't restart pods.
+- **Forgetting `reloader.stakater.com/auto`** on a controller whose pod reads a Secret or ConfigMap (env, `envFrom`, or a mount) — without it, a rotated secret or changed config doesn't restart the pod. Leave it off a controller that reads neither (see `whoami`): there it is dead config.
 - **`readOnlyRootFilesystem: true` without a tmpfs** — apps that write to `/tmp` will crash; mount an emptyDir.
 - **Skipping the sorting conventions** — key order follows the templates above first, then `.agents/instructions/sorting.instructions.md` for anything they don't cover.
 - **Alphabetizing what the templates order differently** — e.g. moving `capabilities` before `readOnlyRootFilesystem`, or `dataFrom` to the top of an ExternalSecret. The template order is the convention, not a mistake to fix.
