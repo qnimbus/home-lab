@@ -109,7 +109,8 @@ When the folder's majority disagrees with a documented convention, or two conven
 - Aim for a README someone reads in two minutes: roughly 40–100 lines. Only a genuine multi-step workflow justifies more.
 - Each fact appears once. Link to a file (`[values.yaml](./tuppr/app/helm/values.yaml)`) instead of repeating what the YAML says.
 - Explain _why_ and _what to watch out for_, not _what_. The manifests already say what.
-- Don't put anything in that rots: versions, image tags, digests, counts, hardcoded consumer lists. Give a `grep` command instead. An incident date is fine as a one-clause anchor for a non-obvious setting ("rebootMode stays `default` since the 2026-09-25 power-cycle NIC failure"). Don't retell the incident.
+- Don't put anything in that rots: versions, image tags, digests, counts, hardcoded consumer lists. Give a `grep` command instead.
+- A README describes the repo as it is now, not how it got there: no dates, incidents, earlier names or previous configurations. Give the reason for a non-obvious setting in the present tense ("`rebootMode` stays `default`: a power cycle can leave the NIC down"). Git history is the audit trail.
 - Plain sentences, bold only for real warnings, relative links. Never cite `docs/` or `ops/` (retired).
 - Example YAML in a README must follow current conventions (`add-app`, sorting), since people copy it.
 
