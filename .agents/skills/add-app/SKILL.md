@@ -149,13 +149,22 @@ spec:
     operation: copy
   ref:
     tag: <version>
+    digest: sha256:<digest>
   url: oci://ghcr.io/bjw-s-labs/helm/app-template
+  verify:
+    provider: cosign
+    matchOIDCIdentity:
+      - issuer: https://token.actions.githubusercontent.com
+        subject: ^https://github.com/bjw-s-labs/
 ```
 
-**Never hardcode `<version>` from memory** — use the version the rest of the repo is on:
+The chart is pinned by tag and digest and its cosign signature is verified against bjw-s-labs' GitHub Actions identity; Renovate updates tag and digest together.
+
+**Never write `<version>` or `<digest>` from memory** — use the pair the rest of the repo is on:
 
 ```bash
-/usr/bin/grep -h "tag:" kubernetes/apps/*/*/app/ocirepository.yaml | sort | uniq -c | sort -rn | head -1
+/usr/bin/grep -l "bjw-s-labs/helm/app-template" kubernetes/apps/*/*/app/ocirepository.yaml \
+  | xargs yq -o=json -I0 '.spec.ref | pick(["tag", "digest"])' | sort | uniq -c | sort -rn | head -1
 ```
 
 ### app/helmrelease.yaml
