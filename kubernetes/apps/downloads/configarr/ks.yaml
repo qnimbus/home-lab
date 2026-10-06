@@ -3,7 +3,7 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: &app configarr
+  name: configarr
 spec:
   targetNamespace: downloads
   interval: 1h
