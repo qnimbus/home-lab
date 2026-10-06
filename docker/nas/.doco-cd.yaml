@@ -8,6 +8,7 @@ auto_discovery:
   delete: true
 # Compose-level secrets, once a stack needs one: add an `external_secrets:` map of
 # `VAR: op://homelab/<item>/<field>` and consume it as ${VAR} in the compose file.
+external_secrets: []
 force_recreate: false
 reconciliation:
   enabled: true
