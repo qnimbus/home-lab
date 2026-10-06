@@ -106,33 +106,3 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
----
-# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: home-assistant
-spec:
-  targetNamespace: network
-  interval: 1h
-  path: ./kubernetes/apps/network/external-services/home-assistant
-  prune: true
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
----
-# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: doco-cd-webhook
-spec:
-  targetNamespace: network
-  interval: 1h
-  path: ./kubernetes/apps/network/external-services/doco-cd-webhook
-  prune: true
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-    namespace: flux-system
