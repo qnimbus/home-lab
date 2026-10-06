@@ -12,6 +12,8 @@ spec:
   values:
     controllers:
       smtp-relay:
+        annotations:
+          reloader.stakater.com/auto: "true"
         containers:
           app:
             image:
