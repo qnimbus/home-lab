@@ -5,7 +5,7 @@ set quiet
 set script-interpreter := ['bash', '-euo', 'pipefail']
 set shell := ['bash', '-euo', 'pipefail', '-c']
 
-doco_url := 'http://lan.home.vwn.io:8880'
+doco_url := 'http://nas.lan.home.vwn.io:8880'
 doco_repo := 'https://github.com/qnimbus/home-lab.git'
 
 [doc('Reconcile Doco-CD on TrueNAS: poll main now and redeploy changed stacks')]
