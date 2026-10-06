@@ -20,6 +20,6 @@ spec:
       name: nfs
       parameters:
         server: "${NAS_HOST}"
-        share: /mnt/tank/Cluster/k8s-nfs-csi
+        share: /mnt/tank/Cluster/nfs
       reclaimPolicy: Delete
       volumeBindingMode: Immediate
