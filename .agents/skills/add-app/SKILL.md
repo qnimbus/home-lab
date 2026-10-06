@@ -13,18 +13,7 @@ Scaffolds `kubernetes/apps/<namespace>/<app>/` with a Flux Kustomization (`ks.ya
 | `kubernetes/apps/default/homepage`  | Secrets from two 1Password items, config files via configMapGenerator |
 | `kubernetes/apps/default/paperless` | Custom probes, dragonfly dependency, kopiur-backed persistence        |
 
-**The templates below are leading, key order included.** Where a template orders keys differently from the alphabetical default in `.agents/instructions/sorting.instructions.md`, follow the template. Keep its order when writing new files, and don't "sort" existing files away from it. The template-specific orders are:
-
-| Section                      | Order                                                                    |
-| ---------------------------- | ------------------------------------------------------------------------ |
-| container `securityContext`  | `allowPrivilegeEscalation`, `readOnlyRootFilesystem`, `capabilities`     |
-| ExternalSecret `spec`        | `refreshInterval`, `secretStoreRef`, `target`, `dataFrom`                |
-| ExternalSecret `spec.target` | `name`, `creationPolicy` (only when not the default), `template`         |
-| HelmRelease `spec`           | `interval`, `chartRef`, then as in `sorting.instructions.md`             |
-| Flux Kustomization `spec`    | `targetNamespace`, alphabetical, then `healthChecks`, `healthCheckExprs` |
-| `app/kustomization.yaml`     | `resources`, `configMapGenerator`, `generatorOptions`, then alphabetical |
-
-Everything the templates don't cover follows `sorting.instructions.md`.
+**The templates below are leading, key order included.** Keep their order when writing new files, and don't "sort" existing files away from it. The orders themselves are in `.agents/instructions/sorting.instructions.md`.
 
 Files beyond these templates (`Service`, `PersistentVolumeClaim`, `ScaledObject`, …) still get a `# yaml-language-server` line, built per `.agents/instructions/yaml-schemas.instructions.md`.
 
@@ -340,8 +329,7 @@ Show the user the created files and get confirmation before committing. Commit s
 - **Using volsync** — this repo migrated to kopiur; `components/volsync` no longer exists.
 - **Forgetting `reloader.stakater.com/auto`** on a controller whose pod reads a Secret or ConfigMap (env, `envFrom`, or a mount) — without it, a rotated secret or changed config doesn't restart the pod. Leave it off a controller that reads neither (see `whoami`): there it is dead config.
 - **`readOnlyRootFilesystem: true` without a tmpfs** — apps that write to `/tmp` will crash; mount an emptyDir.
-- **Skipping the sorting conventions** — key order follows the templates above first, then `.agents/instructions/sorting.instructions.md` for anything they don't cover.
-- **Alphabetizing what the templates order differently** — e.g. moving `capabilities` before `readOnlyRootFilesystem`, or `dataFrom` to the top of an ExternalSecret. The template order is the convention, not a mistake to fix.
+- **Alphabetizing what `sorting.instructions.md` orders differently**, e.g. moving `capabilities` before `readOnlyRootFilesystem`, or `dataFrom` to the top of an ExternalSecret.
 - **Restating a chart default** — e.g. `strategy: Recreate` on an app-template controller. Leave it out unless something depends on it, and then say so in the namespace README (`.agents/instructions/helm-values.instructions.md`).
 - **Using app-template's `route:` value** — a route is a separate `app/httproute.yaml`, listed in `app/kustomization.yaml`.
 - **Putting the pod `securityContext` under `controllers.<app>.pod`** — it goes under `defaultPodOptions`, at the top of `values`.
