@@ -29,3 +29,7 @@ sync-stacks:
 [doc('Restart the Doco-CD container on TrueNAS via Ansible')]
 restart-doco-cd:
     ansible-playbook -i "{{ source_directory() }}/../ansible/inventory.yaml" "{{ source_directory() }}/.ansible/nas/restart-doco-cd.yaml"
+
+[doc('Stop the Doco-CD container on TrueNAS via Ansible')]
+stop-doco-cd:
+    ansible-playbook -i "{{ source_directory() }}/../ansible/inventory.yaml" "{{ source_directory() }}/.ansible/nas/stop-doco-cd.yaml"
