@@ -1,0 +1,11 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/gateway.envoyproxy.io/backend_v1alpha1.json
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: Backend
+metadata:
+  name: doco-cd-webhook
+spec:
+  endpoints:
+    - ip:
+        address: "${NAS_LAN_HOST}"
+        port: 8880
