@@ -8,6 +8,9 @@
     ansible_python_interpreter: auto_silent
 
   tasks:
+    - name: Check host connectivity
+      ansible.builtin.ping: {}
+
     - name: doco-cd
       vars:
         dococd_config_dir: /home/truenas_admin/.config/doco-cd
