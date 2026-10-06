@@ -1,10 +1,8 @@
 # Helm values: don't restate defaults
 
 A HelmRelease's `spec.values` holds only what differs from the chart's
-defaults. A value that equals the default is left out.
-
-Why: a restated default reads as a decision, and it keeps overriding the
-chart after upstream changes the default.
+defaults. A restated default reads as a decision, and it keeps overriding
+the chart after upstream changes the default.
 
 The same goes for the other layers a manifest inherits from:
 
@@ -30,17 +28,13 @@ done
 diff "$TMP/out-with.yaml" "$TMP/out-without.yaml"
 ```
 
-No diff means the value is a default: remove it. Removing it changes nothing
-that is rendered, so the workload does not restart.
+No diff means the value is a default: remove it. Nothing rendered changes,
+so the workload doesn't restart. Two examples on app-template:
 
-Examples, both on app-template:
-
-- `strategy: Recreate` on a controller. The chart already renders a
-  Deployment with `Recreate`.
-- `service.<name>.controller` in a release with one controller. The chart
-  picks the only controller itself. With a second controller it stops
-  being a default: the render fails until every Service names its
-  controller.
+- `strategy: Recreate` on a controller.
+- `service.<name>.controller` in a release with one controller. With a
+  second controller it stops being a default: the render fails until every
+  Service names its controller.
 
 ## When to state a default anyway
 
@@ -53,10 +47,9 @@ silently if the default changed:
 - the value is a safety setting whose absence would be read as "not
   considered" (rare; prefer a README note over a restated value).
 
-Such a value is a declared exception. Say why in the folder's `README.md`
-under Gotchas, naming the value and what depends on it, as `media` does for
-Plex's `secureConnections=1`. No inline comment: `tidy-folder` moves those
-into the README anyway.
+Say why in the folder's `README.md` under Gotchas, naming the value and what
+depends on it, as `media` does for Plex's `secureConnections=1`. No inline
+comment: `tidy-folder` moves those into the README anyway.
 
 A restated default with no such note is a leftover. Remove it when the file
 is touched; don't sweep the repo for them unasked.
@@ -65,5 +58,5 @@ is touched; don't sweep the repo for them unasked.
 
 - Values the `add-app` templates set. The template is the convention, even
   where a line happens to match a chart default.
-- Values that only look like defaults. `resources`, `securityContext` and
-  probes have no useful chart default here; set them.
+- `resources`, `securityContext` and probes. They have no useful chart
+  default here; set them.

@@ -1,15 +1,15 @@
 # CRDs installed by Helm releases
 
-The `helm-crds` skill has the commands and snippets for everything below.
-Use it when adding a chart, when removing, renaming or moving a
-HelmRelease, and when cleaning up a leftover CRD.
+The `helm-crds` skill has the commands and snippets. Use it when adding a
+chart, when removing, renaming or moving a HelmRelease, and when cleaning up
+a leftover CRD.
 
-A chart installs CRDs in one of two ways, and their lifecycle differs:
+A chart installs CRDs in one of two ways:
 
-- **From `crds/`.** Not ordinary release resources: a Helm uninstall leaves
-  them, and they carry no `meta.helm.sh/*` annotations. `cluster-apps`
+- **From `crds/`.** Not release resources: a Helm uninstall leaves them, and
+  they carry no `meta.helm.sh/*` annotations. `cluster-apps`
   (`kubernetes/clusters/main/apps.yaml`) patches every HelmRelease to
-  `install.crds` and `upgrade.crds: CreateReplace` (Flux's own defaults are
+  `install.crds` and `upgrade.crds: CreateReplace` (Flux's defaults are
   `Create` and `Skip`), so they are created and updated with the chart.
   They are never deleted, not even when the chart stops shipping them.
 - **From `templates/`.** Ordinary release resources: updated on upgrade and
@@ -17,30 +17,23 @@ A chart installs CRDs in one of two ways, and their lifecycle differs:
   that kind, cluster-wide.
 
 Don't set `install.crds` or `upgrade.crds` on a HelmRelease: the patch
-overwrites them. To stop a release managing its `crds/` CRDs, label the
-HelmRelease `crds.flux.home.arpa/disabled: "true"`; the patch then sets both
-to `Skip`.
+overwrites them. To stop a release managing its `crds/` CRDs, label it
+`crds.flux.home.arpa/disabled: "true"`; the patch then sets both to `Skip`.
 
-## Rule: templated CRDs carry `helm.sh/resource-policy: keep`
+## Templated CRDs carry `helm.sh/resource-policy: keep`
 
 `keep` stops Helm deleting the CRD on uninstall, or when the chart stops
-rendering it. It doesn't stop updates. The skill has the ways to add it.
+rendering it. It doesn't stop updates. A templated CRD without `keep` that
+isn't an exception below is a defect: add `keep` in the same change.
 
-A templated CRD without `keep` that isn't listed under the exceptions below
-is a defect: add `keep` when you find one, in the same change.
-
-### Accepted exceptions
-
-Deliberately unprotected, because losing their CRDs is recoverable. Don't
-add protection just to clear the exception.
+Accepted exceptions, deliberately unprotected because losing their CRDs is
+recoverable. Don't add protection just to clear one. Only the user decides
+on a new one; it is added here with the reason its loss is recoverable.
 
 - **`external-secrets`**: Flux re-applies the `ExternalSecret`s and the
   operator refills the Secrets from 1Password. `PushSecret`s use
   `deletionPolicy: None`, so nothing is deleted in 1Password.
 - **`tailscale-operator`**: only the `subnet-router` Connector is at stake.
-
-Only the user decides on a new exception. It is added here with the reason
-its loss is recoverable.
 
 ## One release per CRD
 
@@ -54,17 +47,17 @@ The usual cause is a chart bundling CRDs another release owns:
 VolumeSnapshot CRDs in storage/CSI charts, Gateway API CRDs in gateway and
 CNI charts, `monitoring.coreos.com` in Prometheus charts.
 
-**When adding a chart, or changing a value that controls which CRDs it
-installs**, run the skill's duplicate check before committing, and switch
-the copy off in the new release. If a templated copy can't be switched off,
+When adding a chart, or changing a value that controls which CRDs it
+installs, run the skill's duplicate check before committing and switch the
+copy off in the new release. If a templated copy can't be switched off,
 stop and ask the user rather than installing a second copy.
 
 ## Removing, renaming or moving a HelmRelease
 
-Each of these uninstalls the old release: deleting the HelmRelease, pruning
-it from its Kustomization, renaming it, moving it to another namespace. The
-uninstall deletes the release's templated CRDs that lack `keep`, and with
-them every object of those kinds. Run the skill's pre-move check first.
+Deleting a HelmRelease, pruning it from its Kustomization, renaming it or
+moving it to another namespace uninstalls the old release. That deletes its
+templated CRDs that lack `keep`, and with them every object of those kinds.
+Run the skill's pre-move check first.
 
 ## Never delete a CRD just because its HelmRelease or chart is gone
 

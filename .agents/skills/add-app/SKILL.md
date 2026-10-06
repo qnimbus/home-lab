@@ -13,7 +13,18 @@ Scaffolds `kubernetes/apps/<namespace>/<app>/` with a Flux Kustomization (`ks.ya
 | `kubernetes/apps/default/homepage`  | Secrets from two 1Password items, config files via configMapGenerator |
 | `kubernetes/apps/default/paperless` | Custom probes, dragonfly dependency, kopiur-backed persistence        |
 
-**The templates below are leading, key order included.** Keep their order when writing new files, and don't "sort" existing files away from it. The orders themselves are in `.agents/instructions/sorting.instructions.md`.
+**The templates below are leading, key order included.** Where a template orders keys differently from the alphabetical default in `.agents/instructions/sorting.instructions.md`, follow the template. Keep its order when writing new files, and don't "sort" existing files away from it. The template-specific orders are:
+
+| Section                      | Order                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| container `securityContext`  | `allowPrivilegeEscalation`, `readOnlyRootFilesystem`, `capabilities`     |
+| ExternalSecret `spec`        | `refreshInterval`, `secretStoreRef`, `target`, `dataFrom`                |
+| ExternalSecret `spec.target` | `name`, `creationPolicy` (only when not the default), `template`         |
+| HelmRelease `spec`           | `interval`, `chartRef`, then as in `sorting.instructions.md`             |
+| Flux Kustomization `spec`    | `targetNamespace`, alphabetical, then `healthChecks`, `healthCheckExprs` |
+| `app/kustomization.yaml`     | `resources`, `configMapGenerator`, `generatorOptions`, then alphabetical |
+
+Everything the templates don't cover follows `sorting.instructions.md`.
 
 Files beyond these templates (`Service`, `PersistentVolumeClaim`, `ScaledObject`, …) still get a `# yaml-language-server` line, built per `.agents/instructions/yaml-schemas.instructions.md`.
 
@@ -67,9 +78,9 @@ spec:
 
 **Namespace:** always set `spec.targetNamespace` explicitly, normally to the namespace directory the app lives in. Don't set `metadata.namespace`: the `namespace:` field in the namespace's `kustomization.yaml` stamps it, `flux-system` included.
 
-**`wait`:** leave it unset. Add `wait: true` only when another Kustomization will `dependsOn` this one and this one has no `healthChecks`/`healthCheckExprs` (with `healthChecks`, `wait: true` makes Flux ignore them). Depending on another app, such as `kopiur` for persistence, doesn't call for `wait`.
+**`wait`:** omit it for a normal leaf app — it defaults to `false`, and explicit `wait: false` is redundant boilerplate we no longer keep. Only add `wait: true` when _another_ Kustomization will `dependsOn` this one AND this Kustomization defines no `healthChecks`/`healthCheckExprs` — that is what gives the dependent a real readiness gate. If this Kustomization does define `healthChecks`, leave `wait` unset (setting `wait: true` would make Flux ignore those checks). Depending on another app (e.g. `kopiur` for persistence) does not by itself call for `wait`.
 
-Don't add `commonMetadata` or `timeout`: app-template sets the `app.kubernetes.io/*` labels on the workloads, and `cluster-apps` sets the timeout.
+Do not add `commonMetadata` or `timeout` — both were dropped as boilerplate; the app-template chart sets `app.kubernetes.io/*` labels on the workloads, and `cluster-apps` sets `timeout` (15m).
 
 **If the app has persistence**, add these to `spec` (components use `${APP}` and `${KOPIUR_*}` substitutions — see `kubernetes/components/kopiur/README.md` for all knobs and their defaults):
 
@@ -325,9 +336,14 @@ Show the user the created files and get confirmation before committing. Commit s
 
 ## Common mistakes
 
+- **Copying a chart version or image tag from this skill or memory** — always read the current version from the repo (Step 2 command) and upstream.
 - **Using volsync** — this repo migrated to kopiur; `components/volsync` no longer exists.
-- **Forgetting `reloader.stakater.com/auto`** on a controller whose pod reads a Secret or ConfigMap (env, `envFrom`, or a mount): a rotated secret or changed config then doesn't restart the pod. Leave it off a controller that reads neither (see `whoami`).
+- **Forgetting `reloader.stakater.com/auto`** on a controller whose pod reads a Secret or ConfigMap (env, `envFrom`, or a mount) — without it, a rotated secret or changed config doesn't restart the pod. Leave it off a controller that reads neither (see `whoami`): there it is dead config.
 - **`readOnlyRootFilesystem: true` without a tmpfs** — apps that write to `/tmp` will crash; mount an emptyDir.
-- **Alphabetizing what `sorting.instructions.md` orders differently**, e.g. moving `capabilities` before `readOnlyRootFilesystem`, or `dataFrom` to the top of an ExternalSecret.
+- **Skipping the sorting conventions** — key order follows the templates above first, then `.agents/instructions/sorting.instructions.md` for anything they don't cover.
+- **Alphabetizing what the templates order differently** — e.g. moving `capabilities` before `readOnlyRootFilesystem`, or `dataFrom` to the top of an ExternalSecret. The template order is the convention, not a mistake to fix.
 - **Restating a chart default** — e.g. `strategy: Recreate` on an app-template controller. Leave it out unless something depends on it, and then say so in the namespace README (`.agents/instructions/helm-values.instructions.md`).
+- **Using app-template's `route:` value** — a route is a separate `app/httproute.yaml`, listed in `app/kustomization.yaml`.
+- **Putting the pod `securityContext` under `controllers.<app>.pod`** — it goes under `defaultPodOptions`, at the top of `values`.
 - **Adding a NetworkPolicy/CiliumNetworkPolicy by default** — the cluster runs without them (see CLAUDE.md's "Network policies"); only add one if the user asks.
+- **Adding `wait`, `commonMetadata`, or `timeout` to `ks.yaml`** — all three are boilerplate now. Leave `wait` unset unless another Kustomization depends on this one and it has no `healthChecks` (then, and only then, `wait: true`).

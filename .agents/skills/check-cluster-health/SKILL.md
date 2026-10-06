@@ -196,3 +196,24 @@ Structure findings as:
   certs, secrets).
 
 If nothing is wrong, say so plainly — don't manufacture findings to justify the sweep.
+
+## Common mistakes
+
+- **Reporting `Available` + `Progressing` both `True` as stuck** — that's a normal Deployment
+  rollout state.
+- **Flagging a pod by cumulative restart count alone** — check `lastState.terminated.finishedAt`;
+  a pod that restarted 100 times over 3 days but not recently is not an active incident.
+- **Not checking `spec.suspend`** before flagging a non-Ready Kustomization/HelmRelease —
+  deliberately suspended resources are not incidents.
+- **Reporting kopiur's per-backup warnings** — `MissingDependency` for a `Snapshot` that is still
+  within its deadline or has already `Succeeded`, or `VolumeFailedDelete` for a PV that is already
+  gone. Both fire on every backup run. Likewise a PushSecret's 1Password `status 400` event when
+  the PushSecret is `Ready` again.
+- **Trying `flux get ...`** — not installed; this repo's toolchain is `kubectl`-only for Flux CRs.
+- **Skipping the Silence check** — an alert matching an active `Silence` CR is already known and
+  accepted; re-diagnosing it from scratch wastes time and risks a wrong root cause.
+- **Treating Ceph `HEALTH_WARN` as an incident during an in-flight Rook upgrade**, or treating
+  `(muted: ...)` health checks as active problems — both are expected, transient or intentional.
+- **Taking remediation action directly** (`kubectl apply`, restarting a pod, patching a PVC) — this
+  repo is GitOps-only; report findings and propose the Git change instead, unless explicitly asked
+  to act live.

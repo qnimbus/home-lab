@@ -13,8 +13,10 @@ sorted.
   hash changes and triggers a `helm upgrade`, for no functional gain.
 - **Never sort YAML embedded in a string** (a config file under
   `configMap.data.*`).
-- **The `add-app` templates follow these rules.** If a template and this
-  file disagree, keep the template's order and report the difference.
+- **The `add-app` templates take precedence**
+  (`.agents/skills/add-app/SKILL.md`). Where one orders keys differently (a
+  container `securityContext`, an ExternalSecret's `spec` and
+  `spec.target`), its order is the convention. That skill lists every case.
 
 ## Kubernetes manifests
 
@@ -23,9 +25,6 @@ sorted.
 | Top level                                    | `apiVersion`, `kind`, `metadata`, `spec`                                                                     |
 | `metadata`                                   | `name`, `namespace`, `annotations`, `labels`                                                                 |
 | Any `resources` block (container, CRD field) | `requests`, `limits`                                                                                         |
-| Container `securityContext`                  | `allowPrivilegeEscalation`, `readOnlyRootFilesystem`, `capabilities`                                         |
-| ExternalSecret `spec`                        | `refreshInterval`, `secretStoreRef`, `target`, `dataFrom`                                                    |
-| ExternalSecret `spec.target`                 | `name`, `creationPolicy`, `template`                                                                         |
 | ExternalSecret `spec.data[]`                 | `secretKey`, `remoteRef` (a PushSecret's `spec.data[].match` mirrors it)                                     |
 | `kustomization.yaml` (Kustomize, not Flux)   | `apiVersion`, `kind`, `namespace`, `components`, `resources`, `configMapGenerator`, `generatorOptions`, rest |
 | PrometheusRule rule                          | `alert` or `record`, `expr`, `for`, `keep_firing_for`, `labels`, `annotations`                               |

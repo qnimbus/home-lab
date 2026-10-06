@@ -59,7 +59,7 @@ The `check-cluster-health` skill runs a live check for templated duplicates.
 
 ## Removing, renaming or moving a HelmRelease: pre-move check
 
-Each of these uninstalls the old release. First list the Helm-owned CRDs that lack `keep`:
+Each of these uninstalls the old release: deleting the HelmRelease, pruning it from its Kustomization, renaming it, moving it to another namespace. First list the Helm-owned CRDs that lack `keep`:
 
 ```bash
 kubectl get crd -o json | jq -r '.items[]
