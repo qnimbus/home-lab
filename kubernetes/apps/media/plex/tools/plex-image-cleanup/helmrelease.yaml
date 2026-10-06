@@ -34,7 +34,6 @@ spec:
           failedJobsHistory: 1
           schedule: "27 6 * * */2"
           successfulJobsHistory: 0
-          timeZone: "${CLUSTER_TIMEZONE}"
         containers:
           app:
             image:
@@ -45,7 +44,6 @@ spec:
               PHOTO_TRANSCODER: true
               PLEX_PATH: "/mnt/plex-config/Library/Application Support/Plex Media Server"
               PLEX_URL: http://plex.media.svc.cluster.local:32400
-              TZ: "${CLUSTER_TIMEZONE}"
             envFrom:
               - secretRef:
                   name: plex-image-cleanup-secret

@@ -62,7 +62,7 @@ The app reads its connection from the CNPG-generated `${APP}-postgres-app` Secre
 | `POSTGRES_ENABLE_PDB`      | no       | `false`        | CNPG PodDisruptionBudgets; `"true"` only with `POSTGRES_INSTANCES` ≥ 2         |
 | `POSTGRES_STORAGE`         | no       | `5Gi`          | Per-instance PVC size                                                          |
 | `POSTGRES_BACKUP_SCHEDULE` | no       | `0 40 4 * * *` | Base-backup cron. **Six fields, seconds first**: `0 40 4 * * *` is 04:40 daily |
-| `POSTGRES_DUMP_SCHEDULE`   | no       | `0 2 * * *`    | NAS dump cron: a normal five-field Kubernetes CronJob, in `CLUSTER_TIMEZONE`   |
+| `POSTGRES_DUMP_SCHEDULE`   | no       | `0 2 * * *`    | NAS dump cron: a normal five-field Kubernetes CronJob, in UTC                  |
 
 The default is one instance rather than a fixed three instances with one sync replica for every app: that would give HA everywhere, but triple the pods and storage per app. The replica settings come in pairs:
 

@@ -15,7 +15,6 @@ spec:
         type: cronjob
         cronjob:
           schedule: "0 0/12 * * *" # every 12 hours
-          timeZone: "${CLUSTER_TIMEZONE}"
           concurrencyPolicy: Forbid
           successfulJobsHistory: 1
           failedJobsHistory: 1
@@ -24,8 +23,6 @@ spec:
             image:
               repository: ghcr.io/raydak-labs/configarr
               tag: 1.34.0@sha256:738f79088c08ccaf578e71ca44faca16181d5399934beedbb81851a4f9ba06c1
-            env:
-              TZ: "${CLUSTER_TIMEZONE}"
             envFrom:
               - secretRef:
                   name: configarr-secret

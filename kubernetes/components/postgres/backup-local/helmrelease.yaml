@@ -25,7 +25,6 @@ spec:
           failedJobsHistory: 1
           schedule: "${POSTGRES_DUMP_SCHEDULE:=0 2 * * *}"
           successfulJobsHistory: 1
-          timeZone: "${CLUSTER_TIMEZONE}"
           ttlSecondsAfterFinished: 43200
         containers:
           app:
@@ -65,7 +64,6 @@ spec:
                   secretKeyRef:
                     key: username
                     name: ${APP}-postgres-superuser
-              TZ: "${CLUSTER_TIMEZONE}"
             resources:
               requests:
                 cpu: 50m

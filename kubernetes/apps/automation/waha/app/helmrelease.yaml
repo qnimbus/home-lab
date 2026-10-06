@@ -27,7 +27,6 @@ spec:
               repository: docker.io/devlikeapro/waha
               tag: gows-2026.9.2@sha256:1ae3c6a994ee97e5039bf41103193d7bf9175f1a31db73ba89bdeed6277901bc
             env:
-              TZ: "${CLUSTER_TIMEZONE}"
               WAHA_API_KEY:
                 valueFrom:
                   secretKeyRef:
