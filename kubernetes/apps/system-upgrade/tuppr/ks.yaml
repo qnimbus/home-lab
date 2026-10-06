@@ -6,9 +6,6 @@ metadata:
   name: &app tuppr
 spec:
   targetNamespace: system-upgrade
-  dependsOn:
-    - name: kube-prometheus-stack
-      namespace: observability
   prune: true
   interval: 1h
   path: ./kubernetes/apps/system-upgrade/tuppr/app
