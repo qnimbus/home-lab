@@ -15,9 +15,8 @@ commands like `ceph status`) and `curl` against a port-forward. Never `apply`, `
 (see `README.md`); fixes go through Git, not kubectl. If a real problem is found, report it and
 propose the Git-based fix; only take a live corrective action if the user explicitly asks for one.
 
-There is no `flux` CLI in this repo's toolchain (`.mise/config.toml` only has `kubectl`/`kustomize`/
-`helm`) — use `kubectl get kustomizations`/`helmreleases` directly, not `flux get`. `KUBECONFIG` is
-set automatically by mise (`.mise/config.toml` → `[env]`); no manual export needed.
+`KUBECONFIG` is set automatically by mise (`.mise/config.toml` → `[env]`); no manual export
+needed.
 
 ## Step 1: Fast sweep
 
@@ -209,7 +208,6 @@ If nothing is wrong, say so plainly — don't manufacture findings to justify th
   within its deadline or has already `Succeeded`, or `VolumeFailedDelete` for a PV that is already
   gone. Both fire on every backup run. Likewise a PushSecret's 1Password `status 400` event when
   the PushSecret is `Ready` again.
-- **Trying `flux get ...`** — not installed; this repo's toolchain is `kubectl`-only for Flux CRs.
 - **Skipping the Silence check** — an alert matching an active `Silence` CR is already known and
   accepted; re-diagnosing it from scratch wastes time and risks a wrong root cause.
 - **Treating Ceph `HEALTH_WARN` as an incident during an in-flight Rook upgrade**, or treating

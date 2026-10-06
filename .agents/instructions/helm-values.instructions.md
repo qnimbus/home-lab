@@ -16,20 +16,9 @@ The same goes for the other layers a manifest inherits from:
 
 The chart's `values.yaml` is not enough: library charts such as app-template
 set defaults in their templates. Render the release with and without the
-value and compare:
-
-```bash
-yq '.spec.values' <app>/app/helmrelease.yaml > "$TMP/with.yaml"
-yq 'del(.<path.to.value>)' "$TMP/with.yaml" > "$TMP/without.yaml"
-for v in with without; do
-  helm template <release> oci://<chart-url> --version <tag> -n <namespace> \
-    -f "$TMP/$v.yaml" > "$TMP/out-$v.yaml"
-done
-diff "$TMP/out-with.yaml" "$TMP/out-without.yaml"
-```
-
-No diff means the value is a default: remove it. Nothing rendered changes,
-so the workload doesn't restart. Two examples on app-template:
+value and compare; the `helm-values` skill has the commands. No diff means
+the value is a default: remove it. Nothing rendered changes, so the workload
+doesn't restart. Two examples on app-template:
 
 - `strategy: Recreate` on a controller.
 - `service.<name>.controller` in a release with one controller. With a

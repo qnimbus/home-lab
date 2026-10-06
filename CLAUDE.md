@@ -21,10 +21,13 @@ mise pins the tools (`.mise/config.toml`) and sets `KUBECONFIG`, `TALOSCONFIG` a
 | `just docker`       | `docker/mod.just`                   | NAS doco-cd operations                                                  |
 | `just github`       | `.github/mod.just`                  | the `RUNNER` repo variable: `runner`, `runner-cluster`, `runner-hosted` |
 
-Often used:
+Recipes whose name doesn't say it all:
 
-- `just k8s`: `sync hr|ks|gitrepo|ocirepo|es` (force Flux/ExternalSecrets reconciliation), `sync-hr`/`sync-ks`/`sync-es <ns> <name>` (one resource), `apply-ks`/`delete-ks <ns> <ks>` (render and apply/delete a Flux Kustomization locally via `flate`), `toolbox` (shell into rook-ceph-tools), `view-secret <ns> [secret]`, `browse-pvc <ns> <claim>`, `debug-node <node>`, `db-backup <ns> <app>` (manual CNPG backup of an `<app>-postgres` cluster), `prune-pods`, `cron-minute <name>` (stable pseudo-random cron minute).
-- `just talos`: `apply-node`, `render-config`, `upgrade-node`, `upgrade-k8s`, `reboot-node`, `health`, `nodes`, `disks`, `gen-talosconfig` (disaster recovery from 1Password).
+- `just k8s sync hr|ks|gitrepo|ocirepo|es` forces Flux/ExternalSecrets reconciliation; `sync-hr`/`sync-ks`/`sync-es <ns> <name>` does one resource.
+- `just k8s apply-ks`/`delete-ks <ns> <ks>` renders a Flux Kustomization locally via `flate` and applies/deletes it.
+- `just k8s db-backup <ns> <app>` takes a manual CNPG backup of an `<app>-postgres` cluster.
+- `just k8s cron-minute <name>` gives a stable pseudo-random cron minute.
+- `just talos gen-talosconfig` recovers the talosconfig from 1Password.
 - `just bootstrap cluster` brings the cluster up end to end. `just bootstrap nas` runs the Ansible playbook that (re)deploys doco-cd on TrueNAS; `just docker reconcile-nas` restarts it.
 
 Validating one app or stack:
@@ -66,7 +69,7 @@ Each app lives at `kubernetes/apps/<namespace>/<app>/`. Scaffold a new one with 
     └── resources/             # optional — files wired in via configMapGenerator
 ```
 
-`kubernetes/components/` holds reusable kustomize components (`alerts`, `postgres` and `kopiur` have a README):
+`kubernetes/components/` holds reusable kustomize components (`alerts`, `dragonfly`, `postgres`, `kopiur` and `nfs-config` have a README):
 
 - `cluster-settings`: the per-namespace wiring above; it also pulls in `alerts`.
 - `alerts`: a Flux `Provider` + `Alert` per namespace that sends Flux errors to Alertmanager. An `Alert` only sees its own namespace.
@@ -110,7 +113,6 @@ Runtime secrets are never committed in plaintext.
 
 The cluster runs **without NetworkPolicies**. The CNI is Cilium, but nothing sets a default-deny, and apps don't ship their own policies. Don't add one to a new app unless the user asks.
 
-- **Flux:** flux-operator's built-in policies are switched off (`instance.cluster.networkPolicy: false` in `flux-instance`, `web.networkPolicy.create: false` in `flux-operator`). They allowed cross-namespace ingress only on port 8080, which silently blocked Prometheus from scraping konflate on 8081.
-- **Dragonfly:** operator v1.7.0 stopped generating a policy per instance, so `components/dragonfly` no longer ships the `-allow-metrics` rule that opened port 9999 through it. Alone, that rule made a new instance unreachable on 6379 and to the operator's own readiness check.
+Flux and Dragonfly follow the same rule: the policies their operators would create are switched off or gone. Don't re-enable them; `kubernetes/apps/flux-system/README.md` and `kubernetes/components/dragonfly/README.md` say what broke.
 
 Why: this is a single-user homelab running trusted workloads, so a compromised pod moving to other services is a small risk. The cost is real, though. Once any policy selects a pod, all other traffic to it in that direction is dropped. Traffic nobody anticipated then times out silently, and operator-generated policies don't appear in Git. Partial coverage gives the costs without the protection. If that trade-off changes, enforce it deliberately: a namespace-wide default-deny plus explicit allow rules for DNS, Prometheus, the gateway and the Kubernetes API, rather than one-off policies.

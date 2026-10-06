@@ -9,7 +9,7 @@
 @.agents/instructions/dns-naming.instructions.md
 @.agents/instructions/timezones.instructions.md
 
-Reusable task skills (add-app, add-docker-app, ...) live in `.agents/skills/`; Claude Code discovers them through the `.claude/skills` symlink.
+Reusable task skills (add-app, tidy-folder, ...) live in `.agents/skills/`; Claude Code discovers them through the `.claude/skills` symlink.
 
 When a recurring pattern, inconsistency, or divergence from a reference repo (e.g. bykaj/home-ops) comes up during work, flag it and propose whether it should be captured as a documented convention (or explicitly rejected) rather than left implicit.
 
