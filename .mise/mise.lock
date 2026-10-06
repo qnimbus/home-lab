@@ -1041,9 +1041,9 @@ backend = "npm:oxfmt"
 specifiers = ["0.72.0"]
 
 [[tools."pypi:ansible"]]
-version = "14.4.0"
+version = "14.5.0"
 backend = "pypi:ansible"
-specifiers = ["14.4.0"]
+specifiers = ["14.5.0"]
 
 [[tools."pypi:ansible-core"]]
 version = "2.21.5"
