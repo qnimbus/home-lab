@@ -30,6 +30,14 @@ sync-stacks:
 restart-doco-cd:
     ansible-playbook -i "{{ source_directory() }}/../ansible/inventory.yaml" "{{ source_directory() }}/.ansible/nas/restart-doco-cd.yaml"
 
-[doc('Stop the Doco-CD container on TrueNAS via Ansible')]
+[doc('Stop the Doco-CD stacks on TrueNAS, then the Doco-CD container')]
 stop-doco-cd:
+    key=$(op read 'op://homelab/doco-cd/API_SECRET')
+    projects=$(curl -fsS -m 30 "{{ doco_url }}/v1/api/projects" -H "x-api-key: $key" | jq -r '.content[].Name')
+    for dir in "{{ source_directory() }}"/nas/*/; do
+        stack=$(basename "$dir")
+        grep -qxF "$stack" <<< "$projects" || continue
+        just log info "Stopping stack" stack "$stack"
+        curl -fsS -m 60 -o /dev/null -X POST "{{ doco_url }}/v1/api/project/$stack/stop" -H "x-api-key: $key"
+    done
     ansible-playbook -i "{{ source_directory() }}/../ansible/inventory.yaml" "{{ source_directory() }}/.ansible/nas/stop-doco-cd.yaml"
