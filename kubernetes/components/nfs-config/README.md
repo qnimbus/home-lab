@@ -14,7 +14,7 @@ For data like this, Ceph's replication, snapshots and backups cost more than the
 
 This PVC holds only the app's own state. Large shared data, such as a media library or download staging area, belongs on a raw `type: nfs` mount in the HelmRelease.
 
-Any app whose `/config` fits this profile can use the component. The current consumers are the `downloads` apps `prowlarr`, `radarr`, `sabnzbd` and `sonarr`. Sabnzbd is a typical fit: a handful of settings, all rebuildable. The other three are not, and are here only until their storage is decided.
+Any app whose `/config` fits this profile can use the component. The `downloads` apps were its first consumers and moved to `components/kopiur/backup` in 2026-10 after the freezes described below. Find what uses it now with `grep -rl components/nfs-config kubernetes/apps --include=ks.yaml`.
 
 ### Not a good fit
 
