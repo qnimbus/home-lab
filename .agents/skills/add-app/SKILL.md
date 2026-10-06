@@ -211,8 +211,7 @@ spec:
               allowPrivilegeEscalation: false
               readOnlyRootFilesystem: true
               capabilities:
-                drop:
-                  - ALL
+                drop: ["ALL"]
     service:
       app:
         ports:
