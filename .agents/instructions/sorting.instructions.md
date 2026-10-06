@@ -48,7 +48,7 @@ HelmReleases follow the rules above.
 - `spec`: `interval`, `chartRef`, `dependsOn`, any other key alphabetically
   (`driftDetection`, `install`, `postRenderers`, `upgrade`), `values` last.
 - `spec.values`: `defaultPodOptions` first, then alphabetical
-  (`controllers`, `persistence`, `route`, `service`).
+  (`controllers`, `persistence`, `service`).
 - Within every section under `spec.values`: `enabled` first, then the
   section's "First" keys from the table (`annotations`, `labels` when the
   section has no row), then the remaining keys alphabetically, then its
@@ -61,6 +61,6 @@ HelmReleases follow the rules above.
 | `service.*`                                      | `type`, `annotations`, `labels`                                                        |                                  |
 | `persistence.*`                                  | `type`, `annotations`, `labels`                                                        | `globalMounts`, `advancedMounts` |
 
-The named items under `persistence`, `service`, `route`, `configMaps` and
+The named items under `persistence`, `service`, `configMaps` and
 the like (`persistence.config`, `persistence.data`) may be in any order.
 Only the keys within each item are sorted.

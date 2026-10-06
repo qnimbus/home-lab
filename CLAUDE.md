@@ -70,8 +70,8 @@ Each app lives at `kubernetes/apps/<namespace>/<app>/`:
 └── app/
     ├── kustomization.yaml
     ├── ocirepository.yaml     # pins the chart version (app-template: oci://ghcr.io/bjw-s-labs/helm/app-template)
-    ├── helmrelease.yaml       # values: controllers/service/route/persistence, built on bjw-s-labs/app-template
-    ├── httproute.yaml         # optional — Gateway API route
+    ├── helmrelease.yaml       # values: controllers/service/persistence, built on bjw-s-labs/app-template
+    ├── httproute.yaml         # optional — Gateway API route; always this file, never app-template's `route:` value
     ├── externalsecret.yaml    # optional — pulls 1Password fields via the `onepassword` ClusterSecretStore
     └── resources/             # optional — files wired in via configMapGenerator
 ```

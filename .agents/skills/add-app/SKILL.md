@@ -7,11 +7,11 @@ description: Use when deploying a new application to the cluster — scaffolding
 
 Scaffolds `kubernetes/apps/<namespace>/<app>/` with a Flux Kustomization (`ks.yaml`) and an app-template HelmRelease. Every value below comes from current repo conventions — when in doubt, mirror a recent real app instead of inventing structure:
 
-| Reference app                         | Shows                                                          |
-| ------------------------------------- | -------------------------------------------------------------- |
-| `kubernetes/apps/network/echo-server` | Minimal stateless app + route                                  |
-| `kubernetes/apps/security/authentik`  | Secrets, config file via configMapGenerator                    |
-| `kubernetes/apps/default/paperless`   | Custom probes, dragonfly dependency, kopiur-backed persistence |
+| Reference app                       | Shows                                                                 |
+| ----------------------------------- | --------------------------------------------------------------------- |
+| `kubernetes/apps/default/whoami`    | Minimal stateless app + route                                         |
+| `kubernetes/apps/default/homepage`  | Secrets from two 1Password items, config files via configMapGenerator |
+| `kubernetes/apps/default/paperless` | Custom probes, dragonfly dependency, kopiur-backed persistence        |
 
 **The templates below are leading, key order included.** Where a template orders keys differently from the alphabetical default in `.agents/instructions/sorting.instructions.md`, follow the template. Keep its order when writing new files, and don't "sort" existing files away from it. The template-specific orders are:
 
@@ -50,6 +50,7 @@ kubernetes/apps/<namespace>/<app>/
     ├── kustomization.yaml
     ├── ocirepository.yaml
     ├── helmrelease.yaml
+    ├── httproute.yaml           # only if routed
     ├── externalsecret.yaml      # only if secrets
     └── resources/               # only if config files
 ```
@@ -112,6 +113,7 @@ resources:
   - ./externalsecret.yaml # only if secrets
   - ./ocirepository.yaml
   - ./helmrelease.yaml
+  - ./httproute.yaml # only if routed
 ```
 
 **If the app mounts config files**, put them in `resources/` and append:
@@ -214,19 +216,7 @@ spec:
 docker buildx imagetools inspect <image-repo>:<image-tag> --format '{{.Manifest.Digest}}'
 ```
 
-**Optional value blocks** (top-level under `values`, after `defaultPodOptions`, alphabetical: `controllers`, `persistence`, `route`, `service`):
-
-Route (web UI/API):
-
-```yaml
-route:
-  app:
-    hostnames:
-      - "<app>.${DOMAIN_CLUSTER}"
-    parentRefs:
-      - name: envoy-internal # envoy-external for public apps
-        namespace: network
-```
+**Optional value blocks** (top-level under `values`, after `defaultPodOptions`, alphabetical: `controllers`, `persistence`, `service`):
 
 Persistence (pairs with the kopiur block in ks.yaml; also add `fsGroup: 1000` + `fsGroupChangePolicy: OnRootMismatch` to `defaultPodOptions.securityContext`):
 
@@ -263,6 +253,30 @@ envFrom:
       name: <app>-secret
 ```
 
+### app/httproute.yaml (only if routed)
+
+```yaml
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/gateway.networking.k8s.io/httproute_v1.json
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: <app>
+spec:
+  hostnames:
+    - "<app>.${DOMAIN_CLUSTER}"
+  parentRefs:
+    - name: envoy-internal
+      namespace: network
+      sectionName: https
+  rules:
+    - backendRefs:
+        - name: <app>
+          port: <port>
+```
+
+A route is always its own `httproute.yaml`, never app-template's `route:` value. For a public app use `envoy-external` and `${DOMAIN_APP}` (`.agents/instructions/dns-naming.instructions.md`). `backendRefs` names the Service, which app-template calls `<app>` when the release has one.
+
 ### app/externalsecret.yaml (only if secrets)
 
 ```yaml
@@ -291,7 +305,7 @@ spec:
             target: "<APP>_$1"
 ```
 
-Convention: `metadata.name` is `<app>`, the generated Secret is `<app>-secret`, and `dataFrom.extract` + `rewrite` prefixes 1Password fields with the app's name in capitals (`<APP>` is `PLEX` for plex) for use in `template.data` (see wotcher for a multi-item example). The `.<APP>_<field>` references must use the item's real field names (from Step 1) — a wrong field name renders an empty value with no error. If the field names weren't provided and you can't ask, insert `<FIXME: 1password field name>` placeholders and call them out.
+Convention: `metadata.name` is `<app>`, the generated Secret is `<app>-secret`, and `dataFrom.extract` + `rewrite` prefixes 1Password fields with the app's name in capitals (`<APP>` is `PLEX` for plex) for use in `template.data` (see homepage for a multi-item example). The `.<APP>_<field>` references must use the item's real field names (from Step 1) — a wrong field name renders an empty value with no error. If the field names weren't provided and you can't ask, insert `<FIXME: 1password field name>` placeholders and call them out.
 
 ## Step 3: Register in the namespace kustomization
 
@@ -317,6 +331,7 @@ Show the user the created files and get confirmation before committing. Commit s
 - **Skipping the sorting conventions** — key order follows the templates above first, then `.agents/instructions/sorting.instructions.md` for anything they don't cover.
 - **Alphabetizing what the templates order differently** — e.g. moving `capabilities` before `readOnlyRootFilesystem`, or `dataFrom` to the top of an ExternalSecret. The template order is the convention, not a mistake to fix.
 - **Restating a chart default** — e.g. `strategy: Recreate` on an app-template controller. Leave it out unless something depends on it, and then say so in the namespace README (`.agents/instructions/helm-values.instructions.md`).
+- **Using app-template's `route:` value** — a route is a separate `app/httproute.yaml`, listed in `app/kustomization.yaml`.
 - **Putting the pod `securityContext` under `controllers.<app>.pod`** — it goes under `defaultPodOptions`, at the top of `values`.
 - **Adding a NetworkPolicy/CiliumNetworkPolicy by default** — the cluster runs without them (see CLAUDE.md's "Network policies"); only add one if the user asks.
 - **Adding `wait`, `commonMetadata`, or `timeout` to `ks.yaml`** — all three are boilerplate now. Leave `wait` unset unless another Kustomization depends on this one and it has no `healthChecks` (then, and only then, `wait: true`).
