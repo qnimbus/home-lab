@@ -3,11 +3,11 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: "${APP}-nfs-config"
+  name: "${APP}-nfs"
 spec:
   accessModes:
     - ReadWriteOnce
   storageClassName: nfs
   resources:
     requests:
-      storage: "${NFS_CONFIG_CAPACITY:=5Gi}"
+      storage: "${NFS_VOLUME_CAPACITY:=5Gi}"

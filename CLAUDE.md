@@ -69,7 +69,7 @@ Each app lives at `kubernetes/apps/<namespace>/<app>/`. Scaffold a new one with 
     └── resources/             # optional — files wired in via configMapGenerator
 ```
 
-`kubernetes/components/` holds reusable kustomize components (`alerts`, `dragonfly`, `postgres`, `kopiur` and `nfs-config` have a README):
+`kubernetes/components/` holds reusable kustomize components (`alerts`, `dragonfly`, `postgres`, `kopiur` and `nfs-volume` have a README):
 
 - `cluster-settings`: the per-namespace wiring above; it also pulls in `alerts`.
 - `alerts`: a Flux `Provider` + `Alert` per namespace that sends Flux errors to Alertmanager. An `Alert` only sees its own namespace.
@@ -77,7 +77,7 @@ Each app lives at `kubernetes/apps/<namespace>/<app>/`. Scaffold a new one with 
 - `dragonfly`: a dedicated Dragonfly per app (`${APP}-dragonfly`), plus an optional `authentication` sub-component. The operator lives in `apps/database/dragonfly`.
 - `kopiur/backup`: a PVC per app that is backed up to the NAS and refilled from the latest backup when created.
 - `gpu`: a `ResourceClaimTemplate` (`${APP}-gpu`) for the Intel GPU.
-- `keda/http-scaler`, `keda/smb-scaler`, `nfs-config`.
+- `keda/http-scaler`, `keda/smb-scaler`, `nfs-volume`.
 
 `kubernetes/talos/` holds the Talos machine-config Jinja templates (rendered with `minijinja-cli` + 1Password `op inject`, see `.justfile`'s `template` recipe) and `version.yaml`, the pinned Talos/Kubernetes versions `kubernetes/talos/mod.just` uses.
 

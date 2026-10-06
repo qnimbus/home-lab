@@ -80,7 +80,7 @@ REGISTRY: list[SurfaceDef] = [
     app("component:postgres", ["kubernetes/components/postgres/**"], "shared", ("data", "availability", "credentials")),
     app("component:dragonfly", ["kubernetes/components/dragonfly/**"], "shared", ("availability", "credentials")),
     app("component:kopiur", ["kubernetes/components/kopiur/**"], "shared", ("data",)),
-    app("component:nfs-config", ["kubernetes/components/nfs-config/**"], "shared", ("data",)),
+    app("component:nfs-volume", ["kubernetes/components/nfs-volume/**"], "shared", ("data",)),
     app("component:{component}", ["kubernetes/components/{component}/**"], "shared"),
     app("apps", ["kubernetes/apps/kustomization.yaml"], "cluster", ("control_plane",)),
     app("namespace:{ns}", ["kubernetes/apps/{ns}/kustomization.yaml", "kubernetes/apps/{ns}/namespace.yaml"], "shared", ("trust_boundary",)),
