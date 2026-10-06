@@ -28,6 +28,7 @@ spec:
               tag: 6.4.4.10685@sha256:be53998a2d39cfa3c3315b70c7509a6a1f2a10c3aee9337653efc9f4c970430e
             env:
               RADARR__LOG__ANALYTICSENABLED: "false"
+              RADARR__LOG__DBENABLED: "False"
               RADARR__LOG__LEVEL: info
             envFrom:
               - secretRef:
@@ -71,6 +72,7 @@ spec:
                 memory: 1Gi
             securityContext:
               allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
               capabilities:
                 drop: ["ALL"]
     persistence:
@@ -88,6 +90,10 @@ spec:
         server: "${NAS_HOST}"
         globalMounts:
           - path: /mnt/media
+      tmpfs:
+        type: emptyDir
+        globalMounts:
+          - path: /tmp
     service:
       app:
         ports:

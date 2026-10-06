@@ -28,6 +28,7 @@ spec:
               tag: 2.6.5.5623@sha256:6152751c3ea2e7751564f5952173d5e83eed0e09f3fabd2cb6bdb58690c39e2f
             env:
               PROWLARR__LOG__ANALYTICSENABLED: "false"
+              PROWLARR__LOG__DBENABLED: "False"
               PROWLARR__LOG__LEVEL: info
             envFrom:
               - secretRef:
@@ -71,6 +72,7 @@ spec:
                 memory: 512Mi
             securityContext:
               allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
               capabilities:
                 drop: ["ALL"]
     persistence:
@@ -82,6 +84,10 @@ spec:
         type: emptyDir
         globalMounts:
           - path: /config/logs
+      tmpfs:
+        type: emptyDir
+        globalMounts:
+          - path: /tmp
     service:
       app:
         ports:
