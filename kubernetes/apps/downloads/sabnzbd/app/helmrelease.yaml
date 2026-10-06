@@ -42,17 +42,7 @@ spec:
                     port: &port 8080
                   periodSeconds: 10
                   timeoutSeconds: 5
-              liveness:
-                enabled: true
-                custom: true
-                spec:
-                  failureThreshold: 6
-                  httpGet:
-                    path: *path
-                    port: *port
-                  periodSeconds: 10
-                  timeoutSeconds: 5
-              readiness:
+              liveness: &probes
                 enabled: true
                 custom: true
                 spec:
@@ -61,7 +51,8 @@ spec:
                     path: *path
                     port: *port
                   periodSeconds: 10
-                  timeoutSeconds: 5
+                  timeoutSeconds: 1
+              readiness: *probes
             resources:
               requests:
                 cpu: 20m
