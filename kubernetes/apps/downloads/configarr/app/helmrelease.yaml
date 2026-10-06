@@ -10,14 +10,21 @@ spec:
     kind: OCIRepository
     name: configarr
   values:
+    defaultPodOptions:
+      securityContext:
+        fsGroup: 4000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 4000
+        runAsNonRoot: true
+        runAsUser: 4000
     controllers:
       configarr:
         type: cronjob
         cronjob:
-          schedule: "0 0/12 * * *" # every 12 hours
           concurrencyPolicy: Forbid
-          successfulJobsHistory: 1
           failedJobsHistory: 1
+          schedule: "0 0/12 * * *"
+          successfulJobsHistory: 1
         containers:
           app:
             image:
@@ -34,18 +41,9 @@ spec:
                 memory: 128Mi
             securityContext:
               allowPrivilegeEscalation: false
-              # Safe: the TRaSH-guides repo clone and any scratch state land on the
-              # /app/repos tmpfs mount below, not the container filesystem.
               readOnlyRootFilesystem: true
               capabilities:
                 drop: ["ALL"]
-    defaultPodOptions:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 4000
-        runAsGroup: 4000
-        fsGroup: 4000
-        fsGroupChangePolicy: OnRootMismatch
     persistence:
       config:
         type: configMap

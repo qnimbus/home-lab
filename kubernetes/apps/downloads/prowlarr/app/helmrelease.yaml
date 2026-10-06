@@ -10,11 +10,17 @@ spec:
     kind: OCIRepository
     name: prowlarr
   values:
+    defaultPodOptions:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
     controllers:
       prowlarr:
         annotations:
           reloader.stakater.com/auto: "true"
-        strategy: Recreate
         containers:
           app:
             image:
@@ -24,47 +30,36 @@ spec:
               - secretRef:
                   name: prowlarr-secret
             probes:
-              # Confirmed live: this image listens on Prowlarr's traditional default port
-              # (9696), not 80 — an earlier assumption that home-operations images normalize
-              # to 80 was wrong and caused a probe-port mismatch / CrashLoopBackOff. Exposes
-              # an unauthenticated /ping health endpoint.
-              # Probes are split (they used to share one timeoutSeconds: 1 probe): kubelet was
-              # restarting this pod after /ping timeouts (16 restarts in 8d as of 2026-09-20,
-              # all clean exits). The stall itself is not root-caused — sabnzbd has the same
-              # node, NFS backing and 1s probe and restarted once — so this widens tolerance
-              # rather than fixing it. startup gates the other two (5m budget), liveness needs
-              # 6 consecutive 5s timeouts (~1m) before killing, readiness drops the pod from
-              # the Service after 3 without restarting it.
               startup:
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 30
                   httpGet:
                     path: /ping
                     port: &port 9696
                   periodSeconds: 10
                   timeoutSeconds: 5
-                  failureThreshold: 30
               liveness:
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 6
                   httpGet:
                     path: /ping
                     port: *port
                   periodSeconds: 10
                   timeoutSeconds: 5
-                  failureThreshold: 6
               readiness:
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 3
                   httpGet:
                     path: /ping
                     port: *port
                   periodSeconds: 10
                   timeoutSeconds: 5
-                  failureThreshold: 3
             resources:
               requests:
                 cpu: 10m
@@ -75,32 +70,17 @@ spec:
               allowPrivilegeEscalation: false
               capabilities:
                 drop: ["ALL"]
-    defaultPodOptions:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
-        fsGroupChangePolicy: "OnRootMismatch"
-    service:
-      app:
-        controller: prowlarr
-        ports:
-          http:
-            port: 9696
     persistence:
-      # No media/downloads mount — Prowlarr only proxies indexer queries and talks to
-      # Sonarr/Radarr over their APIs, it never touches the filesystem.
       config:
         existingClaim: "${APP}-nfs-config"
         globalMounts:
           - path: /config
-      # Text logs on node-local disk instead of the NFS config PVC, to take their constant
-      # small appends off the NFS mount — a trial for the /ping timeout restarts (see the
-      # probes comment), not a proven cause: logs.db and the main sqlite DB stay on NFS in
-      # /config. Survives container restarts but not pod recreation; console logs still
-      # reach kubectl logs.
       logs:
         type: emptyDir
         globalMounts:
           - path: /config/logs
+    service:
+      app:
+        ports:
+          http:
+            port: 9696

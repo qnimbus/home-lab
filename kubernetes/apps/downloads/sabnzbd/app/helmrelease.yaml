@@ -10,83 +10,63 @@ spec:
     kind: OCIRepository
     name: sabnzbd
   values:
+    defaultPodOptions:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
     controllers:
       sabnzbd:
         annotations:
           reloader.stakater.com/auto: "true"
-        strategy: Recreate
         containers:
           app:
             image:
               repository: ghcr.io/home-operations/sabnzbd
               tag: 5.1.3@sha256:b1795982db498ed5691a7b1231f0fac7eed2a1d53e9c81b8e834d02695e76104
             env:
-              # Sabnzbd rejects any request whose Host header isn't on this list (DNS-rebind
-              # protection) — without it, browsing to the HTTPRoute hostname fails with
-              # "Hostname verification failed". The entrypoint script (home-operations/
-              # containers) sed's this into sabnzbd.ini's host_whitelist on every start,
-              # prefixed with the pod's own hostname automatically. Both the external
-              # hostname (browser) and the in-cluster FQDN (Sonarr/Radarr/Prowlarr's
-              # download-client calls) need to be listed.
               SABNZBD__HOST_WHITELIST_ENTRIES: "sabnzbd.${DOMAIN_CLUSTER},sabnzbd.downloads.svc.cluster.local"
             envFrom:
               - secretRef:
                   name: sabnzbd-secret
             probes:
-              # Confirmed live: this image listens on Sabnzbd's traditional default port
-              # (8080), not 80 — an earlier assumption that home-operations images normalize
-              # to 80 was wrong and caused a probe-port mismatch / CrashLoopBackOff.
               liveness: &probes
                 enabled: true
                 custom: true
                 spec:
+                  failureThreshold: 3
                   httpGet:
                     path: "/api?mode=version"
                     port: 8080
                   initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 1
-                  failureThreshold: 3
               readiness: *probes
             resources:
               requests:
                 cpu: 20m
                 memory: 256Mi
               limits:
-                # par2 repair/unpack is memory-hungry — higher ceiling than the other three.
-                # 2Gi was OOMKilled by a single large UHD REMUX unrar extraction even with
-                # DirectUnpack disabled (2026-08-24) — raised to give headroom for the biggest
-                # multi-track TrueHD/Atmos/DV HEVC REMUX releases.
                 memory: 6Gi
             securityContext:
               allowPrivilegeEscalation: false
               capabilities:
                 drop: ["ALL"]
-    defaultPodOptions:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
-        fsGroupChangePolicy: "OnRootMismatch"
-    service:
-      app:
-        controller: sabnzbd
-        ports:
-          http:
-            port: 8080
     persistence:
       config:
         existingClaim: "${APP}-nfs-config"
         globalMounts:
           - path: /config
-      # Same raw NFS export media/plex, downloads/sonarr and downloads/radarr already mount.
-      # Sabnzbd downloads into the incomplete/complete subpaths here (configured post-deploy
-      # in its UI); Sonarr/Radarr then hardlink from the complete subpath into the library on
-      # this same filesystem — see sonarr's helmrelease.yaml comment.
       media:
         type: nfs
-        server: "${NAS_HOST}"
         path: /mnt/tank/Media
+        server: "${NAS_HOST}"
         globalMounts:
           - path: /mnt/media
+    service:
+      app:
+        ports:
+          http:
+            port: 8080

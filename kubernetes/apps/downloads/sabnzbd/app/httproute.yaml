@@ -5,18 +5,18 @@ kind: HTTPRoute
 metadata:
   name: sabnzbd
   annotations:
-    gethomepage.dev/enabled: "true"
-    gethomepage.dev/name: "Sabnzbd"
     gethomepage.dev/description: "Usenet downloader"
+    gethomepage.dev/enabled: "true"
     gethomepage.dev/group: "Downloads"
     gethomepage.dev/icon: "sabnzbd"
+    gethomepage.dev/name: "Sabnzbd"
 spec:
+  hostnames:
+    - "sabnzbd.${DOMAIN_CLUSTER}"
   parentRefs:
     - name: envoy-internal
       namespace: network
       sectionName: https
-  hostnames:
-    - "sabnzbd.${DOMAIN_CLUSTER}"
   rules:
     - backendRefs:
         - name: sabnzbd

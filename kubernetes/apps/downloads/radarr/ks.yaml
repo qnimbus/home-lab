@@ -8,24 +8,19 @@ spec:
   targetNamespace: downloads
   components:
     - ../../../../components/nfs-config
+  dependsOn:
+    - name: csi-driver-nfs
+      namespace: system
   interval: 1h
   path: ./kubernetes/apps/downloads/radarr/app
   postBuild:
     substitute:
       APP: *app
-      # 1000:1000 matches media/plex and n8n's precedent — see that ks.yaml's comment. Also
-      # the UID/GID the /mnt/media NFS mount is expected to be writable by.
-      APP_UID: "1000"
-      APP_GID: "1000"
-      NFS_CONFIG_CAPACITY: 5Gi
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    - name: csi-driver-nfs
-      namespace: system
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease

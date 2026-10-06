@@ -8,22 +8,20 @@ spec:
   targetNamespace: downloads
   components:
     - ../../../../components/nfs-config
+  dependsOn:
+    - name: csi-driver-nfs
+      namespace: system
   interval: 1h
   path: ./kubernetes/apps/downloads/prowlarr/app
   postBuild:
     substitute:
       APP: *app
-      APP_UID: "1000"
-      APP_GID: "1000"
       NFS_CONFIG_CAPACITY: 2Gi
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    - name: csi-driver-nfs
-      namespace: system
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease

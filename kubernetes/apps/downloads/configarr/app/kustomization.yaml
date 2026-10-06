@@ -10,5 +10,5 @@ configMapGenerator:
   - name: configarr-config
     files:
       - ./resources/config.yml
-    options:
-      disableNameSuffixHash: true
+generatorOptions:
+  disableNameSuffixHash: true
