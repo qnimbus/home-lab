@@ -14,7 +14,7 @@ ready at runtime.
 
 - **Operator → CRD consumer**: a Kustomization defining a CR
   (`ClusterIssuer`, `ScaledObject`, `Grafana`, a `postgresql.cnpg.io/v1
-Cluster`, etc.) whose CRD is installed by another app's Helm chart, when
+  Cluster`, etc.) whose CRD is installed by another app's Helm chart, when
   that CRD isn't already installed by the bootstrap pipeline's CRD-only
   pre-install phase (`bootstrap/kubernetes/helmfile/crds.yaml`, applied
   before Flux ever reconciles). Check its chart list first — if the CRD is
@@ -65,7 +65,7 @@ Cluster`, etc.) whose CRD is installed by another app's Helm chart, when
   Kustomization's `healthChecks` as `grafana-operator` does for `grafana`), rather than adding a new
   dependency purely for secret timing. Example: `rook-ceph-dashboard-password`'s
   `ExternalSecret` lives in the Rook operator's Kustomization (`wait:
-true`), not the CephCluster one that actually reads it. Only fall back to
+  true`), not the CephCluster one that actually reads it. Only fall back to
   skipping the dependency entirely when no suitable earlier Kustomization
   exists to relocate into.
 

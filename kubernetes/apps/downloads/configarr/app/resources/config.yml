@@ -26,10 +26,10 @@ sonarr:
     quality_definition:
       type: series
     include:
-      - # Remux + WEB 1080p — TRaSH doesn't publish a separate Bluray-only tier for TV the
-        # way it does for Radarr; Remux is the closest TV equivalent (bundles Bluray/Remux
-        # sources with WEB into one profile), kept for parity with Radarr's Bluray+WEB tier.
-        template: fe9470e577c300a5ad9a3274f6d1cdf2
+      # Remux + WEB 1080p — TRaSH doesn't publish a separate Bluray-only tier for TV the
+      # way it does for Radarr; Remux is the closest TV equivalent (bundles Bluray/Remux
+      # sources with WEB into one profile), kept for parity with Radarr's Bluray+WEB tier.
+      - template: fe9470e577c300a5ad9a3274f6d1cdf2
         source: TRASH
       - # Remux 2160p (Combined)
         template: 911df0e05a395c19d8b3efc76a7467c1

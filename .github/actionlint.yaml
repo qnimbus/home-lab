@@ -2,6 +2,8 @@ self-hosted-runner:
   # Labels of self-hosted runner in array of strings.
   labels:
     - home-lab
+    # GitHub-hosted, but unknown to actionlint 1.7.12: remove once a release knows it.
+    - ubuntu-26.04
 
 # Configuration variables in array of strings defined in your repository or
 # organization. `null` means disabling configuration variables check.
