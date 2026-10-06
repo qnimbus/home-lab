@@ -1,3 +1,4 @@
+---
 originRequest:
   matchSNItoHost: true
   # Origin cert is now verified: every ingress hostname below has a matching
