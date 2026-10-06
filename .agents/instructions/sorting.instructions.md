@@ -31,6 +31,11 @@ already there unless the user asks for the file to be sorted.
   CRD field such as kopiur's `moverDefaults`): `requests` before `limits`.
 - An ExternalSecret's `spec.data` entries: `secretKey` before `remoteRef`.
   A `PushSecret`'s `spec.data[].match` mirrors that order.
+- A `kustomization.yaml` (Kustomize, not Flux): `apiVersion`, `kind`,
+  `namespace`, `components`, `resources`, `configMapGenerator`,
+  `generatorOptions`, then the rest alphabetically.
+- A `PrometheusRule`'s rules follow the Prometheus docs: `alert` (or
+  `record`), `expr`, `for`, `keep_firing_for`, `labels`, `annotations`.
 - An `OCIRepository`'s `spec.ref`: `tag` before `digest`.
 - An `OCIRepository`'s `spec.verify`: `provider` before `matchOIDCIdentity`.
 - A `HelmRelease`'s `spec`: `interval` first, then `chartRef`, then the rest
@@ -58,6 +63,7 @@ HelmReleases follow the rules above.
 | ------------------------------------------------ | -------------------------------------------------------------------------------------- | -------------------------------- |
 | `controllers.*`                                  | `type`, `annotations`, `labels`, controller-specific (`cronjob`, `statefulset`), `pod` | `initContainers`, `containers`   |
 | `controllers.*.containers.*`, `initContainers.*` | `image`                                                                                |                                  |
+| `controllers.*.containers.*.probes.*`            | `custom`                                                                               | `spec`                           |
 | `service.*`                                      | `type`, `annotations`, `labels`                                                        |                                  |
 | `persistence.*`                                  | `type`, `annotations`, `labels`                                                        | `globalMounts`, `advancedMounts` |
 

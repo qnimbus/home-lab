@@ -22,6 +22,7 @@ Scaffolds `kubernetes/apps/<namespace>/<app>/` with a Flux Kustomization (`ks.ya
 | ExternalSecret `spec.target` | `name`, `creationPolicy` (only when not the default), `template`         |
 | HelmRelease `spec`           | `interval`, `chartRef`, then as in `sorting.instructions.md`             |
 | Flux Kustomization `spec`    | `targetNamespace`, alphabetical, then `healthChecks`, `healthCheckExprs` |
+| `app/kustomization.yaml`     | `resources`, `configMapGenerator`, `generatorOptions`, then alphabetical |
 
 Everything the templates don't cover follows `sorting.instructions.md`.
 
