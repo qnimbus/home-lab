@@ -23,7 +23,7 @@ spec:
         cronjob:
           concurrencyPolicy: Forbid
           failedJobsHistory: 1
-          schedule: "0 0/12 * * *"
+          schedule: "33 0/12 * * *"
           successfulJobsHistory: 1
         containers:
           app:
