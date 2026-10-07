@@ -41,6 +41,23 @@ projects:
             | @csv' \
         | gum table --print
 
+[doc('Show the containers of every Compose project on TrueNAS as a table')]
+containers:
+    key=$(op read 'op://homelab/doco-cd/API_SECRET')
+    projects=$(curl -fsS -m 30 "{{ doco_url }}/v1/api/projects?all=true" -H "x-api-key: $key" | jq -r '.content | sort_by(.Name)[].Name')
+    {
+        echo 'PROJECT,SERVICE,IMAGE,STATUS'
+        for project in $projects; do
+            curl -fsS -m 30 "{{ doco_url }}/v1/api/project/$project" -H "x-api-key: $key" \
+                | jq -r --arg project "$project" '
+                    .content
+                    | sort_by(.Service)
+                    | to_entries[]
+                    | [(if .key == 0 then $project else "" end), .value.Service, (.value.Image | sub("@sha256:.*"; "")), .value.Status]
+                    | @csv'
+        done
+    } | gum table --print
+
 [doc('Reconcile Doco-CD on TrueNAS: poll main now and redeploy changed stacks')]
 sync-stacks:
     key=$(op read 'op://homelab/doco-cd/API_SECRET')
