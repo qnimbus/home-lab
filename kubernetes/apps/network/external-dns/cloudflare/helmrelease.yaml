@@ -45,7 +45,7 @@ spec:
       limits:
         memory: 64Mi
     serviceMonitor:
-      enabled: false
+      enabled: true
     sources:
       - gateway-httproute
       - crd

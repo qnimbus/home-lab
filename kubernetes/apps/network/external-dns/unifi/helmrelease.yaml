@@ -62,7 +62,7 @@ spec:
       limits:
         memory: 90Mi
     serviceMonitor:
-      enabled: false
+      enabled: true
     sources:
       - gateway-httproute
       - service
