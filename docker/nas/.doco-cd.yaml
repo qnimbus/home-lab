@@ -16,6 +16,7 @@ webhook_filter: ^refs/heads/main$
 # `VAR: op://homelab/<item>/<field>` and consume it as ${VAR} in the compose file.
 external_secrets:
   CF_API_TOKEN: op://homelab/doco-cd/CF_API_TOKEN
+  UNIFI_API_KEY: op://homelab/unifi/API_KEY
 
 force_recreate: false
 

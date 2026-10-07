@@ -1,0 +1,14 @@
+---
+name: dexd
+services:
+  dexd:
+    container_name: dexd
+    environment:
+      DEFAULT_TARGET: docker.vwn.app
+      TXT_PREFIX: dkr.
+      UNIFI_API_KEY: ${UNIFI_API_KEY}
+      UNIFI_HOST: https://gateway.lan.home.vwn.io
+    image: ghcr.io/ishioni/dexd:0.4.4@sha256:a17e97fd6eb4761fb6ef29edf1f038d081c63cd94901a6b443683b796d361692
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
