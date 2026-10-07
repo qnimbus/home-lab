@@ -1,13 +1,6 @@
 ---
 config:
   modules:
-    http_2xx:
-      http:
-        follow_redirects: true
-        preferred_ip_protocol: "ip4"
-        valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
-      prober: http
-      timeout: 5s
     icmp:
       icmp:
         preferred_ip_protocol: "ip4"
@@ -26,10 +19,8 @@ config:
       prober: tcp
       tcp:
         preferred_ip_protocol: "ip4"
-
       timeout: 5s
 fullnameOverride: blackbox-exporter
-
 resources:
   requests:
     cpu: 10m
@@ -40,7 +31,6 @@ securityContext:
   capabilities:
     add: ["NET_RAW"]
 serviceMonitor:
-  enabled: false
   selfMonitor:
     enabled: true
     interval: 60s
