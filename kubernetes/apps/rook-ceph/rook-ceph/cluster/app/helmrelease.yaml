@@ -22,11 +22,7 @@ spec:
       createPrometheusRules: true
       prometheusRuleOverrides:
         CephNodeDiskspaceWarning:
-          for: 5m
-          expr: |
-            predict_linear(node_filesystem_free_bytes{device=~"/.*"}[2d], 3600 * 24 * 5)
-              * on(cluster, instance) group_left(nodename) node_uname_info < 0
-            and on(instance) (time() - node_boot_time_seconds > 1800)
+          disabled: true
         CephNodeNetworkPacketDrops:
           for: 1m
     toolbox:
