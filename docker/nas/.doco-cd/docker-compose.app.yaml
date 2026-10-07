@@ -36,11 +36,5 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - data:/data
-    healthcheck:
-      test: ["CMD", "/doco-cd", "healthcheck"]
-      interval: 30s
-      retries: 3
-      start_period: 15s
-      timeout: 5s
 volumes:
   data: {}
