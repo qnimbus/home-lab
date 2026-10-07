@@ -2,6 +2,11 @@
 # yaml-language-server: $schema=https://json.schemastore.org/kustomization
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+resources:
+  - ./ocirepository.yaml
+  - ./helmrelease.yaml
+  - ./probes.yaml
+  - ./prometheusrule.yaml
 configMapGenerator:
   - name: blackbox-exporter-values
     namespace: observability
@@ -12,8 +17,3 @@ generatorOptions:
     reconcile.fluxcd.io/watch: "Enabled"
 configurations:
   - ./helm/kustomizeconfig.yaml
-resources:
-  - ./ocirepository.yaml
-  - ./helmrelease.yaml
-  - ./probes.yaml
-  - ./prometheusrule.yaml

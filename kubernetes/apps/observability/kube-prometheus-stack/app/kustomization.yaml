@@ -2,6 +2,15 @@
 # yaml-language-server: $schema=https://json.schemastore.org/kustomization
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+resources:
+  - ./ocirepository.yaml
+  - ./helmrelease.yaml
+  - ./httproute.yaml
+  - ./externalsecret.yaml
+  - ./alertmanagerconfig.yaml
+  - ./grafanadashboard.yaml
+  - ./prometheusrules
+  - ./scrapeconfig-truenas.yaml
 configMapGenerator:
   - name: kube-prometheus-stack-values
     namespace: observability
@@ -19,12 +28,3 @@ generatorOptions:
     reconcile.fluxcd.io/watch: "Enabled"
 configurations:
   - ./helm/kustomizeconfig.yaml
-resources:
-  - ./ocirepository.yaml
-  - ./helmrelease.yaml
-  - ./httproute.yaml
-  - ./externalsecret.yaml
-  - ./alertmanagerconfig.yaml
-  - ./grafanadashboard.yaml
-  - ./prometheusrules
-  - ./scrapeconfig-truenas.yaml

@@ -9,22 +9,22 @@ spec:
     - name: zfs
       rules:
         - alert: ZfsPoolDegraded
-          annotations:
-            description: >-
-              ZFS pool {{ $labels.zpool }} on {{ $labels.instance }} is degraded. It still serves data, but with reduced redundancy: replace the failed disk.
-            summary: ZFS pool {{ $labels.zpool }} is degraded on {{ $labels.instance }}
           expr: |
             node_zfs_zpool_state{state="degraded"} > 0
           for: 5m
           labels:
             severity: warning
-        - alert: ZfsPoolUnavailable
           annotations:
             description: >-
-              ZFS pool {{ $labels.zpool }} on {{ $labels.instance }} is {{ $labels.state }} and no longer serves data.
-            summary: ZFS pool {{ $labels.zpool }} is {{ $labels.state }} on {{ $labels.instance }}
+              ZFS pool {{ $labels.zpool }} on {{ $labels.instance }} is degraded. It still serves data, but with reduced redundancy: replace the failed disk.
+            summary: ZFS pool {{ $labels.zpool }} is degraded on {{ $labels.instance }}
+        - alert: ZfsPoolUnavailable
           expr: |
             node_zfs_zpool_state{state!~"online|degraded"} > 0
           for: 1m
           labels:
             severity: critical
+          annotations:
+            description: >-
+              ZFS pool {{ $labels.zpool }} on {{ $labels.instance }} is {{ $labels.state }} and no longer serves data.
+            summary: ZFS pool {{ $labels.zpool }} is {{ $labels.state }} on {{ $labels.instance }}
