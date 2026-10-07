@@ -30,8 +30,9 @@ mod k8s "kubernetes"
 mod talos "kubernetes/talos"
 
 [private]
+[positional-arguments]
 log lvl msg *args:
-    gum log -t rfc3339 -s -l "{{ lvl }}" "{{ msg }}" {{ args }}
+    gum log -t rfc3339 -s -l "$1" "$2" "${@:3}"
 
 [private]
 template file *args:
