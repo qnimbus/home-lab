@@ -14,7 +14,9 @@ webhook_filter: ^refs/heads/main$
 
 # Compose-level secrets, once a stack needs one: add an `external_secrets:` map of
 # `VAR: op://homelab/<item>/<field>` and consume it as ${VAR} in the compose file.
-external_secrets: {}
+external_secrets:
+  CF_API_TOKEN: op://homelab/doco-cd/CF_API_TOKEN
+
 force_recreate: false
 
 # Set `enabled: true` to remove every stack below, with its images and volumes.
