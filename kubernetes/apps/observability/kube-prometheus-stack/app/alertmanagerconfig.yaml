@@ -19,12 +19,13 @@ spec:
     - name: "null"
     - name: pushover
       pushoverConfigs:
-        - message: |-
-            {{- if gt (len .Alerts) 5 }}
-            Showing 5 of {{ len .Alerts }} alerts in this group:
+        - html: true
+          message: |-
+            {{- if gt (len .Alerts) 3 }}
+            Showing 3 of {{ len .Alerts }} alerts in this group:
             {{- end }}
             {{- range $i, $alert := .Alerts }}
-              {{- if lt $i 5 }}
+              {{- if lt $i 3 }}
                 {{- if ne $alert.Annotations.description "" }}
             {{ $alert.Annotations.description }}
                 {{- else if ne $alert.Annotations.summary "" }}
@@ -33,6 +34,9 @@ spec:
             {{ $alert.Annotations.message }}
                 {{- else }}
             Alert description not available
+                {{- end }}
+                {{- if gt (len $alert.Labels.SortedPairs) 0 }}
+            <small>{{ range $alert.Labels.SortedPairs }}<b>{{ .Name }}:</b> {{ .Value }} {{ end }}</small>
                 {{- end }}
               {{- end }}
             {{- end }}
@@ -52,12 +56,13 @@ spec:
     - name: pushover-critical
       pushoverConfigs:
         - expire: 1h
+          html: true
           message: |-
-            {{- if gt (len .Alerts) 5 }}
-            Showing 5 of {{ len .Alerts }} alerts in this group:
+            {{- if gt (len .Alerts) 3 }}
+            Showing 3 of {{ len .Alerts }} alerts in this group:
             {{- end }}
             {{- range $i, $alert := .Alerts }}
-              {{- if lt $i 5 }}
+              {{- if lt $i 3 }}
                 {{- if ne $alert.Annotations.description "" }}
             {{ $alert.Annotations.description }}
                 {{- else if ne $alert.Annotations.summary "" }}
@@ -66,6 +71,9 @@ spec:
             {{ $alert.Annotations.message }}
                 {{- else }}
             Alert description not available
+                {{- end }}
+                {{- if gt (len $alert.Labels.SortedPairs) 0 }}
+            <small>{{ range $alert.Labels.SortedPairs }}<b>{{ .Name }}:</b> {{ .Value }} {{ end }}</small>
                 {{- end }}
               {{- end }}
             {{- end }}
@@ -85,20 +93,19 @@ spec:
             key: PUSHOVER_USER_KEY
             name: alertmanager-secret
   route:
-    groupBy: ["alertname", "namespace"]
-    groupInterval: 5m
-    groupWait: 30s
+    groupBy: ["alertname", "job"]
+    groupInterval: 10m
+    groupWait: 1m
     receiver: "null"
-    repeatInterval: 12h
+    repeatInterval: 24h
     routes:
       - matchers:
           - name: severity
             matchType: "="
             value: critical
         receiver: pushover-critical
-        repeatInterval: 1h
       - matchers:
           - name: severity
-            matchType: "=~"
-            value: "warning|error"
+            matchType: "!~"
+            value: "info|none"
         receiver: pushover
