@@ -7,6 +7,22 @@ set shell := ['bash', '-euo', 'pipefail', '-c']
 
 doco_url := 'http://nas.lan.home.vwn.io:8880'
 doco_repo := 'https://github.com/qnimbus/home-lab.git'
+nas_ssh := 'truenas_admin@nas.lan.home.vwn.io'
+
+[doc('List the Doco-CD stacks on TrueNAS, each with its latest log lines')]
+logs lines='20':
+    key=$(op read 'op://homelab/doco-cd/API_SECRET')
+    projects=$(curl -fsS -m 30 "{{ doco_url }}/v1/api/projects?all=true" -H "x-api-key: $key" | jq -r '.content[] | [.Name, .Status] | @tsv')
+    for dir in "{{ source_directory() }}"/nas/*/; do
+        stack=$(basename "$dir")
+        status=$(awk -F '\t' -v stack="$stack" '$1 == stack { print $2 }' <<< "$projects")
+        if [ -z "$status" ]; then
+            just log warn "Stack not deployed" stack "$stack"
+            continue
+        fi
+        just log info "Stack" stack "$stack" status "$status"
+        ssh -n "{{ nas_ssh }}" sudo docker compose -p "$stack" logs --tail "{{ lines }}" || just log error "Could not read logs" stack "$stack"
+    done
 
 [doc('Reconcile Doco-CD on TrueNAS: poll main now and redeploy changed stacks')]
 sync-stacks:
