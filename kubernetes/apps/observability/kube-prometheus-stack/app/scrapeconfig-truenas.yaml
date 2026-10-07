@@ -9,7 +9,7 @@ spec:
   staticConfigs:
     - labels:
         instance: truenas
-        job: truenas-node-exporter
+        job: node-exporter
       targets:
         - "${NAS_LAN_HOST}:9100"
 ---

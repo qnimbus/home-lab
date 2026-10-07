@@ -31,21 +31,35 @@ spec:
         - alert: NodeNvmeTemperatureWarning
           annotations:
             description: >-
-              NVMe composite temperature is {{ $value | printf "%.0f" }}°C on {{ $labels.instance }} (chip: {{ $labels.chip }}).
-            summary: High NVMe temperature on {{ $labels.instance }}
+              {{ $labels.model }} ({{ $labels.chip }}) on {{ $labels.nodename }} is at {{ $value | printf "%.0f" }}°C, within 2°C of the drive's own warning threshold.
+            summary: High NVMe temperature on {{ $labels.nodename }}
           expr: |
-            node_hwmon_temp_celsius{chip=~"nvme.*", sensor="temp1"} > 65
+            (
+              node_hwmon_temp_celsius{chip=~"nvme_.+", sensor="temp1"}
+              >= on (instance, chip, sensor)
+              (node_hwmon_temp_max_celsius{chip=~"nvme_.+", sensor="temp1"} - 2)
+            )
+            * on (instance, chip) group_left (model, serial)
+              label_replace(node_nvme_info, "chip", "nvme_$1", "device", "(.+)")
+            * on (instance) group_left (nodename) node_uname_info
           for: 5m
           labels:
             severity: warning
         - alert: NodeNvmeTemperatureCritical
           annotations:
             description: >-
-              NVMe composite temperature is {{ $value | printf "%.0f" }}°C on {{ $labels.instance }} (chip: {{ $labels.chip }}).
-            summary: Critical NVMe temperature on {{ $labels.instance }}
+              {{ $labels.model }} ({{ $labels.chip }}) on {{ $labels.nodename }} is at {{ $value | printf "%.0f" }}°C, at or above the drive's own warning threshold. The drive may throttle or refuse I/O.
+            summary: Critical NVMe temperature on {{ $labels.nodename }}
           expr: |
-            node_hwmon_temp_celsius{chip=~"nvme.*", sensor="temp1"} > 75
-          for: 2m
+            (
+              node_hwmon_temp_celsius{chip=~"nvme_.+", sensor="temp1"}
+              >= on (instance, chip, sensor)
+              node_hwmon_temp_max_celsius{chip=~"nvme_.+", sensor="temp1"}
+            )
+            * on (instance, chip) group_left (model, serial)
+              label_replace(node_nvme_info, "chip", "nvme_$1", "device", "(.+)")
+            * on (instance) group_left (nodename) node_uname_info
+          for: 1m
           labels:
             severity: critical
         - alert: NodeHwmonTextfileStale
