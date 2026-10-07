@@ -64,7 +64,7 @@ kubernetes/apps/<namespace>/<app>/
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: <app>
+  name: &app <app>
 spec:
   targetNamespace: <namespace>
   interval: 1h
@@ -74,7 +74,14 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: *app
+      namespace: <namespace>
 ```
+
+**`healthChecks`:** every Kustomization that holds a HelmRelease checks it, so the Kustomization is Ready only once the release is, and a failed release shows on both. Leave the block out when the Kustomization holds no HelmRelease, or when it uses `wait: true` instead (see below).
 
 **Namespace:** always set `spec.targetNamespace` explicitly, normally to the namespace directory the app lives in. Don't set `metadata.namespace`: the `namespace:` field in the namespace's `kustomization.yaml` stamps it, `flux-system` included.
 
