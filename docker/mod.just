@@ -24,30 +24,15 @@ logs lines='20':
         ssh -n "{{ nas_ssh }}" sudo docker compose -p "$stack" logs --tail "{{ lines }}" || just log error "Could not read logs" stack "$stack"
     done
 
-[doc('Show every Compose project on TrueNAS as a table, stopped ones included')]
-projects:
-    key=$(op read 'op://homelab/doco-cd/API_SECRET')
-    curl -fsS -m 30 "{{ doco_url }}/v1/api/projects?all=true" -H "x-api-key: $key" \
-        | jq -r --argjson cols "$(tput cols)" '
-            .content
-            | ([.[].Name | length] + [4] | max) as $name
-            | ([.[].Status | length] + [6] | max) as $status
-            | ([$cols - $name - $status - 10, 20] | max) as $width
-            | ["NAME", "STATUS", "CONFIG FILES"],
-              (sort_by(.Name)[]
-                | [.ConfigFiles | split(",")[] | scan(".{1,\($width)}")] as $lines
-                | range($lines | length) as $i
-                | if $i == 0 then [.Name, .Status, $lines[0]] else ["", "", $lines[$i]] end)
-            | @csv' \
-        | gum table --print
-
-[doc('Show the containers of every Compose project on TrueNAS as a table')]
+[doc('Show the containers of the Doco-CD stacks on TrueNAS as a table')]
 containers:
     key=$(op read 'op://homelab/doco-cd/API_SECRET')
-    projects=$(curl -fsS -m 30 "{{ doco_url }}/v1/api/projects?all=true" -H "x-api-key: $key" | jq -r '.content | sort_by(.Name)[].Name')
+    projects=$(curl -fsS -m 30 "{{ doco_url }}/v1/api/projects?all=true" -H "x-api-key: $key" | jq -r '.content[].Name')
     {
         echo 'PROJECT,SERVICE,IMAGE,STATUS'
-        for project in $projects; do
+        for dir in "{{ source_directory() }}"/nas/*/; do
+            project=$(basename "$dir")
+            grep -qxF "$project" <<< "$projects" || continue
             curl -fsS -m 30 "{{ doco_url }}/v1/api/project/$project" -H "x-api-key: $key" \
                 | jq -r --arg project "$project" '
                     .content
