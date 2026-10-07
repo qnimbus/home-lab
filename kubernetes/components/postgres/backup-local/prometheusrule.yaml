@@ -9,8 +9,6 @@ spec:
     - name: ${APP}-postgres-backup-local
       rules:
         - alert: PostgresDumpMissed
-          annotations:
-            summary: No successful pg_dump of ${APP} to the NAS in over 25 hours.
           expr: |
             time() - kube_cronjob_status_last_successful_time{cronjob="${APP}-postgres-backup-local"} > 90000
             or (
@@ -20,3 +18,5 @@ spec:
           for: 15m
           labels:
             severity: critical
+          annotations:
+            summary: No successful pg_dump of ${APP} to the NAS in over 25 hours.
