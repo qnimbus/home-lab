@@ -5,7 +5,6 @@ kind: GrafanaDashboard
 metadata:
   name: fluent-bit
 spec:
-  allowCrossNamespaceImport: true
   configMapRef:
     key: fluent-bit-fluent-bit.json
     name: fluent-bit-dashboard-fluent-bit
