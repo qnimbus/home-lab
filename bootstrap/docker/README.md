@@ -39,3 +39,10 @@ curl http://10.10.0.41:18080/v1/health
 curl -s http://10.10.0.41:9100/metrics | head
 curl -s http://10.10.0.41:9633/metrics | head
 ```
+
+## Troubleshooting
+
+**`ref file is empty` in doco-cd's logs.** A crash mid-fetch leaves a zero-length git ref in its
+cached clone, and it never self-heals. On the NAS: stop doco-cd, delete the clone under `/data` in
+the `doco-cd_data` volume (not the whole volume), and start it again. The next poll re-clones and
+redeploys any drifted stack.
