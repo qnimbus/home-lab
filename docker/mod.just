@@ -28,7 +28,17 @@ logs lines='20':
 projects:
     key=$(op read 'op://homelab/doco-cd/API_SECRET')
     curl -fsS -m 30 "{{ doco_url }}/v1/api/projects?all=true" -H "x-api-key: $key" \
-        | jq -r '["NAME", "STATUS", "CONFIG FILES"], (.content | sort_by(.Name)[] | [.Name, .Status, .ConfigFiles]) | @csv' \
+        | jq -r --argjson cols "$(tput cols)" '
+            .content
+            | ([.[].Name | length] + [4] | max) as $name
+            | ([.[].Status | length] + [6] | max) as $status
+            | ([$cols - $name - $status - 10, 20] | max) as $width
+            | ["NAME", "STATUS", "CONFIG FILES"],
+              (sort_by(.Name)[]
+                | [.ConfigFiles | split(",")[] | scan(".{1,\($width)}")] as $lines
+                | range($lines | length) as $i
+                | if $i == 0 then [.Name, .Status, $lines[0]] else ["", "", $lines[$i]] end)
+            | @csv' \
         | gum table --print
 
 [doc('Reconcile Doco-CD on TrueNAS: poll main now and redeploy changed stacks')]
