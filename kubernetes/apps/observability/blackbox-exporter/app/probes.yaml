@@ -3,6 +3,21 @@
 apiVersion: monitoring.coreos.com/v1
 kind: Probe
 metadata:
+  name: home-assistant
+spec:
+  interval: 30s
+  module: icmp
+  prober:
+    url: blackbox-exporter.observability.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      static:
+        - "${HOME_ASSISTANT_LAN_HOST}"
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/probe_v1.json
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
   name: nas-nfs
 spec:
   interval: 30s
