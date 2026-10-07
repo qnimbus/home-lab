@@ -3,18 +3,22 @@
 # ordering only; renaming a directory deletes and recreates its stack.
 working_dir: ./docker/nas
 auto_discovery:
-  enabled: true
   depth: 1
+  enabled: true
   delete: true
+reconciliation:
+  interval: 3600
+  enabled: true
+reference: refs/heads/main
+webhook_filter: ^refs/heads/main$
+
+# Compose-level secrets, once a stack needs one: add an `external_secrets:` map of
+# `VAR: op://homelab/<item>/<field>` and consume it as ${VAR} in the compose file.
+external_secrets: {}
+force_recreate: false
+
 # Set `enabled: true` to remove every stack below, with its images and volumes.
 destroy:
   enabled: false
   remove_images: true
   remove_volumes: true
-# Compose-level secrets, once a stack needs one: add an `external_secrets:` map of
-# `VAR: op://homelab/<item>/<field>` and consume it as ${VAR} in the compose file.
-external_secrets: {}
-force_recreate: false
-reconciliation:
-  enabled: true
-  interval: 3600
