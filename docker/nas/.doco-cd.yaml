@@ -6,6 +6,11 @@ auto_discovery:
   enabled: true
   depth: 1
   delete: true
+# Set `enabled: true` to remove every stack below, with its images and volumes.
+destroy:
+  enabled: false
+  remove_images: true
+  remove_volumes: true
 # Compose-level secrets, once a stack needs one: add an `external_secrets:` map of
 # `VAR: op://homelab/<item>/<field>` and consume it as ${VAR} in the compose file.
 external_secrets: {}
