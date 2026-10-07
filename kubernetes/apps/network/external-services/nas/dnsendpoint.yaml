@@ -18,3 +18,15 @@ spec:
       recordType: A
       targets:
         - "${NAS_HOST}"
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/externaldns.k8s.io/dnsendpoint_v1alpha1.json
+apiVersion: externaldns.k8s.io/v1alpha1
+kind: DNSEndpoint
+metadata:
+  name: nas-docker
+spec:
+  endpoints:
+    - dnsName: "docker.vwn.app"
+      recordType: A
+      targets:
+        - 10.10.2.100
