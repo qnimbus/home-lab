@@ -24,6 +24,13 @@ logs lines='20':
         ssh -n "{{ nas_ssh }}" sudo docker compose -p "$stack" logs --tail "{{ lines }}" || just log error "Could not read logs" stack "$stack"
     done
 
+[doc('Show every Compose project on TrueNAS as a table, stopped ones included')]
+projects:
+    key=$(op read 'op://homelab/doco-cd/API_SECRET')
+    curl -fsS -m 30 "{{ doco_url }}/v1/api/projects?all=true" -H "x-api-key: $key" \
+        | jq -r '["NAME", "STATUS", "CONFIG FILES"], (.content | sort_by(.Name)[] | [.Name, .Status, .ConfigFiles]) | @csv' \
+        | gum table --print
+
 [doc('Reconcile Doco-CD on TrueNAS: poll main now and redeploy changed stacks')]
 sync-stacks:
     key=$(op read 'op://homelab/doco-cd/API_SECRET')
