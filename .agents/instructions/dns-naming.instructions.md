@@ -3,13 +3,14 @@
 Which zone a new hostname goes under: decided by what answers at the
 address, and which network that address is on.
 
-| The name points at                               | Zone                    | Example                      |
-| ------------------------------------------------ | ----------------------- | ---------------------------- |
-| A device, or one of its interfaces               | `<network>.home.vwn.io` | `nas.storage.home.vwn.io`    |
-| An HTTPRoute on `envoy-internal`                 | `${DOMAIN_CLUSTER}`     | `grafana.cluster.vwn.io`     |
-| A LoadBalancer address on VLAN 60                | `${DOMAIN_CLUSTER}`     | `smtp-relay.cluster.vwn.io`  |
-| A LoadBalancer address on any other network      | `<network>.home.vwn.io` | `smtp-relay.iot.home.vwn.io` |
-| An HTTPRoute on `envoy-external` (WAN-reachable) | `${DOMAIN_APP}`         | `konflate.vwn.app`           |
+| The name points at                                 | Zone                    | Example                      |
+| -------------------------------------------------- | ----------------------- | ---------------------------- |
+| A device, or one of its interfaces                 | `<network>.home.vwn.io` | `nas.storage.home.vwn.io`    |
+| An HTTPRoute on `envoy-internal`                   | `${DOMAIN_CLUSTER}`     | `grafana.cluster.vwn.io`     |
+| A LoadBalancer address on VLAN 60                  | `${DOMAIN_CLUSTER}`     | `smtp-relay.cluster.vwn.io`  |
+| A LoadBalancer address on any other network        | `<network>.home.vwn.io` | `smtp-relay.iot.home.vwn.io` |
+| An HTTPRoute on `envoy-external` (WAN-reachable)   | `${DOMAIN_APP}`         | `konflate.vwn.app`           |
+| Traefik on the NAS, or an app behind it (LAN-only) | `${DOMAIN_APP}`         | `docker.vwn.app`             |
 
 In manifests, `home.vwn.io` is written `home.${DOMAIN_IO}`. `<network>` is
 one of `lan`, `guest`, `iot`, `iot-offline`, `protect`, `k8s`, `dmz`,
@@ -36,7 +37,16 @@ break the rules below; don't copy one without checking it against them.
 - **Only `${DOMAIN_APP}` is for WAN-reachable names.** external-dns-cloudflare
   excludes the LAN-only zones (`excludeDomains`: `${DOMAIN_CLUSTER}`,
   `${DOMAIN_APPS}`, `home.${DOMAIN_IO}`, `iot.${DOMAIN_IO}`,
-  `internal.${DOMAIN_PROXII}`), so a route under one gets no public record.
+  `internal.${DOMAIN_PROXII}`, `docker.${DOMAIN_APP}`), so a route under one
+  gets no public record.
+- **`${DOMAIN_APP}` also holds the names Traefik serves on the NAS, and those
+  are LAN-only.** They are there because Traefik's wildcard certificate is
+  `*.vwn.app`. `docker.${DOMAIN_APP}` is Traefik's own address: a
+  `DNSEndpoint`, kept out of public DNS by the exclusion above. An app
+  behind it is `<app>.${DOMAIN_APP}`, one label deep; dexd writes that record
+  to the gateway from the container's labels, so it never passes through
+  external-dns and needs no exclusion (see the `add-docker-app` skill). A
+  name belongs to an HTTPRoute or to a NAS app, never both.
 - **A new LAN-only zone goes on that `excludeDomains` list before anything
   is named under it.** Both external-dns instances read every
   `DNSEndpoint`; the exclusion is all that keeps a private address out of
