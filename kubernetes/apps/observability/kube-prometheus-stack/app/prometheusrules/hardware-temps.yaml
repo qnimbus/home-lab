@@ -62,13 +62,3 @@ spec:
             description: >-
               {{ $labels.model }} ({{ $labels.chip }}) on {{ $labels.nodename }} is at {{ $value | printf "%.0f" }}°C, at or above the drive's own warning threshold. The drive may throttle or refuse I/O.
             summary: Critical NVMe temperature on {{ $labels.nodename }}
-        - alert: NodeHwmonTextfileStale
-          expr: |
-            time() - node_textfile_mtime_seconds{file="/textfile/hwmon.prom"} > 90
-          for: 1m
-          labels:
-            severity: warning
-          annotations:
-            description: >-
-              node-exporter hasn't seen a fresh hwmon.prom from the sensors-textfile sidecar in over 90s on {{ $labels.instance }} — the CPU/NVMe temperature alerts above are now evaluating against frozen data. Check the sensors-textfile container.
-            summary: hwmon textfile-collector data is stale on {{ $labels.instance }}

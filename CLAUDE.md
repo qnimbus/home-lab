@@ -83,7 +83,7 @@ Each app lives at `kubernetes/apps/<namespace>/<app>/`. Scaffold a new one with 
 
 ### `docker/` — Compose stacks on the TrueNAS host
 
-Deployed by [doco-cd](https://github.com/kimdre/doco-cd), which runs on TrueNAS, polls this repo's `main` over a read-only SSH deploy key, and auto-discovers one-directory-deep stacks under `docker/nas/` (config: `docker/nas/.doco-cd.yaml`). Each stack is `docker/nas/NN-<app>/docker-compose.yaml` with image tags inline (Renovate's `docker-compose` manager tracks them). The `NN-` prefix is ordering only: renaming or renumbering a directory deletes and recreates the stack, anonymous volumes included, so keep it stable. Currently deployed: `00-exporters` (node-exporter + its `sensors-textfile` sidecar, smartctl-exporter; scraped by kube-prometheus-stack).
+Deployed by [doco-cd](https://github.com/kimdre/doco-cd), which runs on TrueNAS, polls this repo's `main` over a read-only SSH deploy key, and auto-discovers one-directory-deep stacks under `docker/nas/` (config: `docker/nas/.doco-cd.yaml`). Each stack is `docker/nas/NN-<app>/docker-compose.yaml` with image tags inline (Renovate's `docker-compose` manager tracks them). The `NN-` prefix is ordering only: renaming or renumbering a directory deletes and recreates the stack, anonymous volumes included, so keep it stable. Currently deployed: `00-exporters` (node-exporter and smartctl-exporter; scraped by kube-prometheus-stack).
 
 doco-cd itself (`docker/nas/.doco-cd/docker-compose.app.yaml`) is **not** self-managed: `just bootstrap nas` places it, and a doco-cd version bump needs that re-run after merging.
 
