@@ -8,6 +8,8 @@ A personal home infrastructure monorepo, not an application: a bare-metal Talos/
 
 mise pins the tools (`.mise/config.toml`) and sets `KUBECONFIG`, `TALOSCONFIG` and `FLATE_PATH` to repo-local paths. Its `postinstall` hook runs `lefthook install` and installs the Ansible collections from `ansible/requirements.yaml`.
 
+**In a worktree, those paths still point at the main checkout** unless the command runs through mise: an agent session inherits the environment of the shell that launched it, and mise only re-resolves them in an interactive shell. `flate` and `just k8s apply-ks`/`delete-ks` then render `main`'s manifests, not the worktree's, without any warning. Run them as `mise exec -- <command>`, or set `FLATE_PATH="$PWD/kubernetes/clusters/main"`.
+
 ## Commands
 
 `just` (`.justfile`) is the command runner. Recipes are namespaced by module; `just` lists them all.
