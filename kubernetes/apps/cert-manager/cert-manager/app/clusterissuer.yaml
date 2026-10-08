@@ -6,15 +6,15 @@ metadata:
   name: letsencrypt-production
 spec:
   acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
     privateKeySecretRef:
       name: letsencrypt-production
+    server: https://acme-v02.api.letsencrypt.org/directory
     solvers:
       - dns01:
           cloudflare:
             apiTokenSecretRef:
-              name: cert-manager-secret
               key: API_TOKEN
+              name: cert-manager-secret
         selector:
           dnsZones:
             - vwn.app
@@ -30,15 +30,15 @@ metadata:
   name: letsencrypt-staging
 spec:
   acme:
-    server: https://acme-staging-v02.api.letsencrypt.org/directory
     privateKeySecretRef:
       name: letsencrypt-staging
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
     solvers:
       - dns01:
           cloudflare:
             apiTokenSecretRef:
-              name: cert-manager-secret
               key: API_TOKEN
+              name: cert-manager-secret
         selector:
           dnsZones:
             - vwn.app
