@@ -14,6 +14,7 @@ data:
   DOMAIN_APPS: apps.vwn.io
   DOMAIN_CASA: vwn.casa
   DOMAIN_CLUSTER: cluster.vwn.io
+  DOMAIN_DEV: clustrs.dev
   DOMAIN_IO: vwn.io
   DOMAIN_PROXII: proxii.nl
   DOMAIN_TAILSCALE: buri-ray.ts.net

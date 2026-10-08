@@ -15,6 +15,7 @@ spec:
     domainFilters:
       - "${DOMAIN_APP}"
       - "${DOMAIN_CASA}"
+      - "${DOMAIN_DEV}"
       - "${DOMAIN_IO}"
       - "${DOMAIN_PROXII}"
     env:

@@ -17,6 +17,7 @@ spec:
       - "${DOMAIN_APPS}"
       - "${DOMAIN_PROXII}"
       - "${DOMAIN_IO}"
+      - "${DOMAIN_DEV}"
     extraArgs:
       - --label-filter=external-dns.home.arpa/public-only!=true
     fullnameOverride: *app

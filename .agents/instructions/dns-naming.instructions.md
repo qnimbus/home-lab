@@ -10,6 +10,7 @@ address, and which network that address is on.
 | A LoadBalancer address on VLAN 60                  | `${DOMAIN_CLUSTER}`     | `smtp-relay.cluster.vwn.io`  |
 | A LoadBalancer address on any other network        | `<network>.home.vwn.io` | `smtp-relay.iot.home.vwn.io` |
 | An HTTPRoute on `envoy-external` (WAN-reachable)   | `${DOMAIN_APP}`         | `konflate.vwn.app`           |
+| The same, for a public view of the cluster itself  | `${DOMAIN_DEV}`         | `stats.clustrs.dev`          |
 | Traefik on the NAS, or an app behind it (LAN-only) | `${DOMAIN_APP}`         | `docker.vwn.app`             |
 
 In manifests, `home.vwn.io` is written `home.${DOMAIN_IO}`. `<network>` is
@@ -34,7 +35,12 @@ break the rules below; don't copy one without checking it against them.
 - **`<host>` is the role, not the product:** `nas`, not `truenas`.
 - **No other private namespace:** not `.internal`, not `home.arpa`, not a
   bare single-label name.
-- **Only `${DOMAIN_APP}` is for WAN-reachable names.** external-dns-cloudflare
+- **Only `${DOMAIN_APP}` and `${DOMAIN_DEV}` are for WAN-reachable names.**
+  `${DOMAIN_DEV}` is for what the cluster publishes about itself, readable
+  by anyone: `stats.clustrs.dev` (kromgo's badges), next to
+  `schemas.clustrs.dev`, which is a Cloudflare Pages project and not a
+  route. Every other public app goes under `${DOMAIN_APP}`.
+  external-dns-cloudflare
   excludes the LAN-only zones (`excludeDomains`: `${DOMAIN_CLUSTER}`,
   `${DOMAIN_APPS}`, `home.${DOMAIN_IO}`, `iot.${DOMAIN_IO}`,
   `internal.${DOMAIN_PROXII}`, `docker.${DOMAIN_APP}`), so a route under one
