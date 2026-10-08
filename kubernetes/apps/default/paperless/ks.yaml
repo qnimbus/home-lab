@@ -8,6 +8,7 @@ spec:
   targetNamespace: default
   components:
     - ../../../../components/dragonfly
+    - ../../../../components/keda/smb-scaler
     - ../../../../components/kopiur/backup
     - ../../../../components/postgres
   dependsOn:
