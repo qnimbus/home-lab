@@ -26,6 +26,7 @@ services:
       - --entryPoints.web-alt.http.aliasHeadersStrategy=delete
       - --log.level=INFO
       - --providers.docker=true
+      - --providers.docker.network=apps
       - --providers.docker.exposedByDefault=false
     container_name: traefik
     environment:
