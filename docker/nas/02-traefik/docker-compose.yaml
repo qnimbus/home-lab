@@ -8,6 +8,7 @@ services:
   traefik:
     command:
       - --accesslog=true
+      - --api.dashboard=true
       - --certificatesresolvers.cf.acme.caserver=https://acme-v02.api.letsencrypt.org/directory
       - --certificatesresolvers.cf.acme.dnsChallenge.provider=cloudflare
       - --certificatesresolvers.cf.acme.dnsChallenge.resolvers=1.1.1.1:53,9.9.9.9:53
@@ -27,6 +28,12 @@ services:
     environment:
       - CLOUDFLARE_DNS_API_TOKEN=${CF_API_TOKEN}
     image: traefik:v3.7.14@sha256:e849695bc5c317da0cec22bfee4794fd9e15871fe554f864d31b625983e883ff
+    labels:
+      dexd.enabled: "true"
+      traefik.enable: "true"
+      traefik.http.routers.dashboard.entrypoints: websecure
+      traefik.http.routers.dashboard.rule: Host(`traefik.vwn.app`)
+      traefik.http.routers.dashboard.service: api@internal
     networks:
       - apps
     ports:
