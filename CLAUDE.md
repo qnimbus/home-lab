@@ -79,7 +79,7 @@ Each app lives at `kubernetes/apps/<namespace>/<app>/`. Scaffold a new one with 
 - `dragonfly`: a dedicated Dragonfly per app (`${APP}-dragonfly`), plus an optional `authentication` sub-component. The operator lives in `apps/database/dragonfly`.
 - `kopiur/backup`: a PVC per app that is backed up to the NAS and refilled from the latest backup when created.
 - `gpu`: a `ResourceClaimTemplate` (`${APP}-gpu`) for the Intel GPU.
-- `keda/http-scaler`, `keda/smb-scaler`, `nfs`.
+- `keda/http-scaler`, `keda/nfs-scaler`, `keda/smb-scaler`, `nfs`.
 
 `kubernetes/talos/` holds the Talos machine-config Jinja templates (rendered with `minijinja-cli` + 1Password `op inject`, see `.justfile`'s `template` recipe) and `version.yaml`, the pinned Talos/Kubernetes versions `kubernetes/talos/mod.just` uses.
 

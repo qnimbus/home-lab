@@ -5,17 +5,17 @@ kind: ScaledObject
 metadata:
   name: ${APP}-nfs-scaler
 spec:
-  scaleTargetRef:
-    name: ${APP}
-  minReplicaCount: 0
-  maxReplicaCount: 1
   advanced:
     restoreToOriginalReplicaCount: true
   cooldownPeriod: 30
+  maxReplicaCount: 1
+  minReplicaCount: 0
+  scaleTargetRef:
+    name: ${APP}
   triggers:
     - type: prometheus
       metadata:
-        serverAddress: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-        query: probe_success{instance="${NAS_HOST}:2049"}
-        threshold: "1"
         ignoreNullValues: "0"
+        query: probe_success{instance="${NAS_HOST}:2049"}
+        serverAddress: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+        threshold: "1"

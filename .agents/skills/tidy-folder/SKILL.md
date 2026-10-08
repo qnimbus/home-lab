@@ -7,7 +7,7 @@ description: Use when asked to document, tidy up, or review a single namespace f
 
 Works on one folder, either a **namespace** (`kubernetes/apps/<ns>`) or a **component** (`kubernetes/components/<name>`, including nested ones like `keda/http-scaler`). Three outcomes:
 
-1. A short `README.md` at the folder root that says what the folder is for and how it's used. Nested components share one README at the group root (`keda/README.md` covers `http-scaler` and `smb-scaler`, `kopiur/README.md` covers `backup`), not one each.
+1. A short `README.md` at the folder root that says what the folder is for and how it's used. Nested components share one README at the group root (`keda/README.md` covers `http-scaler`, `nfs-scaler` and `smb-scaler`, `kopiur/README.md` covers `backup`), not one each.
 2. No explanatory comments left in the folder's manifests. Useful ones move into the README; the rest are deleted.
 3. YAML that follows the repo's conventions and is consistent with itself. Mechanical fixes are applied, anything else is reported.
 

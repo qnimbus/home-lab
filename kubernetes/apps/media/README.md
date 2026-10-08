@@ -35,7 +35,7 @@ The LoadBalancer addresses have no DNS name: clients learn them from plex.tv. Pl
 
 Both NFS exports squash every client to a NAS user, so Plex's UID 1000 doesn't have to exist there.
 
-**NAS down, Plex off.** A KEDA [ScaledObject](./plex/app/scaledobject.yaml) scales Plex to zero while the blackbox `nas-nfs` probe fails, and back when it recovers. The 30s cooldown is one probe interval, so a single failed scrape doesn't stop Plex. The HelmRelease ignores drift on `/spec/replicas`, otherwise Flux would scale it back up within the hour.
+**NAS down, Plex off.** [`components/keda/nfs-scaler`](../../components/keda/README.md) scales Plex to zero while the blackbox `nas-nfs` probe fails, and back when it recovers. The HelmRelease ignores drift on `/spec/replicas`, otherwise Flux would scale it back up within the hour.
 
 ## Operating
 

@@ -8,6 +8,7 @@ spec:
   targetNamespace: media
   components:
     - ../../../../components/gpu
+    - ../../../../components/keda/nfs-scaler
     - ../../../../components/kopiur/backup
   dependsOn:
     - name: rook-ceph-cluster
