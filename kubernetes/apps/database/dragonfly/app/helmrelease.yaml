@@ -12,7 +12,6 @@ spec:
   values:
     grafanaDashboard:
       enabled: true
-      folder: database
       grafanaOperator:
         enabled: true
     manager:
