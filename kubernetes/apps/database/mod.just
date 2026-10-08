@@ -90,7 +90,7 @@ restore ns app file db="":
 
     # DROP TABLE/etc. from --clean refuses to run while any other session holds a
     # lock (e.g. the app's own connection pool) — force-disconnect everyone else
-    # first, same as nfs-restore-from-backup.
+    # first.
     gum log -t rfc3339 -s -l info "Terminating other active connections to '${DB}' so --clean can proceed..." stage terminate
     kubectl exec "${POD}" -n "${NS}" -c postgres -- psql -U postgres -At -c \
         "select pg_terminate_backend(pid) from pg_stat_activity where datname = '${DB}' and pid <> pg_backend_pid();" >/dev/null
