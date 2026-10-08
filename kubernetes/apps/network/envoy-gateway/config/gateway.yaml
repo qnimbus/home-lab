@@ -37,6 +37,8 @@ spec:
             name: cluster-vwn-io-tls
           - kind: Secret
             name: apps-vwn-io-tls
+          - kind: Secret
+            name: clustrs-dev-tls
         mode: Terminate
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/gateway.networking.k8s.io/gateway_v1.json
@@ -77,6 +79,8 @@ spec:
             name: cluster-vwn-io-tls
           - kind: Secret
             name: apps-vwn-io-tls
+          - kind: Secret
+            name: clustrs-dev-tls
         mode: Terminate
     - allowedRoutes:
         namespaces:
