@@ -4,11 +4,11 @@ The database operators. Nothing here is a database: each app gets its own instan
 
 ## Apps
 
-| App                       | What it does                                                      | Notes                                                                  |
-| ------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `cloudnative-pg-operator` | The CloudNative-PG operator, its dashboard and alert rules        | The HelmRelease is `cloudnative-pg`                                    |
-| `plugin-barman-cloud`     | CNPG plugin that ships base backups and WAL to S3 (`ObjectStore`) | Needs cert-manager; `dependsOn` the operator                           |
-| `dragonfly-operator`      | The Dragonfly operator and its dashboard                          | Lives in [dragonfly/](./dragonfly/); the HelmRelease has the same name |
+| App                       | What it does                                                      | Notes                                                                    |
+| ------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `cloudnative-pg-operator` | The CloudNative-PG operator, its dashboard and alert rules        | The HelmRelease is `cloudnative-pg`                                      |
+| `plugin-barman-cloud`     | CNPG plugin that ships base backups and WAL to S3 (`ObjectStore`) | `dependsOn` `cert-manager`, not the operator: it waits for it at runtime |
+| `dragonfly-operator`      | The Dragonfly operator and its dashboard                          | Lives in [dragonfly/](./dragonfly/); the HelmRelease has the same name   |
 
 The first two share [cloudnative-pg/ks.yaml](./cloudnative-pg/ks.yaml).
 
