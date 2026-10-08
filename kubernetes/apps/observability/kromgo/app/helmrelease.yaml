@@ -1,0 +1,74 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: kromgo
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: kromgo
+  values:
+    config:
+      badges:
+        - id: talos_version
+          colorExpr: '"blue"'
+          icon: si:talos
+          query: label_replace(topk(1, count by (version_id) (node_os_info{name="Talos"})), "version", "$1", "version_id", "v(.+)")
+          title: Talos
+          valueExpr: labels[?"version"].orValue("unknown")
+        - id: kubernetes_version
+          colorExpr: '"blue"'
+          icon: si:kubernetes
+          query: label_replace(topk(1, count by (git_version) (kubernetes_build_info{service="kubernetes"})), "version", "$1", "git_version", "v(.+)")
+          title: Kubernetes
+          valueExpr: labels[?"version"].orValue("unknown")
+        - id: flux_version
+          colorExpr: '"blue"'
+          icon: si:flux
+          query: label_replace(topk(1, count by (revision) (flux_instance_info)), "version", "$1", "revision", "v(.+)@sha256:.+")
+          title: Flux
+          valueExpr: labels[?"version"].orValue("unknown")
+        - id: cluster_age_days
+          colorExpr: '"green"'
+          query: time() - min(kube_node_created)
+          title: Age
+          valueExpr: humanizeDurationDays(result)
+        - id: cluster_uptime_days
+          colorExpr: '"green"'
+          query: avg(node_time_seconds{pod!=""} - node_boot_time_seconds{pod!=""})
+          title: Uptime
+          valueExpr: humanizeDurationDays(result)
+        - id: cluster_node_count
+          colorExpr: '"green"'
+          query: count(count by (node) (kube_node_status_condition{condition="Ready"}))
+          title: Nodes
+        - id: cluster_pod_count
+          colorExpr: '"green"'
+          query: sum(kube_pod_status_phase{phase="Running"})
+          title: Pods
+        - id: cluster_cpu_usage
+          colorExpr: colorScale(result, [35.0, 75.0], ["green", "orange", "red"])
+          query: round(avg(instance:node_cpu_utilisation:rate5m{pod!=""}) * 100, 0.1)
+          title: CPU
+          valueExpr: humanizeFloat(result) + "%"
+        - id: cluster_memory_usage
+          colorExpr: colorScale(result, [35.0, 75.0], ["green", "orange", "red"])
+          query: round(sum(node_memory_MemTotal_bytes{pod!=""} - node_memory_MemAvailable_bytes{pod!=""}) / sum(node_memory_MemTotal_bytes{pod!=""}) * 100, 0.1)
+          title: Memory
+          valueExpr: humanizeFloat(result) + "%"
+        - id: cluster_alert_count
+          colorExpr: 'result < 1 ? "green" : "red"'
+          query: count(ALERTS{alertstate="firing", severity!~"none|info"}) or vector(0)
+          title: Alerts
+      defaults:
+        badge:
+          style: for-the-badge
+      prometheus: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 128Mi
