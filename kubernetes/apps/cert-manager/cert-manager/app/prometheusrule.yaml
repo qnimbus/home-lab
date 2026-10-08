@@ -16,7 +16,7 @@ spec:
             severity: critical
           annotations:
             summary: >-
-              Cert Manager has dissapeared from Prometheus service discovery
+              Cert Manager has disappeared from Prometheus service discovery
 
     - name: certificates
       rules:
