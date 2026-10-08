@@ -7,6 +7,7 @@ networks:
 services:
   traefik:
     command:
+      - --accesslog=true
       - --certificatesresolvers.cf.acme.caserver=https://acme-v02.api.letsencrypt.org/directory
       - --certificatesresolvers.cf.acme.dnsChallenge.provider=cloudflare
       - --certificatesresolvers.cf.acme.dnsChallenge.resolvers=1.1.1.1:53,9.9.9.9:53
@@ -19,6 +20,7 @@ services:
       - --entrypoints.websecure.http.tls.certResolver=cf
       - --entrypoints.websecure.http.tls.domains[0].main=*.vwn.app
       - --entryPoints.web-alt.address=:8080
+      - --log.level=INFO
       - --providers.docker=true
       - --providers.docker.exposedByDefault=false
     container_name: traefik
