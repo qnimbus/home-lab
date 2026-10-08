@@ -18,6 +18,14 @@ A 1Password field named `API_KEY` becomes `PLEX_API_KEY` in the Kubernetes
 Secret. Name 1Password fields **without** the application prefix: the
 rewrite adds it.
 
+## Exception: an item several apps read
+
+A 1Password item shared by several apps keeps one prefix in all of them,
+named after the item rather than the app: every ExternalSecret reading
+`cloudflare-tunnel` rewrites to `CF_$1`. The same field then has the same
+name wherever it is used. Find an item's prefix before adding a consumer:
+`grep -rn -A5 "key: <1password-item-name>" kubernetes`.
+
 ## Remapping with `template`
 
 When the app expects env var names that differ from the rewritten keys, add
