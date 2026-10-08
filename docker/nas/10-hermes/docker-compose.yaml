@@ -7,6 +7,7 @@ services:
     command: gateway run
     container_name: hermes
     environment:
+      API_SERVER_CORS_ORIGINS: https://hermes.vwn.app
       API_SERVER_ENABLED: "true"
       API_SERVER_HOST: 0.0.0.0
       API_SERVER_KEY: ${HERMES_API_SERVER_KEY}
@@ -14,6 +15,7 @@ services:
       HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: ${HERMES_DASHBOARD_PASSWORD}
       HERMES_DASHBOARD_BASIC_AUTH_SECRET: ${HERMES_DASHBOARD_SECRET}
       HERMES_DASHBOARD_BASIC_AUTH_USERNAME: ${HERMES_DASHBOARD_USERNAME}
+      HERMES_TIMEZONE: Europe/Amsterdam
     image: docker.io/nousresearch/hermes-agent:v2026.9.24@sha256:fca358f12efd65bfaaca05884166f15c0e2788375ca30d77061ac1ebc96452b7
     labels:
       dexd.enabled: "true"
