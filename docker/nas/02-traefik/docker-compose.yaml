@@ -2,8 +2,8 @@
 name: traefik
 networks:
   apps:
+    external: true
     name: apps
-    external: false
 services:
   traefik:
     command:
@@ -35,7 +35,8 @@ services:
       traefik.http.routers.dashboard.rule: Host(`traefik.vwn.app`)
       traefik.http.routers.dashboard.service: api@internal
     networks:
-      - apps
+      apps:
+        ipv4_address: 172.16.8.2
     ports:
       - "10.10.2.100:80:80"
       - "10.10.2.100:443:443"

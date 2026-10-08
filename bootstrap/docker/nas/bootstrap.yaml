@@ -34,6 +34,17 @@
         doco_api_secret: "{{ secrets_raw.results[2].stdout }}"
       no_log: true
 
+    - name: Docker | Create shared apps network
+      community.docker.docker_network:
+        name: apps
+        driver: bridge
+        driver_options:
+          com.docker.network.bridge.name: br-apps
+        ipam_config:
+          - subnet: 172.16.8.0/24
+            gateway: 172.16.8.1
+        state: present
+
     - name: doco-cd
       vars:
         dococd_config_dir: /home/truenas_admin/.config/doco-cd
