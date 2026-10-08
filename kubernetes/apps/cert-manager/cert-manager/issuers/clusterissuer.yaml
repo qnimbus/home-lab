@@ -17,11 +17,11 @@ spec:
               name: cert-manager-secret
         selector:
           dnsZones:
-            - vwn.app
-            - vwn.casa
-            - cluster.vwn.io
-            - apps.vwn.io
-            - vwn.io
+            - "${DOMAIN_APP}"
+            - "${DOMAIN_CASA}"
+            - "${DOMAIN_CLUSTER}"
+            - "${DOMAIN_APPS}"
+            - "${DOMAIN_IO}"
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/cert-manager.io/clusterissuer_v1.json
 apiVersion: cert-manager.io/v1
@@ -41,8 +41,8 @@ spec:
               name: cert-manager-secret
         selector:
           dnsZones:
-            - vwn.app
-            - vwn.casa
-            - cluster.vwn.io
-            - apps.vwn.io
-            - vwn.io
+            - "${DOMAIN_APP}"
+            - "${DOMAIN_CASA}"
+            - "${DOMAIN_CLUSTER}"
+            - "${DOMAIN_APPS}"
+            - "${DOMAIN_IO}"
