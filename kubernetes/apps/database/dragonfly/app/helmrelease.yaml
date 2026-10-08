@@ -5,16 +5,16 @@ kind: HelmRelease
 metadata:
   name: dragonfly-operator
 spec:
+  interval: 1h
   chartRef:
     kind: OCIRepository
     name: dragonfly-operator
-  interval: 1h
   values:
+    grafanaDashboard:
+      enabled: true
+      folder: database
+      grafanaOperator:
+        enabled: true
     manager:
       image:
         repository: ghcr.io/dragonflydb/operator
-    grafanaDashboard:
-      enabled: true
-      grafanaOperator:
-        enabled: true
-      folder: database

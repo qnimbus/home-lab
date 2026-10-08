@@ -1,18 +1,17 @@
 ---
 # yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
-# Dashboard JSON ships in a ConfigMap rendered by the chart (monitoring.grafanaDashboard.create).
 apiVersion: grafana.integreatly.org/v1beta1
 kind: GrafanaDashboard
 metadata:
   name: cloudnative-pg
 spec:
   allowCrossNamespaceImport: true
+  configMapRef:
+    key: cnp.json
+    name: cnpg-grafana-dashboard
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
   instanceSelector:
     matchLabels:
       dashboards: grafana
-  datasources:
-    - inputName: DS_PROMETHEUS
-      datasourceName: Prometheus
-  configMapRef:
-    name: cnpg-grafana-dashboard
-    key: cnp.json

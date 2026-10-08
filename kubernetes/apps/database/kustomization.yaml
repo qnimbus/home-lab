@@ -7,5 +7,5 @@ components:
   - ../../components/cluster-settings
 resources:
   - ./namespace.yaml
-  - ./cloudnative-pg
+  - ./cloudnative-pg/ks.yaml
   - ./dragonfly/ks.yaml

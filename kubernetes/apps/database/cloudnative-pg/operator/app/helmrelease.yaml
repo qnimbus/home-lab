@@ -5,17 +5,17 @@ kind: HelmRelease
 metadata:
   name: cloudnative-pg
 spec:
+  interval: 1h
   chartRef:
     kind: OCIRepository
     name: cloudnative-pg
-  interval: 1h
   values:
     crds:
       create: true
     monitoring:
-      podMonitorEnabled: true
       grafanaDashboard:
         create: true
+      podMonitorEnabled: true
     resources:
       requests:
         cpu: 20m
