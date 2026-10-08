@@ -12,9 +12,9 @@ runtime.
 ### Use it for
 
 - **Operator → CRD consumer**: a Kustomization defining a CR
-  (`ClusterIssuer`, `ScaledObject`, a CNPG `Cluster`) whose CRD another
-  app's Helm chart installs. Not needed when bootstrap's CRD-only phase
-  already installs that CRD: check the chart list in
+  (`ClusterIssuer`, `ScaledObject`) whose CRD another app's Helm chart
+  installs. Not needed when bootstrap's CRD-only phase already installs
+  that CRD: check the chart list in
   `bootstrap/kubernetes/helmfile/crds.yaml` first.
 - **An app's own two-stage split** (`tuppr` → `tuppr-upgrade`,
   `grafana-operator` → `grafana-operator-instance`): two `Kustomization`
@@ -51,6 +51,13 @@ runtime.
   operator retries a store on its own, and Flux retries a dry-run that fails
   while the webhook isn't serving. The dry-run itself only needs the
   `ExternalSecret` CRD.
+- The database operators, for an app that uses `components/postgres` or
+  `components/dragonfly`. Its `Cluster` or `Dragonfly` does need the
+  operator's CRD, but only a fresh bootstrap lacks it, and there Flux
+  retries the failed dry-run until the operator is installed. A
+  `dependsOn` would be checked on every reconcile instead: an operator
+  that isn't Ready would pause every app with a database. The components
+  already order the app's HelmRelease after the operator's.
 - If a dependent genuinely can't tolerate the secret being briefly absent,
   move the `ExternalSecret` into an upstream Kustomization the dependent
   already depends on and gate it there (`wait: true`, or `healthChecks` as
