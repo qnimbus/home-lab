@@ -10,6 +10,32 @@ spec:
     kind: OCIRepository
     name: smtp-relay
   values:
+    defaultPodOptions:
+      securityContext:
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+    configMaps:
+      config:
+        data:
+          maddy.conf: |-
+            state_dir /cache/state
+            runtime_dir /cache/run
+            tls off
+            hostname {env:SMTP_RELAY_HOSTNAME}
+            smtp tcp://0.0.0.0:{env:SMTP_RELAY_SMTP_PORT} {
+                default_source {
+                    deliver_to &remote_queue
+                }
+            }
+            target.queue remote_queue {
+                target &remote_smtp
+            }
+            target.smtp remote_smtp {
+                starttls yes
+                auth plain {env:SMTP_RELAY_USERNAME} {env:SMTP_RELAY_PASSWORD}
+                targets tcp://{env:SMTP_RELAY_SERVER}:{env:SMTP_RELAY_SERVER_PORT}
+            }
     controllers:
       smtp-relay:
         annotations:
@@ -21,9 +47,6 @@ spec:
               tag: 0.9.6@sha256:e1074e92a452b84d1135ebe8ab831c5f541d33dcbd39e38fab740a53bbf2f97c
             env:
               SMTP_RELAY_HOSTNAME: smtp-relay.${DOMAIN_CLUSTER}
-              # Kept off 25 so the container never needs NET_BIND_SERVICE / root to
-              # bind it — the Service below remaps the printer-facing port 25 to
-              # this one (same trick as victoria-logs' syslog-service.yaml).
               SMTP_RELAY_SMTP_PORT: &port 2525
             envFrom:
               - secretRef:
@@ -43,42 +66,11 @@ spec:
                 cpu: 10m
               limits:
                 memory: 64Mi
-            # Unlike boky/postfix, maddy is a from-scratch Go MTA with no privilege-
-            # separation model requiring root at any point — runs fully locked down.
             securityContext:
               allowPrivilegeEscalation: false
               readOnlyRootFilesystem: true
               capabilities:
                 drop: ["ALL"]
-        pod:
-          securityContext:
-            runAsNonRoot: true
-            runAsUser: 1000
-            runAsGroup: 1000
-    configMaps:
-      config:
-        data:
-          # Only the printer's IP can reach this at all (see service.app.loadBalancerSourceRanges
-          # below), so this accepts mail unauthenticated on the internal listener and relays it
-          # onward through an authenticated upstream (SMTP_RELAY_* from smtp-relay-secret).
-          maddy.conf: |-
-            state_dir /cache/state
-            runtime_dir /cache/run
-            tls off
-            hostname {env:SMTP_RELAY_HOSTNAME}
-            smtp tcp://0.0.0.0:{env:SMTP_RELAY_SMTP_PORT} {
-                default_source {
-                    deliver_to &remote_queue
-                }
-            }
-            target.queue remote_queue {
-                target &remote_smtp
-            }
-            target.smtp remote_smtp {
-                starttls yes
-                auth plain {env:SMTP_RELAY_USERNAME} {env:SMTP_RELAY_PASSWORD}
-                targets tcp://{env:SMTP_RELAY_SERVER}:{env:SMTP_RELAY_SERVER_PORT}
-            }
     persistence:
       cache:
         type: emptyDir
@@ -90,32 +82,12 @@ spec:
             subPath: maddy.conf
     service:
       app:
-        controller: smtp-relay
         type: LoadBalancer
-        # Cluster (not Local): Cilium's L2-announcement leader election has no local-
-        # endpoint awareness on reschedule (cilium/cilium#34235-adjacent behavior,
-        # confirmed via https://docs.cilium.io/en/stable/network/l2-announcements/) —
-        # a stale leader on a node without the pod causes silent drops/refused conns
-        # until the lease expires or is force-deleted. loadBalancerSourceRanges below
-        # is still enforced against the real client IP at ingress regardless of this
-        # setting, so switching away from Local costs nothing but SNAT'd source-IP
-        # visibility in maddy's own logs on the (now harmless) cross-node-forward path.
-        externalTrafficPolicy: Cluster
         annotations:
-          # external-dns-unifi watches plain Services (sources include `service`).
-          # `target` pins this hostname to the mgmt-side IP only — without it, both of this
-          # Service's ingress IPs (mgmt + IOT, see lbipam.cilium.io/ips below) would publish
-          # as separate A records under the same name, and a client resolving it could get
-          # handed either one. The IOT-side name (smtp-relay.iot.home.${DOMAIN_IO}) is
-          # published separately by the smtp-relay-iot DNSEndpoint (dnsendpoint.yaml).
           external-dns.kubernetes.io/hostname: "smtp-relay.${DOMAIN_CLUSTER}"
           external-dns.kubernetes.io/target: "10.60.0.240"
-          # Pin both LB IPs explicitly: mgmt (default pool, matches the target above) and
-          # IOT (pool-iot-smtp-relay, serviceSelector-scoped to this Service).
           lbipam.cilium.io/ips: "10.60.0.240,10.30.0.240"
-        # Restrict to the printer's known IP; widen when a second appliance needs this relay.
-        # Enforced against the real client IP regardless of which of the two LB IPs (10.60.x
-        # or the IOT 10.30.0.240) was used to reach the Service.
+        externalTrafficPolicy: Cluster
         loadBalancerSourceRanges:
           - "${PRINTER_IOT_HOST}/32"
           - "${LAN_CIDR}"
