@@ -28,7 +28,6 @@ spec:
       - "${DOMAIN_APPS}"
       - "${DOMAIN_CLUSTER}"
       - "home.${DOMAIN_IO}"
-      - "iot.${DOMAIN_IO}"
       - "internal.${DOMAIN_PROXII}"
       - "docker.${DOMAIN_APP}"
     extraArgs:

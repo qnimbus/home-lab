@@ -42,9 +42,8 @@ break the rules below; don't copy one without checking it against them.
   route. Every other public app goes under `${DOMAIN_APP}`.
   external-dns-cloudflare
   excludes the LAN-only zones (`excludeDomains`: `${DOMAIN_CLUSTER}`,
-  `${DOMAIN_APPS}`, `home.${DOMAIN_IO}`, `iot.${DOMAIN_IO}`,
-  `internal.${DOMAIN_PROXII}`, `docker.${DOMAIN_APP}`), so a route under one
-  gets no public record.
+  `${DOMAIN_APPS}`, `home.${DOMAIN_IO}`, `internal.${DOMAIN_PROXII}`,
+  `docker.${DOMAIN_APP}`), so a route under one gets no public record.
 - **`${DOMAIN_APP}` also holds the names Traefik serves on the NAS, and those
   are LAN-only.** They are there because Traefik's wildcard certificate is
   `*.vwn.app`. `docker.${DOMAIN_APP}` is Traefik's own address: a
