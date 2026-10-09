@@ -30,7 +30,7 @@ grep -rln "smtp-relay" kubernetes --include=*.yaml        # who sends through it
 ## Gotchas
 
 - **The relay accepts mail from anyone who can reach it.** There is no authentication and no TLS on the listener. `loadBalancerSourceRanges` is the only guard, and it only covers the two LoadBalancer addresses: Cilium doesn't apply it to the ClusterIP, so every pod in the cluster can send. Widen the list when another device needs the relay; don't treat it as protection against in-cluster senders.
-- **`externalTrafficPolicy` must not be `Local`.** Cilium's L2 announcement picks the announcing node without looking at where the pod runs. With `Local`, a leader on a node without the pod drops every connection until the lease moves. The source ranges are checked against the real client address either way.
+- **`externalTrafficPolicy` must not be `Local`.** The Service leaves it at the default, `Cluster`. Cilium's L2 announcement picks the announcing node without looking at where the pod runs. With `Local`, a leader on a node without the pod drops every connection until the lease moves. The source ranges are checked against the real client address either way.
 - **maddy listens on `2525`, the Service maps `25` onto it.** The container runs as non-root with all capabilities dropped, so it never has to bind a privileged port.
 - **The queue is on an `emptyDir`.** `state_dir` is `/cache/state`, so mail that is accepted but not yet delivered upstream is lost when the pod is replaced.
 - **The sender address has to be one the upstream accepts.** See `MAIL_FROM_ADDRESS` in the [`cluster-settings` README](../../components/cluster-settings/README.md).

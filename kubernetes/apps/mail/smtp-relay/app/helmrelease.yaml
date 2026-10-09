@@ -67,7 +67,6 @@ spec:
           external-dns.kubernetes.io/hostname: "smtp-relay.${DOMAIN_CLUSTER}"
           external-dns.kubernetes.io/target: "10.60.0.240"
           lbipam.cilium.io/ips: "10.60.0.240,10.30.0.240"
-        externalTrafficPolicy: Cluster
         loadBalancerSourceRanges:
           - "${PRINTER_IOT_HOST}/32"
           - "${LAN_CIDR}"
