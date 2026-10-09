@@ -1,8 +1,6 @@
 ---
 connect:
-  serviceType: ClusterIP
   credentialsName: onepassword-connect-secrets
-  credentialsKey: 1password-credentials.json
   api:
     resources:
       requests:

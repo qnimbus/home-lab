@@ -1,5 +1,4 @@
 ---
-installCRDs: true
 # 2 replicas + topology spread: pre-places one pod per two nodes so a cp-03 failure causes
 # zero application downtime. Leader election is enabled (leaderElect below) so only one
 # replica reconciles at a time — required because PushSecret's 1Password provider does a

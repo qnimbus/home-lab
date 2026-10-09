@@ -9,13 +9,13 @@ metadata:
 spec:
   targetNamespace: external-secrets
   interval: 1h
-  wait: true
-  prune: true
   path: ./kubernetes/apps/external-secrets/onepassword-connect/app
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
+  wait: true
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease

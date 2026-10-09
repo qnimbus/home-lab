@@ -9,13 +9,13 @@ metadata:
 spec:
   targetNamespace: external-secrets
   interval: 1h
-  wait: true
-  prune: true
   path: ./kubernetes/apps/external-secrets/external-secrets/app
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
+  wait: true
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -31,16 +31,14 @@ metadata:
     substitution.flux.home.arpa/disabled: "true"
 spec:
   targetNamespace: external-secrets
+  dependsOn:
+    - name: external-secrets
+    - name: onepassword-connect
   interval: 1h
-  wait: true
-  prune: true
   path: ./kubernetes/apps/external-secrets/external-secrets/stores/onepassword
+  prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  dependsOn:
-    - name: external-secrets
-      namespace: external-secrets
-    - name: onepassword-connect
-      namespace: external-secrets
+  wait: true
