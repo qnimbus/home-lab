@@ -12,3 +12,4 @@ resources:
   - ./radarr/ks.yaml
   - ./sabnzbd/ks.yaml
   - ./configarr/ks.yaml
+  - ./seerr/ks.yaml
