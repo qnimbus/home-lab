@@ -57,6 +57,21 @@ spec:
               readOnlyRootFilesystem: true
               capabilities:
                 drop: ["ALL"]
+    ingress:
+      ts:
+        annotations:
+          tailscale.com/tags: "tag:plex"
+        className: tailscale
+        hosts:
+          - host: &host seerr.${DOMAIN_TAILSCALE}
+            paths:
+              - path: /
+                service:
+                  identifier: app
+                  port: *port
+        tls:
+          - hosts:
+              - *host
     persistence:
       config:
         existingClaim: "${KOPIUR_CLAIM:=${APP}}"

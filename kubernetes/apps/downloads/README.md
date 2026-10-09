@@ -13,7 +13,7 @@ The Usenet pipeline that fills the media library: Prowlarr finds releases, Sonar
 | seerr         | Request portal for films and series                  | No media mount: it only talks to Plex's, Sonarr's and Radarr's APIs          |
 | configarr     | CronJob that syncs TRaSH profiles and custom formats | No route and no storage; reads Sonarr's and Radarr's API keys from 1Password |
 
-The five web apps are LAN-only on `envoy-internal` (`<app>.${DOMAIN_CLUSTER}`) and appear on Homepage through their route annotations.
+The five web apps are LAN-only on `envoy-internal` (`<app>.${DOMAIN_CLUSTER}`) and appear on Homepage through their route annotations. Seerr is also on the tailnet as `seerr.${DOMAIN_TAILSCALE}`: a Tailscale Ingress with its own device, so the tailnet's ACLs can share it with people who don't get the subnet route to the LAN.
 
 ## How it fits together
 
@@ -42,6 +42,7 @@ kubectl -n downloads create job --from=cronjob/configarr configarr-manual   # sy
 - **The apps listen on their upstream default ports**, not on 80: Prowlarr 9696, Radarr 7878, Sonarr 8989, Sabnzbd 8080. Probes, Services, routes and Configarr's `base_url` all have to agree; a probe on the wrong port is a `CrashLoopBackOff`.
 - **Prowlarr, Radarr and Sonarr have no login of their own** (`<APP>__AUTH__METHOD: External`): anyone who can reach `envoy-internal` is in. "Disabled for Local Addresses" is no alternative: every request arrives from Envoy's pod address, so it lets everyone in as well, and with an empty Allowed Hosts field the apps reject every save of Settings → General. Put real authentication in front before exposing one of them beyond the LAN.
 - **Seerr does have a login**: Plex accounts, set up in its first-run wizard. Until that wizard is finished, whoever opens the route first becomes the admin.
+- **Seerr's Tailscale device carries `tag:plex`**, the same tag as [Plex's](../media/README.md). The tailnet's ACLs can't tell the two apart: whoever is granted `tag:plex` on port 443 reaches both. Sharing one without the other needs a tag of its own, defined in the ACLs' `tagOwners` first.
 - **Sabnzbd rejects a `Host` header it doesn't know** with "Hostname verification failed". `SABNZBD__HOST_WHITELIST_ENTRIES` must list both the route's hostname (browsers) and the in-cluster Service name (the download-client calls from Sonarr and Radarr). The image's entrypoint writes it into `sabnzbd.ini` on every start, so editing the whitelist in the UI doesn't last.
 - **Sabnzbd's 6Gi memory limit is sized for unpacking**, not for downloading. Unpacking one large UHD remux needs more than 2Gi, even with Direct Unpack off.
 - **No SQLite database on NFS.** With `/config` on the `nfs` StorageClass, Prowlarr, Radarr and Sonarr freeze for 30 seconds or more at a time: `/ping` needs the database, and a thread releasing a SQLite file lock blocks in the NFS client (`nfs_iocounter_wait`) while the mount itself answers in milliseconds. The size of the database and its write volume make no difference.
