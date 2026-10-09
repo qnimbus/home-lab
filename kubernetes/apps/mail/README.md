@@ -34,6 +34,5 @@ grep -rln "smtp-relay" kubernetes --include=*.yaml        # who sends through it
 - **maddy listens on `2525`, the Service maps `25` onto it.** The container runs as non-root with all capabilities dropped, so it never has to bind a privileged port.
 - **The queue is on an `emptyDir`.** `state_dir` is `/cache/state`, so mail that is accepted but not yet delivered upstream is lost when the pod is replaced.
 - **The sender address has to be one the upstream accepts.** See `MAIL_FROM_ADDRESS` in the [`cluster-settings` README](../../components/cluster-settings/README.md).
-- **`smtp-relay.iot.${DOMAIN_IO}` is the name the printer is configured with.** It is a second record in the DNSEndpoint, outside the naming scheme. Remove it once the printer uses `smtp-relay.iot.home.${DOMAIN_IO}`.
 - **`dependsOn` both external-dns instances** is deliberate: `external-dns-cloudflare`'s exclusion list is what keeps the IoT record out of public DNS (see [flux-kustomization.instructions.md](../../../.agents/instructions/flux-kustomization.instructions.md)).
 - **The blackbox probe goes through the in-cluster Service** and sends a `QUIT`: maddy logs an error for every connection dropped without one.

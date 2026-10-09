@@ -45,6 +45,5 @@ Each zone is that UniFi network's DNS domain, so DHCP clients land in it too. Th
 Don't copy these. When a task touches one of these apps, propose the move to the user; don't make it unasked, since most need a change outside Git.
 
 - `portal.guest.home.vwn.io` points at 192.168.1.1, the gateway's address on the Default network, not on the guest network its zone names.
-- `printer` (as `canon`) and `smtp-relay` still answer on their old `iot.${DOMAIN_IO}` names as a second record. For `smtp-relay`, drop it once the printer is reconfigured.
 - `kube-vip.home.arpa` in `kubernetes/talos/cluster.yaml.j2`.
 - `external` and `internal.${DOMAIN_PROXII}`, the gateways' own names, and `${DOMAIN_CASA}` and `${DOMAIN_APPS}`, which are wired (certificate, tunnel, DNS filters) and unused: no rule covers these domains, so put no new name under them.

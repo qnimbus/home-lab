@@ -10,7 +10,3 @@ spec:
       recordType: A
       targets:
         - "${PRINTER_IOT_HOST}"
-    - dnsName: "canon.iot.${DOMAIN_IO}"
-      recordType: A
-      targets:
-        - "${PRINTER_IOT_HOST}"
