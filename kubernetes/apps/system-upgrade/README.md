@@ -47,12 +47,12 @@ Per run:
 
 Policy choices that differ from upstream defaults:
 
-| Setting                      | Value     | Why                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ---------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `policy.waitForVolumeDetach` | `true`    | `ceph-block` is the default StorageClass, so most pods hold RWO RBD volumes. Without it, a fast reboot orphans the mount and the pod hits `Multi-Attach` on its next node.                                                                                                                                                                                                                                      |
-| `policy.placement`           | `hard`    | The upgrade Job must never land on the node it's rebooting. Pinned explicitly: this object was created when the default was `soft`, and later default changes never touch a field that already exists.                                                                                                                                                                                                          |
-| `policy.rebootMode`          | `default` | Deliberately **not** `powercycle`. On 2026-09-25 the v1.14.1 run power-cycled cp-02 and its X520 came back with `ixgbe HW Init failed: -114`, so it had no storage bond and both OSDs were down. A warm `talosctl reboot` fixed it, and the Ceph gate held the run until then. `just talos upgrade-node`/`reboot-node` still use `-m powercycle`; if a storage NIC is missing afterwards, warm-reboot the node. |
-| `policy.debug`               | (default) | Left on. The webhook warns about it on every apply, but a verbose Job log is worth more on a rare, hard-to-rerun upgrade. Don't "fix" the warning.                                                                                                                                                                                                                                                              |
+| Setting                      | Value     | Why                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `policy.waitForVolumeDetach` | `true`    | `ceph-block` is the default StorageClass, so most pods hold RWO RBD volumes. Without it, a fast reboot orphans the mount and the pod hits `Multi-Attach` on its next node.                                                                                                                                                                                                   |
+| `policy.placement`           | `hard`    | The upgrade Job must never land on the node it's rebooting. Pinned explicitly, because a change of default never touches a field that already exists on the object.                                                                                                                                                                                                          |
+| `policy.rebootMode`          | `default` | Deliberately **not** `powercycle`. A power cycle can bring a node's X520 back with `ixgbe HW Init failed: -114`: no storage bond, and both of its OSDs down. A warm `talosctl reboot` fixes it, and the Ceph gate holds the run until then. `just talos upgrade-node`/`reboot-node` still use `-m powercycle`; if a storage NIC is missing afterwards, warm-reboot the node. |
+| `policy.debug`               | (default) | Left on. The webhook warns about it on every apply, but a verbose Job log is worth more on a rare, hard-to-rerun upgrade. Don't "fix" the warning.                                                                                                                                                                                                                           |
 
 Things to know about timing:
 
@@ -64,7 +64,7 @@ Things to know about timing:
 
 tuppr doesn't read `schematic.yaml.j2`. It takes each node's **current** install image and swaps in the new version, so a node stays on whatever factory schematic it was installed with. If the node's running extensions don't match the schematic in its install image, tuppr refuses to upgrade that node (the run sits in `Pending`, which is what `TalosUpgradePending` catches).
 
-**Changing a schematic is therefore an out-of-band job**: `just talos apply-node <node>` to push the new install image into the machine config, then `just talos upgrade-node <node>`. That's also how most of the nodes reached their current schematic.
+**Changing a schematic is therefore an out-of-band job**: `just talos apply-node <node>` to push the new install image into the machine config, then `just talos upgrade-node <node>`.
 
 ## What a Kubernetes run does
 
@@ -79,7 +79,7 @@ tuppr doesn't read `schematic.yaml.j2`. It takes each node's **current** install
 | `TalosUpgradePending` / `KubernetesUpgradePending` | A run stuck in `Pending` for 15m                  | `app/prometheusrule.yaml`                                            |
 | Grafana dashboard, ServiceMonitor                  | Phase and duration metrics                        | `monitoring.*` (picked up by kube-prometheus-stack's `{}` selectors) |
 
-**Why the Pending alerts exist:** the chart's rules don't cover `Pending`, and progress notifications only fire once a run starts. On 2026-09-09 the v1.13.10 run sat in `Pending` for ~19 minutes (a schematic mismatch on talos-cp-01) and nothing fired on either channel. The rules key on `tuppr_*_upgrade_phase{phase="Pending"}`, not on `tuppr_upgrade_progressing` (which also reads 0 after a clean finish). They exclude tuppr's own Talos/Kubernetes coordination wait, which is healthy. `for: 15m` outlasts a normal pre-pull and still beats the 19 minutes that went unnoticed.
+**Why the Pending alerts exist:** the chart's rules don't cover `Pending`, and progress notifications only fire once a run starts. A run parked in `Pending` (by a schematic mismatch, say) would otherwise fire nothing on either channel. The rules key on `tuppr_*_upgrade_phase{phase="Pending"}`, not on `tuppr_upgrade_progressing` (which also reads 0 after a clean finish). They exclude tuppr's own Talos/Kubernetes coordination wait, which is healthy. `for: 15m` outlasts a normal pre-pull.
 
 **Notification credentials:** the ExternalSecret reuses the 1Password `alertmanager` item (`pover://<user key>@<token>`), so tuppr notifies wherever Alertmanager does, and rotating those credentials re-renders this Secret too. Split it into its own item if that coupling ever gets in the way. The chart injects the URL as an env var, so the Deployment carries `reloader.stakater.com/auto` to restart on rotation. Without it, notifications would silently go nowhere after a rotation.
 
@@ -98,7 +98,7 @@ The rule is: **silence the expected effects of a planned drain and reboot, never
 
 Deliberately **still paging**: `CephHealthError`, `CephPGsInactive`, `CephPGUnavailableBlockingIO`, `CephFilesystem*`, `KubeAPIDown`, tuppr's `TalosUpgradeFailed` / `TalosUpgradeNodeFailed` / `TalosUpgradeStuck`, and the two `*Pending` rules. These key on data actually being unavailable rather than redundancy being reduced.
 
-`CephMonDownQuorumAtRisk` and `CephOSDDownHigh` started out unsilenced, but at this cluster's size any one host being down trips both (10 OSDs at 2 per host, so one host is 20%; 3 mons, so one down is at the quorum floor), and neither has a topology-aware threshold. Every alert name in the list was checked against the live rule set, because a typo would silently match nothing.
+`CephMonDownQuorumAtRisk` and `CephOSDDownHigh` are silenced because at this cluster's size any one host being down trips both (10 OSDs at 2 per host, so one host is 20%; 3 mons, so one down is at the quorum floor), and neither has a topology-aware threshold. Check a new alert name against the live rule set: a typo silently matches nothing.
 
 ## Operating
 
@@ -123,6 +123,6 @@ just talos nodes                                                      # versions
 
 `tuppr-upgrade` depends on `tuppr` because the `TalosUpgrade`/`KubernetesUpgrade` CRDs only exist once the chart is installed. That's the usual operator → CR split.
 
-`tuppr` itself depends on nothing. The chart renders a ServiceMonitor, a PrometheusRule and a GrafanaDashboard, and `app/prometheusrule.yaml` is a PrometheusRule, but bootstrap installs those CRDs before Flux reconciles anything (`bootstrap/kubernetes/helmfile/crds.yaml`). It used to depend on kube-prometheus-stack, which tied `TalosUpgrade` delivery to that chain (kube-prometheus-stack → rook-ceph-cluster) for no gain.
+`tuppr` itself depends on nothing. The chart renders a ServiceMonitor, a PrometheusRule and a GrafanaDashboard, and `app/prometheusrule.yaml` is a PrometheusRule, but bootstrap installs those CRDs before Flux reconciles anything (`bootstrap/kubernetes/helmfile/crds.yaml`). A dependency on kube-prometheus-stack would tie `TalosUpgrade` delivery to that chain (kube-prometheus-stack → rook-ceph-cluster) for no gain.
 
 The cost of the one dependency that remains: while `tuppr` isn't Ready, `tuppr-upgrade` shows `DependencyNotReady` and stays on its last revision, so `TalosUpgrade` changes aren't delivered, a rollback included. Don't fight Flux: recover the node with `just talos upgrade-node` instead.
