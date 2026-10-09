@@ -5,17 +5,8 @@ kind: DNSEndpoint
 metadata:
   name: smtp-relay-iot
 spec:
-  # The IOT-side name for the relay: the pinned VIP (pool-iot-smtp-relay, 10.30.0.240) that the
-  # smtp-relay Service holds as its second LoadBalancer IP (see helmrelease.yaml). It can't come
-  # from that Service's own hostname annotation: external-dns publishes every hostname against
-  # every ingress IP, and `target` pins all of them to the mgmt-side IP.
   endpoints:
     - dnsName: "smtp-relay.iot.home.${DOMAIN_IO}"
-      recordType: A
-      targets:
-        - "10.30.0.240"
-    # The name the printer is configured with. Drop it once the printer uses the one above.
-    - dnsName: "smtp-relay.iot.${DOMAIN_IO}"
       recordType: A
       targets:
         - "10.30.0.240"
