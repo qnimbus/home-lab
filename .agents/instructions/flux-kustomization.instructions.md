@@ -66,6 +66,14 @@ runtime.
   operator's Kustomization, not the CephCluster one that reads it. When no
   such upstream Kustomization exists, skip the dependency entirely.
 
+## `dependsOn[].namespace`: only for another namespace
+
+An entry names its `namespace` only when the target Kustomization is in a
+different one. Left out, it defaults to the Kustomization's own namespace,
+which the namespace's `kustomization.yaml` stamps on. A same-namespace
+entry is just `- name: <target>`. Existing entries that spell it out are
+leftovers: fix them when the file is touched.
+
 ## `commonMetadata.labels: {app.kubernetes.io/name: *app}`: don't add
 
 It stamps the label onto every resource the Kustomization renders, not just
