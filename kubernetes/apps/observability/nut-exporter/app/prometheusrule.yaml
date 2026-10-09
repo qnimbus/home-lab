@@ -1,0 +1,41 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/prometheusrule_v1.json
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: nut-exporter-rules
+spec:
+  groups:
+    - name: nut-exporter.rules
+      rules:
+        - alert: UpsOnBattery
+          expr: network_ups_tools_ups_status{flag="OB"} == 1
+          for: 10s
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.instance }} has lost power and is running on battery."
+        - alert: UpsLowRuntime
+          expr: |
+            network_ups_tools_ups_status{flag="OB"} == 1
+            and ignoring (flag)
+            network_ups_tools_battery_runtime < 600
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "{{ $labels.instance }} is on battery with less than 10 minutes of runtime left."
+        - alert: UpsLowBattery
+          expr: network_ups_tools_battery_charge < 50
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.instance }} battery charge is {{ $value }}%."
+        - alert: UpsBatteryReplace
+          expr: network_ups_tools_ups_status{flag="RB"} == 1
+          for: 10s
+          labels:
+            severity: warning
+          annotations:
+            summary: "{{ $labels.instance }} reports that its battery needs replacing."

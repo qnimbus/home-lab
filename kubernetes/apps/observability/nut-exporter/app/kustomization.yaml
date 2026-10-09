@@ -1,0 +1,17 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ./ocirepository.yaml
+  - ./helmrelease.yaml
+  - ./grafanadashboard.yaml
+  - ./prometheusrule.yaml
+configMapGenerator:
+  - name: nut-exporter-config
+    files:
+      - ups.conf=./resources/ups.conf
+      - upsd.conf=./resources/upsd.conf
+      - upsd.users=./resources/upsd.users
+generatorOptions:
+  disableNameSuffixHash: true

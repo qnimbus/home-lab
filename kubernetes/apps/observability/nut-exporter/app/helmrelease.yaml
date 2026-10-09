@@ -1,0 +1,123 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/bjw-s-labs/helm-charts/main/charts/other/app-template/schemas/helmrelease-helm-v2.schema.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: nut-exporter
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: nut-exporter
+  values:
+    defaultPodOptions:
+      securityContext:
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+    controllers:
+      nut-exporter:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: ghcr.io/druggeri/nut_exporter
+              tag: 3.3.0@sha256:276460d141c732772f8b1fcd785a7de272473e6d39fd85c32b163efc2999cb9a
+            env:
+              NUT_EXPORTER_SERVER: 127.0.0.1
+              NUT_EXPORTER_VARIABLES: >-
+                battery.charge,battery.runtime,battery.voltage,input.frequency,input.voltage,input.voltage.nominal,output.current,output.voltage,ups.load,ups.power,ups.realpower,ups.realpower.nominal,ups.status,ups.temperature
+            probes:
+              liveness:
+                enabled: true
+              readiness:
+                enabled: true
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 64Mi
+            securityContext: &securityContext
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: ["ALL"]
+          upsd:
+            image:
+              repository: docker.io/instantlinux/nut-upsd
+              tag: 2.8.5-r1@sha256:28eae8f3c097b409749ed4a50da57668cf8785a9bccf0db83e521bf343c0e97e
+            command:
+              - sh
+              - -c
+              - |
+                /usr/lib/nut/dummy-ups -a ups-2u
+                /usr/lib/nut/dummy-ups -a ups-tower
+                exec /usr/sbin/upsd -F
+            env:
+              NUT_ALTPIDPATH: /run/nut
+              NUT_CONFPATH: /etc/nut
+              NUT_STATEPATH: /run/nut
+            probes:
+              liveness:
+                enabled: true
+                custom: true
+                spec:
+                  exec:
+                    command:
+                      - sh
+                      - -c
+                      - |
+                        (upsc ups-2u@127.0.0.1 ups.status || ! timeout 3 upsc ups@10.10.0.101 ups.status) &&
+                        (upsc ups-tower@127.0.0.1 ups.status || ! timeout 3 upsc ups_tower@10.10.0.102 ups.status)
+                  failureThreshold: 4
+                  initialDelaySeconds: 30
+                  periodSeconds: 30
+                  timeoutSeconds: 10
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 64Mi
+            securityContext: *securityContext
+    persistence:
+      config:
+        type: configMap
+        name: nut-exporter-config
+        advancedMounts:
+          nut-exporter:
+            upsd:
+              - path: /etc/nut
+                readOnly: true
+      state:
+        type: emptyDir
+        advancedMounts:
+          nut-exporter:
+            upsd:
+              - path: /run/nut
+    service:
+      app:
+        ports:
+          metrics:
+            port: 9199
+    serviceMonitor:
+      app:
+        endpoints:
+          - interval: 30s
+            params:
+              ups: ["ups-2u"]
+            path: /ups_metrics
+            port: metrics
+            relabelings:
+              - replacement: ups-2u
+                targetLabel: instance
+            scrapeTimeout: 10s
+          - interval: 30s
+            params:
+              ups: ["ups-tower"]
+            path: /ups_metrics
+            port: metrics
+            relabelings:
+              - replacement: ups-tower
+                targetLabel: instance
+            scrapeTimeout: 10s

@@ -1,0 +1,16 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: nut-exporter
+spec:
+  datasources:
+    - datasourceName: Prometheus
+      inputName: DS_PROMETHEUS
+  grafanaCom:
+    id: 19308
+    revision: 4
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
