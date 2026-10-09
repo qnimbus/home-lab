@@ -15,7 +15,6 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  wait: true
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -33,7 +32,6 @@ spec:
   targetNamespace: external-secrets
   dependsOn:
     - name: external-secrets
-    - name: onepassword-connect
   interval: 1h
   path: ./kubernetes/apps/external-secrets/external-secrets/stores/onepassword
   prune: true
