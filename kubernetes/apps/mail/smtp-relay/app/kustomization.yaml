@@ -7,3 +7,9 @@ resources:
   - ./ocirepository.yaml
   - ./helmrelease.yaml
   - ./dnsendpoint.yaml
+configMapGenerator:
+  - name: smtp-relay-config
+    files:
+      - maddy.conf=./resources/maddy.conf
+generatorOptions:
+  disableNameSuffixHash: true

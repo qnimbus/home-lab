@@ -18,7 +18,7 @@ in-cluster apps ─────► ClusterIP:25 ───┘
 
 - **Two LoadBalancer addresses on one Service.** `lbipam.cilium.io/ips` pins both: one from the default pool, one from `pool-iot-smtp-relay`, a single-address pool that selects only this Service ([pool.yaml](../kube-system/cilium/config/pool.yaml)).
 - **Two DNS names, declared in two places.** `smtp-relay.${DOMAIN_CLUSTER}` comes from the Service's `external-dns.kubernetes.io/hostname` annotation. The IoT name comes from [dnsendpoint.yaml](./smtp-relay/app/dnsendpoint.yaml), because external-dns publishes every hostname on a Service against every one of its addresses. `external-dns.kubernetes.io/target` pins the annotated name to the VLAN 60 address, and it would pin a second annotated name to that same address.
-- **The upstream** is whatever the `smtp-relay` item in 1Password points at. [externalsecret.yaml](./smtp-relay/app/externalsecret.yaml) maps its fields onto the `SMTP_RELAY_*` variables that `maddy.conf` reads with `{env:…}`. The config itself is inline in [helmrelease.yaml](./smtp-relay/app/helmrelease.yaml).
+- **The upstream** is whatever the `smtp-relay` item in 1Password points at. [externalsecret.yaml](./smtp-relay/app/externalsecret.yaml) maps its fields onto the `SMTP_RELAY_*` variables that `maddy.conf` reads with `{env:…}`. The config itself is [maddy.conf](./smtp-relay/app/resources/maddy.conf).
 
 ## Operating
 

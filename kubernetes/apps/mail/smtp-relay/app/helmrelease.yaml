@@ -15,27 +15,6 @@ spec:
         runAsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
-    configMaps:
-      config:
-        data:
-          maddy.conf: |-
-            state_dir /cache/state
-            runtime_dir /cache/run
-            tls off
-            hostname {env:SMTP_RELAY_HOSTNAME}
-            smtp tcp://0.0.0.0:{env:SMTP_RELAY_SMTP_PORT} {
-                default_source {
-                    deliver_to &remote_queue
-                }
-            }
-            target.queue remote_queue {
-                target &remote_smtp
-            }
-            target.smtp remote_smtp {
-                starttls yes
-                auth plain {env:SMTP_RELAY_USERNAME} {env:SMTP_RELAY_PASSWORD}
-                targets tcp://{env:SMTP_RELAY_SERVER}:{env:SMTP_RELAY_SERVER_PORT}
-            }
     controllers:
       smtp-relay:
         annotations:
@@ -74,12 +53,13 @@ spec:
     persistence:
       cache:
         type: emptyDir
-      config-file:
+      config:
         type: configMap
-        identifier: config
+        name: smtp-relay-config
         globalMounts:
           - path: /data/maddy.conf
             subPath: maddy.conf
+            readOnly: true
     service:
       app:
         type: LoadBalancer
