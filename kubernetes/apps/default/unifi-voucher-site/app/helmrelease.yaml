@@ -3,12 +3,12 @@
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
-  name: &app unifi-voucher-site
+  name: unifi-voucher-site
 spec:
+  interval: 1h
   chartRef:
     kind: OCIRepository
     name: unifi-voucher-site
-  interval: 1h
   driftDetection:
     ignore:
       - paths: ["/spec/replicas"]
@@ -23,7 +23,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
     controllers:
-      *app :
+      unifi-voucher-site:
         annotations:
           reloader.stakater.com/auto: "true"
         containers:
@@ -34,7 +34,7 @@ spec:
             env:
               AUTH_DISABLE: "true"
               LOG_LEVEL: info
-              TZ: "${CLUSTER_TIMEZONE}"
+              TZ: ${CLUSTER_TIMEZONE}
               UNIFI_SITE_ID: default
             envFrom:
               - secretRef:
@@ -61,7 +61,8 @@ spec:
             securityContext:
               allowPrivilegeEscalation: false
               readOnlyRootFilesystem: true
-              capabilities: { drop: ["ALL"] }
+              capabilities:
+                drop: ["ALL"]
     persistence:
       tmp:
         type: emptyDir

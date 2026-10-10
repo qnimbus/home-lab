@@ -5,11 +5,11 @@ kind: HelmRelease
 metadata:
   name: forgejo
 spec:
+  interval: 1h
   chartRef:
     kind: OCIRepository
     name: forgejo
   dependsOn: []
-  interval: 1h
   values:
     containerSecurityContext:
       allowPrivilegeEscalation: false

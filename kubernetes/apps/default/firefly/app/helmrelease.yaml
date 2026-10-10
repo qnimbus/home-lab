@@ -5,10 +5,10 @@ kind: HelmRelease
 metadata:
   name: firefly
 spec:
+  interval: 1h
   chartRef:
     kind: OCIRepository
     name: firefly
-  interval: 1h
   dependsOn: []
   values:
     defaultPodOptions:
@@ -21,7 +21,6 @@ spec:
       firefly:
         annotations:
           reloader.stakater.com/auto: "true"
-        strategy: Recreate
         containers:
           app:
             image:
@@ -59,7 +58,6 @@ spec:
                   httpGet:
                     path: /
                     port: &port 8080
-                  initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 5
               readiness: *probes
@@ -91,7 +89,6 @@ spec:
           - path: /var/www/html/storage/upload
     service:
       app:
-        controller: firefly
         ports:
           http:
             port: *port

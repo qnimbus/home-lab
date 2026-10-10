@@ -5,10 +5,10 @@ kind: HelmRelease
 metadata:
   name: paperless
 spec:
+  interval: 1h
   chartRef:
     kind: OCIRepository
     name: paperless
-  interval: 1h
   dependsOn: []
   driftDetection:
     ignore:
@@ -26,7 +26,6 @@ spec:
       paperless:
         annotations:
           reloader.stakater.com/auto: "true"
-        strategy: Recreate
         containers:
           app:
             image:
@@ -88,7 +87,6 @@ spec:
                   httpGet:
                     path: /
                     port: *port
-                  initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 5
               readiness: *probes
@@ -163,7 +161,6 @@ spec:
             subPath: log
     service:
       app:
-        controller: paperless
         ports:
           http:
             port: *port

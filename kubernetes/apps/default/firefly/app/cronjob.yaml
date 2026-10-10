@@ -25,17 +25,17 @@ spec:
                     secretKeyRef:
                       key: STATIC_CRON_TOKEN
                       name: firefly-secret
-              securityContext:
-                allowPrivilegeEscalation: false
-                readOnlyRootFilesystem: true
-                capabilities:
-                  drop: ["ALL"]
               resources:
                 requests:
                   cpu: 10m
                   memory: 32Mi
                 limits:
                   memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
           restartPolicy: Never
           securityContext:
             runAsGroup: 65534

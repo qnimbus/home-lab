@@ -5,10 +5,10 @@ kind: HelmRelease
 metadata:
   name: firefly-importer
 spec:
+  interval: 1h
   chartRef:
     kind: OCIRepository
     name: firefly-importer
-  interval: 1h
   driftDetection:
     ignore:
       - paths: ["/spec/replicas"]
@@ -19,7 +19,6 @@ spec:
       firefly-importer:
         annotations:
           reloader.stakater.com/auto: "true"
-        strategy: Recreate
         containers:
           app:
             image:
@@ -41,7 +40,6 @@ spec:
                   httpGet:
                     path: /
                     port: &port 8080
-                  initialDelaySeconds: 0
                   periodSeconds: 10
                   timeoutSeconds: 5
               readiness: *probes
@@ -68,7 +66,6 @@ spec:
                 drop: ["ALL"]
     service:
       app:
-        controller: firefly-importer
         ports:
           http:
             port: *port
