@@ -8,7 +8,7 @@ metadata:
     gethomepage.dev/description: "Subscription tracker"
     gethomepage.dev/enabled: "true"
     gethomepage.dev/group: "Finance"
-    gethomepage.dev/icon: "sh-wallos.svg"
+    gethomepage.dev/icon: "wallos"
     gethomepage.dev/name: "Wallos"
 spec:
   hostnames:
