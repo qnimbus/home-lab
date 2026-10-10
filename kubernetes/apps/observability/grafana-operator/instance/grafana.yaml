@@ -51,8 +51,7 @@ spec:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
                 capabilities:
-                  drop:
-                    - ALL
+                  drop: ["ALL"]
           securityContext:
             fsGroup: 1000
             fsGroupChangePolicy: OnRootMismatch
