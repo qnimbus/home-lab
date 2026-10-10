@@ -10,6 +10,15 @@ _Declarative home infrastructure managed with Talos, Kubernetes, Flux, Ansible, 
 [![Renovate](https://img.shields.io/github/actions/workflow/status/qnimbus/home-lab/renovate.yaml?branch=main&label=renovate&logo=renovate&logoColor=white&style=for-the-badge)](https://github.com/qnimbus/home-lab/actions/workflows/renovate.yaml)
 [![Validation](https://img.shields.io/github/actions/workflow/status/qnimbus/home-lab/validate.yaml?branch=main&label=validation&logo=githubactions&logoColor=white&style=for-the-badge)](https://github.com/qnimbus/home-lab/actions/workflows/validate.yaml)
 
+![Age](https://stats.clustrs.dev/badges/cluster_age_days)
+![Uptime](https://stats.clustrs.dev/badges/cluster_uptime_days)
+![Nodes](https://stats.clustrs.dev/badges/cluster_node_count)
+![Pods](https://stats.clustrs.dev/badges/cluster_pod_count)
+![CPU](https://stats.clustrs.dev/badges/cluster_cpu_usage)
+![Memory](https://stats.clustrs.dev/badges/cluster_memory_usage)
+![Power](https://stats.clustrs.dev/badges/cluster_power_usage)
+![Alerts](https://stats.clustrs.dev/badges/cluster_alert_count)
+
 </div>
 
 ---
