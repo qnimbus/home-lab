@@ -66,7 +66,7 @@ spec:
           valueExpr: humanizeCommas(result) + " W"
         - id: cluster_alert_count
           colorExpr: 'result < 1 ? "green" : "red"'
-          query: count(ALERTS{alertstate="firing", severity!~"none|info"}) or vector(0)
+          query: clamp_min(max(alertmanager_alerts{state="active"}) - (count(ALERTS{alertstate="firing", severity=~"none|info"}) or vector(0)), 0)
           title: Alerts
       defaults:
         badge:
