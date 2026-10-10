@@ -108,6 +108,14 @@ postBuild:
 
 Don't add a `dependsOn` on `kopiur`/`kopiur-repository` for the backup component: until the kopiur CRDs and the `nas` ClusterRepository exist (fresh cluster), the first apply fails and Flux's retry picks it up. That one-off failure on bootstrap is accepted over carrying a dependency every backed-up app would need.
 
+A volume on `ceph-block` (the component's default storage class) does get a `dependsOn` on the storage behind it, the accepted exception in `.agents/instructions/flux-kustomization.instructions.md`:
+
+```yaml
+dependsOn:
+  - name: rook-ceph-cluster
+    namespace: rook-ceph
+```
+
 Add user-specified dependencies to `dependsOn`. Include `postBuild.substitute.APP` whenever any component is used; omit `components`/`postBuild` entirely otherwise.
 
 ### app/kustomization.yaml
@@ -228,6 +236,28 @@ spec:
 
 **The pod `securityContext` goes under `defaultPodOptions`**, not under `controllers.<app>.pod`. It then sits at the top of `values` and covers every controller of the release. Use `controllers.<app>.pod.securityContext` only for a controller that must differ from the others in the same release. Adjust `runAsUser`/`runAsGroup` (and capabilities) to what the image requires; drop the pod `securityContext` only if the image genuinely can't run non-root.
 
+**An image that must start as root** (its entrypoint runs `usermod`/`chown`, binds a port below 1024, or starts a daemon before dropping to its own user) still gets a container `securityContext`. Keep `allowPrivilegeEscalation: false` and `drop: ["ALL"]`, add back only the capabilities the entrypoint needs, and leave `readOnlyRootFilesystem` out when it writes outside its volumes (see `default/wallos`):
+
+```yaml
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    drop: ["ALL"]
+```
+
+Don't guess the list: run the image locally with it and check that it starts and serves.
+
+```bash
+docker run --rm --cap-drop ALL --cap-add CHOWN --cap-add SETGID --cap-add SETUID \
+  --security-opt no-new-privileges <image-repo>:<image-tag>
+```
+
+Keep `fsGroup` under `defaultPodOptions.securityContext` for a persistent volume, set `KOPIUR_MOVER_UID`/`KOPIUR_MOVER_GID` to the user the app drops to, and say in the namespace README's Gotchas why the image starts as root.
+
 **Pin the image by digest**, in the `tag` value: `<image-tag>@sha256:<digest>`. Renovate keeps a digest current once it is there, updating tag and digest together, but it doesn't add one to a bare tag. Look the digest up, never write it from memory:
 
 ```bash
@@ -295,6 +325,19 @@ spec:
 
 A route is always its own `httproute.yaml`, never app-template's `route:` value. That gives every app the same form whatever its chart (kube-prometheus-stack, forgejo and `network/home-assistant` have routes too), applies a hostname or annotation change without a Helm upgrade, and lets the route point at a Service the release doesn't own, as the KEDA HTTP scaler apps do. For a public app use `envoy-external` and `${DOMAIN_APP}` (`.agents/instructions/dns-naming.instructions.md`). `backendRefs` names the Service, which app-template calls `<app>` when the release has one.
 
+**Homepage tile** (optional, for an app a person opens in a browser): homepage discovers routes by these annotations, under `metadata`:
+
+```yaml
+annotations:
+  gethomepage.dev/description: "<what it is, in a few words>"
+  gethomepage.dev/enabled: "true"
+  gethomepage.dev/group: "<group>"
+  gethomepage.dev/icon: "<icon>"
+  gethomepage.dev/name: "<Display Name>"
+```
+
+Use a group that already exists rather than a new one (`grep -rh "gethomepage.dev/group" kubernetes/apps | sort | uniq -c`). The icon is a [dashboard-icons](https://github.com/homarr-labs/dashboard-icons) name (`plex`), a selfh.st one (`sh-wallos.svg`) or a Material Design icon (`mdi-cash-multiple`).
+
 ### app/externalsecret.yaml (only if secrets)
 
 ```yaml
@@ -351,5 +394,6 @@ Show the user the created files and get confirmation before committing. Commit s
 - **Restating a chart default** — e.g. `strategy: Recreate` on an app-template controller. Leave it out unless something depends on it, and then say so in the namespace README (`.agents/instructions/helm-values.instructions.md`).
 - **Using app-template's `route:` value** — a route is a separate `app/httproute.yaml`, listed in `app/kustomization.yaml`.
 - **Putting the pod `securityContext` under `controllers.<app>.pod`** — it goes under `defaultPodOptions`, at the top of `values`.
+- **Running a root-starting image with default capabilities, or with a guessed list** — drop `ALL`, add back what a local run shows it needs.
 - **Adding a NetworkPolicy/CiliumNetworkPolicy by default** — the cluster runs without them (see CLAUDE.md's "Network policies"); only add one if the user asks.
 - **Adding `wait`, `commonMetadata`, or `timeout` to `ks.yaml`** — all three are boilerplate now. Leave `wait` unset unless another Kustomization depends on this one and it has no `healthChecks` (then, and only then, `wait: true`).
