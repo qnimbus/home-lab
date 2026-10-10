@@ -31,12 +31,12 @@ spec:
           title: Flux
           valueExpr: labels[?"version"].orValue("unknown")
         - id: cluster_age_days
-          colorExpr: '"green"'
+          colorExpr: colorScale(result, [15552000.0, 31104000.0], ["green", "orange", "red"])
           query: time() - min(kube_node_created)
           title: Age
           valueExpr: humanizeDurationDays(result)
         - id: cluster_uptime_days
-          colorExpr: '"green"'
+          colorExpr: colorScale(result, [15552000.0, 31104000.0], ["green", "orange", "red"])
           query: avg(node_time_seconds{pod!=""} - node_boot_time_seconds{pod!=""})
           title: Uptime
           valueExpr: humanizeDurationDays(result)
@@ -48,6 +48,7 @@ spec:
           colorExpr: '"green"'
           query: sum(kube_pod_status_phase{phase="Running"})
           title: Pods
+          valueExpr: humanizeCommas(result)
         - id: cluster_cpu_usage
           colorExpr: colorScale(result, [35.0, 75.0], ["green", "orange", "red"])
           query: round(avg(instance:node_cpu_utilisation:rate5m{pod!=""}) * 100, 0.1)
@@ -58,6 +59,11 @@ spec:
           query: round(sum(node_memory_MemTotal_bytes{pod!=""} - node_memory_MemAvailable_bytes{pod!=""}) / sum(node_memory_MemTotal_bytes{pod!=""}) * 100, 0.1)
           title: Memory
           valueExpr: humanizeFloat(result) + "%"
+        - id: cluster_power_usage
+          colorExpr: '"green"'
+          query: round(sum(network_ups_tools_ups_realpower))
+          title: Power
+          valueExpr: humanizeCommas(result) + " W"
         - id: cluster_alert_count
           colorExpr: 'result < 1 ? "green" : "red"'
           query: count(ALERTS{alertstate="firing", severity!~"none|info"}) or vector(0)
