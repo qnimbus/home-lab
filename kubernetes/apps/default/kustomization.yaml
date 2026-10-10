@@ -13,3 +13,4 @@ resources:
   - ./homepage/ks.yaml
   - ./paperless/ks.yaml
   - ./unifi-voucher-site/ks.yaml
+  - ./wallos/ks.yaml

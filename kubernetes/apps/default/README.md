@@ -12,6 +12,7 @@ Personal apps with no better home: finance, documents, git, the dashboard and th
 | homepage           | Dashboard                                      | `homepage.${DOMAIN_CLUSTER}`; config in [app/config](./homepage/app/config/)                               |
 | paperless          | Paperless-ngx, document archive with OCR       | `paperless.${DOMAIN_CLUSTER}`; Postgres, Dragonfly, NAS SMB shares; scales to zero when the NAS is down    |
 | unifi-voucher-site | Guest-WiFi voucher portal                      | `voucher.${DOMAIN_CLUSTER}`; scales to zero (KEDA HTTP); no login                                          |
+| wallos             | Wallos, subscription tracker                   | `wallos.${DOMAIN_CLUSTER}`; SQLite and logos on one kopiur-backed PVC                                      |
 | whoami             | Request-echo test app, **not deployed**        | Add `./whoami/ks.yaml` to [kustomization.yaml](./kustomization.yaml) to enable; public on `envoy-external` |
 
 ## How it fits together
@@ -54,4 +55,6 @@ just k8s browse-pvc default <claim>
 - **paperless's `paperless` PVC holds only derived data**: the search index, the classifier model and scheduler state. Everything else is in Postgres and on the NAS. An empty volume is recoverable with `document_index reindex` and `document_create_classifier`, run in the `app` container.
 - **forgejo** leaves `image.tag` unset so it follows the pinned chart's `appVersion`. `cache`/`queue`/`session` are unset too, so the chart falls back to in-memory, which is fine for one replica.
 - **unifi-voucher-site** has `AUTH_DISABLE: "true"`. That's only acceptable while it's internal-only; revisit it if the route is ever widened. Its secret reshapes the shared 1Password `unifi` item (full-URL `UNIFI_HOST` to bare `UNIFI_IP`/`UNIFI_PORT`, `API_KEY` to `UNIFI_TOKEN`). All other settings are listed in the [upstream README](https://github.com/glenndehaan/unifi-voucher-site).
+- **wallos starts as root** and has a writable root filesystem. Its `startup.sh` runs `usermod`, chowns `/var/www/html` and the volumes to `www-data` (82), and starts nginx on port 80 and crond; php-fpm then serves as 82. The container keeps only the capabilities that needs (`capabilities.add`). The kopiur mover runs as 82 to match the files.
+- **wallos runs its own cron** inside the container (payment dates, exchange rates, notifications at 09:00). It follows `TZ`, which is `${CLUSTER_TIMEZONE}`: the dates and notification times are local.
 - **whoami** listens on 8080 so it can run as non-root; its Service keeps port 80.

@@ -1,0 +1,77 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/bjw-s-labs/helm-charts/main/charts/other/app-template/schemas/helmrelease-helm-v2.schema.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: wallos
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: wallos
+  values:
+    defaultPodOptions:
+      securityContext:
+        fsGroup: 82
+        fsGroupChangePolicy: OnRootMismatch
+    controllers:
+      wallos:
+        containers:
+          app:
+            image:
+              repository: ghcr.io/ellite/wallos
+              tag: 5.8.3@sha256:0006879778f31a962a3873f7682514b92a3c7665dcbc4764fcc241ad968eaccd
+            env:
+              TZ: ${CLUSTER_TIMEZONE}
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  failureThreshold: 3
+                  httpGet:
+                    path: /health.php
+                    port: &port 80
+                  periodSeconds: 10
+                  timeoutSeconds: 2
+              readiness: *probes
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  failureThreshold: 30
+                  httpGet:
+                    path: /health.php
+                    port: *port
+                  periodSeconds: 5
+                  timeoutSeconds: 2
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 256Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                add:
+                  - CHOWN
+                  - DAC_OVERRIDE
+                  - FOWNER
+                  - KILL
+                  - NET_BIND_SERVICE
+                  - SETGID
+                  - SETUID
+                drop: ["ALL"]
+    persistence:
+      data:
+        existingClaim: "${KOPIUR_CLAIM:=${APP}}"
+        globalMounts:
+          - path: /var/www/html/db
+            subPath: db
+          - path: /var/www/html/images/uploads/logos
+            subPath: logos
+    service:
+      app:
+        ports:
+          http:
+            port: *port
