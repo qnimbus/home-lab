@@ -111,6 +111,8 @@ spec:
             relabelings:
               - replacement: ups-2u
                 targetLabel: instance
+              - replacement: ups-2u
+                targetLabel: ups
             scrapeTimeout: 10s
           - interval: 30s
             params:
@@ -120,4 +122,6 @@ spec:
             relabelings:
               - replacement: ups-tower
                 targetLabel: instance
+              - replacement: ups-tower
+                targetLabel: ups
             scrapeTimeout: 10s
