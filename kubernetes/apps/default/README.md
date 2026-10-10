@@ -1,6 +1,6 @@
 # default
 
-Personal apps with no better home: finance, documents, git, the dashboard and the guest-WiFi voucher portal. They share nothing beyond the namespace. Each stateful app gets its own CNPG cluster from [`components/postgres`](../../components/postgres/README.md), and every route is on `envoy-internal` except whoami's.
+Personal apps with no better home: finance, documents, git, the dashboard and the guest-WiFi voucher portal. They share nothing beyond the namespace. Each app with a database gets its own CNPG cluster from [`components/postgres`](../../components/postgres/README.md), except wallos, which keeps SQLite on its volume, and every route is on `envoy-internal` except whoami's.
 
 ## Apps
 
@@ -48,7 +48,7 @@ just k8s browse-pvc default <claim>
 ## Gotchas
 
 - **paperless `PAPERLESS_FILENAME_FORMAT`**: app-template runs env values through Helm's `tpl`, so Jinja's `{{ }}` must be written `{{"{{"}} … {{"}}"}}`. Unescaped, the HelmRelease fails to render and the old pod silently keeps running. `{% %}` needs no escaping.
-- **paperless starts as root** (container `securityContext`). The s6-overlay init installs `tesseract-ocr-nld` for `PAPERLESS_OCR_LANGUAGES` and chowns the volumes; both fail as non-root. `USERMAP_UID`/`USERMAP_GID` then drop the app processes to 1000.
+- **paperless starts as root** (container `securityContext`). The s6-overlay init installs `tesseract-ocr-nld` for `PAPERLESS_OCR_LANGUAGES` and chowns the volumes; both fail as non-root. `USERMAP_UID`/`USERMAP_GID` then drop the app processes to 1000. It keeps the runtime's default capabilities, an accepted exception to the drop-`ALL` pattern for root-starting images.
 - **paperless v3** needs `PAPERLESS_DBENGINE` set explicitly (it was inferred from `DBHOST` before).
 - **paperless's Dragonfly has no auth.** With no NetworkPolicy, any pod in the cluster can reach it on `6379`.
 - **Long startup probes** (`failureThreshold: 60`) on firefly and paperless cover first-boot migrations and search-index builds.

@@ -25,6 +25,7 @@ sorted.
 | Top level                                    | `apiVersion`, `kind`, `metadata`, `spec`                                                                     |
 | `metadata`                                   | `name`, `namespace`, `annotations`, `labels`                                                                 |
 | Any `resources` block (container, CRD field) | `requests`, `limits`                                                                                         |
+| Container in a raw workload (`containers[]`) | `name`, `image`, rest                                                                                        |
 | ExternalSecret `spec.data[]`                 | `secretKey`, `remoteRef` (a PushSecret's `spec.data[].match` mirrors it)                                     |
 | `kustomization.yaml` (Kustomize, not Flux)   | `apiVersion`, `kind`, `namespace`, `components`, `resources`, `configMapGenerator`, `generatorOptions`, rest |
 | PrometheusRule rule                          | `alert` or `record`, `expr`, `for`, `keep_firing_for`, `labels`, `annotations`                               |

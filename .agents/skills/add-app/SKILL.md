@@ -236,6 +236,8 @@ spec:
 
 **The pod `securityContext` goes under `defaultPodOptions`**, not under `controllers.<app>.pod`. It then sits at the top of `values` and covers every controller of the release. Use `controllers.<app>.pod.securityContext` only for a controller that must differ from the others in the same release. Adjust `runAsUser`/`runAsGroup` (and capabilities) to what the image requires; drop the pod `securityContext` only if the image genuinely can't run non-root.
 
+Don't set `seccompProfile`: Talos makes `RuntimeDefault` the default for every pod (`defaultRuntimeSeccompProfileEnabled` in `kubernetes/talos/cluster.yaml.j2`).
+
 **An image that must start as root** (its entrypoint runs `usermod`/`chown`, binds a port below 1024, or starts a daemon before dropping to its own user) still gets a container `securityContext`. Keep `allowPrivilegeEscalation: false` and `drop: ["ALL"]`, add back only the capabilities the entrypoint needs, and leave `readOnlyRootFilesystem` out when it writes outside its volumes (see `default/wallos`):
 
 ```yaml
@@ -257,6 +259,8 @@ docker run --rm --cap-drop ALL --cap-add CHOWN --cap-add SETGID --cap-add SETUID
 ```
 
 Keep `fsGroup` under `defaultPodOptions.securityContext` for a persistent volume, set `KOPIUR_MOVER_UID`/`KOPIUR_MOVER_GID` to the user the app drops to, and say in the namespace README's Gotchas why the image starts as root.
+
+**Write the registry out**, Docker Hub included: `docker.io/traefik/whoami`, not `traefik/whoami`.
 
 **Pin the image by digest**, in the `tag` value: `<image-tag>@sha256:<digest>`. Renovate keeps a digest current once it is there, updating tag and digest together, but it doesn't add one to a bare tag. Look the digest up, never write it from memory:
 
