@@ -11,6 +11,7 @@ resources:
   - ./firefly-importer/ks.yaml
   - ./forgejo/ks.yaml
   - ./homepage/ks.yaml
+  - ./mail-archiver/ks.yaml
   - ./paperless/ks.yaml
   - ./unifi-voucher-site/ks.yaml
   - ./wallos/ks.yaml

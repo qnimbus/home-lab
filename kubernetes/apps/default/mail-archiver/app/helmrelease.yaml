@@ -1,0 +1,108 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/bjw-s-labs/helm-charts/main/charts/other/app-template/schemas/helmrelease-helm-v2.schema.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: mail-archiver
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: mail-archiver
+  dependsOn: []
+  values:
+    defaultPodOptions:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+    controllers:
+      mail-archiver:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: ghcr.io/s1t5/mailarchiver
+              tag: 2609.1@sha256:8a05e3c99f63c03ab2599c04078c7de4ee5ecf1988e8adec8d233a457913ab44
+            env:
+              AllowedHosts: &hostname "mail-archiver.${DOMAIN_CLUSTER}"
+              ConnectionStrings__DefaultConnection:
+                value: "Host=${APP}-postgres-rw;Database=mail-archiver;Username=$(DB_USERNAME);Password=$(DB_PASSWORD)"
+                dependsOn:
+                  - DB_PASSWORD
+                  - DB_USERNAME
+              DB_PASSWORD:
+                valueFrom:
+                  secretKeyRef:
+                    key: password
+                    name: mail-archiver-postgres-app
+              DB_USERNAME:
+                valueFrom:
+                  secretKeyRef:
+                    key: username
+                    name: mail-archiver-postgres-app
+              TimeZone__DisplayTimeZoneId: ${CLUSTER_TIMEZONE}
+            envFrom:
+              - secretRef:
+                  name: mail-archiver-secret
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  failureThreshold: 3
+                  httpGet:
+                    httpHeaders:
+                      - name: Host
+                        value: *hostname
+                    path: /Auth/Login
+                    port: &port 5000
+                  periodSeconds: 10
+                  timeoutSeconds: 5
+              readiness: *probes
+              startup:
+                enabled: true
+                custom: true
+                spec:
+                  failureThreshold: 30
+                  httpGet:
+                    httpHeaders:
+                      - name: Host
+                        value: *hostname
+                    path: /Auth/Login
+                    port: *port
+                  periodSeconds: 5
+                  timeoutSeconds: 5
+            resources:
+              requests:
+                cpu: 20m
+                memory: 256Mi
+              limits:
+                memory: 2Gi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: ["ALL"]
+    persistence:
+      keys:
+        existingClaim: "nfs-${APP}"
+        globalMounts:
+          - path: /app/DataProtection-Keys
+      scratch:
+        type: emptyDir
+        globalMounts:
+          - path: /app/exports
+            subPath: exports
+          - path: /app/uploads
+            subPath: uploads
+          - path: /tmp
+            subPath: tmp
+    service:
+      app:
+        ports:
+          http:
+            port: *port

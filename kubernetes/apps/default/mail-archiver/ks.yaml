@@ -1,0 +1,39 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app mail-archiver
+  labels:
+    components.postgres/cnpg: init
+spec:
+  targetNamespace: default
+  components:
+    - ../../../../components/nfs
+    - ../../../../components/postgres
+  dependsOn:
+    - name: csi-driver-nfs
+      namespace: system
+  interval: 1h
+  path: ./kubernetes/apps/default/mail-archiver/app
+  postBuild:
+    substitute:
+      APP: *app
+      NFS_CAPACITY: 1Gi
+      POSTGRES_BACKUP_SCHEDULE: "0 18 2 * * *"
+      POSTGRES_STORAGE: 50Gi
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: *app
+      namespace: default
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      current: status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'True')
+      failed: status.conditions.filter(e, e.type == 'Ready').all(e, e.status == 'False')

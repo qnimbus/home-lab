@@ -10,6 +10,7 @@ Personal apps with no better home: finance, documents, git, the dashboard and th
 | firefly-importer   | Bank CSV/API import for Firefly III            | `firefly-importer.${DOMAIN_CLUSTER}`; scales to zero (KEDA HTTP)                                           |
 | forgejo            | Git hosting (upstream chart, not app-template) | `forgejo.${DOMAIN_CLUSTER}`; SSH through the `ssh` listener on `envoy-internal` (TCPRoute); Postgres       |
 | homepage           | Dashboard                                      | `homepage.${DOMAIN_CLUSTER}`; config in [app/config](./homepage/app/config/)                               |
+| mail-archiver      | Mail Archiver, IMAP mailbox archive and search | `mail-archiver.${DOMAIN_CLUSTER}`; Postgres holds all mail; login keys on an NFS volume                    |
 | paperless          | Paperless-ngx, document archive with OCR       | `paperless.${DOMAIN_CLUSTER}`; Postgres, Dragonfly, NAS SMB shares; scales to zero when the NAS is down    |
 | unifi-voucher-site | Guest-WiFi voucher portal                      | `voucher.${DOMAIN_CLUSTER}`; scales to zero (KEDA HTTP); no login                                          |
 | wallos             | Wallos, subscription tracker                   | `wallos.${DOMAIN_CLUSTER}`; SQLite and logos on one kopiur-backed PVC                                      |
@@ -47,6 +48,11 @@ just k8s browse-pvc default <claim>
 
 ## Gotchas
 
+- **mail-archiver's probes send a `Host` header.** `AllowedHosts` makes the app answer `400` to any other host, the pod IP a probe uses by default included. They hit `/Auth/Login`, because `/` redirects to the route's hostname, which the kubelet reports as a probe warning.
+- **mail-archiver keeps everything in Postgres**, attachments included, so `POSTGRES_STORAGE` is sized for the mail. It can't be raised in place: `openebs-hostpath` doesn't expand volumes, so a larger size means rebuilding the cluster from its backup.
+- **mail-archiver's NFS volume holds only ASP.NET's DataProtection keys**, which sign the login cookies. Losing it logs everyone out and nothing more. The key that encrypts the stored mailbox passwords is `CREDENTIAL_ENCRYPTION_KEY` in 1Password: without it those passwords have to be entered again.
+- **mail-archiver writes to `/app/uploads` and `/app/exports`** at startup and crashes on a read-only root filesystem without them. Both are scratch, on an `emptyDir` with `/tmp`: an mbox upload (up to 10 GB) lands on the node's disk until it is imported.
+- **mail-archiver's database connection string is assembled in `env`** from the CNPG Secret with `$(DB_PASSWORD)`. Kubernetes only expands variables defined earlier in the list, which the `dependsOn` on that entry arranges.
 - **paperless `PAPERLESS_FILENAME_FORMAT`**: app-template runs env values through Helm's `tpl`, so Jinja's `{{ }}` must be written `{{"{{"}} … {{"}}"}}`. Unescaped, the HelmRelease fails to render and the old pod silently keeps running. `{% %}` needs no escaping.
 - **paperless starts as root** (container `securityContext`). The s6-overlay init installs `tesseract-ocr-nld` for `PAPERLESS_OCR_LANGUAGES` and chowns the volumes; both fail as non-root. `USERMAP_UID`/`USERMAP_GID` then drop the app processes to 1000. It keeps the runtime's default capabilities, an accepted exception to the drop-`ALL` pattern for root-starting images.
 - **paperless v3** needs `PAPERLESS_DBENGINE` set explicitly (it was inferred from `DBHOST` before).
