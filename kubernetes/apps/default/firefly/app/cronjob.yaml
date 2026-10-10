@@ -14,7 +14,7 @@ spec:
         spec:
           containers:
             - name: cron
-              image: curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
+              image: docker.io/curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
               command:
                 - /bin/sh
                 - -c
@@ -41,7 +41,5 @@ spec:
             runAsGroup: 65534
             runAsNonRoot: true
             runAsUser: 65534
-            seccompProfile:
-              type: RuntimeDefault
   schedule: "0 * * * *"
   successfulJobsHistoryLimit: 1
