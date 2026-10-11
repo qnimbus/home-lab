@@ -305,6 +305,27 @@ envFrom:
       name: <app>-secret
 ```
 
+An env value that references another variable (a connection string built from a CNPG Secret, see `default/mail-archiver`): Kubernetes only expands `$(VAR)` when `VAR` is defined earlier in the list, and app-template sorts `env` alphabetically. Put `dependsOn` on the entry that does the referencing; app-template then orders it after the ones it names:
+
+```yaml
+env:
+  DATABASE_URL:
+    value: "postgres://$(DB_USERNAME):$(DB_PASSWORD)@${APP}-postgres-rw/<app>"
+    dependsOn:
+      - DB_PASSWORD
+      - DB_USERNAME
+  DB_PASSWORD:
+    valueFrom:
+      secretKeyRef:
+        key: password
+        name: <app>-postgres-app
+  DB_USERNAME:
+    valueFrom:
+      secretKeyRef:
+        key: username
+        name: <app>-postgres-app
+```
+
 ### app/httproute.yaml (only if routed)
 
 ```yaml
@@ -396,6 +417,7 @@ Show the user the created files and get confirmation before committing. Commit s
 - **Skipping the sorting conventions** — key order follows the templates above first, then `.agents/instructions/sorting.instructions.md` for anything they don't cover.
 - **Alphabetizing what the templates order differently** — e.g. moving `capabilities` before `readOnlyRootFilesystem`, or `dataFrom` to the top of an ExternalSecret. The template order is the convention, not a mistake to fix.
 - **Restating a chart default** — e.g. `strategy: Recreate` on an app-template controller. Leave it out unless something depends on it, and then say so in the namespace README (`.agents/instructions/helm-values.instructions.md`).
+- **Renaming env variables to steer the sort** — an `AA_` prefix so a variable is defined before the one that references it. Use `dependsOn` on the referencing entry instead; an unexpanded `$(VAR)` reaches the app as literal text, with no error.
 - **Using app-template's `route:` value** — a route is a separate `app/httproute.yaml`, listed in `app/kustomization.yaml`.
 - **Putting the pod `securityContext` under `controllers.<app>.pod`** — it goes under `defaultPodOptions`, at the top of `values`.
 - **Running a root-starting image with default capabilities, or with a guessed list** — drop `ALL`, add back what a local run shows it needs.
