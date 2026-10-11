@@ -26,7 +26,7 @@ spec:
         image:
           registry: quay.io/
       hostpathClass:
-        basePath: &hostPath /var/mnt/openebs/local
+        basePath: &hostPath /var/mnt/local-hostpath
         enabled: true
         isDefaultClass: false
         name: openebs-hostpath
