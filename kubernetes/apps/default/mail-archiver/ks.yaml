@@ -14,6 +14,7 @@ spec:
     substitute:
       APP: *app
       POSTGRES_BACKUP_SCHEDULE: "0 18 2 * * *"
+      POSTGRES_INSTANCES: "2"
       POSTGRES_STORAGE: 50Gi
   prune: true
   sourceRef:
