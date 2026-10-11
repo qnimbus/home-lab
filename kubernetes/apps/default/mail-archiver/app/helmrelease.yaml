@@ -13,8 +13,6 @@ spec:
   values:
     defaultPodOptions:
       securityContext:
-        fsGroup: 1000
-        fsGroupChangePolicy: OnRootMismatch
         runAsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
@@ -44,6 +42,7 @@ spec:
                   secretKeyRef:
                     key: username
                     name: mail-archiver-postgres-app
+              LocalImport__AllowedPaths__0: &import /data/import
               TimeZone__DisplayTimeZoneId: ${CLUSTER_TIMEZONE}
             envFrom:
               - secretRef:
@@ -88,10 +87,15 @@ spec:
               capabilities:
                 drop: ["ALL"]
     persistence:
-      keys:
-        existingClaim: "nfs-${APP}"
+      data:
+        type: nfs
+        path: /mnt/tank/Cluster/backup
+        server: "${NAS_HOST}"
         globalMounts:
           - path: /app/DataProtection-Keys
+            subPath: apps/mail-archiver/data
+          - path: *import
+            subPath: apps/mail-archiver/import
       scratch:
         type: emptyDir
         globalMounts:

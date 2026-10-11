@@ -9,17 +9,12 @@ metadata:
 spec:
   targetNamespace: default
   components:
-    - ../../../../components/nfs
     - ../../../../components/postgres
-  dependsOn:
-    - name: csi-driver-nfs
-      namespace: system
   interval: 1h
   path: ./kubernetes/apps/default/mail-archiver/app
   postBuild:
     substitute:
       APP: *app
-      NFS_CAPACITY: 1Gi
       POSTGRES_BACKUP_SCHEDULE: "0 18 2 * * *"
       POSTGRES_STORAGE: 50Gi
   prune: true
