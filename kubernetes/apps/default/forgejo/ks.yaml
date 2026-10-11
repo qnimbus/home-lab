@@ -17,6 +17,7 @@ spec:
     substitute:
       APP: *app
       POSTGRES_BACKUP_SCHEDULE: "0 33 0 * * *"
+      POSTGRES_INSTANCES: "2"
   prune: true
   sourceRef:
     kind: GitRepository
