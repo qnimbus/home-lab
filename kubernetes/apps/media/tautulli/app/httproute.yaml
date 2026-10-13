@@ -1,0 +1,23 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/gateway.networking.k8s.io/httproute_v1.json
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: tautulli
+  annotations:
+    gethomepage.dev/description: "Plex statistics"
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: "Media"
+    gethomepage.dev/icon: "tautulli"
+    gethomepage.dev/name: "Tautulli"
+spec:
+  hostnames:
+    - "tautulli.${DOMAIN_CLUSTER}"
+  parentRefs:
+    - name: envoy-internal
+      namespace: network
+      sectionName: https
+  rules:
+    - backendRefs:
+        - name: tautulli
+          port: 8181

@@ -4,10 +4,11 @@ Plex, with hardware transcoding on the nodes' Intel GPUs, its library on the NAS
 
 ## Apps
 
-| Kustomization | What it does                                              | Notes                                                                                    |
-| ------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| plex          | Plex Media Server                                         | GPU via [components/gpu](../../components/gpu/), `/config` backed up by kopiur           |
-| plex-tools    | `plex-image-cleanup`, a CronJob that prunes unused images | Runs in `MODE: remove` on Plex's config volume, so it is pinned to the node Plex runs on |
+| Kustomization | What it does                                              | Notes                                                                                      |
+| ------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| plex          | Plex Media Server                                         | GPU via [components/gpu](../../components/gpu/), `/config` backed up by kopiur             |
+| plex-tools    | `plex-image-cleanup`, a CronJob that prunes unused images | Runs in `MODE: remove` on Plex's config volume, so it is pinned to the node Plex runs on   |
+| tautulli      | Tautulli, play history and statistics for Plex            | `tautulli.${DOMAIN_CLUSTER}` only, `/config` backed up by kopiur. `TZ` set: it dates plays |
 
 ## How it fits together
 
