@@ -45,7 +45,7 @@ A Kustomization labelled `substitution.flux.home.arpa/disabled: "true"` is skipp
 ## Caveats
 
 - **Everything here is plaintext in Git**, and the repo is public. A value that must reach `${VAR}` substitution without being committed comes from an ExternalSecret through the app's own `substituteFrom`, as [`network/cloudflare-tunnel`](../../apps/network/cloudflare-tunnel/) does.
-- **`MAIL_FROM_ADDRESS` must be an identity verified in AWS SES**, the upstream of [`mail/smtp-relay`](../../apps/mail/smtp-relay/). SES rejects any `From` address outside a verified domain or identity, so the value follows the SES console, not `DOMAIN_CLUSTER` or another in-cluster domain.
+- **`MAIL_FROM_ADDRESS` must be under `notifications.vanwetten.id`**, the sender domain [`mail/smtp-relay`](../../apps/mail/smtp-relay/) routes to that domain's Resend key. The relay rejects any other sender domain, and Resend rejects a `From` outside the key's verified domain, so the value follows the relay's `maddy.conf`, not `DOMAIN_CLUSTER` or another in-cluster domain.
 - `TAILSCALE_CIDR` is Tailscale's CGNAT range for client addresses. It is the same for every tailnet, not something this tailnet chose.
 - The ConfigMap is labelled `reconcile.fluxcd.io/watch: Enabled`, so a changed value reconciles the Kustomizations that substitute from it right away, not at their next interval.
 - A variable a manifest uses but nothing defines is substituted as an empty string, without an error. Check the render after adding one.
