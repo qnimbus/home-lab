@@ -44,3 +44,15 @@ grep -rln "smtp-relay" kubernetes --include=*.yaml        # who sends through it
 - **Routing reads the envelope sender, Resend checks the `From:` header.** A client whose two senders are in different domains passes the relay and is then rejected by Resend. The rejection shows up in the relay's logs, not on the client.
 - **`dependsOn` both external-dns instances** is deliberate: `external-dns-cloudflare`'s exclusion list is what keeps the IoT record out of public DNS (see [flux-kustomization.instructions.md](../../../.agents/instructions/flux-kustomization.instructions.md)).
 - **The blackbox probe goes through the in-cluster Service** and sends a `QUIT`: maddy logs an error for every connection dropped without one.
+- **`connection reset by peer` from the pod's own node IP is the kubelet**, not a client. The liveness and readiness probes are `tcpSocket` on `2525`: the kubelet connects and closes without reading. When maddy's `220` greeting has already arrived, the kernel answers the close with a reset, and maddy logs it. No mail is involved.
+- **Resend needs a text or HTML body.** Its SMTP endpoint feeds Resend's API, and a message with only an attachment comes back as `550 Missing html or text field`. The printer's scan-to-mail has its Message field set for this reason.
+- **A failed connection to Resend is either retried or dropped, depending on how it fails.** maddy wraps the dial error, so its own "network errors are temporary" handling never sees it. The queue then asks the operating system's error code instead:
+
+  | Failure                                                   | Outcome                                                                   |
+  | --------------------------------------------------------- | ------------------------------------------------------------------------- |
+  | Connect timeout, DNS timeout                              | Retried: first after 15 minutes, then ×1.25 each time, 20 tries (~3 days) |
+  | 4xx reply, connection lost mid-session                    | Retried, same schedule                                                    |
+  | Connection refused, host or network unreachable, NXDOMAIN | Dropped at once: `not delivered, permanent error`                         |
+  | 5xx reply                                                 | Dropped at once                                                           |
+
+  There's no `bounce` block, so a dropped message only shows up in the log, and the sender never hears about it. `SmtpRelayMailNotDelivered` (a log alert in [`observability/vmalert`](../observability/vmalert/app/helmrelease.yaml)) fires on that log line and stays firing for an hour.

@@ -1,0 +1,56 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: vmalert
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: vmalert
+  values:
+    server:
+      config:
+        alerts:
+          groups:
+            - name: smtp-relay
+              type: vlogs
+              interval: 1m
+              rules:
+                - alert: SmtpRelayMailNotDelivered
+                  expr: >-
+                    _time:1h app_name:smtp-relay "not delivered, permanent error"
+                    | stats by (k_namespace_name) count() as undelivered
+                    | rename k_namespace_name as namespace
+                  labels:
+                    severity: warning
+                  annotations:
+                    summary: smtp-relay dropped {{ $value }} message(s) in the last hour
+                    description: >-
+                      maddy gave up on {{ $value }} message(s) in the last hour
+                      ("not delivered, permanent error"). The upstream's reason
+                      is on the "delivery attempt failed" line with the same
+                      msg_id: kubectl -n mail logs deploy/smtp-relay
+      datasource:
+        url: http://victoria-logs-server.observability.svc.cluster.local:9428
+      fullnameOverride: vmalert
+      notifiers:
+        - url: http://alertmanager-kube-prometheus-stack-alertmanager-0.alertmanager-operated.observability.svc.cluster.local:9093
+        - url: http://alertmanager-kube-prometheus-stack-alertmanager-1.alertmanager-operated.observability.svc.cluster.local:9093
+        - url: http://alertmanager-kube-prometheus-stack-alertmanager-2.alertmanager-operated.observability.svc.cluster.local:9093
+      resources:
+        requests:
+          cpu: 10m
+        limits:
+          memory: 128Mi
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        readOnlyRootFilesystem: true
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+    serviceMonitor:
+      enabled: true
