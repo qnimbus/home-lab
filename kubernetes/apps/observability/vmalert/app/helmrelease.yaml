@@ -32,6 +32,22 @@ spec:
                       ("not delivered, permanent error"). The upstream's reason
                       is on the "delivery attempt failed" line with the same
                       msg_id: kubectl -n mail logs deploy/smtp-relay
+                - alert: SmtpRelayMailQueued
+                  expr: >-
+                    _time:1h app_name:smtp-relay "will retry"
+                    | stats by (k_namespace_name) count() as retries
+                    | rename k_namespace_name as namespace
+                  labels:
+                    severity: warning
+                  annotations:
+                    summary: smtp-relay has mail waiting for a retry
+                    description: >-
+                      maddy scheduled {{ $value }} retr(y/ies) in the last hour
+                      ("will retry"). The queue is on an emptyDir: restarting
+                      the pod (a node drain, an upgrade, a config or secret
+                      change) loses this mail. The upstream's reason is on the
+                      "delivery attempt failed" line with the same msg_id:
+                      kubectl -n mail logs deploy/smtp-relay
       datasource:
         url: http://victoria-logs-server.observability.svc.cluster.local:9428
       extraArgs:
