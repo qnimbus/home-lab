@@ -27,6 +27,10 @@ spec:
               tag: 2609.1@sha256:8a05e3c99f63c03ab2599c04078c7de4ee5ecf1988e8adec8d233a457913ab44
             env:
               AllowedHosts: &hostname "mail-archiver.${DOMAIN_CLUSTER}"
+              BandwidthTracking__DailyLimitMb: "2500"
+              BandwidthTracking__Enabled: "true"
+              BandwidthTracking__PauseHoursOnLimit: "24"
+              BandwidthTracking__WarningThresholdPercent: "80"
               ConnectionStrings__DefaultConnection:
                 value: "Host=${APP}-postgres-rw;Database=mail-archiver;Username=$(DB_USERNAME);Password=$(DB_PASSWORD)"
                 dependsOn:
