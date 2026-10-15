@@ -1,0 +1,6 @@
+---
+dns_sd_configs:
+  - names:
+      - alertmanager-operated.observability.svc.cluster.local
+    type: A
+    port: 9093

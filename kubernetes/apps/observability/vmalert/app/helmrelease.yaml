@@ -34,11 +34,17 @@ spec:
                       msg_id: kubectl -n mail logs deploy/smtp-relay
       datasource:
         url: http://victoria-logs-server.observability.svc.cluster.local:9428
+      extraArgs:
+        notifier.config: /notifier/notifier.yaml
+      extraVolumeMounts:
+        - name: notifier
+          mountPath: /notifier
+          readOnly: true
+      extraVolumes:
+        - name: notifier
+          configMap:
+            name: vmalert-notifier
       fullnameOverride: vmalert
-      notifiers:
-        - url: http://alertmanager-kube-prometheus-stack-alertmanager-0.alertmanager-operated.observability.svc.cluster.local:9093
-        - url: http://alertmanager-kube-prometheus-stack-alertmanager-1.alertmanager-operated.observability.svc.cluster.local:9093
-        - url: http://alertmanager-kube-prometheus-stack-alertmanager-2.alertmanager-operated.observability.svc.cluster.local:9093
       resources:
         requests:
           cpu: 10m
