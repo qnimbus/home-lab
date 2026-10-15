@@ -22,6 +22,7 @@ spec:
               repository: ghcr.io/ellite/wallos
               tag: 5.8.3@sha256:0006879778f31a962a3873f7682514b92a3c7665dcbc4764fcc241ad968eaccd
             env:
+              SSRF_ALLOWLIST: smtp-relay.mail.svc.cluster.local:25
               TZ: ${CLUSTER_TIMEZONE}
             probes:
               liveness: &probes
