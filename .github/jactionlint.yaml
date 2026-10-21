@@ -1,0 +1,10 @@
+---
+# actionlint's checks only; zizmor covers the security rules.
+profile: correctness
+
+self-hosted-runner:
+  labels:
+    - home-lab
+
+# Repository and organization variables aren't checked against a list.
+config-variables: null

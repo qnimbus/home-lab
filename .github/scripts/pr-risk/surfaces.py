@@ -49,7 +49,7 @@ REGISTRY: list[SurfaceDef] = [
     # nothing deploys from them.
     d("ci:workflows", [".github/workflows/**", ".github/actions/**"], "ci", ("credentials", "trust_boundary"), ("pre_merge",)),
     d("ci:scripts", [".github/scripts/**"], "ci", ("credentials", "trust_boundary"), ("pre_merge",)),
-    d("ci:config", [".github/labeler.yaml", ".github/actionlint.yaml", ".github/validate.env", ".yamllint.yaml",
+    d("ci:config", [".github/labeler.yaml", ".github/jactionlint.yaml", ".github/validate.env", ".yamllint.yaml",
                     ".oxfmtrc.json", ".yamlfmt.yaml"], "ci", (), ("pre_merge",)),  # fmt: skip
     d("renovate", [".renovaterc.json5", ".renovate/**", "renovate.json5"], "ci", ("trust_boundary",), ("latent",)),
     d("workstation:hooks", [".lefthook.yaml", ".mise/**", ".mise.toml", ".claude/settings*.json", ".mcp.json", ".gitattributes",

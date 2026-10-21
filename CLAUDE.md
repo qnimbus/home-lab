@@ -4,7 +4,7 @@
 
 ## Repository overview
 
-A personal home infrastructure monorepo, not an application: a bare-metal Talos/Kubernetes cluster (GitOps via Flux), Docker Compose stacks on a TrueNAS host (GitOps via doco-cd), and the Ansible/Talos/just tooling that bootstraps and operates both. "Correct" means manifests render and lint cleanly. Validation is split between lefthook pre-commit hooks and GitHub Actions (`.github/workflows/validate.yaml`): `kustomize build`, `yamllint`, `flux-schema` (the `gitops-repo-audit` skill's vendored `scripts/validate.sh`), `kubeconform`, `actionlint`, `zizmor` and `shellcheck`. Rendered PR diffs come from konflate, running in-cluster.
+A personal home infrastructure monorepo, not an application: a bare-metal Talos/Kubernetes cluster (GitOps via Flux), Docker Compose stacks on a TrueNAS host (GitOps via doco-cd), and the Ansible/Talos/just tooling that bootstraps and operates both. "Correct" means manifests render and lint cleanly. Validation is split between lefthook pre-commit hooks and GitHub Actions (`.github/workflows/validate.yaml`): `kustomize build`, `yamllint`, `flux-schema` (the `gitops-repo-audit` skill's vendored `scripts/validate.sh`), `kubeconform`, `jactionlint`, `zizmor` and `shellcheck`. Rendered PR diffs come from konflate, running in-cluster.
 
 mise pins the tools (`.mise/config.toml`) and sets `KUBECONFIG`, `TALOSCONFIG` and `FLATE_PATH` to repo-local paths. Its `postinstall` hook runs `lefthook install` and installs the Ansible collections from `ansible/requirements.yaml`.
 
@@ -40,7 +40,7 @@ yamllint --config-file .yamllint.yaml kubernetes/apps/<namespace>/<app>
 docker compose -f docker/nas/NN-<app>/docker-compose.yaml config --quiet   # unset ${VAR} warnings are expected
 ```
 
-Pre-commit hooks (lefthook, `.lefthook.yaml`) run on `git commit`, on staged files: `mise fmt`, `mise lock`, `oxfmt` for JSON/Markdown/YAML (`*.sops.yaml` excluded) followed by `yamllint` (its `braces`/`quoted-strings` rules are set to agree with oxfmt), `shellcheck`, `actionlint`, `zizmor`, and `renovate-config-validator` for `.renovaterc.json5`. CI runs the same hooks via `lefthook run`.
+Pre-commit hooks (lefthook, `.lefthook.yaml`) run on `git commit`, on staged files: `mise fmt`, `mise lock`, `oxfmt` for JSON/Markdown/YAML (`*.sops.yaml` excluded) followed by `yamllint` (its `braces`/`quoted-strings` rules are set to agree with oxfmt), `shellcheck`, `jactionlint`, `zizmor`, and `renovate-config-validator` for `.renovaterc.json5`. CI runs the same hooks via `lefthook run`.
 
 ## Architecture
 

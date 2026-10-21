@@ -349,7 +349,7 @@ This provides reproducible versions of the tools used to operate and validate th
 - `yamllint`
 - `yamlfmt`
 - `shellcheck`
-- `actionlint`
+- `jactionlint`
 - `zizmor`
 - `lefthook`
 - `uv`
