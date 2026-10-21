@@ -19,9 +19,8 @@
     additionalBranchPrefix: "{{manager}}-",
   },
   // Renovate runs every ~6hrs
-  prHourlyLimit: 2, // This setting - if enabled - limits Renovate to a maximum of x PRs opened per hour (or run, in our case)
-  prConcurrentLimit: 10, // This setting - if enabled - limits Renovate to a maximum of x concurrent PRs open at any time
-  // Only scan on weekends — avoids noise during the week; change to "at any time" to run continuously
+  prHourlyLimit: 4, // This setting - if enabled - limits Renovate to a maximum of x PRs opened per hour (or run, in our case)
+  prConcurrentLimit: 20, // This setting - if enabled - limits Renovate to a maximum of x concurrent PRs open at any time
   schedule: ["at any time"],
   // Never touch SOPS-encrypted files — contents are ciphertext, not real versions
   // Devcontainer features use OCI artifact format; Renovate's docker datasource can't query them
