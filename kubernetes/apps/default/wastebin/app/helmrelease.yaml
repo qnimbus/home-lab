@@ -29,14 +29,20 @@ spec:
             env:
               WASTEBIN_BASE_URL: https://wastebin.${DOMAIN_CLUSTER}
               WASTEBIN_DATABASE_PATH: /data/state.db
+              WASTEBIN_PASTE_EXPIRATIONS: 10m,1h,1d,1w=d,1M,1y,0
+              WASTEBIN_THEME: onehalf
             envFrom:
               - secretRef:
                   name: wastebin-secret
             probes:
-              liveness:
+              liveness: &probes
                 enabled: true
-              readiness:
-                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /
+                    port: &port 8088
+              readiness: *probes
             resources:
               requests:
                 cpu: 10m
@@ -60,4 +66,4 @@ spec:
       app:
         ports:
           http:
-            port: 8088
+            port: *port
