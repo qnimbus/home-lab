@@ -213,10 +213,14 @@ spec:
               repository: <image-repo>
               tag: <image-tag>@sha256:<digest>
             probes:
-              liveness:
+              liveness: &probes
                 enabled: true
-              readiness:
-                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: <health-path>
+                    port: &port <port>
+              readiness: *probes
             resources:
               requests:
                 cpu: 10m
@@ -231,8 +235,10 @@ spec:
       app:
         ports:
           http:
-            port: <port>
+            port: *port
 ```
+
+**Probes check HTTP**, not just the open port. app-template's default probe is a TCP check, which passes while the app hangs or answers every request with an error. Use the app's health endpoint when it has one (`/health.php` for wallos, `/api/health` and the like); otherwise a path that answers `200` without a login, often `/`. Not a path that redirects to a login page or to the route's hostname, and not one that does real work on every probe. Check the path before committing: `curl -s -o /dev/null -w '%{http_code}' http://localhost:<port><health-path>` against a local run, or from a debug pod. `spec` holds only what differs from the Kubernetes defaults (`periodSeconds: 10`, `timeoutSeconds: 1`, `failureThreshold: 3`). An app that starts slowly adds a `startup` probe with a higher `failureThreshold` (see `default/wallos`) rather than delaying liveness. Keep the default TCP probes (`enabled: true` only) when the app serves no HTTP on that port.
 
 **The pod `securityContext` goes under `defaultPodOptions`**, not under `controllers.<app>.pod`. It then sits at the top of `values` and covers every controller of the release. Use `controllers.<app>.pod.securityContext` only for a controller that must differ from the others in the same release. Adjust `runAsUser`/`runAsGroup` (and capabilities) to what the image requires; drop the pod `securityContext` only if the image genuinely can't run non-root.
 
