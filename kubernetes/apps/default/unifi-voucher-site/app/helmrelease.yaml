@@ -28,7 +28,7 @@ spec:
           app:
             image:
               repository: docker.io/glenndehaan/unifi-voucher-site
-              tag: 8.13.1@sha256:3d6a371292a50922b7920ea632eaddd16f438d822e5258d6c4e5a2ea9be9558e
+              tag: 8.13.2@sha256:87ca409b7459d451f9a2593c44bccea3293a1328628964ce3305af7fbaed41ea
             env:
               AUTH_DISABLE: "true"
               LOG_LEVEL: info
