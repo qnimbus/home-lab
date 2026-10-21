@@ -1,6 +1,6 @@
 # default
 
-Personal apps with no better home: finance, documents, git, the dashboard and the guest-WiFi voucher portal. They share nothing beyond the namespace. Each app with a database gets its own CNPG cluster from [`components/postgres`](../../components/postgres/README.md), except wallos, which keeps SQLite on its volume, and every route is on `envoy-internal` except whoami's.
+Personal apps with no better home: finance, documents, git, a pastebin, the dashboard and the guest-WiFi voucher portal. They share nothing beyond the namespace. Each app with a database gets its own CNPG cluster from [`components/postgres`](../../components/postgres/README.md), except wallos and wastebin, which keep SQLite on their volume, and every route is on `envoy-internal` except whoami's.
 
 ## Apps
 
@@ -14,6 +14,7 @@ Personal apps with no better home: finance, documents, git, the dashboard and th
 | paperless          | Paperless-ngx, document archive with OCR       | `paperless.${DOMAIN_CLUSTER}`; Postgres, Dragonfly, NAS SMB shares; scales to zero when the NAS is down    |
 | unifi-voucher-site | Guest-WiFi voucher portal                      | `voucher.${DOMAIN_CLUSTER}`; scales to zero (KEDA HTTP); no login                                          |
 | wallos             | Wallos, subscription tracker                   | `wallos.${DOMAIN_CLUSTER}`; SQLite and logos on one kopiur-backed PVC                                      |
+| wastebin           | Wastebin, pastebin                             | `wastebin.${DOMAIN_CLUSTER}`; SQLite on a kopiur-backed PVC; no login                                      |
 | whoami             | Request-echo test app, **not deployed**        | Add `./whoami/ks.yaml` to [kustomization.yaml](./kustomization.yaml) to enable; public on `envoy-external` |
 
 ## How it fits together

@@ -1,0 +1,63 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/bjw-s-labs/helm-charts/main/charts/other/app-template/schemas/helmrelease-helm-v2.schema.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: wastebin
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: wastebin
+  values:
+    defaultPodOptions:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+    controllers:
+      wastebin:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: docker.io/quxfoo/wastebin
+              tag: 3.9.0@sha256:d441b009827b896b67d7df5d7bf849cc5cff970c505cb50d72c946c3d3fd0a5e
+            env:
+              WASTEBIN_BASE_URL: https://wastebin.${DOMAIN_CLUSTER}
+              WASTEBIN_DATABASE_PATH: /data/state.db
+            envFrom:
+              - secretRef:
+                  name: wastebin-secret
+            probes:
+              liveness:
+                enabled: true
+              readiness:
+                enabled: true
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 256Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: ["ALL"]
+    persistence:
+      data:
+        existingClaim: "${KOPIUR_CLAIM:=${APP}}"
+        globalMounts:
+          - path: /data
+      tmpfs:
+        type: emptyDir
+        globalMounts:
+          - path: /tmp
+    service:
+      app:
+        ports:
+          http:
+            port: 8088
