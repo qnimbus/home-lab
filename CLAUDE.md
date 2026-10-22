@@ -29,7 +29,7 @@ Recipes whose name doesn't say it all:
 - `just k8s apply-ks`/`delete-ks <ns> <ks>` renders a Flux Kustomization locally via `flate` and applies/deletes it.
 - `just k8s db-backup <ns> <app>` takes a manual CNPG backup of an `<app>-postgres` cluster.
 - `just k8s cron-minute <name>` gives a stable pseudo-random cron minute.
-- `just github merge-safe [all|ask|<pr>]` rebases and merges the open `risk/safe` PRs one at a time, waiting for checks after each rebase. `ask` confirms each PR, a number merges just that one. Merging is the deploy.
+- `just github merge-safe [ask|all|<pr>]` rebases and merges the open `risk/safe` PRs one at a time, waiting for checks after each rebase. The default, `ask`, confirms each PR; `all` merges them without asking, and a number merges just that one. Merging is the deploy.
 - `just talos gen-talosconfig` recovers the talosconfig from 1Password.
 - `just bootstrap cluster` brings the cluster up end to end. `just bootstrap nas` runs the Ansible playbook that (re)deploys doco-cd on TrueNAS; `just docker reconcile-nas` restarts it.
 

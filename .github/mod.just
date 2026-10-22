@@ -47,9 +47,9 @@ runner-hosted:
     gh variable set RUNNER --body ubuntu-24.04
     just log info "Workflows run on GitHub-hosted runners" "runner" "ubuntu-24.04"
 
-[doc('Rebase and merge risk/safe PRs one by one: all, ask (confirm each), or a PR number')]
+[doc('Rebase and merge risk/safe PRs one by one: ask (confirm each, default), all, or a PR number')]
 [script]
-merge-safe target="all":
+merge-safe target="ask":
     # Serial on purpose: each merge moves main, so the next PR is rebased onto the new main
     # and its checks rerun before it is merged. Merging to main is the deploy.
     case "{{ target }}" in
