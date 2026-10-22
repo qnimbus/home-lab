@@ -104,6 +104,14 @@
       allowedVersions: "<19",
     },
     {
+      // Every 5.x tag so far is a GitHub pre-release, but the registry gives
+      // Renovate no way to tell. Raise the cap by hand once v5 is stable
+      description: "Keep Sonarr on version 4.x",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["ghcr.io/home-operations/sonarr"],
+      allowedVersions: "<5",
+    },
+    {
       // WAHA tags carry the engine name as a prefix (gows-2026.4.3, noweb-2026.4.3),
       // which docker versioning can't parse. Anchoring on gows- also keeps updates
       // within the same engine
