@@ -11,7 +11,7 @@ secrets:
 services:
   app:
     container_name: doco-cd
-    image: ghcr.io/kimdre/doco-cd:0.124.0@sha256:31d3755a206ba5c7bc2d12752a9170edf327b2f36f815a8bc992753434f04676
+    image: ghcr.io/kimdre/doco-cd:0.129.1@sha256:9c6e7f0040056465cdbc762b608c8893c64e691d464e34928c14338a6eaf6b8f
     restart: unless-stopped
     environment:
       API_SECRET_FILE: /run/secrets/api_secret
