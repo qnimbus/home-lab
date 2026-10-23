@@ -26,7 +26,7 @@ spec:
           app:
             image:
               repository: ghcr.io/n8n-io/n8n
-              tag: 2.44.0@sha256:92e8d64780d6ed26d14eaa5e7c0b83aa51add651f4d22289558aaafbffce0a07
+              tag: 2.45.3@sha256:bf88c3783fc4b2a90a007bb99b04ad2f6a9627f41499baf72ca67559c51c7f4c
             env:
               DB_POSTGRESDB_DATABASE:
                 valueFrom:
@@ -104,7 +104,7 @@ spec:
           runners:
             image:
               repository: ghcr.io/n8n-io/runners
-              tag: 2.44.0@sha256:4cb6ae7fdab16df0b0ba5123f08e39355b33865d3745f884f198ae8d78276ab1
+              tag: 2.45.3@sha256:c57f7d17c37e89fc8128c165063874db788b599ed9c5d263c7adc6d3b59a0477
             env:
               GENERIC_TIMEZONE: "${CLUSTER_TIMEZONE}"
               N8N_RUNNERS_AUTH_TOKEN:
