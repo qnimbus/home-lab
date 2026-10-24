@@ -4,10 +4,10 @@
   //
   // LOG_LEVEL=debug LOG_FORMAT=json timeout 580 npx -y renovate@ --platform=local --dry-run=extract
   extends: [
-    "github>home-operations/renovate-presets#8.1.0",
-    "github>home-operations/renovate-presets//apps/cnpg.json5#8.1.0",
-    "github>home-operations/renovate-presets//apps/grafanaDashboards.json5#8.1.0",
-    "github>home-operations/renovate-presets//apps/talosFactory.json5#8.1.0",
+    "github>home-operations/renovate-presets#10.0.1",
+    "github>home-operations/renovate-presets//apps/cnpg.json5#10.0.1",
+    "github>home-operations/renovate-presets//apps/grafanaDashboards.json5#10.0.1",
+    "github>home-operations/renovate-presets//apps/talosFactory.json5#10.0.1",
     ":timezone(Europe/Amsterdam)",
   ],
   dependencyDashboard: true,
