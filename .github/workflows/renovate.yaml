@@ -15,8 +15,10 @@ on:
       - .renovaterc.json5
       - .github/workflows/renovate.yaml
   schedule:
+    # `timezone: "Europe/Amsterdam"` is off while testing whether it is why GitHub
+    # creates only ~5 of the 24 hourly runs a day (bykaj's cron without it gets
+    # all 24). Dropping it changes nothing here: Amsterdam's offset is whole hours
     - cron: "50 * * * *"
-      timezone: "Europe/Amsterdam"
   workflow_dispatch:
     inputs:
       dryRun:

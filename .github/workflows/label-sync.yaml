@@ -10,8 +10,10 @@ on:
     paths:
       - .github/labels.yaml
   schedule:
-    - cron: "10 1 * * *"
-      timezone: "Europe/Amsterdam"
+    # `timezone: "Europe/Amsterdam"` is off while testing whether it is why
+    # scheduled runs start hours late or are skipped (see renovate.yaml). The
+    # cron is in UTC instead: 01:10 Amsterdam time in winter, 02:10 in summer
+    - cron: "10 0 * * *"
 
 permissions:
   contents: read
