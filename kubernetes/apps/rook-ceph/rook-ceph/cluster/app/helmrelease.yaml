@@ -37,6 +37,7 @@ spec:
           mon_data_avail_warn: "10"
         mon:
           mon_cluster_log_to_stderr: "false"
+          mon_memory_target: "805306368"
         osd:
           ms_async_op_threads: "5"
           bluestore_rocksdb_options_annex: "stats_dump_period_sec=0"
