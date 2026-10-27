@@ -56,7 +56,7 @@
       description: "Keep ceph-csi-drivers at the ceph-csi-operator Rook bundles",
       matchDatasources: ["docker"],
       matchPackageNames: ["ghcr.io/home-operations/charts-mirror/ceph-csi-drivers"],
-      allowedVersions: "<=1.0.4",
+      allowedVersions: "<=1.1.0",
     },
     {
       description: "Keep PostgreSQL on version 18.x",
