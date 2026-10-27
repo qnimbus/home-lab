@@ -118,6 +118,27 @@ Resolution is per node: `nodes/<role>/<node>.schematic.yaml.j2` wins when presen
 shared `schematic.yaml.j2` applies. Overrides are complete files, not deltas, for nodes whose
 hardware diverges from the fleet. None exist today.
 
+## Defragmenting etcd
+
+etcd's database file never shrinks: compaction frees space inside it for reuse, but the file keeps
+its size. Talos doesn't defragment on its own, and a reboot or upgrade doesn't either. This is
+harmless until the file nears etcd's 2 GiB quota; in practice the trigger is
+`etcdDatabaseHighFragmentationRatio`, which fires when less than half the file is in use and more
+than 100 MiB is live data.
+
+Defragmenting blocks that member for a second or so, so do one node at a time, the leader last:
+
+```sh
+talosctl -n 10.60.0.201,10.60.0.202,10.60.0.203 etcd status   # DB SIZE vs IN USE; note the LEADER
+talosctl -n <follower> etcd defrag
+talosctl -n <other follower> etcd defrag
+talosctl -n <leader> etcd defrag
+talosctl -n 10.60.0.201,10.60.0.202,10.60.0.203 etcd status   # IN USE ~100%, same RAFT TERM
+```
+
+An unchanged `RAFT TERM` means no leader election happened. Not automated: it's rarely needed and
+the alert says when.
+
 ## Gotchas
 
 - **`machine.ca`/`cluster.ca` merge as a cert+key unit** — a patch supplying only `key` blanks
