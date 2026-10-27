@@ -14,14 +14,14 @@ mise pins the tools (`.mise/config.toml`) and sets `KUBECONFIG`, `TALOSCONFIG` a
 
 `just` (`.justfile`) is the command runner. Recipes are namespaced by module; `just` lists them all.
 
-| Module              | File                                | For                                                                   |
-| ------------------- | ----------------------------------- | --------------------------------------------------------------------- |
-| `just k8s`          | `kubernetes/mod.just`               | day-2 cluster operations                                              |
-| `just k8s database` | `kubernetes/apps/database/mod.just` | `dump`/`restore`: `pg_dump`/`pg_restore` against a CNPG cluster       |
-| `just talos`        | `kubernetes/talos/mod.just`         | Talos node operations                                                 |
-| `just bootstrap`    | `bootstrap/mod.just`                | end-to-end bring-up                                                   |
-| `just docker`       | `docker/mod.just`                   | NAS doco-cd operations                                                |
-| `just github`       | `.github/mod.just`                  | the `RUNNER` repo variable (`runner*`), `merge-safe`, `prune-secrets` |
+| Module              | File                                | For                                                                                   |
+| ------------------- | ----------------------------------- | ------------------------------------------------------------------------------------- |
+| `just k8s`          | `kubernetes/mod.just`               | day-2 cluster operations                                                              |
+| `just k8s database` | `kubernetes/apps/database/mod.just` | `dump`/`restore`: `pg_dump`/`pg_restore` against a CNPG cluster                       |
+| `just talos`        | `kubernetes/talos/mod.just`         | Talos node operations                                                                 |
+| `just bootstrap`    | `bootstrap/mod.just`                | end-to-end bring-up                                                                   |
+| `just docker`       | `docker/mod.just`                   | NAS doco-cd operations                                                                |
+| `just github`       | `.github/mod.just`                  | the `RUNNER` repo variable (`runner*`), `merge-safe`, `merge-review`, `prune-secrets` |
 
 Recipes whose name doesn't say it all:
 
@@ -30,6 +30,7 @@ Recipes whose name doesn't say it all:
 - `just k8s db-backup <ns> <app>` takes a manual CNPG backup of an `<app>-postgres` cluster.
 - `just k8s cron-minute <name>` gives a stable pseudo-random cron minute.
 - `just github merge-safe [ask|all|<pr>]` rebases and merges the open `risk/safe` PRs one at a time, waiting for checks after each rebase. The default, `ask`, confirms each PR; `all` merges them without asking, and a number merges just that one. Merging is the deploy.
+- `just github merge-review` does the same for open `risk/review` PRs that aren't also `risk/uncertain`, and always confirms each one.
 - `just talos gen-talosconfig` recovers the talosconfig from 1Password.
 - `just bootstrap cluster` brings the cluster up end to end. `just bootstrap nas` runs the Ansible playbook that (re)deploys doco-cd on TrueNAS; `just docker reconcile-nas` restarts it.
 
