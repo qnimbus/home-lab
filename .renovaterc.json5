@@ -131,6 +131,31 @@
       schedule: ["before 6am on Monday"],
     },
     {
+      // Rebuilds of the same Postgres version (base OS updates). A merge restarts
+      // every app's single-instance cluster at once, so only merge at night; the
+      // PR itself opens straight away
+      description: "Auto-merge CNPG PostgreSQL digests weekly",
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["digest"],
+      matchPackageNames: ["ghcr.io/cloudnative-pg/postgresql"],
+      automerge: true,
+      automergeType: "pr",
+      ignoreTests: false,
+      automergeSchedule: ["before 6am on Monday"],
+    },
+    {
+      // Rebuilds of the same Traefik tag on the NAS. Docker Hub gives release
+      // timestamps, so the age check holds back a bad re-push for a day
+      description: "Auto-merge Traefik digests",
+      matchDatasources: ["docker"],
+      matchUpdateTypes: ["digest"],
+      matchPackageNames: ["traefik"],
+      automerge: true,
+      automergeType: "pr",
+      ignoreTests: false,
+      minimumReleaseAge: "1 day",
+    },
+    {
       // Both matchers must hit: only these images, and only in these namespaces
       description: "Auto-merge patch updates for media and downloads apps",
       matchFileNames: ["kubernetes/apps/downloads/**", "kubernetes/apps/media/**"],
