@@ -4,8 +4,7 @@ name: Renovate
 
 # Self-hosted Renovate running as the github-bot App (1Password → App token, as in labeler.yaml).
 # `env:` below is Renovate global config; repository config lives in .renovaterc.json5.
-# Runs on the in-cluster runner; set the repo variable RUNNER=ubuntu-24.04 to fall back to
-# GitHub-hosted (e.g. while the cluster is down).
+# Always GitHub-hosted, so it keeps running while the cluster is down.
 
 on:
   push:
@@ -45,7 +44,7 @@ permissions:
 jobs:
   renovate:
     name: Renovate
-    runs-on: ${{ vars.RUNNER || 'home-lab' }}
+    runs-on: ubuntu-26.04
     timeout-minutes: 20 # App token lives 60 min; a normal run takes a few
     steps:
       - name: Load Secrets
@@ -71,20 +70,17 @@ jobs:
           permission-statuses: write # posts renovate/stability-days; read alone 403s the whole run
 
       # No actions/checkout: Renovate clones the repository itself with the token.
-      # A container step, not renovatebot/github-action: that action shells out to `docker run`,
-      # and the home-lab runner (Kubernetes container mode) has no Docker — the runner's
-      # container hook starts this step as its own pod instead. Only this step runs in the image;
-      # the steps above stay on the runner, whose user owns the step-output files they write.
+      # renovate-version is the ghcr.io/renovatebot/renovate image tag; Renovate tracks it
+      # in the renovate group, next to the npm pin in .lefthook.yaml.
       - name: Run Renovate
-        uses: docker://ghcr.io/renovatebot/renovate:44.188.0@sha256:96ded8bde6a33719cb57b66878637dec03c4ec8c06e0d725e29883655dda6744
+        uses: renovatebot/github-action@2804199d260ad00c1fae0e9e842888369391c776 # v46.3.10
         env:
-          # The runner points HOME at /github/home, owned by the runner's user rather than the
-          # image's (uid 12021); restore the image's own home, where containerbase keeps tools.
-          HOME: /home/ubuntu
           LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
           RENOVATE_DRY_RUN: ${{ inputs.dryRun && 'full' || '' }} # empty unless dispatched with dryRun
           RENOVATE_INTERNAL_CHECKS_FILTER: strict
           RENOVATE_PLATFORM: github
           RENOVATE_PLATFORM_COMMIT: enabled # commits via the API, signed as the App
           RENOVATE_REPOSITORIES: ${{ github.repository }}
-          RENOVATE_TOKEN: ${{ steps.app-token.outputs.token }}
+        with:
+          renovate-version: 44.188.0
+          token: ${{ steps.app-token.outputs.token }}

@@ -11,7 +11,7 @@ GitHub's [Actions Runner Controller](https://github.com/actions/actions-runner-c
 
 ## How it fits together
 
-- **Which workflows use it.** Image Pull always runs on `home-lab`, since it needs `talosctl`. Renovate, Labeler and Label Sync run on `${{ vars.RUNNER || 'home-lab' }}`, so they can be moved to GitHub-hosted runners while the cluster is down (see Operating).
+- **Which workflows use it.** Image Pull always runs on `home-lab`, since it needs `talosctl`. Labeler and Label Sync run on `${{ vars.RUNNER || 'home-lab' }}`, so they can be moved to GitHub-hosted runners while the cluster is down (see Operating). Renovate always runs GitHub-hosted.
 - **GitHub auth.** The scale set registers as a GitHub App. The 1Password item `actions-runner` holds `APP_ID`, `INSTALLATION_ID` and `PRIVATE_KEY`, which [externalsecret.yaml](./actions-runner-controller/runners/home-lab/externalsecret.yaml) maps onto the key names ARC expects.
 - **Jobs** run in Kubernetes container mode: each runner gets a work-volume PVC on `openebs-hostpath`.
 - **Talos access** needs no talosconfig in 1Password. The `talos.dev` ServiceAccount in [talos-serviceaccount.yaml](./actions-runner-controller/runners/home-lab/talos-serviceaccount.yaml) makes Talos mint a Secret `home-lab` with a client certificate for role `os:admin`, mounted at `/var/run/secrets/talos.dev`. Talos only does this because `KubeTalosAPIAccessConfig` in [controlplane.yaml.j2](../../talos/controlplane.yaml.j2) allows this namespace and role. `os:admin` is requested because no narrower Talos role is known to cover image pulls.
@@ -23,7 +23,6 @@ GitHub's [Actions Runner Controller](https://github.com/actions/actions-runner-c
 just github runner            # show where RUNNER-aware workflows run
 just github runner-hosted     # move them to GitHub-hosted runners (cluster down)
 just github runner-cluster    # back to the in-cluster runner
-just github prune-secrets     # delete step Secrets left behind by runner pods that died mid-job
 ```
 
 ## Gotchas
@@ -34,4 +33,3 @@ just github prune-secrets     # delete step Secrets left behind by runner pods t
 - The two charts must stay on the same version. Renovate bumps them together (the `actions-runner-controller` group in [.renovaterc.json5](../../../.renovaterc.json5)).
 - **The `home-lab` HelmRelease `dependsOn` the controller's HelmRelease, to order the two upgrades.** The controller deletes any `AutoscalingRunnerSet` whose version differs from its own, so the scale set must upgrade after the controller has finished. The Kustomization `dependsOn` can't do that: a chart bump only changes the `OCIRepository`, so its health check sees a HelmRelease that is still Ready from the old version and passes at once. helm-controller marks a release not Ready as soon as it starts an upgrade, which is what holds the scale set back. This is runtime ordering, an exception to [flux-kustomization](../../../.agents/instructions/flux-kustomization.instructions.md).
 - **A failed `home-lab` upgrade after an ARC bump usually repairs itself.** The ordering above isn't airtight. When the upgrades overlap anyway, the runner set is deleted mid-upgrade, the upgrade times out (`AutoscalingRunnerSet ... status: 'NotFound'`), the rollback to the old version fails the same way, and the retry then succeeds: about 30 minutes without runners, as on 2026-10-05. If it doesn't recover, `just k8s sync-hr actions-runner-system home-lab`.
-- The runner's container hook keeps each container step's env, tokens included, in a Secret labelled `runner-pod=<pod>`, and deletes it only in its own job cleanup. That's why `prune-secrets` exists.

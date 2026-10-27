@@ -14,14 +14,14 @@ mise pins the tools (`.mise/config.toml`) and sets `KUBECONFIG`, `TALOSCONFIG` a
 
 `just` (`.justfile`) is the command runner. Recipes are namespaced by module; `just` lists them all.
 
-| Module              | File                                | For                                                                                   |
-| ------------------- | ----------------------------------- | ------------------------------------------------------------------------------------- |
-| `just k8s`          | `kubernetes/mod.just`               | day-2 cluster operations                                                              |
-| `just k8s database` | `kubernetes/apps/database/mod.just` | `dump`/`restore`: `pg_dump`/`pg_restore` against a CNPG cluster                       |
-| `just talos`        | `kubernetes/talos/mod.just`         | Talos node operations                                                                 |
-| `just bootstrap`    | `bootstrap/mod.just`                | end-to-end bring-up                                                                   |
-| `just docker`       | `docker/mod.just`                   | NAS doco-cd operations                                                                |
-| `just github`       | `.github/mod.just`                  | the `RUNNER` repo variable (`runner*`), `merge-safe`, `merge-review`, `prune-secrets` |
+| Module              | File                                | For                                                                  |
+| ------------------- | ----------------------------------- | -------------------------------------------------------------------- |
+| `just k8s`          | `kubernetes/mod.just`               | day-2 cluster operations                                             |
+| `just k8s database` | `kubernetes/apps/database/mod.just` | `dump`/`restore`: `pg_dump`/`pg_restore` against a CNPG cluster      |
+| `just talos`        | `kubernetes/talos/mod.just`         | Talos node operations                                                |
+| `just bootstrap`    | `bootstrap/mod.just`                | end-to-end bring-up                                                  |
+| `just docker`       | `docker/mod.just`                   | NAS doco-cd operations                                               |
+| `just github`       | `.github/mod.just`                  | the `RUNNER` repo variable (`runner*`), `merge-safe`, `merge-review` |
 
 Recipes whose name doesn't say it all:
 

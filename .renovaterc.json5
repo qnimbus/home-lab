@@ -175,7 +175,7 @@
     {
       description: "Auto-merge trusted GitHub Actions",
       matchManagers: ["github-actions"],
-      matchPackageNames: ["/^actions\\//", "ghcr.io/renovatebot/renovate"],
+      matchPackageNames: ["/^actions\\//", "/^renovatebot\\//"],
       matchUpdateTypes: ["minor", "patch", "digest"],
       automerge: true,
       automergeType: "branch",
@@ -268,14 +268,15 @@
       group: {
         commitMessageTopic: "{{{groupName}}} group",
       },
-      // One age for both members: the image otherwise inherits the GitHub Actions
-      // rules' age and the npm package none, so one lags and the group falls below
-      // minimumGroupSize. GHCR gives Renovate no release timestamps, so without
-      // timestamp-optional the image never passes the age check at all; the npm
-      // package has timestamps and still waits the 6 hours
+      // No release age for either member. GHCR gives Renovate no release
+      // timestamps, so any age lets the image through at once while the npm
+      // package waits, and the two land on different versions. Unset, the image
+      // would inherit the GitHub Actions rule's 3 days instead
       minimumGroupSize: 2,
-      minimumReleaseAge: "6 hours",
-      minimumReleaseAgeBehaviour: "timestamp-optional",
+      minimumReleaseAge: null,
+      automerge: true,
+      automergeType: "branch",
+      ignoreTests: true,
     },
     {
       description: "Rook-Ceph Group",
