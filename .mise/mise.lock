@@ -50,9 +50,51 @@ url_api = "https://api.github.com/repos/FiloSottile/age/releases/assets/53554193
 provenance = "github-attestations"
 
 [[tools.cloudflared]]
-version = "2026.10.3"
+version = "2026.10.4"
 backend = "aqua:cloudflare/cloudflared"
-specifiers = ["2026.10.3"]
+specifiers = ["2026.10.4"]
+
+[tools.cloudflared."platforms.linux-arm64"]
+checksum = "sha256:2b7203b4fb0ba28a0c1e12f8855ce2c25f76d266a8d5edafac5540b6812acff6"
+checksum_source = "mise-versions"
+url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-linux-arm64"
+url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/677936913"
+
+[tools.cloudflared."platforms.linux-arm64-musl"]
+checksum = "sha256:2b7203b4fb0ba28a0c1e12f8855ce2c25f76d266a8d5edafac5540b6812acff6"
+checksum_source = "mise-versions"
+url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-linux-arm64"
+url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/677936913"
+
+[tools.cloudflared."platforms.linux-x64"]
+checksum = "sha256:ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42"
+checksum_source = "mise-versions"
+url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-linux-amd64"
+url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/677936595"
+
+[tools.cloudflared."platforms.linux-x64-musl"]
+checksum = "sha256:ae5e8add7884b0531d66bbca4570d1de491ff6da51e4ebe7eb160cdf241d9e42"
+checksum_source = "mise-versions"
+url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-linux-amd64"
+url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/677936595"
+
+[tools.cloudflared."platforms.macos-arm64"]
+checksum = "sha256:68b6bc4080ac1330234db2a9002d07f98b000537a1bd531a687b660d4160fa7f"
+checksum_source = "mise-versions"
+url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-darwin-arm64.tgz"
+url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/677936244"
+
+[tools.cloudflared."platforms.macos-x64"]
+checksum = "sha256:f11fbef4207d715892331917dafd437f032cf4b7137ed64dea3008338c1c613d"
+checksum_source = "mise-versions"
+url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-darwin-amd64.tgz"
+url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/677935958"
+
+[tools.cloudflared."platforms.windows-x64"]
+checksum = "sha256:411b16d40c8d872243efeb52c550053d00af0a8a97fbb32e730fb8aba429eaa8"
+checksum_source = "mise-versions"
+url = "https://github.com/cloudflare/cloudflared/releases/download/2026.10.4/cloudflared-windows-amd64.exe"
+url_api = "https://api.github.com/repos/cloudflare/cloudflared/releases/assets/677938166"
 
 [[tools.etcd]]
 version = "3.6.14"
@@ -189,49 +231,98 @@ url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/rele
 provenance = "github-attestations"
 
 [[tools.flux2]]
-version = "2.9.6"
+version = "2.10.0"
 backend = "aqua:fluxcd/flux2"
-specifiers = ["2.9.6"]
+specifiers = ["2.10.0"]
 
 [tools.flux2."platforms.linux-arm64"]
-checksum = "sha256:6663c154755b732f43dc993d72321f71c2fc1ff0bcb94b2696e0a8638fa562b4"
-url = "https://github.com/fluxcd/flux2/releases/download/v2.9.6/flux_2.9.6_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/602941235"
+checksum = "sha256:c3c435052e5e18156858bc73f26bcadb62821a6e30951b4b302beb4e65a532c2"
+checksum_source = "mise-versions"
+url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609576"
 
 [tools.flux2."platforms.linux-arm64-musl"]
-checksum = "sha256:6663c154755b732f43dc993d72321f71c2fc1ff0bcb94b2696e0a8638fa562b4"
-url = "https://github.com/fluxcd/flux2/releases/download/v2.9.6/flux_2.9.6_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/602941235"
+checksum = "sha256:c3c435052e5e18156858bc73f26bcadb62821a6e30951b4b302beb4e65a532c2"
+checksum_source = "mise-versions"
+url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609576"
 
 [tools.flux2."platforms.linux-x64"]
-checksum = "sha256:b4d22673e9246cbd628881f1a9ef3b090085dced291e42d804555cee8e8d42c5"
-url = "https://github.com/fluxcd/flux2/releases/download/v2.9.6/flux_2.9.6_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/602941244"
+checksum = "sha256:208dd7012c04fedeed5b2d0b6e63df3b15b1c34a381527811685c098bc9f8659"
+checksum_source = "mise-versions"
+url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609567"
 
 [tools.flux2."platforms.linux-x64-musl"]
-checksum = "sha256:b4d22673e9246cbd628881f1a9ef3b090085dced291e42d804555cee8e8d42c5"
-url = "https://github.com/fluxcd/flux2/releases/download/v2.9.6/flux_2.9.6_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/602941244"
+checksum = "sha256:208dd7012c04fedeed5b2d0b6e63df3b15b1c34a381527811685c098bc9f8659"
+checksum_source = "mise-versions"
+url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609567"
 
 [tools.flux2."platforms.macos-arm64"]
-checksum = "sha256:7008a758da4b8d57c5845aad6552f256d4d23630c2b2de2ca8da362f9a48c126"
-url = "https://github.com/fluxcd/flux2/releases/download/v2.9.6/flux_2.9.6_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/602941251"
+checksum = "sha256:339c5dba218e2b0a04a0841d1dace6c00d65736dc3286038463fa86754ff6c53"
+checksum_source = "mise-versions"
+url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609572"
 
 [tools.flux2."platforms.macos-x64"]
-checksum = "sha256:c3c3532c8c6cf689ef7b93125b33dc170df84a9d5d036f578568bfdf88a2d7e6"
-url = "https://github.com/fluxcd/flux2/releases/download/v2.9.6/flux_2.9.6_darwin_amd64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/602941249"
+checksum = "sha256:23fc019f5b682c1ff6841a2ce06798b3c8e17452998cb9c2dd57a6440e6340ff"
+checksum_source = "mise-versions"
+url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609570"
 
 [tools.flux2."platforms.windows-x64"]
-checksum = "sha256:164e87a13ee8be864a96dbfe597d938cfcea60b9f309a2bd8eaad3e539fba054"
-url = "https://github.com/fluxcd/flux2/releases/download/v2.9.6/flux_2.9.6_windows_amd64.zip"
-url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/602941233"
+checksum = "sha256:750250d4dcc828c395d7edaf72c1787d34af697fc3d7bc310d32955a5269823d"
+checksum_source = "mise-versions"
+url = "https://github.com/fluxcd/flux2/releases/download/v2.10.0/flux_2.10.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/fluxcd/flux2/releases/assets/678609573"
 
 [[tools.gh]]
-version = "2.103.0"
+version = "2.103.3"
 backend = "aqua:cli/cli"
-specifiers = ["2.103.0"]
+specifiers = ["2.103.3"]
+
+[tools.gh."platforms.linux-arm64"]
+checksum = "sha256:ee32df2323c8847f5fac6cb6b4b69ca75828e9329a8f22f677021f7b3306ce63"
+url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195636"
+provenance = "github-attestations"
+
+[tools.gh."platforms.linux-arm64-musl"]
+checksum = "sha256:ee32df2323c8847f5fac6cb6b4b69ca75828e9329a8f22f677021f7b3306ce63"
+url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195636"
+provenance = "github-attestations"
+
+[tools.gh."platforms.linux-x64"]
+checksum = "sha256:4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d"
+url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195621"
+provenance = "github-attestations"
+
+[tools.gh."platforms.linux-x64-musl"]
+checksum = "sha256:4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d"
+url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195621"
+provenance = "github-attestations"
+
+[tools.gh."platforms.macos-arm64"]
+checksum = "sha256:d700207eae9ae98fe2b89535c2c087c07823d4628c56364695a5a07ef311c062"
+url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_macOS_arm64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195704"
+provenance = "github-attestations"
+
+[tools.gh."platforms.macos-x64"]
+checksum = "sha256:a2f86418f4350ae6e9ec60d5000bdf7665728436946a97fc27fe50e6ae752682"
+url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_macOS_amd64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195693"
+provenance = "github-attestations"
+
+[tools.gh."platforms.windows-x64"]
+checksum = "sha256:98d0cfa794721665d7973dd728c78aff7bd836d58f10f6d7a03568eccb0a22e0"
+url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_windows_amd64.zip"
+url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195750"
+provenance = "github-attestations"
 
 [[tools."github:fluxcd/flux-schema"]]
 version = "0.15.0"
@@ -423,26 +514,50 @@ backend = "packslip:github.com/helmfile/helmfile"
 specifiers = ["1.8.2"]
 
 [[tools.jactionlint]]
-version = "2.2.0"
+version = "2.3.0"
 backend = "github:jdx/jactionlint"
-specifiers = ["2.2.0"]
+specifiers = ["v2.3.0"]
 
 [tools.jactionlint."platforms.linux-arm64"]
-checksum = "sha256:6d4c3831cc360b14550fb2f4605b4de9d2761515cd3fd5c1da718528b314647d"
-url = "https://github.com/jdx/jactionlint/releases/download/v2.2.0/jactionlint_2.2.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/640875713"
+checksum = "sha256:deea7744e5769e1e5cc8c9898a838f80a941ec68476d9f2814a61474d5652dac"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.3.0/jactionlint_2.3.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/662210370"
+provenance = "github-attestations"
+
+[tools.jactionlint."platforms.linux-arm64-musl"]
+checksum = "sha256:deea7744e5769e1e5cc8c9898a838f80a941ec68476d9f2814a61474d5652dac"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.3.0/jactionlint_2.3.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/662210370"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.linux-x64"]
-checksum = "sha256:8137d5bfe266dd5e48d2af2306827785ce07c6988e04b1c3d6ad4776e97d27d2"
-url = "https://github.com/jdx/jactionlint/releases/download/v2.2.0/jactionlint_2.2.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/640875708"
+checksum = "sha256:907e6f6a59e181879f7e6936e19ee2eca1cbc51de134fb85460cfa8d65a71f28"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.3.0/jactionlint_2.3.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/662210498"
+provenance = "github-attestations"
+
+[tools.jactionlint."platforms.linux-x64-musl"]
+checksum = "sha256:907e6f6a59e181879f7e6936e19ee2eca1cbc51de134fb85460cfa8d65a71f28"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.3.0/jactionlint_2.3.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/662210498"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.macos-arm64"]
-checksum = "sha256:622b29b15a59618bc032163073209ffc434252e9a19eafd451e69207a50f266a"
-url = "https://github.com/jdx/jactionlint/releases/download/v2.2.0/jactionlint_2.2.0_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/640875646"
+checksum = "sha256:f96afa36578b21290203ae8df4fa7ac3bf5aba08ed288df28cb0530af7ca6e55"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.3.0/jactionlint_2.3.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/662210452"
+provenance = "github-attestations"
+
+[tools.jactionlint."platforms.macos-x64"]
+checksum = "sha256:a61006b669ec0ab1266c73e3561eecf839537eb6e8b3b6be766a55ba17fcbe42"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.3.0/jactionlint_2.3.0_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/662210428"
+provenance = "github-attestations"
+
+[tools.jactionlint."platforms.windows-x64"]
+checksum = "sha256:9864d1045bd37fddb2df33bf4d6b45de205c0ce133c52a225928b7ede7d7f3eb"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.3.0/jactionlint_2.3.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/662210534"
 provenance = "github-attestations"
 
 [[tools.jq]]
@@ -798,9 +913,44 @@ backend = "pypi:ansible-core"
 specifiers = ["2.21.5"]
 
 [[tools.python]]
-version = "3.15.1"
+version = "3.15.2"
 backend = "core:python"
-specifiers = ["3.15.1"]
+specifiers = ["3.15.2"]
+
+[tools.python."platforms.linux-arm64"]
+checksum = "sha256:0f23351c03b39beb880de668976074fcc3c082d9c3b03d0b43185632b2b270a0"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.15.2+20261026-aarch64-unknown-linux-gnu-install_only_stripped.tar.gz"
+provenance = "github-attestations"
+
+[tools.python."platforms.linux-arm64-musl"]
+checksum = "sha256:2996760114a56a9cbe9111f8a55e8a2e67735c1ff5b5da1bbdedf06ccc26dbb4"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.15.2+20261026-aarch64-unknown-linux-musl-install_only_stripped.tar.gz"
+provenance = "github-attestations"
+
+[tools.python."platforms.linux-x64"]
+checksum = "sha256:7b03163a980c607ba8194709d4a4086735a7a9c488cc475b098157306927b36b"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.15.2+20261026-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+provenance = "github-attestations"
+
+[tools.python."platforms.linux-x64-musl"]
+checksum = "sha256:9723f525ec21a52e5e3b18165ad3d553f1af38aba76125ddae25b156ed9c9202"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.15.2+20261026-x86_64-unknown-linux-musl-install_only_stripped.tar.gz"
+provenance = "github-attestations"
+
+[tools.python."platforms.macos-arm64"]
+checksum = "sha256:1b1b03fca8aa351698403f3d100ee83db7a5d99748fc7707681ac31a6a846ad9"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.15.2+20261026-aarch64-apple-darwin-install_only_stripped.tar.gz"
+provenance = "github-attestations"
+
+[tools.python."platforms.macos-x64"]
+checksum = "sha256:6ec04346b578656b5d5597144cbe0f4773acea6af6048cb8fe0cac3e92c702ac"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.15.2+20261026-x86_64-apple-darwin-install_only_stripped.tar.gz"
+provenance = "github-attestations"
+
+[tools.python."platforms.windows-x64"]
+checksum = "sha256:02e532b60e720aa3d77e757c349ae9cc945441c05851fa646336fc9ff0403041"
+url = "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.15.2+20261026-x86_64-pc-windows-msvc-install_only_stripped.tar.gz"
+provenance = "github-attestations"
 
 [[tools.shellcheck]]
 version = "0.11.0"
@@ -890,44 +1040,51 @@ url_api = "https://api.github.com/repos/getsops/sops/releases/assets/486808200"
 provenance = "cosign"
 
 [[tools.stern]]
-version = "1.34.0"
+version = "1.35.0"
 backend = "aqua:stern/stern"
-specifiers = ["1.34.0"]
+specifiers = ["1.35.0"]
 
 [tools.stern."platforms.linux-arm64"]
-checksum = "sha256:e215cfc5e42d71e93b77d3fac8f0df7d736271f44b2d92a5b417eaa588edff3a"
-url = "https://github.com/stern/stern/releases/download/v1.34.0/stern_1.34.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/stern/stern/releases/assets/410516131"
+checksum = "sha256:b12f5e2ee0d01f6f21e0759cced0be2d8df9cd4e93e6a3cf11393170ae0f43cf"
+checksum_source = "mise-versions"
+url = "https://github.com/stern/stern/releases/download/v1.35.0/stern_1.35.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/stern/stern/releases/assets/666034789"
 
 [tools.stern."platforms.linux-arm64-musl"]
-checksum = "sha256:e215cfc5e42d71e93b77d3fac8f0df7d736271f44b2d92a5b417eaa588edff3a"
-url = "https://github.com/stern/stern/releases/download/v1.34.0/stern_1.34.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/stern/stern/releases/assets/410516131"
+checksum = "sha256:b12f5e2ee0d01f6f21e0759cced0be2d8df9cd4e93e6a3cf11393170ae0f43cf"
+checksum_source = "mise-versions"
+url = "https://github.com/stern/stern/releases/download/v1.35.0/stern_1.35.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/stern/stern/releases/assets/666034789"
 
 [tools.stern."platforms.linux-x64"]
-checksum = "sha256:7754adfa653939240f7d20fff4ada9b69cda40c9e70732301f67bb8045f1ef3e"
-url = "https://github.com/stern/stern/releases/download/v1.34.0/stern_1.34.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/stern/stern/releases/assets/410516137"
+checksum = "sha256:03729b01a8fcfab25f6ea53389bd38bc37400ff86d90cd2dcda541f248cf843e"
+checksum_source = "mise-versions"
+url = "https://github.com/stern/stern/releases/download/v1.35.0/stern_1.35.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/stern/stern/releases/assets/666034794"
 
 [tools.stern."platforms.linux-x64-musl"]
-checksum = "sha256:7754adfa653939240f7d20fff4ada9b69cda40c9e70732301f67bb8045f1ef3e"
-url = "https://github.com/stern/stern/releases/download/v1.34.0/stern_1.34.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/stern/stern/releases/assets/410516137"
+checksum = "sha256:03729b01a8fcfab25f6ea53389bd38bc37400ff86d90cd2dcda541f248cf843e"
+checksum_source = "mise-versions"
+url = "https://github.com/stern/stern/releases/download/v1.35.0/stern_1.35.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/stern/stern/releases/assets/666034794"
 
 [tools.stern."platforms.macos-arm64"]
-checksum = "sha256:4014d84096e1e603ee115864e03a1e15fb9bae9876647bf7bb8031eee278dcd3"
-url = "https://github.com/stern/stern/releases/download/v1.34.0/stern_1.34.0_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/stern/stern/releases/assets/410516133"
+checksum = "sha256:951ba00a33ea09b9e64c8ab7b71443b9be4d65f6f6c91b184fbec6d684d9dd0a"
+checksum_source = "mise-versions"
+url = "https://github.com/stern/stern/releases/download/v1.35.0/stern_1.35.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/stern/stern/releases/assets/666034869"
 
 [tools.stern."platforms.macos-x64"]
-checksum = "sha256:153355317f21e565ea10bc710d4c2e3d98fd06f83cae5eb927e7031cc724a7a6"
-url = "https://github.com/stern/stern/releases/download/v1.34.0/stern_1.34.0_darwin_amd64.tar.gz"
-url_api = "https://api.github.com/repos/stern/stern/releases/assets/410516129"
+checksum = "sha256:6a0b9d99a73a70326fc30079d1b70f03c9593f1b1d441c64a93907e79baec815"
+checksum_source = "mise-versions"
+url = "https://github.com/stern/stern/releases/download/v1.35.0/stern_1.35.0_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/stern/stern/releases/assets/666034790"
 
 [tools.stern."platforms.windows-x64"]
-checksum = "sha256:22ed0c8eb0c15cbd2651c944517f6c06aa6ffa11467be55f7673f7242f1bafd3"
-url = "https://github.com/stern/stern/releases/download/v1.34.0/stern_1.34.0_windows_amd64.tar.gz"
-url_api = "https://api.github.com/repos/stern/stern/releases/assets/410516130"
+checksum = "sha256:86944902f0f6e0b97a5e487cd77a216c34795df45fc8d753f61b765689f6e24f"
+checksum_source = "mise-versions"
+url = "https://github.com/stern/stern/releases/download/v1.35.0/stern_1.35.0_windows_amd64.tar.gz"
+url_api = "https://api.github.com/repos/stern/stern/releases/assets/666034875"
 
 [[tools.talos]]
 version = "1.14.0"
