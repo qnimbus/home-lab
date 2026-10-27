@@ -9,7 +9,7 @@ spec:
     - name: cloudnative-pg.rules
       rules:
         - alert: LongRunningTransaction
-          expr: cnpg_backends_max_tx_duration_seconds > 300
+          expr: cnpg_backends_max_tx_duration_seconds{application_name!="pg_dump"} > 300
           for: 1m
           labels:
             severity: warning
