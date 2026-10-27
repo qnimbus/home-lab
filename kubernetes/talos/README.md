@@ -5,11 +5,6 @@ composable multi-document Jinja2 templates (requires **Talos >= 1.14**) and reso
 1Password. Nothing here is applied automatically — configs are rendered on demand and pushed to
 nodes with `talosctl`.
 
-This replaced a [talhelper](https://github.com/budimanjojo/talhelper) + SOPS pipeline: same idea
-(layered patches over per-node hardware data), but composed directly via `talosctl machineconfig
-patch` instead of a wrapper tool, with secrets read live from 1Password instead of a checked-in
-encrypted file.
-
 ## Layout
 
 | Path                                    | Purpose                                                     |
