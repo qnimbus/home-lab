@@ -41,7 +41,9 @@ pre-commit:
         - "*.jsonc"
         - "*.json5"
       run: oxfmt oxfmt --config=.oxfmtrc.json  {staged_files}
-      exclude: []
+      # mise lock writes these; reformatting them would only churn the lockfile
+      exclude:
+        - ".mise/locks/**"
       stage_fixed: true
 
     # yamllint runs in the same command, after oxfmt, so it lints the formatted
@@ -53,6 +55,8 @@ pre-commit:
       run: >-
         oxfmt oxfmt --config=.oxfmtrc.json {staged_files} &&
         yamllint --config-file .yamllint.yaml {staged_files}
+      exclude:
+        - ".mise/locks/**"
       stage_fixed: true
 
     format-shellcheck:

@@ -73,6 +73,16 @@
       allowedVersions: "<5",
     },
     {
+      // The mise Python runs the pypi tools: ansible-core 2.21 crashes on 3.15
+      // (dataclasses._is_type is gone), and pyyaml 6.0.3, which yamllint and
+      // ansible need, has no 3.15 wheels. Locked installs never build from
+      // source, so neither installs. Raise the cap by hand once both support 3.15
+      description: "Keep the mise Python on 3.14.x",
+      matchManagers: ["mise"],
+      matchDepNames: ["python"],
+      allowedVersions: "<3.15",
+    },
+    {
       // WAHA tags carry the engine name as a prefix (gows-2026.4.3, noweb-2026.4.3),
       // which docker versioning can't parse. Anchoring on gows- also keeps updates
       // within the same engine
