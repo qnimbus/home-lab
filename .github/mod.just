@@ -51,7 +51,7 @@ runner-hosted:
 [script]
 merge-safe target="ask":
     # Serial on purpose: each merge moves main, so the next PR is rebased onto the new main
-    # and its checks rerun before it is merged. Merging to main is the deploy.
+    # and its checks rerun before it is merged.
     case "{{ target }}" in
         all|ask) prs=$(gh pr list --label risk/safe --state open --json number --jq '.[].number' | sort -n) ;;
         *[!0-9]*) just log error "Target must be all, ask or a PR number" "target" "{{ target }}"; exit 1 ;;
@@ -68,20 +68,47 @@ merge-safe target="ask":
         exit 0
     fi
     for pr in $prs; do
-        title=$(gh pr view "$pr" --json title --jq .title)
-        if [[ "{{ target }}" == ask ]] && ! gum confirm "Rebase and merge #$pr: $title?"; then
+        if [[ "{{ target }}" == ask ]] \
+            && ! gum confirm "Rebase and merge #$pr: $(gh pr view "$pr" --json title --jq .title)?"; then
             just log info "Skipped" "pr" "$pr"
             continue
         fi
-        if [[ $(gh pr view "$pr" --json mergeStateStatus --jq .mergeStateStatus) == BEHIND ]]; then
-            gh pr update-branch "$pr" --rebase
-            # Give GitHub time to register the new head's checks, or --watch sees the old run.
-            sleep 10
-        fi
-        if ! gh pr checks "$pr" --watch --fail-fast; then
-            just log error "Checks failed, stopping" "pr" "$pr"
-            exit 1
-        fi
-        gh pr merge "$pr" --rebase --delete-branch
-        just log info "Merged" "pr" "$pr" "title" "$title"
+        just github _rebase-merge "$pr"
     done
+
+[doc('Rebase and merge risk/review PRs (but not risk/uncertain) one by one, confirming each')]
+[script]
+merge-review:
+    # Always asks: these PRs need a look before they deploy. Serial for the same reason as
+    # merge-safe.
+    prs=$(gh pr list --state open --search 'label:risk/review -label:risk/uncertain' \
+        --json number --jq '.[].number' | sort -n)
+    if [[ -z "$prs" ]]; then
+        just log info "No open risk/review PRs"
+        exit 0
+    fi
+    for pr in $prs; do
+        if ! gum confirm "Rebase and merge #$pr: $(gh pr view "$pr" --json title --jq .title)?"; then
+            just log info "Skipped" "pr" "$pr"
+            continue
+        fi
+        just github _rebase-merge "$pr"
+    done
+
+[private]
+[script]
+_rebase-merge pr:
+    # Rebases a PR that is behind main, waits for its checks, then merges it. Merging to main
+    # is the deploy.
+    title=$(gh pr view "{{ pr }}" --json title --jq .title)
+    if [[ $(gh pr view "{{ pr }}" --json mergeStateStatus --jq .mergeStateStatus) == BEHIND ]]; then
+        gh pr update-branch "{{ pr }}" --rebase
+        # Give GitHub time to register the new head's checks, or --watch sees the old run.
+        sleep 10
+    fi
+    if ! gh pr checks "{{ pr }}" --watch --fail-fast; then
+        just log error "Checks failed, stopping" "pr" "{{ pr }}"
+        exit 1
+    fi
+    gh pr merge "{{ pr }}" --rebase --delete-branch
+    just log info "Merged" "pr" "{{ pr }}" "title" "$title"
