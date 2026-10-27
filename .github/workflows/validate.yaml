@@ -43,6 +43,13 @@ jobs:
           tools: flux2 github:fluxcd/flux-schema kustomize lefthook uv
           strict: ${{ steps.mise-changed.outputs.changed }}
 
+      # The lockfile check above only sees that each tool has an entry. The pypi and npm tools
+      # also carry their own lock under .mise/locks/, which only an install exercises. Nothing
+      # else here installs them, so this is the only place a broken one shows up.
+      - name: Install the pypi and npm tools from their locks
+        if: steps.mise-changed.outputs.changed == 'true'
+        run: mise install --locked python node yamllint pypi:ansible pypi:ansible-core oxfmt
+
       # Vendored flux-schema script (online catalog). -E fills Flux ${VAR}s with placeholders so
       # pattern-checked fields pass; the excluded dirs aren't Kubernetes manifests.
       - name: Validate Kubernetes manifests
