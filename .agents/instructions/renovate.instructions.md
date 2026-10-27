@@ -1,11 +1,17 @@
 # Renovate conventions
 
 Prefer Renovate's built-in managers over manual `# renovate:` comments.
-`.renovaterc.json5` enables `flux`, `helm-values`, `kubernetes` and
-`kustomize` for files under `kubernetes/` (each manager's
-`managerFilePatterns` gives its exact scope), next to Renovate's defaults
+The `home-operations/renovate-presets` default preset enables `flux`,
+`helm-values`, `kubernetes` and `kustomize`, next to Renovate's defaults
 such as `github-actions` and `docker-compose`. These read versions from the
 manifest structure, so no comment is needed.
+
+The preset decides which files each manager scans: `flux` and `kubernetes`
+read every YAML file in the repo, `helm-values` only `values.yaml` and
+HelmRelease files. Don't set `managerFilePatterns` in `.renovaterc.json5`
+to narrow that: Renovate adds those patterns to the preset's, it never
+replaces them. Exclude paths with `ignorePaths` instead, which does replace
+the inherited list, so keep `config:recommended`'s entries in it.
 
 ## No `# renovate:` comment on a field a native manager covers
 

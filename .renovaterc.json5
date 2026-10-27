@@ -4,13 +4,12 @@
   //
   // LOG_LEVEL=debug LOG_FORMAT=json timeout 580 npx -y renovate@ --platform=local --dry-run=extract
   extends: [
-    "github>home-operations/renovate-presets#8.1.0",
-    "github>home-operations/renovate-presets//apps/cnpg.json5#8.1.0",
-    "github>home-operations/renovate-presets//apps/grafanaDashboards.json5#8.1.0",
-    "github>home-operations/renovate-presets//apps/talosFactory.json5#8.1.0",
+    "github>home-operations/renovate-presets#10.0.1",
+    "github>home-operations/renovate-presets//apps/cnpg.json5#10.0.1",
+    "github>home-operations/renovate-presets//apps/grafanaDashboards.json5#10.0.1",
+    "github>home-operations/renovate-presets//apps/talosFactory.json5#10.0.1",
     ":timezone(Europe/Amsterdam)",
   ],
-  dependencyDashboard: true,
   dependencyDashboardTitle: "Renovate Dashboard for my home-lab 🤖",
   lockFileMaintenance: {
     enabled: true,
@@ -18,16 +17,25 @@
     commitMessageExtra: "({{manager}})",
     additionalBranchPrefix: "{{manager}}-",
   },
-  // Renovate runs every ~6hrs
-  prHourlyLimit: 4, // This setting - if enabled - limits Renovate to a maximum of x PRs opened per hour (or run, in our case)
-  prConcurrentLimit: 20, // This setting - if enabled - limits Renovate to a maximum of x concurrent PRs open at any time
-  schedule: ["at any time"],
-  // Never touch SOPS-encrypted files — contents are ciphertext, not real versions
-  // Devcontainer features use OCI artifact format; Renovate's docker datasource can't query them
-  ignorePaths: ["**/*.sops.*", ".devcontainer/**"],
+  // main doesn't require up-to-date branches, and the default (`auto`) would
+  // rebase every open automerge PR, and re-run its checks, each time main moves
+  rebaseWhen: "conflicted",
+  // ignorePaths replaces config:recommended's list rather than adding to it, so
+  // its entries are repeated here. SOPS files hold ciphertext, not versions
+  ignorePaths: [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    "**/vendor/**",
+    "**/examples/**",
+    "**/__tests__/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/__fixtures__/**",
+    "**/*.sops.*",
+  ],
   // Dependencies managed outside Renovate — do not open PRs for these.
-  // talosctl: CLI tool in .mise.toml — must match the running Talos server version; bump manually alongside Talos PRs.
-  // etcd: CLI tool in .mise.toml — must match the etcd version bundled with the running Talos release.
+  // talosctl: CLI tool in .mise/config.toml — must match the running Talos server version; bump manually alongside Talos PRs.
+  // etcd: CLI tool in .mise/config.toml — must match the etcd version bundled with the running Talos release.
   ignoreDeps: ["talos", "etcd"],
   logLevelRemap: [
     {
@@ -35,43 +43,10 @@
       newLogLevel: "info",
     },
   ],
-  // ── Manager file-pattern overrides ──────────────────────────────────────────
-  // Renovate's built-in managers each have a default set of filename globs they
-  // scan. These overrides extend those defaults to cover this repo's structure.
-  flux: {
-    // To test: git ls-files | grep -P '(^|/)kubernetes/.+\.ya?ml(?:\.j2)?$'
-    // Pick up HelmRelease, GitRepository, OCIRepository in kubernetes/
-    managerFilePatterns: ["/(^|/)kubernetes/.+\\.ya?ml(?:\\.j2)?$/"],
-  },
-  "helm-values": {
-    // To test: git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?values\.ya?ml(?:\.j2)?$'
-    //          git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?helmrelease\.ya?ml(?:\.j2)?$'
-    //          git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?helm-release\.ya?ml(?:\.j2)?$'
-    //          git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?hr\.ya?ml(?:\.j2)?$'
-    managerFilePatterns: [
-      "/(^|/)kubernetes/(?:.+/)?values\\.ya?ml(?:\\.j2)?$/",
-      "/(^|/)kubernetes/(?:.+/)?helmrelease\\.ya?ml(?:\\.j2)?$/",
-      "/(^|/)kubernetes/(?:.+/)?helm-release\\.ya?ml(?:\\.j2)?$/",
-      "/(^|/)kubernetes/(?:.+/)?hr\\.ya?ml(?:\\.j2)?$/",
-    ],
-  },
-  helmfile: {
-    // To test: git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?helmfile\.ya?ml(?:\.gotmpl)?(?:\.j2)?$'
-    //          git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?helmfile\\.d/.+\.ya?ml(?:\.gotmpl)?(?:\.j2)?$'
-    managerFilePatterns: [
-      "/(^|/)kubernetes/(?:.+/)?helmfile\\.ya?ml(?:\\.gotmpl)?(?:\\.j2)?$/",
-      "/(^|/)kubernetes/(?:.+/)?helmfile\\.d/.+\\.ya?ml(?:\\.gotmpl)?(?:\\.j2)?$/",
-    ],
-  },
-  kubernetes: {
-    // Raw Kubernetes manifests (image: fields, etc.)
-    // To test: git ls-files | grep -P '(^|/)kubernetes/(?:apps|components|flux)/.+\.ya?ml(?:\.j2)?$'
-    managerFilePatterns: ["/(^|/)kubernetes/(?:apps|components|flux)/.+\\.ya?ml(?:\\.j2)?$/"],
-  },
-  kustomize: {
-    // To test: git ls-files | grep -P '(^|/)kubernetes/(?:.+/)?kustomization\.ya?ml(?:\.j2)?$'
-    managerFilePatterns: ["/(^|/)kubernetes/(?:.+/)?kustomization\\.ya?ml(?:\\.j2)?$/"],
-  },
+  // No managerFilePatterns here: the preset sets each manager's, and patterns
+  // set here are added to those, never replace them. To narrow what a manager
+  // scans, use ignorePaths
+  //
   // ── Package rule overrides ──────────────────────────────────────────
   packageRules: [
     //
@@ -120,6 +95,14 @@
       matchPackageNames: ["docker.io/devlikeapro/waha"],
       versioning: "regex:^gows-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
     },
+    {
+      // Docker versioning reads -rN as a suffix that must stay identical, so
+      // 2.8.5-r1 would only ever update to another -r1 tag
+      description: "nut-upsd: the -rN suffix is the Alpine package release",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["docker.io/instantlinux/nut-upsd"],
+      versioning: "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-r(?<build>\\d+)$",
+    },
     //
     // Auto-merge rules
     //
@@ -158,7 +141,7 @@
         "ghcr.io/home-operations/plex",
         "ghcr.io/home-operations/prowlarr",
         "ghcr.io/home-operations/radarr",
-        "ghcr.io/home-operations/configarr",
+        "ghcr.io/raydak-labs/configarr",
         "ghcr.io/home-operations/sonarr",
         "ghcr.io/home-operations/sabnzbd",
       ],
@@ -185,6 +168,16 @@
       automerge: true,
       automergeType: "branch",
       minimumReleaseAge: "1 minute",
+      ignoreTests: true,
+    },
+    {
+      // The dashboard datasource's versioning is the revision number alone, so
+      // every revision bump is a major
+      description: "Auto-merge Grafana dashboards",
+      matchDatasources: ["custom.grafana-dashboards"],
+      matchUpdateTypes: ["major"],
+      automerge: true,
+      automergeType: "branch",
       ignoreTests: true,
     },
     {
@@ -232,7 +225,7 @@
       group: {
         commitMessageTopic: "{{{groupName}}} group",
       },
-      minimumGroupSize: 5,
+      minimumGroupSize: 2,
     },
     {
       description: "Mise Tools Group",
@@ -265,9 +258,12 @@
       },
       // One age for both members: the image otherwise inherits the GitHub Actions
       // rules' age and the npm package none, so one lags and the group falls below
-      // minimumGroupSize
+      // minimumGroupSize. GHCR gives Renovate no release timestamps, so without
+      // timestamp-optional the image never passes the age check at all; the npm
+      // package has timestamps and still waits the 6 hours
       minimumGroupSize: 2,
       minimumReleaseAge: "6 hours",
+      minimumReleaseAgeBehaviour: "timestamp-optional",
     },
     {
       description: "Rook-Ceph Group",
@@ -280,8 +276,8 @@
       minimumGroupSize: 2,
     },
     {
-      // After the mise tools catch-all so talos wins its own group; unites the
-      // mise pin, the factory installer image, and the tuppr upgrade version
+      // Unites kubernetes/talos/version.yaml and tuppr's TalosUpgrade version.
+      // The mise talosctl pin is not a member: it is in ignoreDeps
       description: "Talos Group",
       groupName: "talos",
       matchPackageNames: ["siderolabs/talos"],
