@@ -15,6 +15,10 @@
       ansible.builtin.shell: "op read 'op://{{ item.key }}' < /dev/null"
       delegate_to: localhost
       become: false
+      vars:
+        # Runs locally: interpreter discovery would pick the first python3.x on PATH, which
+        # can be a mise shim for a version this repo doesn't pin, and that fails.
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
       loop:
         - key: homelab/doco-cd/OP_SERVICE_ACCOUNT_TOKEN
           var: doco_op_service_account_token
