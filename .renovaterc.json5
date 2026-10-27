@@ -20,19 +20,6 @@
   // main doesn't require up-to-date branches, and the default (`auto`) would
   // rebase every open automerge PR, and re-run its checks, each time main moves
   rebaseWhen: "conflicted",
-  // ignorePaths replaces config:recommended's list rather than adding to it, so
-  // its entries are repeated here. SOPS files hold ciphertext, not versions
-  ignorePaths: [
-    "**/node_modules/**",
-    "**/bower_components/**",
-    "**/vendor/**",
-    "**/examples/**",
-    "**/__tests__/**",
-    "**/test/**",
-    "**/tests/**",
-    "**/__fixtures__/**",
-    "**/*.sops.*",
-  ],
   // Dependencies managed outside Renovate — do not open PRs for these.
   // etcd: CLI tool in .mise/config.toml — must match the etcd version bundled with the running Talos release.
   ignoreDeps: ["etcd"],
