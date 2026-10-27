@@ -132,8 +132,9 @@
     },
     {
       // Rebuilds of the same Postgres version (base OS updates). A merge restarts
-      // every app's single-instance cluster at once, so only merge at night; the
-      // PR itself opens straight away
+      // every app's single-instance cluster at once, so merge only in a quiet
+      // window that starts after the last nightly base backup (03:50 UTC) and NAS
+      // dump (02:00 UTC). The PR itself opens straight away
       description: "Auto-merge CNPG PostgreSQL digests weekly",
       matchDatasources: ["docker"],
       matchUpdateTypes: ["digest"],
@@ -141,7 +142,7 @@
       automerge: true,
       automergeType: "pr",
       ignoreTests: false,
-      automergeSchedule: ["before 6am on Monday"],
+      automergeSchedule: ["after 6am and before 10am on Monday"],
     },
     {
       // Rebuilds of the same Traefik tag on the NAS. Docker Hub gives release
