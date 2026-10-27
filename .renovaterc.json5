@@ -34,9 +34,8 @@
     "**/*.sops.*",
   ],
   // Dependencies managed outside Renovate — do not open PRs for these.
-  // talosctl: CLI tool in .mise/config.toml — must match the running Talos server version; bump manually alongside Talos PRs.
   // etcd: CLI tool in .mise/config.toml — must match the etcd version bundled with the running Talos release.
-  ignoreDeps: ["talos", "etcd"],
+  ignoreDeps: ["etcd"],
   logLevelRemap: [
     {
       matchMessage: "/Some .+ did not have a releaseTimestamp, but as we're running with minimumReleaseAgeBehaviour=timestamp-optional, proceeding/",
@@ -276,8 +275,9 @@
       minimumGroupSize: 2,
     },
     {
-      // Unites kubernetes/talos/version.yaml and tuppr's TalosUpgrade version.
-      // The mise talosctl pin is not a member: it is in ignoreDeps
+      // After the mise tools catch-all so talos wins its own group. Unites
+      // kubernetes/talos/version.yaml, tuppr's TalosUpgrade and the mise
+      // talosctl pin, which must match the version the cluster runs
       description: "Talos Group",
       groupName: "talos",
       matchPackageNames: ["siderolabs/talos"],
