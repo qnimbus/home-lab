@@ -1,9 +1,6 @@
 ---
 match_type: doublestar
 
-exclude:
-  - "**/*.sops.yaml"
-
 line_ending: lf
 
 formatter:

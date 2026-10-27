@@ -53,9 +53,6 @@ pre-commit:
       run: >-
         oxfmt oxfmt --config=.oxfmtrc.json {staged_files} &&
         yamllint --config-file .yamllint.yaml {staged_files}
-      exclude:
-        - "*.sops.yaml"
-        - "*.sops.yml"
       stage_fixed: true
 
     format-shellcheck:

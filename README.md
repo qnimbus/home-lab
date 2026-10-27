@@ -311,7 +311,6 @@ Files such as:
 ```text
 kubeconfig
 talosconfig
-age.key
 ```
 
 are local operational credentials and are intentionally excluded from version control.
@@ -338,8 +337,6 @@ This provides reproducible versions of the tools used to operate and validate th
 - `helmfile`
 - `flux`
 - `talos`
-- `sops`
-- `age`
 - `ansible`
 - `just`
 - `gh`

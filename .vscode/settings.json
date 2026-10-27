@@ -1,7 +1,4 @@
 {
-  "sops.defaults.ageKeyFile": "age.key",
-  "sops.enabled": true,
-  "sops.configPath": "./.sopsrc.yaml",
   "workbench.editorAssociations": {
     "*.md": "vscode.markdown.preview.editor"
   },
@@ -26,7 +23,6 @@
   "files.trimTrailingWhitespace": true,
   "material-icon-theme.files.associations": {
     "*.gotmpl": "smarty",
-    "*.sops.yaml": "lock",
     "helmfile.yaml": "helm",
     "kubeconfig": "kubernetes",
     "talosconfig": "kubernetes"
