@@ -10,17 +10,26 @@ A live, read-only triage sweep. Each run re-inspects the live cluster from scrat
 persist findings or state between runs, so always re-check rather than trusting a prior report.
 
 **Read-only.** This skill only runs `kubectl get/describe/logs/exec` (exec limited to read
-commands like `ceph status`) and `curl` against a port-forward. Never `apply`, `patch`, `delete`,
+commands like `ceph status`), `flux get`, `helm list/get`, and the scripts in `scripts/` (which
+run only those). Never `apply`, `patch`, `delete`,
 `scale`, `rollout restart`, or anything else that changes cluster state — this repo is GitOps-only
 (see `README.md`); fixes go through Git, not kubectl. If a real problem is found, report it and
 propose the Git-based fix; only take a live corrective action if the user explicitly asks for one.
 
 `KUBECONFIG` is set automatically by mise (`.mise/config.toml` → `[env]`); no manual export
-needed.
+needed. It points at `kubeconfig` in the checkout's root. A Claude Code worktree gets a copy of it
+through `.worktreeinclude`; one made with plain `git worktree add` doesn't, and `kubectl` then
+falls back to `localhost:8080`.
+
+Scripts live next to this file in `scripts/`; run them from the repo root as
+`bash .agents/skills/check-cluster-health/scripts/<name>.sh`. From a worktree session, run every
+command as a plain call of its own: no `cd`, no `bash -c`, no exported variables. The worktree
+isolation check refuses those, and it also refuses any command containing the word `git`, which is
+why the sources below are listed with `flux get`.
 
 ## Step 1: Fast sweep
 
-Run these in one batch — they're cheap and cover most real incidents:
+These are cheap and cover most real incidents:
 
 ```bash
 # Nodes
@@ -31,7 +40,7 @@ kubectl get kustomizations -A
 kubectl get helmreleases -A
 
 # Flux sources (Git/OCI/Helm repos) — a stuck source blocks every Kustomization/HelmRelease using it
-kubectl get gitrepositories,ocirepositories,helmrepositories -A
+flux get sources all -A
 
 # Anything not Running/Succeeded
 kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded
@@ -44,29 +53,11 @@ kubectl get externalsecrets -A
 kubectl get pvc -A | grep -v Bound
 
 # Recent warning events, fleet-wide, minus known self-resolving noise (see below)
-succeeded=$(kubectl get snapshots.kopiur.home-operations.com -A -o json |
-  jq -c '[.items[] | select(.status.phase == "Succeeded") | "\(.metadata.namespace)/\(.metadata.name)"]')
-pvs=$(kubectl get pv -o json | jq -c '[.items[].metadata.name]')
-pushed=$(kubectl get pushsecrets -A -o json | jq -c '[.items[]
-  | select(any(.status.conditions[]?; .type == "Ready" and .status == "True"))
-  | "\(.metadata.namespace)/\(.metadata.name)"]')
-kubectl get events -A --field-selector type=Warning -o json |
-  jq -r --argjson ok "$succeeded" --argjson pvs "$pvs" --argjson pushed "$pushed" '
-  .items | sort_by(.lastTimestamp // .eventTime) | .[] |
-  select((.reason == "MissingDependency" and .involvedObject.kind == "Snapshot"
-    and (.involvedObject.apiVersion | startswith("kopiur."))
-    and ("\(.involvedObject.namespace)/\(.involvedObject.name)" as $s | $ok | index($s))) | not) |
-  select((.reason == "VolumeFailedDelete" and (.message | test("is still attached to node"))
-    and (.involvedObject.name as $pv | $pvs | index($pv) | not)) | not) |
-  select((.reason == "Errored" and .involvedObject.kind == "PushSecret"
-    and .message == "set secret failed"
-    and ("\(.involvedObject.namespace)/\(.involvedObject.name)" as $p | $pushed | index($p))) | not) |
-  "\(.lastTimestamp // .eventTime)  \(.involvedObject.namespace // "-")  \(.reason)  \(.involvedObject.kind)/\(.involvedObject.name)  \(.message)"' |
-  tail -30
+bash .agents/skills/check-cluster-health/scripts/warning-events.sh
 ```
 
-The query above drops three warnings that fire routinely and resolve on their own, once they have.
-The first two come from every kopiur backup run:
+`warning-events.sh` drops four warnings that fire routinely and resolve on their own, once they
+have. The first two come from every kopiur backup run:
 
 - **`MissingDependency` on the `Snapshot`** ("waiting for VolumeSnapshot `<ns>/<name>-snap` to
   become readyToUse"). kopiur checks the Ceph snapshot it has just created about a second later,
@@ -74,13 +65,22 @@ The first two come from every kopiur backup run:
   `Snapshot` has reached `Succeeded`. If one still shows, check that `Snapshot`'s `status.phase`:
   still running before the message's "staging fails at" time is expected. Only a `Failed` phase, or a
   run still waiting past that time, is a finding.
-- **`VolumeFailedDelete` "is still attached to node"** on the PV behind kopiur's temporary
-  `<name>-src` PVC. kopiur deletes that PVC as soon as the backup finishes, while the volume is still
-  being detached, so the CSI provisioner's first 3–4 delete attempts fail. It succeeds a few seconds
-  later. The event is dropped once the PV no longer exists, whatever created it. A PV that still
-  exists is a finding, and so is a leftover `-src` PVC.
+- **`VolumeFailedDelete`** on the PV behind kopiur's temporary `<name>-src` PVC, usually "is still
+  attached to node". kopiur deletes that PVC as soon as the backup finishes, while the volume is
+  still being detached, so the CSI provisioner's first 3–4 delete attempts fail. A delete that
+  races ceph-csi's own trash cleanup can also fail once with "image ID is empty, cannot remove … from
+  trash". Either succeeds a few seconds later. The event is dropped once the PV no longer exists,
+  whatever the message and whatever created the PV. A PV that still exists is a finding, and so is
+  a leftover `-src` PVC.
 
-The third comes from the certificate PushSecrets in `network`:
+The third comes from the GitHub runners in `actions-runner-system`:
+
+- **`FailedScheduling` "waiting for ephemeral volume"** on a runner pod. Each runner gets its own
+  temporary `-work` PVC, and the scheduler waits for it to be provisioned, usually a few seconds. The
+  event is dropped once the pod is no longer `Pending`, whichever namespace it is in. A pod still
+  `Pending` is a finding.
+
+The fourth comes from the certificate PushSecrets in `network`:
 
 - **`Errored` "set secret failed"** on a PushSecret. ESO's 1Password Connect provider writes each
   `data` entry as a separate read-modify-write of the whole item. When the `tls.crt` write's new
@@ -108,15 +108,10 @@ kubectl get kustomizations,helmreleases -A -o json | \
 **A CRD rendered by more than one Helm release** has two owners that silently overwrite each other
 (see [helm-crds](../../instructions/helm-crds.instructions.md#one-release-per-crd)). Any output line
 is a finding; empty output is healthy. It reads every release's stored manifest, so it takes about ten
-seconds, and it can't see duplicates shipped from charts' `crds/` directories. The awk fields are
-written `$(1)` and `$(2)` on purpose: a bare `$` followed by a digit in this file is replaced by a
-word of the skill's arguments when it is invoked with any:
+seconds, and it can't see duplicates shipped from charts' `crds/` directories:
 
 ```bash
-helm list -A -o json | jq -r '.[] | "\(.namespace) \(.name)"' | while read -r ns name; do
-  helm get manifest "$name" -n "$ns" | yq -N 'select(.kind=="CustomResourceDefinition") | .metadata.name' |
-    sed "s|^|$ns/$name |"
-done | awk '{r[$(2)]=r[$(2)]" "$(1); c[$(2)]++} END {for (k in c) if (c[k]>1) print k ":" r[k]}'
+bash .agents/skills/check-cluster-health/scripts/duplicate-crds.sh
 ```
 
 **A Deployment showing both `Available` and `Progressing` conditions as `True` is a normal rollout
@@ -188,14 +183,12 @@ orphaned image is a separate, deliberate step the user decides on.
 ## Step 4 (only if Steps 1–3 don't explain a reported symptom): Alertmanager
 
 Metric-only alerts (thermal, disk-fill prediction, network drops) don't show up as broken
-Kustomizations/pods. Check what's actually firing and unsilenced:
+Kustomizations/pods. Check what's actually firing and unsilenced, through the API server's service
+proxy (no port-forward to start and stop):
 
 ```bash
-kubectl -n observability port-forward svc/kube-prometheus-stack-alertmanager 9093:9093 &
-sleep 1
-curl -s 'http://localhost:9093/api/v2/alerts?active=true&silenced=false&inhibited=false' | \
+kubectl get --raw '/api/v1/namespaces/observability/services/kube-prometheus-stack-alertmanager:9093/proxy/api/v2/alerts?active=true&silenced=false&inhibited=false' |
   jq -r '.[] | "\(.labels.alertname) [\(.labels.severity // "-")] \(.labels.namespace // "-")"'
-kill %1
 ```
 
 ## Step 5: Filter out already-accepted noise
@@ -233,7 +226,8 @@ If nothing is wrong, say so plainly — don't manufacture findings to justify th
   deliberately suspended resources are not incidents.
 - **Reporting kopiur's per-backup warnings** — `MissingDependency` for a `Snapshot` that is still
   within its deadline or has already `Succeeded`, or `VolumeFailedDelete` for a PV that is already
-  gone. Both fire on every backup run. Likewise a PushSecret's `set secret failed` event when the
+  gone. Both fire on every backup run. Likewise a runner pod's `FailedScheduling` "waiting for
+  ephemeral volume" once the pod is running, and a PushSecret's `set secret failed` event when the
   PushSecret is `Ready` again.
 - **Skipping the Silence check** — an alert matching an active `Silence` CR is already known and
   accepted; re-diagnosing it from scratch wastes time and risks a wrong root cause.
