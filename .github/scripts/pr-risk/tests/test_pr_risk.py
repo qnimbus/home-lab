@@ -260,6 +260,30 @@ class TestReleaseNoteSources(unittest.TestCase):
         self.assertEqual([s["version"] for s in sections], ["coredns-1.48.2"])
         self.assertEqual(reason, "GitHub releases of coredns/helm")
 
+    def test_kubelet_notes_come_from_upstreams_changelog_file_349(self):
+        """#349: siderolabs/kubelet's releases, and kubernetes/kubernetes's, only link
+        CHANGELOG/CHANGELOG-1.37.md. Its sections are read from `## Changelog since` on."""
+        files = {
+            "/repos/kubernetes/kubernetes/contents/CHANGELOG/CHANGELOG-1.37.md": (
+                "<!-- toc -->\n# v1.37.2\n\n## Downloads for v1.37.2\n\n| file | sha |\n\n## Changelog since v1.37.1\n\n"
+                "### Bug or Regression\n\n- Fixed NoExecute device taints not evicting DRA pods\n\n"
+                "# v1.37.1\n\n## Changelog since v1.37.0\n\n- Fixed a kube-proxy conntrack cleanup race\n\n"
+                "# v1.37.0\n\n## Changelog since v1.36.0\n\n- Big release\n"),
+            "/repos/kubernetes/kubernetes/contents/CHANGELOG/CHANGELOG-1.36.md": "# v1.36.5\n\n## Changelog since v1.36.4\n\n- Backported fix for something\n",
+        }  # fmt: skip
+        row = "| [ghcr.io/siderolabs/kubelet](https://redirect.github.com/siderolabs/kubelet) | patch | `v1.37.1` → `v1.37.2` |"
+        pointer = "### [`v1.37.2`](https://redirect.github.com/siderolabs/kubelet/releases/tag/v1.37.2)\n\nSee the CHANGELOG for more details."
+        with mock.patch.object(p, "github_raw", side_effect=files.get):
+            notes = p.gather_release_notes(renovate_meta(row, pointer), get=lambda path: self.fail(f"looked up {path}"))
+            self.assertEqual((notes["source"], [s["version"] for s in notes["sections"]]), ("github", ["v1.37.2"]))
+            self.assertIn("NoExecute", notes["sections"][0]["text"])
+            self.assertNotIn("Downloads", notes["sections"][0]["text"])
+            (u,) = p.renovate_updates(row.replace("v1.37.1", "v1.36.4"))
+            sections, _ = p.changelog_file_sections(u)
+            self.assertEqual([s["version"] for s in sections], ["v1.36.5", "v1.37.0", "v1.37.1", "v1.37.2"])
+            sections, reason = p.changelog_file_sections({**u, "to": "v1.37.3"})
+            self.assertEqual((sections, reason), ([], "kubernetes/kubernetes's changelog has no v1.37.3 section"))
+
     def test_unlinked_package_is_its_own_repo_when_listed(self):
         (u,) = p.renovate_updates("| Package | Update | Change |\n|---|---|---|\n| siderolabs/talos | patch | `v1.14.1` → `v1.14.2` |")
         self.assertEqual((u["package"], u["repos"], u["to"]), ("siderolabs/talos", [], "v1.14.2"))

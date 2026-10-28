@@ -809,6 +809,11 @@ RENOVATE_ROW = re.compile(  # the package is a link, or plain text when Renovate
 # `# renovate:` comment). Listed, not matched by shape: a Docker Hub image (`traefik/whoami`,
 # `fireflyiii/core`) looks the same, and its namespace is not a GitHub owner.
 REPO_PACKAGES = {"siderolabs/talos", "fluxcd/flux2"}
+# Packages whose notes are a changelog file in another repo, one file per minor line: (repo,
+# path with `{line}` for `1.37`). siderolabs/kubelet repackages upstream's kubelet, and both
+# repos' GitHub releases only link that file.
+CHANGELOG_FILES = {"ghcr.io/siderolabs/kubelet": ("kubernetes/kubernetes", "CHANGELOG/CHANGELOG-{line}.md")}
+CHANGELOG_VERSION = re.compile(r"(?ms)^# (v\d+(?:\.\d+)+)[ \t]*$(.*?)(?=^# v\d|\Z)")
 BARE_REPO = re.compile(r"^[\w-]+/[\w.-]+$")  # the shape only: an unlisted one is reported, not looked up
 GITHUB_REPO = re.compile(r"^https://(?:redirect\.)?github\.com/([\w.-]+/[\w.-]+?)(?:\.git)?/?(?:[#?].*)?$")
 TAG_VERSION = re.compile(r"(.*?)(v?\d+(?:\.\d+)+)")
@@ -902,6 +907,45 @@ def github_release_sections(update: dict, get=None) -> tuple[list[dict], str, bo
         partial = "" if reached_from else f", back to {sections[0]['version']} only"
         return sections, f"GitHub releases of {repo}{partial}", not reached_from
     return [], "no release tagged for this package in " + ", ".join(repos), False
+
+
+def changelog_file_sections(update: dict, fetch=None) -> tuple[list[dict], str]:
+    """The `# vX.Y.Z` sections in (from, to] of the package's CHANGELOG_FILES entry, oldest
+    first, from `## Changelog since` on (what comes before is download tables)."""
+    fetch = fetch or github_raw
+    repo, pattern = CHANGELOG_FILES[update["package"]]
+    lo, hi = vkey(update["from"]), vkey(update["to"])
+    if not (lo and hi) or lo >= hi or len(lo) < 2 or lo[0] != hi[0]:
+        return [], f"{update['from']} → {update['to']} isn't a version range in one major"
+    found = []
+    for minor in range(lo[1], hi[1] + 1):
+        path = pattern.format(line=f"{hi[0]}.{minor}")
+        text = fetch(f"/repos/{repo}/contents/{path}")
+        if text is None:
+            return [], f"couldn't read {repo}/{path}"
+        for m in CHANGELOG_VERSION.finditer(text):
+            v = vkey(m.group(1))
+            if v and lo < v <= hi:
+                body = m.group(2)
+                body = body[body.find("## Changelog since") :] if "## Changelog since" in body else body
+                found.append((v, {"version": m.group(1), "text": f"### {m.group(1)}\n\n{body.strip()}"}))
+    if not any(v == hi for v, _ in found):
+        return [], f"{repo}'s changelog has no {update['to']} section"
+    return [s for _, s in sorted(found, key=lambda x: x[0])], f"{repo}'s {pattern.format(line='<line>')}"
+
+
+def github_raw(path: str) -> str | None:
+    """A file's raw text from the GitHub contents API (files over 1 MB too), or None."""
+    api, headers = github_api()
+    try:
+        status, _, body = http_json(f"{api}{path}", headers={**headers, "Accept": "application/vnd.github.raw+json"}, timeout=30)
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        log(f"github {path}: {e}")
+        return None
+    if status != 200 or not isinstance(body, str):
+        log(f"github {path}: HTTP {status}")
+        return None
+    return body
 
 
 def github_api() -> tuple[str, dict]:
@@ -1118,7 +1162,10 @@ def package_release_notes(meta: dict, get=None, images: list[dict] | None = None
         why = "Renovate's notes only point elsewhere" if sections else "Renovate found no release notes"
     fetched, reasons, unlisted, partial = [], [], [], False
     for update in updates:
-        got, reason, short = github_release_sections(update, get)
+        if update["package"] in CHANGELOG_FILES:
+            (got, reason), short = changelog_file_sections(update), False
+        else:
+            got, reason, short = github_release_sections(update, get)
         fetched += got
         partial |= short
         if not got and not candidate_repos(update) and BARE_REPO.match(update["package"]):
