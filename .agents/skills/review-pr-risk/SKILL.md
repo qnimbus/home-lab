@@ -43,7 +43,8 @@ git diff --name-only "$(git merge-base origin/main "$HEAD")" origin/main  # chan
   at head (`git show "$HEAD:<path>"`), plus any component in `kubernetes/components/` it uses.
 - **The render:** `curl -s https://konflate.cluster.vwn.io/api/prs/$PR/summary | jq 'del(.pr.labels)'`
   (warnings, failures, images; its `pr` block carries the labels, `risk/*` included, hence the
-  `del`) and `…/diff` (the rendered resources). Check its `headSha` matches `$HEAD`. If there's no fresh
+  `del`) and `curl -s …/api/prs/$PR/diff | jq 'del(.pr.labels)'` (the rendered resources; it
+  carries the same `pr` block). Check its `headSha` matches `$HEAD`. If there's no fresh
   render, that is an evidence gap, not a clean result.
 - **Release notes** for a version bump: Renovate's `### Release Notes` in the body, else the
   upstream GitHub releases between the two versions. The tag must name the package: a chart's
