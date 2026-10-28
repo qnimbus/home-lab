@@ -43,8 +43,8 @@ To pair WAHA with a phone, open the dashboard at `waha.${DOMAIN_CLUSTER}/dashboa
 
 ### waha
 
-- **Sessions are started by the `postStart` hook.** WAHA CORE doesn't restart sessions after a server restart. `WHATSAPP_START_SESSION`, `WHATSAPP_RESTART_ALL_SESSIONS` and `WAHA_WORKER_RESTART_SESSIONS` are PLUS-only and do nothing here. The hook waits for `/ping`, then starts the `default` session; a 404 means a fresh PVC, and only then does it create the session. Starting first avoids the 422 "already exists" error WAHA logs on every restart when create is called first. `|| true` keeps a failed hook from restarting the container.
-- **The plain API key never enters the environment.** That is why the secret keys are listed one by one instead of `envFrom`: `WAHA_API_KEY_PLAIN` is only readable as a file under `/run/secrets/waha`, where the hook picks it up.
+- **WAHA starts its own sessions.** Since 2026.6.1 the former PLUS features are part of CORE, including the session variables. `WHATSAPP_START_SESSION` takes session names, not a boolean (`"true"` creates a session called `true`); `default` creates the session on a fresh PVC and starts it on every boot. `WHATSAPP_RESTART_ALL_SESSIONS` also starts STOPPED sessions after a restart, so a session stopped by hand starts again on the next restart. `WAHA_AUTO_START_DELAY_SECONDS` spaces those restarts out.
+- **The plain API key never reaches the pod.** That is why the secret keys are listed one by one instead of `envFrom`: WAHA only needs the hash, and `WAHA_API_KEY_PLAIN` stays in `waha-secret` for clients.
 - **The PVC is called `waha`, not `sessions`.** It comes from `components/kopiur/backup`, named after `${APP}`; `sessions` is only the HelmRelease's name for the mount.
 - **ExternalSecret rewrite rules run in sequence**, each on the previous rule's output. The blanket `WAHA_$1` rule runs first, so the two rules after it must match `WAHA_username`/`WAHA_password`, not the bare 1Password field names.
 - **`WHATSAPP_*` keys in the secret** are the names WAHA expects; the 1Password fields carry no prefix. Swagger reuses the dashboard's username and password.
