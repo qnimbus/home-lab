@@ -93,7 +93,14 @@ spec:
             keyRotationPolicy: KeyGeneration
             keyGeneration: 2
           csi:
-            keyType: aes
+            keepPriorKeyCountMax: 1
+            keyGeneration: 2
+            keyRotationPolicy: KeyGeneration
+            keyType: aes256k
+          rbdMirrorPeer:
+            keyGeneration: 2
+            keyRotationPolicy: KeyGeneration
+            keyType: aes256k
       resources:
         mgr:
           requests:
