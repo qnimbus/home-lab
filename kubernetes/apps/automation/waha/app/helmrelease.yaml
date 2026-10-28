@@ -25,7 +25,7 @@ spec:
           app:
             image:
               repository: docker.io/devlikeapro/waha
-              tag: gows-2026.9.2@sha256:1ae3c6a994ee97e5039bf41103193d7bf9175f1a31db73ba89bdeed6277901bc
+              tag: gows-2026.10.1@sha256:1f7faeb0227ad5edb5711f7058bfce807ea65e5f92234af0778e4db140f6eb46
             env:
               WAHA_API_KEY:
                 valueFrom:
