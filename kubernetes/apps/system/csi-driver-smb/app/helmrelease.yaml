@@ -9,4 +9,6 @@ spec:
     kind: OCIRepository
     name: csi-driver-smb
   interval: 1h
-  values: {}
+  values:
+    windows:
+      enabled: false
