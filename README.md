@@ -4,19 +4,19 @@
 
 _Declarative home infrastructure managed with Talos, Kubernetes, Flux, Ansible, and GitHub Actions_
 
-[![Talos](https://img.shields.io/badge/Talos-1.14.1-blue?style=for-the-badge&logo=talos&logoColor=white)](https://www.talos.dev/)
-[![Kubernetes](https://img.shields.io/badge/Kubernetes-1.37.1-blue?style=for-the-badge&logo=kubernetes&logoColor=white)](https://kubernetes.io/)
-[![Flux](https://img.shields.io/badge/Flux-2.9.5-blue?style=for-the-badge&logo=flux&logoColor=white)](https://fluxcd.io/)
-[![Renovate](https://img.shields.io/github/actions/workflow/status/qnimbus/home-lab/renovate.yaml?branch=main&label=renovate&logo=renovate&logoColor=white&style=for-the-badge)](https://github.com/qnimbus/home-lab/actions/workflows/renovate.yaml)
-[![Validation](https://img.shields.io/github/actions/workflow/status/qnimbus/home-lab/validate.yaml?branch=main&label=validation&logo=githubactions&logoColor=white&style=for-the-badge)](https://github.com/qnimbus/home-lab/actions/workflows/validate.yaml)
+[![Talos](https://img.shields.io/endpoint?url=https%3A%2F%2Fstats.clustrs.dev%2Fbadges%2Ftalos_version%3Fformat%3Dshields&style=for-the-badge&logo=talos&logoColor=white&color=blue&label=talos)](https://talos.dev)
+[![Kubernetes](https://img.shields.io/endpoint?url=https%3A%2F%2Fstats.clustrs.dev%2Fbadges%2Fkubernetes_version%3Fformat%3Dshields&style=for-the-badge&logo=kubernetes&logoColor=white&color=blue&label=k8s)](https://kubernetes.io)
+[![Flux](https://img.shields.io/endpoint?url=https%3A%2F%2Fstats.clustrs.dev%2Fbadges%2Fflux_version%3Fformat%3Dshields&style=for-the-badge&logo=flux&logoColor=white&color=blue&label=flux)](https://fluxcd.io)
+[![Renovate](https://img.shields.io/github/actions/workflow/status/qnimbus/home-lab/renovate.yaml?branch=main&label=renovate&logo=renovate&logoColor=white&style=for-the-badge&color=blue)](https://github.com/qnimbus/home-lab/actions/workflows/renovate.yaml)
+[![Validation](https://img.shields.io/github/actions/workflow/status/qnimbus/home-lab/validate.yaml?branch=main&label=validation&logo=githubactions&logoColor=white&style=for-the-badge&color=blue)](https://github.com/qnimbus/home-lab/actions/workflows/validate.yaml)
 
-![Age](https://stats.clustrs.dev/badges/cluster_age_days)
-![Uptime](https://stats.clustrs.dev/badges/cluster_uptime_days)
-![Nodes](https://stats.clustrs.dev/badges/cluster_node_count)
-![Pods](https://stats.clustrs.dev/badges/cluster_pod_count)
-![CPU](https://stats.clustrs.dev/badges/cluster_cpu_usage)
-![Memory](https://stats.clustrs.dev/badges/cluster_memory_usage)
-![Power](https://stats.clustrs.dev/badges/cluster_power_usage)
+[![Age-Days](https://img.shields.io/endpoint?url=https%3A%2F%2Fstats.clustrs.dev%2Fbadges%2Fcluster_age_days%3Fformat%3Dshields&style=for-the-badge&label=Age)](https://github.com/home-operations/kromgo)
+[![Uptime-Days](https://img.shields.io/endpoint?url=https%3A%2F%2Fstats.clustrs.dev%2Fbadges%2Fcluster_uptime_days%3Fformat%3Dshields&style=for-the-badge&label=Uptime)](https://github.com/home-operations/kromgo)
+[![Node-Count](https://img.shields.io/endpoint?url=https%3A%2F%2Fstats.clustrs.dev%2Fbadges%2Fcluster_node_count%3Fformat%3Dshields&style=for-the-badge&label=Nodes)](https://github.com/home-operations/kromgo)
+[![Pod-Count](https://img.shields.io/endpoint?url=https%3A%2F%2Fstats.clustrs.dev%2Fbadges%2Fcluster_pod_count%3Fformat%3Dshields&style=for-the-badge&label=Pods)](https://github.com/home-operations/kromgo)
+[![CPU-Usage](https://img.shields.io/endpoint?url=https%3A%2F%2Fstats.clustrs.dev%2Fbadges%2Fcluster_cpu_usage%3Fformat%3Dshields&style=for-the-badge&label=CPU)](https://github.com/home-operations/kromgo)
+[![Memory-Usage](https://img.shields.io/endpoint?url=https%3A%2F%2Fstats.clustrs.dev%2Fbadges%2Fcluster_memory_usage%3Fformat%3Dshields&style=for-the-badge&label=MEM)](https://github.com/home-operations/kromgo)
+[![Power](https://img.shields.io/endpoint?url=https%3A%2F%2Fstats.clustrs.dev%2Fbadges%2Fcluster_power_usage%3Fformat%3Dshields&style=for-the-badge&label=PWR)](https://github.com/home-operations/kromgo)
 ![Alerts](https://stats.clustrs.dev/badges/cluster_alert_count)
 
 </div>
