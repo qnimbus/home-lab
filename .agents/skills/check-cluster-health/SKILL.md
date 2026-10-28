@@ -59,7 +59,7 @@ kubectl get events -A --field-selector type=Warning -o json |
   select((.reason == "VolumeFailedDelete" and (.message | test("is still attached to node"))
     and (.involvedObject.name as $pv | $pvs | index($pv) | not)) | not) |
   select((.reason == "Errored" and .involvedObject.kind == "PushSecret"
-    and (.message | test("error updating 1Password Item: status 400"))
+    and .message == "set secret failed"
     and ("\(.involvedObject.namespace)/\(.involvedObject.name)" as $p | $pushed | index($p))) | not) |
   "\(.lastTimestamp // .eventTime)  \(.involvedObject.namespace // "-")  \(.reason)  \(.involvedObject.kind)/\(.involvedObject.name)  \(.message)"' |
   tail -30
@@ -82,13 +82,17 @@ The first two come from every kopiur backup run:
 
 The third comes from the certificate PushSecrets in `network`:
 
-- **`Errored` "set secret failed: … error updating 1Password Item: status 400: Unable to update
-  item"** on a PushSecret. ESO's 1Password Connect provider writes each `data` entry as a separate
-  read-modify-write of the whole item. When the `tls.crt` write's new item version hasn't reached
-  Connect yet, the `tls.key` write is based on the old version and 1Password rejects it. ESO retries
-  and succeeds a few seconds later, so roughly one such event per hourly sync round is normal. It's
-  dropped while the PushSecret is `Ready`. A PushSecret that isn't `Ready`, or any other push error,
-  is a finding.
+- **`Errored` "set secret failed"** on a PushSecret. ESO's 1Password Connect provider writes each
+  `data` entry as a separate read-modify-write of the whole item. When the `tls.crt` write's new
+  item version hasn't reached Connect yet, the `tls.key` write is based on the old version and
+  1Password rejects it. ESO retries and succeeds a few seconds later, so roughly one such event per
+  hourly sync round is normal. It's dropped while the PushSecret is `Ready`; a PushSecret that isn't
+  `Ready` is a finding. The event carries no reason, so the filter can't tell this race from any
+  other push error that clears on retry. The reason is in the controller log, on whichever replica
+  ran the sync:
+  `kubectl -n external-secrets logs -l app.kubernetes.io/name=external-secrets --since=2h | grep "status 400"`
+  shows `error updating 1Password Item: status 400: Unable to update item` for this race. Any other
+  error there, even on a `Ready` PushSecret, is a finding.
 
 For Kustomizations/HelmReleases, `READY` + `STATUS`/`MESSAGE` columns are the signal. `Unknown` that
 persists for more than a couple of reconcile intervals is as bad as `False` — Flux only shows
@@ -158,6 +162,29 @@ kubectl -n rook-ceph exec deploy/rook-ceph-tools -- ceph health detail
 before treating a `WARN` as an incident. A `health:` line listing `(muted: ...)` items is also
 expected — those are deliberately silenced Ceph health checks, not active problems.
 
+**A volume stuck in the RBD trash** never shows up in `ceph status`, an event or a Flux status.
+When a PVC is deleted while a snapshot or clone still depends on its image, ceph-csi moves the
+image to the trash and queues an `rbd_support` task that removes it once nothing depends on it.
+If the dependant is never deleted, the task retries forever:
+
+```bash
+kubectl -n rook-ceph exec deploy/rook-ceph-tools -- rbd trash ls --long ceph-blockpool
+kubectl -n rook-ceph exec deploy/rook-ceph-tools -- ceph rbd task list
+```
+
+Empty output and `[]` are healthy, and so is an entry whose `DELETED_AT` is minutes old. An entry
+older than a day, or a task with a high `retry_attempts` and a `retry_message` such as `RBD image
+has snapshots`, is a finding. Name what holds it:
+
+```bash
+kubectl -n rook-ceph exec deploy/rook-ceph-tools -- rbd snap ls --all --pool ceph-blockpool --image-id <id>
+```
+
+Each snapshot in the `trash` namespace names the `csi-snap-…` image cloned from it. Report whether
+any VolumeSnapshot (`kubectl get volumesnapshotcontents`) or PV still refers to that image, and
+whether another image is a clone of it (`rbd children`). Don't delete anything: removing an
+orphaned image is a separate, deliberate step the user decides on.
+
 ## Step 4 (only if Steps 1–3 don't explain a reported symptom): Alertmanager
 
 Metric-only alerts (thermal, disk-fill prediction, network drops) don't show up as broken
@@ -206,12 +233,14 @@ If nothing is wrong, say so plainly — don't manufacture findings to justify th
   deliberately suspended resources are not incidents.
 - **Reporting kopiur's per-backup warnings** — `MissingDependency` for a `Snapshot` that is still
   within its deadline or has already `Succeeded`, or `VolumeFailedDelete` for a PV that is already
-  gone. Both fire on every backup run. Likewise a PushSecret's 1Password `status 400` event when
-  the PushSecret is `Ready` again.
+  gone. Both fire on every backup run. Likewise a PushSecret's `set secret failed` event when the
+  PushSecret is `Ready` again.
 - **Skipping the Silence check** — an alert matching an active `Silence` CR is already known and
   accepted; re-diagnosing it from scratch wastes time and risks a wrong root cause.
 - **Treating Ceph `HEALTH_WARN` as an incident during an in-flight Rook upgrade**, or treating
   `(muted: ...)` health checks as active problems — both are expected, transient or intentional.
+- **Taking `HEALTH_OK` to mean Ceph has nothing pending** — a volume stuck in the RBD trash keeps
+  `rbd_support` retrying without ever raising a health check.
 - **Taking remediation action directly** (`kubectl apply`, restarting a pod, patching a PVC) — this
   repo is GitOps-only; report findings and propose the Git change instead, unless explicitly asked
   to act live.
