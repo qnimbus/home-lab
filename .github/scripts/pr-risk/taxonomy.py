@@ -159,6 +159,7 @@ CONTEXT_CODES = {
     "ctx.large_changeset": "Large changeset",
     "ctx.helm_hook_recreated": "Immutable change on a Helm hook that Helm recreates",
     "ctx.networkpolicy_removed": "Removes a network policy",
+    "ctx.privileged_workload": "A changed resource runs privileged; its rendered diff shows whether the PR adds that",
     "ctx.unrendered_surface": "A surface nothing renders",
     "ctx.runner_privileged": "Runs on the cluster-admin in-cluster runner",
     "ctx.resource_envelope": "Resource requests/limits or replica counts change",

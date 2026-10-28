@@ -589,6 +589,42 @@ class TestRegressions(Assertions):
         self.verdict(r, "safe")
         self.assertIn("ctx.helm_hook_recreated", {c["code"] for c in r["context"]})
 
+    SMB_OCI = mkdiff("kubernetes/apps/system/csi-driver-smb/app/ocirepository.yaml", "  ref:\n-    tag: 1.20.3\n+    tag: 1.20.4", header="spec:")
+    SMB_PRIVILEGED = [{"level": "caution", "rule": "privileged", "resource": "DaemonSet system/csi-smb-node"},
+                      {"level": "caution", "rule": "privileged", "resource": "Deployment system/csi-smb-controller"}]  # fmt: skip
+
+    @staticmethod
+    def smb_kdiff(*extra):
+        def res(kind, name, image, *rows):
+            unified = [("ctx", "        securityContext:"), ("ctx", "          privileged: true"), *rows,
+                       ("del", f"          image: {image}:v1.20.3"), ("add", f"          image: {image}:v1.20.4")]  # fmt: skip
+            return {"kind": kind, "title": f"{kind} system/{name}", "status": "changed", "parent": "HelmRelease system/csi-driver-smb",
+                    "unified": [{"kind": k, "html": h, "folded": k == "ctx"} for k, h in unified]}  # fmt: skip
+        return {"diff": {"resources": [res("DaemonSet", "csi-smb-node", "registry.k8s.io/sig-storage/smbplugin", *extra),
+                                       res("Deployment", "csi-smb-controller", "registry.k8s.io/sig-storage/smbplugin")]}}  # fmt: skip
+
+    def test_privileged_warning_on_already_privileged_chart_343(self):
+        """#343: Konflate warns `privileged` on every changed resource that runs privileged. The
+        SMB driver's pods always did; the rendered diff changes only their images."""
+        r = Scenario(self.SMB_OCI, konflate=konflate_fresh(warnings=self.SMB_PRIVILEGED), kdiff=self.smb_kdiff(),
+                     title="fix(helm): update chart csi-driver-smb (1.20.3 ➔ 1.20.4)", author="renovate").run()  # fmt: skip
+        self.verdict(r, "safe")
+        self.assertNotIn("sec.privilege_added", codes(r))
+        self.assertIn("ctx.privileged_workload", {c["code"] for c in r["context"]})
+
+    def test_privileged_warning_without_rendered_diff_is_possible(self):
+        r = Scenario(self.SMB_OCI, konflate=konflate_fresh(warnings=self.SMB_PRIVILEGED),
+                     title="fix(helm): update chart csi-driver-smb (1.20.3 ➔ 1.20.4)", author="renovate").run()  # fmt: skip
+        self.assertIn("sec.privilege_added", codes(r, {"possible"}))
+        self.assertNotIn("sec.privilege_added", codes(r, {"established"}))
+
+    def test_privileged_added_in_rendered_diff_is_still_found(self):
+        kdiff = self.smb_kdiff(("add", "          hostNetwork: true"))
+        r = Scenario(self.SMB_OCI, konflate=konflate_fresh(warnings=self.SMB_PRIVILEGED), kdiff=kdiff,
+                     title="fix(helm): update chart csi-driver-smb (1.20.3 ➔ 1.20.4)", author="renovate").run()  # fmt: skip
+        self.assertIn("sec.privilege_added", codes(r, {"established"}))
+        self.assertNotEqual(r["classification"], "safe")
+
     def test_namespace_added_to_cluster_apps_77(self):
         """#77 added `./documents` to kubernetes/apps/kustomization.yaml: nothing existing changes.
         Dropping one prunes the whole namespace."""

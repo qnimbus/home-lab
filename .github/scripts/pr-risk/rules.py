@@ -1207,7 +1207,7 @@ KONFLATE_RULES: dict[str, tuple[str, str] | None] = {
     "dangling-dependson": ("integrity.dependency_unsatisfiable", "established"),
     "image-not-found": ("integrity.image_unresolvable", "established"),
     "rbac-widened": ("sec.rbac_widened", "possible"),
-    "privileged": ("sec.privilege_added", "established"),
+    "privileged": None,  # special-cased: the rendered diff decides
     "replicas-zero": ("avail.capacity_reduced", "established"),
     "suspends": ("recon.suspension_changed", "established"),
     "resumes": ("recon.suspension_changed", "established"),
@@ -1238,7 +1238,7 @@ KONFLATE_CODES = sorted(
     {c for v in KONFLATE_RULES.values() if v for c in [v[0]]}
     | set(KONFLATE_CONTEXT.values())
     | {"integrity.render_failed", "integrity.apply_rejected", "ev.render_missing", "ev.render_incomplete", "ev.unknown_signal",
-       "ctx.helm_hook_recreated", "ctx.crd_touched"}
+       "ctx.helm_hook_recreated", "ctx.crd_touched", "sec.privilege_added", "ctx.privileged_workload"}
 )  # fmt: skip
 
 
@@ -1298,6 +1298,15 @@ def konflate_render(f: Facts, a: Assessment) -> None:
                            kind="mechanism")  # fmt: skip
             else:
                 a.find("integrity.apply_rejected", "established", sid, (eid,), f"`{res}` changes an immutable field: the apply fails.")
+            continue
+        if name == "privileged":
+            # Konflate flags every changed resource that runs privileged, not only one this PR
+            # makes privileged. With the rendered diff, security.privileges sees what is added.
+            if in_kdiff(f.kdiff, res):
+                a.note("ctx.privileged_workload", res, sid)
+            else:
+                a.find("sec.privilege_added", "possible", sid, (eid,),
+                       f"Konflate `privileged`: `{res}` runs privileged; without its rendered diff, whether this PR adds that can't be told.")  # fmt: skip
             continue
         if name == "dangling-dependson" and res in failed_infra:
             # The resource only looks removed because its render failed for Konflate's reasons.
