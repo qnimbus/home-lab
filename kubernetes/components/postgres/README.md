@@ -52,17 +52,18 @@ The app reads its connection from the CNPG-generated `${APP}-postgres-app` Secre
 
 ## Variables
 
-| Variable                   | Required | Default        | Purpose                                                                        |
-| -------------------------- | -------- | -------------- | ------------------------------------------------------------------------------ |
-| `APP`                      | yes      | —              | Prefix for every resource name and the S3 backup path                          |
-| `POSTGRES_DATABASE`        | no       | `${APP}`       | Database created on bootstrap                                                  |
-| `POSTGRES_USERNAME`        | no       | `${APP}`       | Owner role created on bootstrap                                                |
-| `POSTGRES_INSTANCES`       | no       | `1`            | Pod count; CNPG scales live, no rebuild                                        |
-| `POSTGRES_SYNC_REPLICAS`   | no       | `0`            | `min`/`maxSyncReplicas`; `1` only with `POSTGRES_INSTANCES` ≥ 2                |
-| `POSTGRES_ENABLE_PDB`      | no       | `false`        | CNPG PodDisruptionBudgets; `"true"` only with `POSTGRES_INSTANCES` ≥ 2         |
-| `POSTGRES_STORAGE`         | no       | `5Gi`          | Per-instance PVC size                                                          |
-| `POSTGRES_BACKUP_SCHEDULE` | no       | `0 40 4 * * *` | Base-backup cron. **Six fields, seconds first**: `0 40 4 * * *` is 04:40 daily |
-| `POSTGRES_DUMP_SCHEDULE`   | no       | `0 2 * * *`    | NAS dump cron: a normal five-field Kubernetes CronJob, in UTC                  |
+| Variable                     | Required | Default        | Purpose                                                                        |
+| ---------------------------- | -------- | -------------- | ------------------------------------------------------------------------------ |
+| `APP`                        | yes      | —              | Prefix for every resource name and the S3 backup path                          |
+| `POSTGRES_DATABASE`          | no       | `${APP}`       | Database created on bootstrap                                                  |
+| `POSTGRES_USERNAME`          | no       | `${APP}`       | Owner role created on bootstrap                                                |
+| `POSTGRES_INSTANCES`         | no       | `1`            | Pod count; CNPG scales live, no rebuild                                        |
+| `POSTGRES_SYNC_REPLICAS`     | no       | `0`            | `min`/`maxSyncReplicas`; `1` only with `POSTGRES_INSTANCES` ≥ 2                |
+| `POSTGRES_ENABLE_PDB`        | no       | `false`        | CNPG PodDisruptionBudgets; `"true"` only with `POSTGRES_INSTANCES` ≥ 2         |
+| `POSTGRES_STORAGE`           | no       | `5Gi`          | Per-instance PVC size                                                          |
+| `POSTGRES_BACKUP_SCHEDULE`   | no       | `0 40 4 * * *` | Base-backup cron. **Six fields, seconds first**: `0 40 4 * * *` is 04:40 daily |
+| `POSTGRES_DUMP_SCHEDULE`     | no       | `0 2 * * *`    | NAS dump cron: a normal five-field Kubernetes CronJob, in UTC                  |
+| `POSTGRES_DUMP_MEMORY_LIMIT` | no       | `512Mi`        | NAS dump container's memory limit; see [NAS dumps](#nas-dumps)                 |
 
 The default is one instance rather than a fixed three instances with one sync replica for every app: that would give HA everywhere, but triple the pods and storage per app. The replica settings come in pairs:
 
@@ -127,6 +128,8 @@ Base backups on the schedule above, plus continuous WAL archiving, go to one sha
 A second, independent copy: the `${APP}-postgres-backup-local` CronJob ([postgres-backup-local](https://github.com/prodrigestivill/docker-postgres-backup-local), retention in [its HelmRelease](./backup-local/helmrelease.yaml)) writes a `pg_dump` custom-format file to `/mnt/tank/Cluster/backup/apps/postgres-local/${APP}/` on the NAS, as `kubernetes` 3001:3001. Unlike the Barman backups, a dump survives losing the B2 bucket or its credentials, and restores into a newer PostgreSQL major. `just k8s database restore <namespace> <app> <file>` takes it directly; `kubectl create job -n <namespace> --from=cronjob/<app>-postgres-backup-local <app>-dump-test` runs one by hand.
 
 **Keep the dump image's major tag equal to the `cnpg` image's PostgreSQL major.** `pg_dump` can't dump a newer server. The job creates `/backups/${APP}` itself before calling `/backup.sh`, because the image checks that `BACKUP_DIR` exists before its own `mkdir` runs, so a first run would otherwise always fail. The same wrapper sets `umask 0027`, the only place to control modes (the image has no setting): folders are 0750, dumps 0640.
+
+**The dump's memory is mostly page cache, not `pg_dump`.** Writing the dump file over NFS fills the pod's page cache faster than the NAS takes it, and that cache counts against the container's memory limit. A large database then gets OOMKilled with `pg_dump` itself at a few dozen MB, and Prometheus' 30-second samples miss the peak. Raise `POSTGRES_DUMP_MEMORY_LIMIT` for that app (`mail-archiver` sets `1Gi`) rather than lowering it to what the graphs show.
 
 ## Caveats
 
