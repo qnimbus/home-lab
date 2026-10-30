@@ -82,5 +82,5 @@ jobs:
           RENOVATE_PLATFORM_COMMIT: enabled # commits via the API, signed as the App
           RENOVATE_REPOSITORIES: ${{ github.repository }}
         with:
-          renovate-version: 44.198.0
+          renovate-version: 44.198.2
           token: ${{ steps.app-token.outputs.token }}
