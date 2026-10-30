@@ -4,24 +4,24 @@ Personal apps with no better home: finance, documents, git, a pastebin, the dash
 
 ## Apps
 
-| App                | What it does                                   | Notes                                                                                                      |
-| ------------------ | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| firefly            | Firefly III, personal finance manager          | `firefly.${DOMAIN_CLUSTER}`; Postgres, kopiur-backed upload PVC; hourly cron CronJob                       |
-| firefly-importer   | Bank CSV/API import for Firefly III            | `firefly-importer.${DOMAIN_CLUSTER}`; scales to zero (KEDA HTTP)                                           |
-| forgejo            | Git hosting (upstream chart, not app-template) | `forgejo.${DOMAIN_CLUSTER}`; SSH through the `ssh` listener on `envoy-internal` (TCPRoute); Postgres       |
-| homepage           | Dashboard                                      | `homepage.${DOMAIN_CLUSTER}`; config in [app/config](./homepage/app/config/)                               |
-| mail-archiver      | Mail Archiver, IMAP mailbox archive and search | `mail-archiver.${DOMAIN_CLUSTER}`; Postgres holds all mail; login keys and bulk imports on the NAS         |
-| paperless          | Paperless-ngx, document archive with OCR       | `paperless.${DOMAIN_CLUSTER}`; Postgres, Dragonfly, NAS SMB shares; scales to zero when the NAS is down    |
-| unifi-voucher-site | Guest-WiFi voucher portal                      | `voucher.${DOMAIN_CLUSTER}`; scales to zero (KEDA HTTP); no login                                          |
-| wallos             | Wallos, subscription tracker                   | `wallos.${DOMAIN_CLUSTER}`; SQLite and logos on one kopiur-backed PVC                                      |
-| wastebin           | Wastebin, pastebin                             | `wastebin.${DOMAIN_CLUSTER}`; SQLite on a kopiur-backed PVC; no login                                      |
-| whoami             | Request-echo test app, **not deployed**        | Add `./whoami/ks.yaml` to [kustomization.yaml](./kustomization.yaml) to enable; public on `envoy-external` |
+| App                | What it does                                   | Notes                                                                                                                                   |
+| ------------------ | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| firefly            | Firefly III, personal finance manager          | `firefly.${DOMAIN_CLUSTER}`; Postgres, kopiur-backed upload PVC; hourly cron CronJob                                                    |
+| firefly-importer   | Bank CSV/API import for Firefly III            | `firefly-importer.${DOMAIN_CLUSTER}`; scales to zero (KEDA HTTP)                                                                        |
+| forgejo            | Git hosting (upstream chart, not app-template) | `forgejo.${DOMAIN_CLUSTER}`; SSH through the `ssh` listener on `envoy-internal` (TCPRoute); Postgres                                    |
+| homepage           | Dashboard                                      | `homepage.${DOMAIN_CLUSTER}`; config in [app/config](./homepage/app/config/)                                                            |
+| mail-archiver      | Mail Archiver, IMAP mailbox archive and search | `mail-archiver.${DOMAIN_CLUSTER}`; Postgres holds all mail; login keys and bulk imports on the NAS; scales to zero when the NAS is down |
+| paperless          | Paperless-ngx, document archive with OCR       | `paperless.${DOMAIN_CLUSTER}`; Postgres, Dragonfly, NAS SMB shares; scales to zero when the NAS is down                                 |
+| unifi-voucher-site | Guest-WiFi voucher portal                      | `voucher.${DOMAIN_CLUSTER}`; scales to zero (KEDA HTTP); no login                                                                       |
+| wallos             | Wallos, subscription tracker                   | `wallos.${DOMAIN_CLUSTER}`; SQLite and logos on one kopiur-backed PVC                                                                   |
+| wastebin           | Wastebin, pastebin                             | `wastebin.${DOMAIN_CLUSTER}`; SQLite on a kopiur-backed PVC; no login                                                                   |
+| whoami             | Request-echo test app, **not deployed**        | Add `./whoami/ks.yaml` to [kustomization.yaml](./kustomization.yaml) to enable; public on `envoy-external`                              |
 
 ## How it fits together
 
 **Scale to zero over HTTP.** firefly-importer and unifi-voucher-site use [`components/keda/http-scaler`](../../components/keda/http-scaler/). Their HTTPRoute points at `keda-add-ons-http-interceptor-proxy` in `system`, not at the app's Service, so the interceptor can hold the first request while the pod starts. Meanwhile the `InterceptorRoute` serves a self-refreshing 503 page. It scales on `requestRate`, not concurrency: the placeholder answers in microseconds, so a concurrency gauge is back at 0 before the scaler polls, and scale-up never fires. Their `ks.yaml` depends on `keda-add-ons-http`, because bootstrap doesn't pre-install the `InterceptorRoute` CRD.
 
-**paperless follows the NAS.** [`components/keda/smb-scaler`](../../components/keda/README.md) scales it to zero while blackbox-exporter's `${NAS_HOST}:445` probe fails. That is its only scaler: KEDA allows one ScaledObject per workload. Every KEDA-scaled HelmRelease here ignores `/spec/replicas` in drift detection; without that, Flux would put the replicas back within the hour.
+**paperless and mail-archiver follow the NAS.** [`components/keda/smb-scaler`](../../components/keda/README.md) scales paperless to zero while blackbox-exporter's `${NAS_HOST}:445` probe fails, and `components/keda/nfs-scaler` does the same for mail-archiver on `${NAS_HOST}:2049`. That is each one's only scaler: KEDA allows one ScaledObject per workload. Every KEDA-scaled HelmRelease here ignores `/spec/replicas` in drift detection; without that, Flux would put the replicas back within the hour.
 
 **paperless storage.** The archive (`consume`, `export`, `media`) and backups live on the NAS `Archive` and `Backup` SMB shares, as static PVs in [pv.yaml](./paperless/app/pv.yaml):
 

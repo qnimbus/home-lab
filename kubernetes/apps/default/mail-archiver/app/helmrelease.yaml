@@ -10,6 +10,11 @@ spec:
     kind: OCIRepository
     name: mail-archiver
   dependsOn: []
+  driftDetection:
+    ignore:
+      - paths: ["/spec/replicas"]
+        target:
+          kind: Deployment
   values:
     defaultPodOptions:
       securityContext:

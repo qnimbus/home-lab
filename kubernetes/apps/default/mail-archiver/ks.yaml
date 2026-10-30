@@ -7,6 +7,7 @@ metadata:
 spec:
   targetNamespace: default
   components:
+    - ../../../../components/keda/nfs-scaler
     - ../../../../components/postgres
   interval: 1h
   path: ./kubernetes/apps/default/mail-archiver/app
