@@ -76,3 +76,31 @@ stop-doco-cd:
         curl -fsS -m 60 -o /dev/null -X POST "{{ doco_url }}/v1/api/project/$stack/stop" -H "x-api-key: $key"
     done
     ansible-playbook -i "{{ source_directory() }}/../ansible/inventory.yaml" "{{ source_directory() }}/.ansible/nas/stop-doco-cd.yaml"
+
+[doc('Start the llama.cpp servers on TrueNAS: server, embedding or all')]
+llama-start which='all':
+    for c in $(just docker _llama-containers "{{ which }}"); do
+        just log info "Starting" container "$c"
+        ssh -n "{{ nas_ssh }}" sudo docker start "$c" >/dev/null
+    done
+
+[doc('Stop the llama.cpp servers on TrueNAS: server, embedding or all')]
+llama-stop which='all':
+    for c in $(just docker _llama-containers "{{ which }}"); do
+        just log info "Stopping" container "$c"
+        ssh -n "{{ nas_ssh }}" sudo docker stop "$c" >/dev/null
+    done
+
+[doc('Show the state of the llama.cpp servers on TrueNAS')]
+llama-status:
+    ssh -n "{{ nas_ssh }}" sudo docker ps --all --filter label=com.docker.compose.project=10-llama \
+        --format "'table {{ '{{' }}.Names}}\t{{ '{{' }}.Status}}\t{{ '{{' }}.Image}}'"
+
+[private]
+_llama-containers which:
+    case "{{ which }}" in
+        server) echo llama-server ;;
+        embedding) echo llama-embedding ;;
+        all) echo llama-server llama-embedding ;;
+        *) just log fatal "Unknown llama server" which "{{ which }}" expected "server, embedding or all" ;;
+    esac

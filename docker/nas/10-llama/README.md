@@ -14,8 +14,9 @@ The model files live on the NAS in `/mnt/tank/AI/models`, mounted read-only at `
 Both services carry `cd.doco.deployment.autostart: "false"`. doco-cd creates their containers but doesn't start them, and leaves a stopped one stopped when it redeploys. Start and stop them by hand:
 
 ```bash
-ssh truenas_admin@nas.lan.home.vwn.io sudo docker start llama-server
-ssh truenas_admin@nas.lan.home.vwn.io sudo docker stop llama-server
+just docker llama-start [server|embedding|all]   # all is the default
+just docker llama-stop [server|embedding|all]
+just docker llama-status
 ```
 
 `restart: unless-stopped` brings a running service back after a NAS reboot; a stopped one stays stopped. While a service is stopped, Traefik has no route for it: it only routes running containers.
