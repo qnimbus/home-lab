@@ -19,7 +19,6 @@ services:
       - "107"
     image: ghcr.io/ggml-org/llama.cpp:server-vulkan-b10548@sha256:70815abd05cfd67c9a686f295573075aac96a3099ad979443b909666c291ad2e
     labels:
-      cd.doco.deployment.autostart: "false"
       dexd.enabled: "true"
       traefik.enable: "true"
       traefik.http.routers.llama-embedding.entrypoints: websecure

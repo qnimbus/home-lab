@@ -9,17 +9,18 @@ Two [llama.cpp](https://github.com/ggml-org/llama.cpp) servers on the NAS's Rade
 
 The model files live on the NAS in `/mnt/tank/AI/models`, mounted read-only at `/models`. They are not in Git: download a new one there before adding a preset that points at it.
 
-## On demand
+## Always on, and on demand
 
-Both services carry `cd.doco.deployment.autostart: "false"`. doco-cd creates their containers but doesn't start them, and leaves a stopped one stopped when it redeploys. Start and stop them by hand:
+- **`llama-embedding` always runs.** paperless embeds every new document and rebuilds its index nightly, so the endpoint has to be up. doco-cd starts it on every deploy, and `restart: unless-stopped` brings it back after a reboot.
+- **`llama-server` is on demand.** It carries `cd.doco.deployment.autostart: "false"`: doco-cd creates its container but doesn't start it, and leaves it stopped when it redeploys. Start and stop it by hand:
 
-```bash
-just docker llama-start [server|embedding|all]   # all is the default
-just docker llama-stop [server|embedding|all]
-just docker llama-status
-```
+  ```bash
+  just docker llama-start
+  just docker llama-stop
+  just docker llama-status   # both containers
+  ```
 
-`restart: unless-stopped` brings a running service back after a NAS reboot; a stopped one stays stopped. While a service is stopped, Traefik has no route for it: it only routes running containers.
+  If it was running, `restart: unless-stopped` brings it back after a NAS reboot; a stopped one stays stopped. While it is stopped, Traefik has no route for it: it only routes running containers.
 
 ## Gotchas
 
