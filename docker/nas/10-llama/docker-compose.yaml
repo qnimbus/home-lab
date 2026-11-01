@@ -1,0 +1,64 @@
+---
+networks:
+  apps:
+    external: true
+services:
+  llama-embedding:
+    command:
+      - --models-preset
+      - /config/models.embedding.ini
+      - --models-max
+      - "1"
+    container_name: llama-embedding
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      XDG_CACHE_HOME: /tmp/.cache
+    group_add:
+      - "44"
+      - "107"
+    image: ghcr.io/ggml-org/llama.cpp:server-vulkan-b10548@sha256:70815abd05cfd67c9a686f295573075aac96a3099ad979443b909666c291ad2e
+    labels:
+      cd.doco.deployment.autostart: "false"
+      dexd.enabled: "true"
+      traefik.enable: "true"
+      traefik.http.routers.llama-embedding.entrypoints: websecure
+      traefik.http.routers.llama-embedding.rule: Host(`embeddings.vwn.app`)
+      traefik.http.services.llama-embedding.loadbalancer.server.port: "8080"
+    networks:
+      - apps
+    restart: unless-stopped
+    user: "568:568"
+    volumes:
+      - ./config/models.embedding.ini:/config/models.embedding.ini:ro
+      - /mnt/tank/AI/models:/models:ro
+
+  llama-server:
+    command:
+      - --models-preset
+      - /config/models.ini
+      - --models-max
+      - "1"
+    container_name: llama-server
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      XDG_CACHE_HOME: /tmp/.cache
+    group_add:
+      - "44"
+      - "107"
+    image: ghcr.io/ggml-org/llama.cpp:server-vulkan-b10548@sha256:70815abd05cfd67c9a686f295573075aac96a3099ad979443b909666c291ad2e
+    labels:
+      cd.doco.deployment.autostart: "false"
+      dexd.enabled: "true"
+      traefik.enable: "true"
+      traefik.http.routers.llama-server.entrypoints: websecure
+      traefik.http.routers.llama-server.rule: Host(`llama.vwn.app`)
+      traefik.http.services.llama-server.loadbalancer.server.port: "8080"
+    networks:
+      - apps
+    restart: unless-stopped
+    user: "568:568"
+    volumes:
+      - ./config/models.ini:/config/models.ini:ro
+      - /mnt/tank/AI/models:/models:ro

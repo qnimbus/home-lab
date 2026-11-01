@@ -99,6 +99,15 @@
       matchPackageNames: ["docker.io/instantlinux/nut-upsd"],
       versioning: "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-r(?<build>\\d+)$",
     },
+    {
+      // llama.cpp tags its builds <variant>-bNNNN (server-vulkan-b10548), which
+      // docker versioning can't parse. Anchoring on server-vulkan- keeps updates
+      // within the same variant; every build is a major, so none auto-merges
+      description: "llama.cpp: parse the build number from the server-vulkan-bNNNN tag",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["ghcr.io/ggml-org/llama.cpp"],
+      versioning: "regex:^server-vulkan-b(?<major>\\d+)$",
+    },
     //
     // Auto-merge rules
     //
