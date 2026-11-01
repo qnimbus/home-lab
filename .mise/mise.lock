@@ -1007,13 +1007,11 @@ specifiers = ["0.75.0"]
 version = "14.5.0"
 backend = "pypi:ansible"
 specifiers = ["14.5.0"]
-uv = { path = "locks/pypi-ansible/14.5.0", digest = "sha256:f48e18be2e15273a145729cdd2c0ed0e29129478f148693b86ce540bcb464db0" }
 
 [[tools."pypi:ansible-core"]]
 version = "2.21.5"
 backend = "pypi:ansible-core"
 specifiers = ["2.21.5"]
-uv = { path = "locks/pypi-ansible-core/2.21.5", digest = "sha256:514e2eb28723cbe38fbfaaae1351826916239ce642dd3f88f8063081a3e100d5" }
 
 [[tools.python]]
 version = "3.14.10"
@@ -1280,7 +1278,6 @@ url_api = "https://api.github.com/repos/google/yamlfmt/releases/assets/336650206
 version = "1.38.0"
 backend = "pypi:yamllint"
 specifiers = ["1.38.0"]
-uv = { path = "locks/yamllint/1.38.0", digest = "sha256:a793b485f0ebe38dd9270726d5d90376f71355a8bd38feb2bccf45cea10b0a26" }
 
 [[tools.yq]]
 version = "4.54.1"
