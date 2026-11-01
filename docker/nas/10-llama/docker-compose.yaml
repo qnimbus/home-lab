@@ -17,7 +17,7 @@ services:
     group_add:
       - "44"
       - "107"
-    image: ghcr.io/ggml-org/llama.cpp:server-vulkan-b10548@sha256:70815abd05cfd67c9a686f295573075aac96a3099ad979443b909666c291ad2e
+    image: ghcr.io/ggml-org/llama.cpp:server-vulkan-b11046@sha256:4321158cf5d0393b7a26e8bef7d68f7fc6eeccca95ad215ff5dde179f316e803
     labels:
       cd.doco.deployment.autostart: "false"
       dexd.enabled: "true"
@@ -47,7 +47,7 @@ services:
     group_add:
       - "44"
       - "107"
-    image: ghcr.io/ggml-org/llama.cpp:server-vulkan-b10548@sha256:70815abd05cfd67c9a686f295573075aac96a3099ad979443b909666c291ad2e
+    image: ghcr.io/ggml-org/llama.cpp:server-vulkan-b11046@sha256:4321158cf5d0393b7a26e8bef7d68f7fc6eeccca95ad215ff5dde179f316e803
     labels:
       cd.doco.deployment.autostart: "false"
       dexd.enabled: "true"
