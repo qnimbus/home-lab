@@ -33,9 +33,12 @@ spec:
               tag: 3.4.1@sha256:1a08d8dfc2b51a08de09652dd86ad4d0c611c362382f944533ad38b73125fbc4
             env:
               PAPERLESS_AI_ENABLED: "true"
+              PAPERLESS_AI_LLM_BACKEND: openai-like
               PAPERLESS_AI_LLM_EMBEDDING_BACKEND: openai-like
               PAPERLESS_AI_LLM_EMBEDDING_ENDPOINT: "https://embeddings.${DOMAIN_APP}/v1"
               PAPERLESS_AI_LLM_EMBEDDING_MODEL: harrier-oss-v1-0.6b
+              PAPERLESS_AI_LLM_ENDPOINT: "https://llama.${DOMAIN_APP}/v1"
+              PAPERLESS_AI_LLM_MODEL: Qwen3.5-35B-A3B
               PAPERLESS_APPS: "allauth.socialaccount.providers.openid_connect"
               PAPERLESS_CONSUMER_POLLING_INTERVAL: "15"
               PAPERLESS_CONSUMER_RECURSIVE: "true"
