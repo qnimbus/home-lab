@@ -32,6 +32,8 @@ Personal apps with no better home: finance, documents, git, a pastebin, the dash
 
 Gotenberg and Tika run as sidecars in the same pod and are reached over `localhost`.
 
+**paperless AI index.** paperless embeds documents through the NAS's `llama-embedding` server (`https://embeddings.${DOMAIN_APP}/v1`, see [`docker/nas/10-llama`](../../../docker/nas/10-llama/README.md)). `PAPERLESS_AI_LLM_EMBEDDING_MODEL` must match that server's preset section name. Changing the model means rebuilding the index (`document_llmindex rebuild` in the `app` container), as vectors from different models don't compare. No chat backend (`PAPERLESS_AI_LLM_BACKEND`) is set, so the AI suggestions and chat in the UI return an error.
+
 **Firefly III.** The importer calls Firefly through its in-cluster Service. `VANITY_URL` is the browser-facing URL for anything sent to the user, like the OAuth redirect. The `firefly-cron` CronJob calls `/api/v1/cron/<STATIC_CRON_TOKEN>` hourly. Firefly needs this at least daily for recurring transactions, bills and auto-budgets. Both apps read the 1Password `firefly-III` item.
 
 **homepage** discovers services from the `gethomepage.dev/*` annotations on HTTPRoutes across the cluster, so a new app shows up by annotating its route. For that it needs a read-only ClusterRole and `automountServiceAccountToken: true`, which chart v5 defaults to false. Its MCP endpoint is on, authenticated by `HOMEPAGE_MCP_TOKEN` because there's no session auth. It's read-only because `/app/config` is a ConfigMap mount.

@@ -32,6 +32,10 @@ spec:
               repository: ghcr.io/paperless-ngx/paperless-ngx
               tag: 3.3.4@sha256:9bc6e8248891bcfa6f52fffe8b81e4ea8cae75790c3ec1b9906961a7ba55c969
             env:
+              PAPERLESS_AI_ENABLED: "true"
+              PAPERLESS_AI_LLM_EMBEDDING_BACKEND: openai-like
+              PAPERLESS_AI_LLM_EMBEDDING_ENDPOINT: "https://embeddings.${DOMAIN_APP}/v1"
+              PAPERLESS_AI_LLM_EMBEDDING_MODEL: harrier-oss-v1-0.6b
               PAPERLESS_APPS: "allauth.socialaccount.providers.openid_connect"
               PAPERLESS_CONSUMER_POLLING_INTERVAL: "15"
               PAPERLESS_CONSUMER_RECURSIVE: "true"
