@@ -16,7 +16,7 @@ spec:
     operatorNamespace: rook-ceph
     cephImage:
       repository: quay.io/ceph/ceph
-      tag: v20.2.4
+      tag: v20.2.5
     monitoring:
       enabled: true
       createPrometheusRules: true
