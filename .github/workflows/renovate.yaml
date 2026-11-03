@@ -76,6 +76,8 @@ jobs:
         uses: renovatebot/github-action@1c0cf989c02653fba0efe7ca5772338860ca71dc # v46.3.12
         env:
           LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
+          # The only post-upgrade task, from .renovaterc.json5: it writes the mise pypi tools' locks
+          RENOVATE_ALLOWED_COMMANDS: '["^env MISE_SAFE=1 mise lock yamllint pypi:ansible pypi:ansible-core$"]'
           RENOVATE_DRY_RUN: ${{ inputs.dryRun && 'full' || '' }} # empty unless dispatched with dryRun
           RENOVATE_INTERNAL_CHECKS_FILTER: strict
           RENOVATE_PLATFORM: github

@@ -320,8 +320,33 @@
       minimumGroupSize: 2,
     },
     //
+    // Post-upgrade tasks
+    //
+    {
+      // Renovate's own `mise lock` has no uv, so it leaves a pypi tool without
+      // its dependency lock under .mise/locks/ and validate's locked install
+      // fails. This re-locks them with uv, in mise's safe mode as Renovate's
+      // own run is. The command must match allowedCommands in renovate.yaml
+      description: "Write the dependency locks of the mise pypi tools",
+      matchManagers: ["mise"],
+      postUpgradeTasks: {
+        commands: ["env MISE_SAFE=1 mise lock yamllint pypi:ansible pypi:ansible-core"],
+        executionMode: "branch",
+        fileFilters: [".mise/**"],
+        installTools: { mise: {}, uv: {} },
+      },
+    },
+    //
     // Scheduling rules
     //
+    {
+      // mise hides releases younger than 24h from uv, so no dependency lock
+      // can be written for one before then
+      description: "Hold the mise pypi tools for a day",
+      matchManagers: ["mise"],
+      matchDepNames: ["/^pypi:/", "yamllint"],
+      minimumReleaseAge: "1 day",
+    },
     {
       description: "High-cadence mise tools monthly",
       matchManagers: ["mise"],
