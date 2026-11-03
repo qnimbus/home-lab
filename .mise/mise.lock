@@ -1013,6 +1013,7 @@ uv = { path = "locks/pypi-ansible/14.5.0", digest = "sha256:f48e18be2e15273a1457
 version = "2.22.0"
 backend = "pypi:ansible-core"
 specifiers = ["2.22.0"]
+uv = { path = "locks/pypi-ansible-core/2.22.0", digest = "sha256:a77884f1713b42a4f38929eb486dd4cc6d3daf821e0f615dbe2d4b906a948118" }
 
 [[tools.python]]
 version = "3.14.10"
