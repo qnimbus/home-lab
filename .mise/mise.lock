@@ -525,97 +525,97 @@ checksum = "sha256:5735a2bd59071b814546c6d0a76f29a8fd3ebe06e3a4791dd2784804ae895
 url = "https://get.helm.sh/helm-v4.3.1-windows-amd64.tar.gz"
 
 [[tools.helmfile]]
-version = "1.8.2"
+version = "1.8.3"
 backend = "packslip:github.com/helmfile/helmfile"
-specifiers = ["1.8.2"]
+specifiers = ["1.8.3"]
 
 [tools.helmfile."platforms.linux-arm64"]
-checksum = "sha256:9163f0d7ad088d243d7305ba09c3465aac02dfebd658d46c62dbdaa11c224b16"
-url = "https://github.com/helmfile/helmfile/releases/download/v1.8.2/helmfile_1.8.2_linux_arm64.tar.gz"
+checksum = "sha256:e035c0338e31e0a8054ae798280532d32edcfbb7d6c4993e3b2efa2dc40647ce"
+url = "https://github.com/helmfile/helmfile/releases/download/v1.8.3/helmfile_1.8.3_linux_arm64.tar.gz"
 signer = "sigstore-oidc:https://github.com/helmfile/helmfile/.github/workflows/releaser.yaml"
 repository_ids = { repository = "474521466" }
 
 [tools.helmfile."platforms.linux-arm64-musl"]
-checksum = "sha256:9163f0d7ad088d243d7305ba09c3465aac02dfebd658d46c62dbdaa11c224b16"
-url = "https://github.com/helmfile/helmfile/releases/download/v1.8.2/helmfile_1.8.2_linux_arm64.tar.gz"
+checksum = "sha256:e035c0338e31e0a8054ae798280532d32edcfbb7d6c4993e3b2efa2dc40647ce"
+url = "https://github.com/helmfile/helmfile/releases/download/v1.8.3/helmfile_1.8.3_linux_arm64.tar.gz"
 signer = "sigstore-oidc:https://github.com/helmfile/helmfile/.github/workflows/releaser.yaml"
 repository_ids = { repository = "474521466" }
 
 [tools.helmfile."platforms.linux-x64"]
-checksum = "sha256:f179485c5bb9f8e20fbd8ea16d8807915988aba4d60131ee864fb3232452716e"
-url = "https://github.com/helmfile/helmfile/releases/download/v1.8.2/helmfile_1.8.2_linux_amd64.tar.gz"
+checksum = "sha256:7d79c6d2099a4819213873164eda23bdbd32f1404fec7a7104d934e5d102596f"
+url = "https://github.com/helmfile/helmfile/releases/download/v1.8.3/helmfile_1.8.3_linux_amd64.tar.gz"
 signer = "sigstore-oidc:https://github.com/helmfile/helmfile/.github/workflows/releaser.yaml"
 repository_ids = { repository = "474521466" }
 
 [tools.helmfile."platforms.linux-x64-musl"]
-checksum = "sha256:f179485c5bb9f8e20fbd8ea16d8807915988aba4d60131ee864fb3232452716e"
-url = "https://github.com/helmfile/helmfile/releases/download/v1.8.2/helmfile_1.8.2_linux_amd64.tar.gz"
+checksum = "sha256:7d79c6d2099a4819213873164eda23bdbd32f1404fec7a7104d934e5d102596f"
+url = "https://github.com/helmfile/helmfile/releases/download/v1.8.3/helmfile_1.8.3_linux_amd64.tar.gz"
 signer = "sigstore-oidc:https://github.com/helmfile/helmfile/.github/workflows/releaser.yaml"
 repository_ids = { repository = "474521466" }
 
 [tools.helmfile."platforms.macos-arm64"]
-checksum = "sha256:0e788f4aa7b4eea1ec0d1e278e0e66e845d5733be5f4e6cb7f832c779e656c72"
-url = "https://github.com/helmfile/helmfile/releases/download/v1.8.2/helmfile_1.8.2_darwin_arm64.tar.gz"
+checksum = "sha256:a80eda044f1b73adc9ca051d34c787444203f31c3b9d5328a6b27c3ff02520ff"
+url = "https://github.com/helmfile/helmfile/releases/download/v1.8.3/helmfile_1.8.3_darwin_arm64.tar.gz"
 signer = "sigstore-oidc:https://github.com/helmfile/helmfile/.github/workflows/releaser.yaml"
 repository_ids = { repository = "474521466" }
 
 [tools.helmfile."platforms.macos-x64"]
-checksum = "sha256:e99b669bb02729d5c4b0f5de9d830298d336d5968dcac76c7c01635f67095574"
-url = "https://github.com/helmfile/helmfile/releases/download/v1.8.2/helmfile_1.8.2_darwin_amd64.tar.gz"
+checksum = "sha256:043c4139987ad0009416575a0d52480af45b651f4dc85a90133199e8f9d6a71c"
+url = "https://github.com/helmfile/helmfile/releases/download/v1.8.3/helmfile_1.8.3_darwin_amd64.tar.gz"
 signer = "sigstore-oidc:https://github.com/helmfile/helmfile/.github/workflows/releaser.yaml"
 repository_ids = { repository = "474521466" }
 
 [tools.helmfile."platforms.windows-x64"]
-checksum = "sha256:c13185673f1ee1547419a9312be6f3e18f0a715c1fdbd214df535c6358298e95"
-url = "https://github.com/helmfile/helmfile/releases/download/v1.8.2/helmfile_1.8.2_windows_amd64.tar.gz"
+checksum = "sha256:1f4209a22437596fafade7809b4d223e6f1aca41437f4511e45b7c2d3c97b5d3"
+url = "https://github.com/helmfile/helmfile/releases/download/v1.8.3/helmfile_1.8.3_windows_amd64.tar.gz"
 signer = "sigstore-oidc:https://github.com/helmfile/helmfile/.github/workflows/releaser.yaml"
 repository_ids = { repository = "474521466" }
 
 [[tools.jactionlint]]
-version = "2.4.0"
+version = "2.5.0"
 backend = "github:jdx/jactionlint"
-specifiers = ["v2.4.0"]
+specifiers = ["v2.5.0"]
 
 [tools.jactionlint."platforms.linux-arm64"]
-checksum = "sha256:42413391c248f99ff4550d6c866ee717d5ea4ca2b966d9d54ad1503af955e22f"
-url = "https://github.com/jdx/jactionlint/releases/download/v2.4.0/jactionlint_2.4.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/688130101"
+checksum = "sha256:ad7e33b6264cea16b7e83ad2bb004824d5b1c15aedb35ba0dc84917f791c5525"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.5.0/jactionlint_2.5.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/714298511"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.linux-arm64-musl"]
-checksum = "sha256:42413391c248f99ff4550d6c866ee717d5ea4ca2b966d9d54ad1503af955e22f"
-url = "https://github.com/jdx/jactionlint/releases/download/v2.4.0/jactionlint_2.4.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/688130101"
+checksum = "sha256:ad7e33b6264cea16b7e83ad2bb004824d5b1c15aedb35ba0dc84917f791c5525"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.5.0/jactionlint_2.5.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/714298511"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.linux-x64"]
-checksum = "sha256:26ddba81db28fffc51163175c070ee1a9d1150260de4b5232f01d9b749f32d8e"
-url = "https://github.com/jdx/jactionlint/releases/download/v2.4.0/jactionlint_2.4.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/688130108"
+checksum = "sha256:5ac307b0499bb0eab45ae99c23e8e0790874fbc667c75224410954e0e3c6e0f5"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.5.0/jactionlint_2.5.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/714298541"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.linux-x64-musl"]
-checksum = "sha256:26ddba81db28fffc51163175c070ee1a9d1150260de4b5232f01d9b749f32d8e"
-url = "https://github.com/jdx/jactionlint/releases/download/v2.4.0/jactionlint_2.4.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/688130108"
+checksum = "sha256:5ac307b0499bb0eab45ae99c23e8e0790874fbc667c75224410954e0e3c6e0f5"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.5.0/jactionlint_2.5.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/714298541"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.macos-arm64"]
-checksum = "sha256:349a13dbffdd25376898a256d195806afda08ba97ccc6378cbf2dd11a77ef8e7"
-url = "https://github.com/jdx/jactionlint/releases/download/v2.4.0/jactionlint_2.4.0_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/688130202"
+checksum = "sha256:15b47d53e3b1aafbd674cca0e8fff0d5952f3cf2a7d7501a8f67576ef76397b4"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.5.0/jactionlint_2.5.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/714298455"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.macos-x64"]
-checksum = "sha256:4c21fce834f8267b65a65b32a527aaa2ec1c321c8f066d44b42d7f038835aa90"
-url = "https://github.com/jdx/jactionlint/releases/download/v2.4.0/jactionlint_2.4.0_darwin_amd64.tar.gz"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/688130179"
+checksum = "sha256:f8f10def21260aa9515974f0aa145f5a6741efd60efe1f880c8c6f53a4ba676c"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.5.0/jactionlint_2.5.0_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/714298456"
 provenance = "github-attestations"
 
 [tools.jactionlint."platforms.windows-x64"]
-checksum = "sha256:4e0c7b428a4faa35bb3b86af6fa65a0ac9797edcd4c64e4f7e16ca886437e172"
-url = "https://github.com/jdx/jactionlint/releases/download/v2.4.0/jactionlint_2.4.0_windows_amd64.zip"
-url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/688130261"
+checksum = "sha256:6f6202d6fc476cbe3978c7dd2349c881cfcfa98257593cb2f1bde87004f054c6"
+url = "https://github.com/jdx/jactionlint/releases/download/v2.5.0/jactionlint_2.5.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/jdx/jactionlint/releases/assets/714298686"
 provenance = "github-attestations"
 
 [[tools.jq]]
@@ -1004,10 +1004,9 @@ backend = "npm:oxfmt"
 specifiers = ["0.75.0"]
 
 [[tools."pypi:ansible"]]
-version = "14.5.0"
+version = "14.6.0"
 backend = "pypi:ansible"
-specifiers = ["14.5.0"]
-uv = { path = "locks/pypi-ansible/14.5.0", digest = "sha256:f48e18be2e15273a145729cdd2c0ed0e29129478f148693b86ce540bcb464db0" }
+specifiers = ["14.6.0"]
 
 [[tools."pypi:ansible-core"]]
 version = "2.22.0"
@@ -1283,50 +1282,50 @@ specifiers = ["1.38.0"]
 uv = { path = "locks/yamllint/1.38.0", digest = "sha256:a793b485f0ebe38dd9270726d5d90376f71355a8bd38feb2bccf45cea10b0a26" }
 
 [[tools.yq]]
-version = "4.54.1"
+version = "4.54.2"
 backend = "aqua:mikefarah/yq"
-specifiers = ["4.54.1"]
+specifiers = ["4.54.2"]
 
 [tools.yq."platforms.linux-arm64"]
-checksum = "sha256:189088da0c6429ec5178dfaab1a114805f6cab0b61b165ab236efedf1d57a71b"
-url = "https://github.com/mikefarah/yq/releases/download/v4.54.1/yq_linux_arm64"
-url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/597222603"
+checksum = "sha256:bd44211dcd29a5f0eb701d4b7eb5ccd0cfff3bd3966cb4f7f9bd5b13701d997e"
+url = "https://github.com/mikefarah/yq/releases/download/v4.54.2/yq_linux_arm64"
+url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/715419591"
 provenance = "cosign"
 
 [tools.yq."platforms.linux-arm64-musl"]
-checksum = "sha256:189088da0c6429ec5178dfaab1a114805f6cab0b61b165ab236efedf1d57a71b"
-url = "https://github.com/mikefarah/yq/releases/download/v4.54.1/yq_linux_arm64"
-url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/597222603"
+checksum = "sha256:bd44211dcd29a5f0eb701d4b7eb5ccd0cfff3bd3966cb4f7f9bd5b13701d997e"
+url = "https://github.com/mikefarah/yq/releases/download/v4.54.2/yq_linux_arm64"
+url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/715419591"
 provenance = "cosign"
 
 [tools.yq."platforms.linux-x64"]
-checksum = "sha256:8e34fc298390875de416e6a4afcb8cabeceb25d9aa8506c1a2f9353cf702ea5f"
-url = "https://github.com/mikefarah/yq/releases/download/v4.54.1/yq_linux_amd64"
-url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/597222595"
+checksum = "sha256:44c7759059b4910827a0059a2757b22001e59360cdecdb2ef8dedc4b6c7e9f32"
+url = "https://github.com/mikefarah/yq/releases/download/v4.54.2/yq_linux_amd64"
+url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/715419583"
 provenance = "cosign"
 
 [tools.yq."platforms.linux-x64-musl"]
-checksum = "sha256:8e34fc298390875de416e6a4afcb8cabeceb25d9aa8506c1a2f9353cf702ea5f"
-url = "https://github.com/mikefarah/yq/releases/download/v4.54.1/yq_linux_amd64"
-url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/597222595"
+checksum = "sha256:44c7759059b4910827a0059a2757b22001e59360cdecdb2ef8dedc4b6c7e9f32"
+url = "https://github.com/mikefarah/yq/releases/download/v4.54.2/yq_linux_amd64"
+url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/715419583"
 provenance = "cosign"
 
 [tools.yq."platforms.macos-arm64"]
-checksum = "sha256:fee511a181bd8b3e6b7da98842b41973bfac8cd3bcd341ed29a584620b5b2844"
-url = "https://github.com/mikefarah/yq/releases/download/v4.54.1/yq_darwin_arm64"
-url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/597222609"
+checksum = "sha256:34923a7ca09a32a4257702ced5f7f2e5e83b16968cce3866f5ff830e4ce1cdd4"
+url = "https://github.com/mikefarah/yq/releases/download/v4.54.2/yq_darwin_arm64"
+url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/715419585"
 provenance = "cosign"
 
 [tools.yq."platforms.macos-x64"]
-checksum = "sha256:3a812fce205a4d67014fb71b7fa297092210e580df3d8f52dddc2cf3a599c22b"
-url = "https://github.com/mikefarah/yq/releases/download/v4.54.1/yq_darwin_amd64"
-url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/597222619"
+checksum = "sha256:651e61c6a13085d6a88d30c54fa74e894d4bb18461b5e8522d3dd00a327fb3bd"
+url = "https://github.com/mikefarah/yq/releases/download/v4.54.2/yq_darwin_amd64"
+url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/715419582"
 provenance = "cosign"
 
 [tools.yq."platforms.windows-x64"]
-checksum = "sha256:b645f47ebb3a0d2fbab52998550bbd0a1706f23b5ca5f5b48e638c580bb70928"
-url = "https://github.com/mikefarah/yq/releases/download/v4.54.1/yq_windows_amd64.exe"
-url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/597222575"
+checksum = "sha256:d14bfc4c0daf75336e07f534980b0dd560775cbffbedef29d91aa733c9fefb52"
+url = "https://github.com/mikefarah/yq/releases/download/v4.54.2/yq_windows_amd64.exe"
+url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/715419566"
 provenance = "cosign"
 
 [[tools.zizmor]]
