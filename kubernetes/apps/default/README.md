@@ -58,6 +58,7 @@ just k8s browse-pvc default <claim>
 - **mail-archiver's database connection string is assembled in `env`** from the CNPG Secret with `$(DB_PASSWORD)`. Kubernetes only expands variables defined earlier in the list, which the `dependsOn` on that entry arranges.
 - **paperless `PAPERLESS_FILENAME_FORMAT`**: app-template runs env values through Helm's `tpl`, so Jinja's `{{ }}` must be written `{{"{{"}} … {{"}}"}}`. Unescaped, the HelmRelease fails to render and the old pod silently keeps running. `{% %}` needs no escaping.
 - **paperless starts as root** (container `securityContext`). The s6-overlay init installs `tesseract-ocr-nld` for `PAPERLESS_OCR_LANGUAGES` and chowns the volumes; both fail as non-root. `USERMAP_UID`/`USERMAP_GID` then drop the app processes to 1000. It keeps the runtime's default capabilities, an accepted exception to the drop-`ALL` pattern for root-starting images.
+- **paperless's `gotenberg` sidecar runs as 1001**, the image's own `gotenberg` user, not the pod's 1000. As 1000 it has no passwd entry, so `HOME` is `/`, which isn't writable, and Chromium fails to start (`chrome_crashpad_handler: --database is required`): every email-to-PDF conversion returns `500`.
 - **paperless v3** needs `PAPERLESS_DBENGINE` set explicitly (it was inferred from `DBHOST` before).
 - **paperless's Dragonfly has no auth.** With no NetworkPolicy, any pod in the cluster can reach it on `6379`.
 - **Long startup probes** (`failureThreshold: 60`) on firefly and paperless cover first-boot migrations and search-index builds.
