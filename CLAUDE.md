@@ -32,7 +32,7 @@ Recipes whose name doesn't say it all:
 - `just github merge-safe [ask|all|<pr>]` rebases and merges the open `risk/safe` PRs one at a time, waiting for checks after each rebase. The default, `ask`, confirms each PR; `all` merges them without asking, and a number merges just that one. Merging is the deploy.
 - `just github merge-review` does the same for open `risk/review` PRs that aren't also `risk/uncertain`, and always confirms each one.
 - `just talos gen-talosconfig` recovers the talosconfig from 1Password.
-- `just bootstrap cluster` brings the cluster up end to end. `just bootstrap nas` runs the Ansible playbook that (re)deploys doco-cd on TrueNAS; `just docker reconcile-nas` restarts it.
+- `just bootstrap cluster` brings the cluster up end to end. `just bootstrap nas` runs the Ansible playbook that (re)deploys doco-cd on TrueNAS; `just docker restart-doco-cd` restarts it, and `just docker sync-stacks` makes it poll `main` now.
 
 Validating one app or stack:
 

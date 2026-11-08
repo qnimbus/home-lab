@@ -14,8 +14,21 @@ on doco-cd polls `main` and deploys every `docker/nas/NN-<app>/` stack itself; t
 used again until the next provisioning.
 
 doco-cd can't redeploy itself, so after merging a doco-cd version bump (or any change to
-`docker-compose.app.yaml`) re-run `just bootstrap nas`. `just docker reconcile-nas` only restarts the
-running container.
+`docker-compose.app.yaml`) re-run `just bootstrap nas`. `just docker restart-doco-cd` only restarts
+the running container.
+
+## The `apps` network
+
+The playbook also creates `apps`, the bridge (`br-apps`, `172.16.8.0/24`) that Traefik and the apps
+behind it share. Traefik has the fixed address `172.16.8.2`, which FRR's return route for
+`10.10.0.0/24` matches on (`docker/nas/00-frr/config/frr.conf`). Docker hands out every other address
+from `iprange` (`172.16.8.128/25`). Without that range, a container that starts before Traefik after a
+reboot can take `.2`, and Traefik then fails with `Address already in use`. A stack that needs a fixed
+address takes one below `.128`.
+
+Changing the network's IPAM settings makes the playbook delete and recreate `apps`, which disconnects
+every container on it. Docker doesn't reconnect them, and a restart doesn't either: reattach each one
+with `docker network connect` (`--ip 172.16.8.2` for Traefik), or redeploy its stack.
 
 ## 1Password
 
