@@ -36,7 +36,7 @@ spec:
                 spec:
                   failureThreshold: 30
                   httpGet:
-                    path: /api/v1/status
+                    path: /api/v1/status?checkUpdateAvailable=false
                     port: &port 5055
                   periodSeconds: 10
                   timeoutSeconds: 5
@@ -46,7 +46,7 @@ spec:
                 spec:
                   failureThreshold: 3
                   httpGet:
-                    path: /api/v1/status
+                    path: /api/v1/status?checkUpdateAvailable=false
                     port: *port
                   periodSeconds: 10
                   timeoutSeconds: 5
