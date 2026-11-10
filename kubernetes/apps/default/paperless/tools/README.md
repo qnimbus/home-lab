@@ -53,6 +53,7 @@ About 6–7 seconds per document on the NAS, so a pass over every document takes
 - **tags**: only the tags in `keep_tags` (`Inbox`, people) stay; every other tag, nonsense ones included, is replaced by the CSV's domain tags. `remove_tags` always go, even when also in `keep_tags`. With `keep_tags` empty, apply only replaces domain tags and removes `remove_tags`, and every other tag stays. Both runs print each document's tag changes (`tags -[removed] +[added]`): read the dry run before `--yes`.
 - **custom fields** from the CSV are set; the document's other fields stay.
 - paperless renames the file to match `PAPERLESS_FILENAME_FORMAT`, which uses the title and correspondent.
+- **a document an earlier run already changed is skipped**, unless that run was undone: `suggest` appends every batch to the same CSV, so the `x` marks of earlier batches are still there, and writing them again would overwrite whatever you fixed in paperless since. `--reapply` writes them anyway, for a row you edited after applying it.
 
 ## Undo and backups
 

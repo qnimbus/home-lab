@@ -791,6 +791,12 @@ class Journal:
         if not self.dry_run:
             append_jsonl(self.path, {"run": self.run, **record})
 
+    def applied_documents(self) -> set[int]:
+        """Documents an earlier apply run changed, unless that run was undone."""
+        records = read_jsonl(self.path)
+        undone = {r["undone"] for r in records if "undone" in r}
+        return {r["document"] for r in records if "document" in r and r["run"] not in undone}
+
 
 def ensure(
     pl: Paperless, inv: dict, kind: str, name: str, journal: Journal, body: dict | None = None
@@ -864,6 +870,14 @@ def cmd_apply(pl: Paperless, args: argparse.Namespace) -> None:
     options_cache: dict[int, dict[str, str]] = {}
     with (args.out / "suggestions.csv").open(encoding="utf-8-sig", newline="") as fh:
         rows = [r for r in csv.DictReader(fh, delimiter=CSV_DELIMITER) if r["apply"].strip().lower() in APPLY_YES]
+    # suggest appends every batch to one CSV, so earlier batches' marked rows are
+    # still there. Writing them again would overwrite fixes made in paperless since.
+    if not args.reapply:
+        applied = journal.applied_documents()
+        skipped = [r for r in rows if int(r["id"]) in applied]
+        rows = [r for r in rows if int(r["id"]) not in applied]
+        if skipped:
+            log(f"skipping {len(skipped)} marked rows an earlier run already applied (--reapply writes them)")
     log(f"{len(rows)} rows marked to apply{' (dry run: add --yes to write)' if dry_run else ''}")
     tag_names = by_id(inv["tags"])
     for n, row in enumerate(rows, 1):
@@ -997,6 +1011,10 @@ def main() -> None:
     )  # fmt: skip
     ap = sub.add_parser("apply", help="write the rows marked in suggestions.csv to paperless")
     ap.add_argument("--yes", action="store_true", help="really write; without it this is a dry run")
+    ap.add_argument(
+        "--reapply", action="store_true",
+        help="also write rows for documents an earlier run already changed",
+    )  # fmt: skip
     up = sub.add_parser("undo", help="restore the documents an apply run changed")
     up.add_argument("--run", help="run ID printed by apply (default: the last run)")
     up.add_argument("--all", action="store_true", help="undo every run that isn't undone yet")
