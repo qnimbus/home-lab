@@ -69,6 +69,7 @@ spec:
               PAPERLESS_MEDIA_ROOT: &mediaPath /mnt/archive/media
               PAPERLESS_OCR_LANGUAGE: nld+eng
               PAPERLESS_OCR_LANGUAGES: nld
+              PAPERLESS_OCR_MODE: redo
               PAPERLESS_PORT: &port 8000
               PAPERLESS_REDIRECT_LOGIN_TO_SSO: "false"
               PAPERLESS_REDIS: "redis://${APP}-dragonfly:6379"
