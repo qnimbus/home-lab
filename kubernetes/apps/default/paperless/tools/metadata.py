@@ -959,6 +959,11 @@ CSV_COLUMNS = [
 ]  # fmt: skip
 
 
+def premarked(confidence: str, status: str) -> bool:
+    """Rows the model is sure of and whose correspondent needs no check start with an x."""
+    return confidence == "hoog" and not status.startswith(("nieuw:", "controleren"))
+
+
 def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     tax = load_taxonomy(args)
     inv = load_inventory(pl)
@@ -994,7 +999,7 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
             canonical, status = resolve_correspondent(s, lookup, existing_correspondents)
             writer.writerow(
                 {
-                    "apply": "",
+                    "apply": "x" if args.mark and premarked(s["confidence"], status) else "",
                     "id": doc["id"],
                     "url": f"{pl.url}/documents/{doc['id']}/details",
                     "confidence": s["confidence"],
@@ -1239,6 +1244,10 @@ def main() -> None:
             sp.add_argument(
                 "--ignore-current", action="store_true",
                 help="don't show the model the document's current title, type, sender and tags",
+            )  # fmt: skip
+            sp.add_argument(
+                "--no-mark", dest="mark", action="store_false",
+                help="leave every apply cell empty, instead of marking the confident rows",
             )  # fmt: skip
         if name == "summarize":
             sp.add_argument(

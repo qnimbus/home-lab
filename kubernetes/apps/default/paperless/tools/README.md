@@ -25,10 +25,12 @@ Run every step as `kubernetes/apps/default/paperless/tools/metadata.py <step>` (
 | `propose`   | Turns the summaries into a proposed taxonomy: at most 25 types, 15 domain tags, advice per existing tag, and correspondent name groups. | `taxonomy.proposed.yaml`, `proposal.md`     |
 | (you)       | Edit the proposal and save it as `taxonomy.yaml`. That file is the convention.                                                          |                                             |
 | `suggest`   | Per document: title, one type, correspondent, 1–4 domain tags and the custom fields, constrained to `taxonomy.yaml`.                    | `suggestions.csv`                           |
-| (you)       | Review the CSV in a spreadsheet, edit cells, and put `x` in `apply` for each row to write.                                              |                                             |
+| (you)       | Review the CSV in a spreadsheet and edit cells. Rows with `x` in `apply` get written; `suggest` pre-marks the confident ones.           |                                             |
 | `apply`     | Writes the marked rows. A dry run unless `--yes`.                                                                                       | `apply-journal.jsonl`, changes in paperless |
 | `undo`      | Restores what an apply run changed. A dry run unless `--yes`.                                                                           | changes in paperless                        |
 | `tag`       | Puts a temporary tag (`Redo OCR` unless `--name`) on `--bad-ocr` or `--ids` documents; `--remove` deletes it. A dry run unless `--yes`. | a tag in paperless                          |
+
+**Pre-marked rows.** `suggest` puts `x` in `apply` when the model's `confidence` is `hoog` and the correspondent needs no check (`correspondent_status` isn't `nieuw: controleren` or `controleren: …`). Review the empty rows, and spot-check the marked ones: clear the `x` on any you don't want. `suggest --no-mark` leaves every cell empty.
 
 `summarize` and `suggest` take `--limit N`, `--query '<paperless search>'` and `--ids 1,2,3`, and resume where they stopped: run them again to continue. `summarize --redo` describes documents again; the newest summary of a document wins.
 
