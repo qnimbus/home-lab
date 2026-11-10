@@ -31,6 +31,8 @@ Run every step as `kubernetes/apps/default/paperless/tools/metadata.py <step>` (
 
 `summarize` and `suggest` take `--limit N`, `--query '<paperless search>'` and `--ids 1,2,3`, and resume where they stopped: run them again to continue. `summarize --redo` describes documents again; the newest summary of a document wins.
 
+Both go newest first. For the taxonomy sample, use `summarize --random --limit 1000`: newest first would leave out the kinds of documents and senders that only older documents have. Each `--random` run skips documents that already have a summary, so running it again adds another random batch.
+
 ## What the LLM sees
 
 The first 3000 (`summarize`) or 6000 (`suggest`) characters of paperless's OCR text, and the original filename, flagged as often meaningless (scanner and download names). Never the PDF's own metadata: on a home scan its author and producer are the printer.
@@ -41,7 +43,7 @@ The sender (`afzender`, `correspondent`) is the organisation that wrote or issue
 
 ## Timing
 
-About 6–7 seconds per document on the NAS, so a pass over every document takes most of a night. The proposal doesn't need every document: `summarize --limit 1000` is a good sample. Run `suggest` in batches and review each one. paperless's own AI suggestions keep working meanwhile: the server handles one request at a time, so they wait for one script request at most.
+About 6–7 seconds per document on the NAS, so a pass over every document takes most of a night. The proposal doesn't need every document: `summarize --random --limit 1000` is a good sample. Run `suggest` in batches and review each one. paperless's own AI suggestions keep working meanwhile: the server handles one request at a time, so they wait for one script request at most.
 
 ## What `apply` does to a document
 

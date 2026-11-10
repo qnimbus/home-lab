@@ -19,6 +19,7 @@ import csv
 import difflib
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -182,13 +183,29 @@ def by_name(items: list[dict]) -> dict[str, int]:
 DOC_FIELDS = "id,title,content,created,correspondent,document_type,tags,original_file_name,custom_fields"
 
 
-def iter_documents(pl: Paperless, args: argparse.Namespace) -> Iterator[dict]:
-    params: dict[str, Any] = {"fields": DOC_FIELDS, "ordering": "-added"}
+def iter_documents(
+    pl: Paperless, args: argparse.Namespace, skip: set[int] = frozenset()
+) -> Iterator[dict]:
+    """Newest first, or in random order with --random. IDs in skip aren't fetched
+    in random order; callers still check them in newest-first order."""
+    params: dict[str, Any] = {"ordering": "-added"}
     if args.query:
         params["query"] = args.query
     if args.ids:
         params["id__in"] = args.ids
-    yield from pl.all("documents/", **params)
+    if not getattr(args, "random", False):
+        yield from pl.all("documents/", fields=DOC_FIELDS, **params)
+        return
+    # Shuffle the IDs (cheap: no content), then fetch the documents in that order.
+    ids = [d["id"] for d in pl.all("documents/", **params, fields="id") if d["id"] not in skip]
+    random.shuffle(ids)
+    for start in range(0, len(ids), 50):
+        batch = ids[start : start + 50]
+        docs = {
+            d["id"]: d
+            for d in pl.all("documents/", fields=DOC_FIELDS, id__in=",".join(map(str, batch)))
+        }
+        yield from (docs[i] for i in batch if i in docs)
 
 
 def current_names(doc: dict, inv: dict) -> dict:
@@ -265,7 +282,7 @@ def cmd_summarize(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     path = args.out / "summaries.jsonl"
     done = set() if args.redo else {r["id"] for r in read_jsonl(path)}
     count = 0
-    for doc in iter_documents(pl, args):
+    for doc in iter_documents(pl, args, skip=done):
         if doc["id"] in done:
             continue
         if args.limit and count >= args.limit:
@@ -815,6 +832,10 @@ def main() -> None:
         sp.add_argument("--ids", help="comma-separated document IDs")
         sp.add_argument("--chars", type=int, default=3000 if name == "summarize" else 6000)
         if name == "summarize":
+            sp.add_argument(
+                "--random", action="store_true",
+                help="pick documents in random order instead of newest first (a fair sample)",
+            )  # fmt: skip
             sp.add_argument(
                 "--redo", action="store_true",
                 help="describe documents again even if they have a summary (the new one wins)",
