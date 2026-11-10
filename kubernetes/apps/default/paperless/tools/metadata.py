@@ -36,7 +36,10 @@ DEFAULT_MODEL = "Qwen3.6-35B-A3B"
 DEFAULT_OUT = Path.home() / "paperless-metadata"
 
 # paperless's "Auto" matching: it learns from the documents assigned to an item.
+MATCH_NONE = 0
 MATCH_AUTO = 6
+# paperless can't filter its document list on a set of IDs, so `tag` marks them.
+DEFAULT_WORK_TAG = "Redo OCR"
 CSV_DELIMITER = ";"  # what Excel and LibreOffice expect in a Dutch locale
 APPLY_YES = {"x", "j", "ja", "y", "yes", "1"}
 CUSTOM_FIELD_TYPES = {"string", "date", "monetary", "integer"}
@@ -86,6 +89,9 @@ class Paperless:
         r = self.http.patch(path, json=body)
         r.raise_for_status()
         return r.json()
+
+    def delete(self, path: str) -> None:
+        self.http.delete(path).raise_for_status()
 
 
 class LLM:
@@ -268,6 +274,10 @@ SUMMARY_SCHEMA = obj(
 )
 
 
+def bad_ocr_ids(summaries: list[dict]) -> list[int]:
+    return sorted(s["id"] for s in summaries if s["summary"].get("ocr_kwaliteit") == "slecht")
+
+
 def latest_per_id(records: list[dict]) -> list[dict]:
     """summaries.jsonl is append-only: a re-summarized document's last entry wins."""
     return list({r["id"]: r for r in records}.values())
@@ -313,6 +323,34 @@ def cmd_summarize(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         count += 1
         log(f"[{count}] document {doc['id']} in {time.monotonic() - start:.0f}s")
     log(f"summarized {count} documents, {len(latest_per_id(read_jsonl(path)))} in {path}")
+
+
+def cmd_tag(pl: Paperless, args: argparse.Namespace) -> None:
+    """Put a temporary tag on documents, so paperless's UI can select them."""
+    inv = load_inventory(pl)
+    tag = next((t for t in inv["tags"] if t["name"].casefold() == args.name.casefold()), None)
+    dry_run = not args.yes
+    if args.remove:
+        if tag is None:
+            log(f"no tag {args.name!r}: nothing to remove")
+            return
+        log(f"{'would delete' if dry_run else 'deleting'} tag {args.name!r} ({tag.get('document_count') or 0} documents)")
+        if not dry_run:
+            pl.delete(f"tags/{tag['id']}/")
+    else:
+        if args.bad_ocr:
+            ids = bad_ocr_ids(latest_per_id(read_jsonl(args.out / "summaries.jsonl")))
+        else:
+            ids = [int(i) for i in (args.ids or "").split(",") if i.strip()]
+        if not ids:
+            sys.exit("no documents: pass --bad-ocr or --ids")
+        log(f"{'would tag' if dry_run else 'tagging'} {len(ids)} documents with {args.name!r}")
+        if not dry_run:
+            # No matching: paperless must never add this tag to new documents itself.
+            tag_id = tag["id"] if tag else pl.post("tags/", {"name": args.name, "matching_algorithm": MATCH_NONE})["id"]
+            pl.post("documents/bulk_edit/", {"documents": ids, "method": "add_tag", "parameters": {"tag": tag_id}})
+    if dry_run:
+        log("dry run: add --yes to write")
 
 
 def counted(counter: Counter, limit: int) -> str:
@@ -434,7 +472,7 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     tag_limit = max(args.max_tags, len(fixed_tags) + 5)
     # Summaries from before ocr_kwaliteit existed count as unknown.
     ocr = Counter(s["summary"].get("ocr_kwaliteit", "onbekend") for s in summaries)
-    bad_ocr = sorted(s["id"] for s in summaries if s["summary"].get("ocr_kwaliteit") == "slecht")
+    bad_ocr = bad_ocr_ids(summaries)
     no_sender = sum(1 for s in summaries if not sender(s["summary"]))
     soorten = Counter(s["summary"]["soort"].strip().lower() for s in summaries)
     onderwerpen = Counter(o.strip().lower() for s in summaries for o in s["summary"]["onderwerpen"])
@@ -607,8 +645,14 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         "",
         f"No clear sender: {no_sender} documents.",
         "",
-        "Documents with unreadable OCR. With paperless's OCR mode set to redo (in auto, a PDF that has a text layer is never OCR'd again), reprocess them in paperless (bulk edit), "
-        "then `summarize --redo --ids <ids>`:",
+        "Documents with unreadable OCR. With paperless's OCR mode set to redo (in auto, a PDF "
+        "that has a text layer is never OCR'd again):",
+        "",
+        f"1. `tag --bad-ocr --yes` tags them `{DEFAULT_WORK_TAG}`.",
+        f"2. In paperless, filter on the tag `{DEFAULT_WORK_TAG}`, select all, and bulk edit → Reprocess.",
+        "3. Once paperless has finished: `summarize --redo --ids <ids below>`.",
+        "4. `tag --remove --yes` deletes the tag again.",
+        "",
         ", ".join(map(str, bad_ocr)) or "-",
         "",
     ]
@@ -1225,6 +1269,13 @@ def main() -> None:
     sub.add_parser(
         "layout", help="print the PAPERLESS_FILENAME_FORMAT for taxonomy.yaml's folder layout"
     )
+    tp = sub.add_parser("tag", help="put a temporary tag on documents, to select them in paperless")
+    tp.add_argument("--name", default=DEFAULT_WORK_TAG, help=f"the tag (default: {DEFAULT_WORK_TAG})")
+    which = tp.add_mutually_exclusive_group(required=True)
+    which.add_argument("--bad-ocr", action="store_true", help="the documents summarize rated slecht")
+    which.add_argument("--ids", help="comma-separated document IDs")
+    which.add_argument("--remove", action="store_true", help="delete the tag, and so take it off every document")
+    tp.add_argument("--yes", action="store_true", help="really write; without it this is a dry run")
     args = p.parse_args()
 
     if args.command == "layout":  # needs only taxonomy.yaml, not paperless
@@ -1249,6 +1300,8 @@ def main() -> None:
             cmd_apply(pl, args)
         case "undo":
             cmd_undo(pl, args)
+        case "tag":
+            cmd_tag(pl, args)
 
 
 if __name__ == "__main__":

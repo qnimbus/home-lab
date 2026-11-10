@@ -28,6 +28,7 @@ Run every step as `kubernetes/apps/default/paperless/tools/metadata.py <step>` (
 | (you)       | Review the CSV in a spreadsheet, edit cells, and put `x` in `apply` for each row to write.                                              |                                             |
 | `apply`     | Writes the marked rows. A dry run unless `--yes`.                                                                                       | `apply-journal.jsonl`, changes in paperless |
 | `undo`      | Restores what an apply run changed. A dry run unless `--yes`.                                                                           | changes in paperless                        |
+| `tag`       | Puts a temporary tag (`Redo OCR` unless `--name`) on `--bad-ocr` or `--ids` documents; `--remove` deletes it. A dry run unless `--yes`. | a tag in paperless                          |
 
 `summarize` and `suggest` take `--limit N`, `--query '<paperless search>'` and `--ids 1,2,3`, and resume where they stopped: run them again to continue. `summarize --redo` describes documents again; the newest summary of a document wins.
 
@@ -51,7 +52,7 @@ The first 3000 (`summarize`) or 6000 (`suggest`) characters of paperless's OCR t
 
 The sender (`afzender`, `correspondent`) is the organisation that wrote or issued the document: the letterhead, or for a licence, card, diploma or certificate the issuing body. Never the holder, recipient or someone who only signs. When that isn't clear, it's left empty rather than guessed.
 
-`summarize` also rates the OCR (`goed`, `matig`, `slecht`): the model's impression of the extracted text, not a measurement. It never sees the scan, and a page of numbers or tables can look worse than it is. `proposal.md` lists the IDs rated `slecht`. Reprocessing them only helps with paperless's OCR mode set to `redo` (or `force`): in the default `auto`, a PDF that already has more than 50 characters of text, such as a printer's own OCR layer, is never OCR'd again. Set the mode, reprocess those documents in paperless (bulk edit), then run `summarize --redo --ids <ids>`.
+`summarize` also rates the OCR (`goed`, `matig`, `slecht`): the model's impression of the extracted text, not a measurement. It never sees the scan, and a page of numbers or tables can look worse than it is. `proposal.md` lists the IDs rated `slecht`. Reprocessing them only helps with paperless's OCR mode set to `redo` (or `force`): in the default `auto`, a PDF that already has more than 50 characters of text, such as a printer's own OCR layer, is never OCR'd again. paperless's document list can't filter on a list of IDs (and full-text search treats `id:` as a word), so `tag --bad-ocr --yes` tags them `Redo OCR`, without matching, so paperless never adds it to new documents. Filter on that tag, bulk edit → Reprocess, run `summarize --redo --ids <ids>` once paperless has finished, then `tag --remove --yes`.
 
 ## Timing
 
