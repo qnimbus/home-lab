@@ -122,3 +122,5 @@ To switch:
 3. Move the existing files: `document_renamer` in the `app` container. It renames on disk only; nothing in the database changes but the file name.
 
 Changing the domain list or its order later means running `layout` and these steps again.
+
+**The format holds the domain tag names as fixed text.** Renaming or deleting a domain tag in paperless itself, without updating `taxonomy.yaml` and the format, silently files its documents under `layout_fallback`. Rename in `taxonomy.yaml` and paperless together, then rerun `layout` and update the HelmRelease. And since the folder follows the tags, adding or removing a domain tag on a document moves its file: that is the layout working, not a fault.
