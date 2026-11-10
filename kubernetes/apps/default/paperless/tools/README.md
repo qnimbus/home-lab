@@ -37,6 +37,8 @@ Both go newest first. For the taxonomy sample, use `summarize --random --limit 1
 
 The first 3000 (`summarize`) or 6000 (`suggest`) characters of paperless's OCR text, and the original filename, flagged as often meaningless (scanner and download names). Never the PDF's own metadata: on a home scan its author and producer are the printer.
 
+Never the document's current title, type, correspondent or tags either: many are wrong (a licence typed `Factuur`), and a model follows a hint even when told it may be wrong. The current values only appear in the CSV, next to the suggestion, for your review. `propose` does see the names and counts of the existing types and tags, to reuse names that fit.
+
 The sender (`afzender`, `correspondent`) is the organisation that wrote or issued the document: the letterhead, or for a licence, card, diploma or certificate the issuing body. Never the holder, recipient or someone who only signs. When that isn't clear, it's left empty rather than guessed.
 
 `summarize` also rates the OCR (`goed`, `matig`, `slecht`). `proposal.md` lists the IDs rated `slecht`: run Redo OCR on them in paperless (bulk edit), then `summarize --redo --ids <ids>`.
@@ -48,7 +50,7 @@ About 6–7 seconds per document on the NAS, so a pass over every document takes
 ## What `apply` does to a document
 
 - **title, type and correspondent** are set to the CSV's values. A missing type, tag, correspondent or custom field is created, with paperless's Auto matching so it learns from the documents it is assigned to.
-- **tags**: the CSV's domain tags replace the document's domain tags. Tags in `remove_tags` are removed. Every other tag stays (`Inbox`, people).
+- **tags**: only the tags in `keep_tags` (`Inbox`, people) stay; every other tag, nonsense ones included, is replaced by the CSV's domain tags. `remove_tags` always go, even when also in `keep_tags`. With `keep_tags` empty, apply only replaces domain tags and removes `remove_tags`, and every other tag stays. Both runs print each document's tag changes (`tags -[removed] +[added]`): read the dry run before `--yes`.
 - **custom fields** from the CSV are set; the document's other fields stay.
 - paperless renames the file to match `PAPERLESS_FILENAME_FORMAT`, which uses the title and correspondent.
 
@@ -67,7 +69,7 @@ document_types:
   - { name: Factuur, description: Een verzoek om te betalen voor geleverde goederen of diensten }
 tags:
   - { name: Wonen, description: Het huis, energie, water, gemeentelijke belastingen }
-keep_tags: [Inbox] # informative: tags that aren't domains and stay
+keep_tags: [Inbox] # the only tags apply leaves on a document, next to the domain tags
 remove_tags: [Archived] # removed from every document that apply touches
 custom_fields:
   - { name: Bedrag, type: monetary, description: Te betalen of ontvangen bedrag }
@@ -77,4 +79,14 @@ correspondents:
 
 Custom field types: `string`, `date`, `monetary`, `integer`.
 
-**Correspondents.** `propose` groups spellings that differ only in case, punctuation or legal form (B.V., N.V.), and leaves out a sender paperless doesn't know unless at least two documents name it (`--min-sender-count`): one-off names are mostly misreads. In `suggest`, the model picks from paperless's correspondents plus this list, or answers `(nieuw)` with a name or `(onbekend)`. The CSV's `correspondent_status` says which: `bestaand`, `alias van X`, `nieuw (uit taxonomy)`, `nieuw: controleren` or `onbekend` (left empty: apply keeps the document's current correspondent). With more than 1500 correspondents it names the sender freely instead.
+**Correspondents.** `propose` groups spellings that differ only in case, punctuation or legal form (B.V., N.V.), and leaves out a sender paperless doesn't know unless at least two documents name it (`--min-sender-count`): one-off names are mostly misreads. In `suggest`, the model first writes the sender as the document names it, then picks from paperless's correspondents plus this list, or answers `(nieuw)` or `(onbekend)`. A list nudges a model to pick something, so the script checks the pick resembles what it wrote (shared word, initials such as KLM, similar spelling). The CSV's `correspondent_status`:
+
+| Status                                            | `correspondent` cell                                                    |
+| ------------------------------------------------- | ----------------------------------------------------------------------- |
+| `bestaand`, `alias van X`                         | an existing correspondent                                               |
+| `nieuw (uit taxonomy)`                            | a name from this list that paperless doesn't have yet; apply creates it |
+| `nieuw: controleren`                              | a name nobody knows yet; apply creates it, so check the spelling        |
+| `controleren: document noemt 'A', lijst koos 'B'` | empty: fill in the right one, or leave it                               |
+| `onbekend`                                        | empty                                                                   |
+
+An empty cell makes apply keep the document's current correspondent. With more than 1500 correspondents there is no list, and the written name is matched instead.

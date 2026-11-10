@@ -556,15 +556,16 @@ def suggestion_schema(tax: dict, known: list[str]) -> dict:
     fields = {
         f["name"]: {"anyOf": [field_schema[f["type"]], {"type": "null"}]} for f in tax["custom_fields"]
     }
+    # Property order is generation order: the model writes the sender as the
+    # document names it before it picks from the list, so the pick has an anchor.
     props: dict[str, Any] = {
         "title": {"type": "string", "maxLength": 100},
         "document_type": {"type": "string", "enum": [t["name"] for t in tax["document_types"]]},
-        "correspondent": (
-            {"type": "string", "enum": [*known, NEW_SENDER, UNKNOWN_SENDER]}
-            if len(known) <= MAX_CORRESPONDENT_CHOICES
-            else NULLABLE_STRING
-        ),
-        "new_correspondent": NULLABLE_STRING,
+        "afzender": NULLABLE_STRING,
+    }
+    if len(known) <= MAX_CORRESPONDENT_CHOICES:
+        props["correspondent"] = {"type": "string", "enum": [*known, NEW_SENDER, UNKNOWN_SENDER]}
+    props |= {
         "tags": str_list(4, enum=[t["name"] for t in tax["tags"]]),
         "confidence": {"type": "string", "enum": ["hoog", "middel", "laag"]},
     }
@@ -573,7 +574,7 @@ def suggestion_schema(tax: dict, known: list[str]) -> dict:
     return obj(props)
 
 
-def suggestion_prompt(tax: dict, known: list[str], doc: dict, current: dict, chars: int) -> str:
+def suggestion_prompt(tax: dict, known: list[str], doc: dict, chars: int) -> str:
     """Everything before the document is the same for every call, so llama.cpp's
     prompt cache only has to process the document itself."""
 
@@ -585,15 +586,14 @@ def suggestion_prompt(tax: dict, known: list[str], doc: dict, current: dict, cha
         if tax.get("title_language", "nl") == "nl"
         else "in de taal van het document"
     )
+    sender_part = f"afzender: de officiële naam zoals het document die noemt. {SENDER_RULE}"
     if len(known) <= MAX_CORRESPONDENT_CHOICES:
-        sender_part = (
-            f"correspondent: {SENDER_RULE} Kies de afzender uit deze lijst. Staat hij er niet "
-            f"in, kies dan '{NEW_SENDER}' en zet de officiële naam in new_correspondent. Is "
-            f"de afzender niet duidelijk, kies '{UNKNOWN_SENDER}'.\n"
-            + "\n".join(f"- {n}" for n in known)
+        sender_part += (
+            "\n\ncorrespondent: dezelfde organisatie als afzender, gekozen uit deze lijst. "
+            "Kies een naam alleen als het écht dezelfde organisatie is, niet een die erop "
+            f"lijkt of in dezelfde branche zit. Staat ze er niet in, kies '{NEW_SENDER}'. Is "
+            f"afzender null, kies '{UNKNOWN_SENDER}'.\n" + "\n".join(f"- {n}" for n in known)
         )
-    else:
-        sender_part = f"correspondent: de officiële naam. {SENDER_RULE}"
     parts = [
         f"Documentsoorten (kies er precies één):\n{listing(tax['document_types'])}",
         f"Domein-tags (kies er 1 tot 4 die echt passen):\n{listing(tax['tags'])}",
@@ -606,13 +606,58 @@ def suggestion_prompt(tax: dict, known: list[str], doc: dict, current: dict, cha
             f"als getal in euro):\n{listing(tax['custom_fields'])}"
         )
     parts += [
+        # The document's current metadata is left out on purpose: much of it is
+        # wrong, and the model follows a hint even when told it may be wrong.
         "confidence: hoe zeker je bent van soort en afzender samen.",
-        f"Huidige gegevens (kunnen fout of leeg zijn): soort '{current['document_type']}', "
-        f"afzender '{current['correspondent']}'",
         f"{FILENAME_NOTE} {doc.get('original_file_name') or ''}",
         f"Inhoud (eerste {chars} tekens):\n{(doc.get('content') or '')[:chars]}",
     ]
     return "\n\n".join(parts)
+
+
+def names_resemble(a: str, b: str) -> bool:
+    """Loose check that two names could be the same organisation: one contains
+    the other, they share a word, one is the other's initials (KLM), or they're
+    spelled alike."""
+    ka, kb = normalize_name(a), normalize_name(b)
+    if not ka or not kb:
+        return False
+    if ka in kb or kb in ka:
+        return True
+    noise = {"de", "het", "van", "en", "der", "the", "of", "and"}
+    if (set(ka.split()) & set(kb.split())) - noise:
+        return True
+
+    def initials(key: str) -> str:
+        return "".join(w[0] for w in key.split() if w not in noise)
+
+    a_flat, b_flat = ka.replace(" ", ""), kb.replace(" ", "")
+    if a_flat in (initials(kb), b_flat) or b_flat == initials(ka):
+        return True
+    return difflib.SequenceMatcher(None, ka, kb).ratio() >= 0.6
+
+
+def resolve_correspondent(s: dict, lookup: dict[str, str], existing: set[str]) -> tuple[str, str]:
+    """(correspondent for the CSV, correspondent_status)."""
+    written = (s.get("afzender") or "").strip()
+    choice = (s.get("correspondent") or "").strip()
+    if choice == UNKNOWN_SENDER or (not written and choice in ("", NEW_SENDER)):
+        return "", "onbekend"
+    if choice in ("", NEW_SENDER):
+        canonical = lookup.get(normalize_name(written))
+        if canonical is None:
+            return written, "nieuw: controleren"
+    else:
+        canonical = lookup.get(normalize_name(choice), choice)
+        if written and not names_resemble(written, choice):
+            # The list nudges the model to pick something. A pick that doesn't look
+            # like what it read stays out of the CSV cell: apply keeps the current one.
+            return "", f"controleren: document noemt '{written}', lijst koos '{canonical}'"
+    if canonical not in existing:
+        return canonical, "nieuw (uit taxonomy)"
+    if normalize_name(canonical) == normalize_name(written or canonical):
+        return canonical, "bestaand"
+    return canonical, f"alias van {canonical}"
 
 
 CSV_COLUMNS = [
@@ -650,19 +695,9 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
             current = current_names(doc, inv)
             start = time.monotonic()
             s = llm.json(
-                suggestion_prompt(tax, known, doc, current, args.chars), schema, max_tokens=600
+                suggestion_prompt(tax, known, doc, args.chars), schema, max_tokens=600
             )
-            choice = (s["correspondent"] or "").strip()
-            name = (s["new_correspondent"] or "").strip() if choice == NEW_SENDER else choice
-            canonical = lookup.get(normalize_name(name)) if name else None
-            if choice == UNKNOWN_SENDER or not name:
-                status, canonical = "onbekend", ""
-            elif canonical is None:
-                status, canonical = "nieuw: controleren", name
-            elif canonical in existing_correspondents:
-                status = "bestaand" if canonical == name else f"alias van {canonical}"
-            else:
-                status = "nieuw (uit taxonomy)"
+            canonical, status = resolve_correspondent(s, lookup, existing_correspondents)
             writer.writerow(
                 {
                     "apply": "",
@@ -727,13 +762,28 @@ def format_field(kind: str, value: Any) -> Any:
     return str(value)
 
 
+def tag_kept(name: str, tax: dict) -> bool:
+    """Whether a tag already on a document survives apply.
+
+    With keep_tags set, only those survive: every other tag, nonsense included, is
+    replaced by the suggested domain tags. Without it, only domain tags and
+    remove_tags go, and every other tag stays.
+    """
+    name = name.casefold()
+    if name in {t.casefold() for t in tax["remove_tags"]}:
+        return False
+    if tax["keep_tags"]:
+        return name in {t.casefold() for t in tax["keep_tags"]}
+    return name not in {t["name"].casefold() for t in tax["tags"]}
+
+
 def cmd_apply(pl: Paperless, args: argparse.Namespace) -> None:
     tax = load_taxonomy(args)
     inv = load_inventory(pl)
     dry_run = not args.yes
     journal = Journal(args.out, dry_run)
-    domain_tags = {t["name"].casefold() for t in tax["tags"]}
-    removed_tags = {t.casefold() for t in tax["remove_tags"]}
+    if not tax["keep_tags"]:
+        log("keep_tags is empty: tags that aren't domain tags or in remove_tags stay on documents")
     field_types = {f["name"]: f["type"] for f in tax["custom_fields"]}
     with (args.out / "suggestions.csv").open(encoding="utf-8-sig", newline="") as fh:
         rows = [r for r in csv.DictReader(fh, delimiter=CSV_DELIMITER) if r["apply"].strip().lower() in APPLY_YES]
@@ -741,15 +791,19 @@ def cmd_apply(pl: Paperless, args: argparse.Namespace) -> None:
     tag_names = by_id(inv["tags"])
     for n, row in enumerate(rows, 1):
         doc = pl.get(f"documents/{row['id']}/")
-        keep = [
-            t for t in doc["tags"]
-            if tag_names.get(t, "").casefold() not in domain_tags | removed_tags
-        ]  # fmt: skip
-        new_tags = [ensure(pl, inv, "tags", t.strip(), journal) for t in row["tags"].split(",") if t.strip()]
+        keep = [t for t in doc["tags"] if tag_kept(tag_names.get(t, ""), tax)]
+        suggested = [t.strip() for t in row["tags"].split(",") if t.strip()]
+        new_tags = [ensure(pl, inv, "tags", t, journal) for t in suggested]
         body: dict[str, Any] = {
             "title": row["title"].strip(),
             "tags": sorted({*keep, *(t for t in new_tags if t is not None)}),
         }
+        current = {tag_names.get(t, "") for t in doc["tags"]}
+        final = {tag_names.get(t, "") for t in keep} | set(suggested)
+        log(
+            f"document {row['id']}: tags -[{', '.join(sorted(current - final))}] "
+            f"+[{', '.join(sorted(final - current))}]"
+        )
         if row["type"].strip():
             body["document_type"] = ensure(pl, inv, "document_types", row["type"].strip(), journal)
         if row["correspondent"].strip():
