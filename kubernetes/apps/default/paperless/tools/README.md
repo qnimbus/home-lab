@@ -33,6 +33,16 @@ Run every step as `kubernetes/apps/default/paperless/tools/metadata.py <step>` (
 
 Both go newest first. For the taxonomy sample, use `summarize --random --limit 1000`: newest first would leave out the kinds of documents and senders that only older documents have. Each `--random` run skips documents that already have a summary, so running it again adds another random batch.
 
+`propose` can run again after more summaries. Once `taxonomy.yaml` exists, it builds on that file:
+
+- **Kept unchanged:** its types, domain tags and correspondent groups, in their order, and every other setting.
+- **New types and domains** are added at the end.
+- **A new spelling** becomes an alias of the group it resembles.
+- **Tag advice** covers only tags the file doesn't mention yet.
+- **`ignore`:** names listed there are never proposed again.
+
+`proposal.md` lists what is new. `propose` still writes only `taxonomy.proposed.yaml`: compare it with `diff taxonomy.yaml taxonomy.proposed.yaml` and copy over what you want.
+
 ## What the LLM sees
 
 The first 3000 (`summarize`) or 6000 (`suggest`) characters of paperless's OCR text, and the original filename, flagged as often meaningless (scanner and download names). Never the PDF's own metadata: on a home scan its author and producer are the printer.
@@ -81,6 +91,10 @@ clear_storage_paths: true # apply removes each document's storage path (see Arch
 layout_fallback: Overig # the folder for a document without a domain tag
 correspondents:
   - { name: Voorbeeld Energie, aliases: [Voorbeeld Energie B.V.] }
+ignore: # names propose never suggests again
+  correspondents: [Voorbeeld Blog]
+  tags: [Veld]
+  document_types: []
 ```
 
 Custom field types: `string`, `date`, `monetary`, `integer`.

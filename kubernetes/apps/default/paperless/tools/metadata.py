@@ -358,11 +358,80 @@ def group_correspondents(inv: dict, summaries: list[dict], min_count: int) -> li
     return sorted(result, key=lambda g: g["name"].casefold())
 
 
+def fixed_block(items: list[dict], kind: str) -> str:
+    """Prompt text pinning the taxonomy.yaml entries a proposal builds on."""
+    if not items:
+        return ""
+    listing = "\n".join(f"- {i['name']}: {i.get('description') or ''}" for i in items)
+    return (
+        f"\n\nDeze {kind} zijn al vastgesteld; neem ze ongewijzigd over, met dezelfde naam:\n"
+        f"{listing}\nVoeg alleen een nieuwe toe voor beschrijvingen hierboven die onder geen "
+        "van deze vallen."
+    )
+
+
+def merge_named(fixed: list[dict], proposed: list[dict], ignored: set[str]) -> tuple[list[dict], list[str]]:
+    """taxonomy.yaml's entries unchanged and in order, then the new ones."""
+    known = {i["name"].casefold() for i in fixed} | ignored
+    added = []
+    for p in proposed:
+        if p["name"].casefold() not in known:
+            known.add(p["name"].casefold())
+            added.append({"name": p["name"], "description": p["description"]})
+    return [*fixed, *added], [a["name"] for a in added]
+
+
+def merge_correspondents(
+    fixed: list[dict], proposed: list[dict], ignored: set[str]
+) -> tuple[list[dict], list[str]]:
+    """taxonomy.yaml's groups, extended with new spellings, then new groups.
+
+    A new name joins the group that already holds one of its spellings, or one
+    spelled alike; otherwise it starts a group of its own.
+    """
+    groups = [{"name": g["name"], "aliases": list(g.get("aliases") or [])} for g in fixed]
+    keys = {normalize_name(n): g for g in groups for n in [g["name"], *g["aliases"]]}
+    changes = []
+    for p in proposed:
+        names = [n for n in [p["name"], *p["aliases"]] if normalize_name(n) not in ignored]
+        new = [n for n in names if normalize_name(n) not in keys]
+        if not new:
+            continue
+        group = next((keys[normalize_name(n)] for n in names if normalize_name(n) in keys), None)
+        group = group or next(
+            (
+                g for k, g in keys.items()
+                if any(difflib.SequenceMatcher(None, normalize_name(n), k).ratio() >= 0.88 for n in new)
+            ),
+            None,
+        )  # fmt: skip
+        if group:
+            group["aliases"].extend(new)
+            changes += [f"{n} (alias of {group['name']})" for n in new]
+        else:
+            group = {"name": new[0], "aliases": new[1:]}
+            groups.append(group)
+            changes.append(f"{new[0]} (new)" + (f", aliases {', '.join(new[1:])}" if new[1:] else ""))
+        keys.update({normalize_name(n): group for n in new})
+    return groups, changes
+
+
 def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     inv = load_inventory(pl)
     summaries = latest_per_id(read_jsonl(args.out / "summaries.jsonl"))
     if not summaries:
         sys.exit("no summaries yet: run `summarize` first")
+    # An existing taxonomy.yaml holds decisions: build on it instead of starting over.
+    base_path = args.out / "taxonomy.yaml"
+    base = yaml.safe_load(base_path.read_text(encoding="utf-8")) if base_path.exists() else {}
+    ignore = base.get("ignore") or {}
+    ignored_types = {n.casefold() for n in ignore.get("document_types") or []}
+    ignored_tags = {n.casefold() for n in ignore.get("tags") or []}
+    ignored_senders = {normalize_name(n) for n in ignore.get("correspondents") or []}
+    fixed_types = base.get("document_types") or []
+    fixed_tags = base.get("tags") or []
+    type_limit = max(args.max_types, len(fixed_types) + 5)
+    tag_limit = max(args.max_tags, len(fixed_tags) + 5)
     # Summaries from before ocr_kwaliteit existed count as unknown.
     ocr = Counter(s["summary"].get("ocr_kwaliteit", "onbekend") for s in summaries)
     bad_ocr = sorted(s["id"] for s in summaries if s["summary"].get("ocr_kwaliteit") == "slecht")
@@ -378,18 +447,19 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         "Een persoonlijk documentarchief heeft deze bestaande documentsoorten "
         f"(aantal documenten in de steekproef):\n{counted(current_types, 100) or '- (geen)'}\n\n"
         f"Een taalmodel beschreef de documenten zelf als:\n{counted(soorten, 250)}\n\n"
-        f"Stel een vaste lijst van hoogstens {args.max_types} documentsoorten voor die alle "
+        f"Stel een vaste lijst van hoogstens {type_limit} documentsoorten voor die alle "
         "documenten dekt; liever minder soorten dan soorten waar niets onder valt. Een soort "
         "zegt wát een document is (factuur, polis, loonstrook), niet waar het over gaat of "
         "van wie het komt. Gebruik Nederlandse namen in enkelvoud die met een hoofdletter "
         "beginnen, hergebruik bestaande namen als ze kloppen, en voeg synoniemen samen. "
         "Geef per soort een naam, een omschrijving van één zin die uitlegt wanneer je hem "
-        "kiest, en de beschrijvingen van hierboven die erin opgaan.",
+        "kiest, en de beschrijvingen van hierboven die erin opgaan."
+        + fixed_block(fixed_types, "documentsoorten"),
         obj(
             {
                 "document_types": {
                     "type": "array",
-                    "maxItems": args.max_types,
+                    "maxItems": type_limit,
                     "items": obj(
                         {
                             "name": {"type": "string"},
@@ -405,14 +475,21 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
 
     log("proposing domain tags ...")
     type_names = [t["name"] for t in types["document_types"]]
+    placed = {
+        *(t["name"].casefold() for t in fixed_tags),
+        *(n.casefold() for n in base.get("keep_tags") or []),
+        *(n.casefold() for n in base.get("remove_tags") or []),
+        *ignored_tags,
+    }
+    unplaced = sorted(n for n in existing_tags if n.casefold() not in placed)
     name_schema: dict = {"type": "string"}
-    if existing_tags:
-        name_schema["enum"] = sorted(existing_tags)
+    if unplaced:
+        name_schema["enum"] = unplaced
     tags = llm.json(
         "Een persoonlijk documentarchief heeft deze bestaande tags (aantal documenten):\n"
         f"{counted(Counter(existing_tags), 300) or '- (geen)'}\n\n"
         f"Een taalmodel deelde de documenten zelf in onder:\n{counted(onderwerpen, 250)}\n\n"
-        f"Stel hoogstens {args.max_tags} domein-tags voor: levensdomeinen waar een document "
+        f"Stel hoogstens {tag_limit} domein-tags voor: levensdomeinen waar een document "
         "bij hoort (wonen, auto, zorg, werk), in het Nederlands, met een hoofdletter, elkaar "
         "zo weinig mogelijk overlappend. Een domein-tag zegt waar een document over gaat, niet "
         f"wát het is: geen documentsoort ({', '.join(type_names)}), geen persoon, geen vorm "
@@ -423,12 +500,13 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         "Geef daarnaast voor elke bestaande tag aan wat ermee moet: 'domein' (wordt of is een "
         "domein-tag), 'workflow' (zegt iets over de verwerking, zoals Inbox), 'persoon' (voor "
         "wie het document is), 'veld' (een gegeven dat beter in een eigen veld past) of "
-        "'verwijderen' (zegt niets bruikbaars).",
+        "'verwijderen' (zegt niets bruikbaars)."
+        + fixed_block(fixed_tags, "domein-tags"),
         obj(
             {
                 "tags": {
                     "type": "array",
-                    "maxItems": args.max_tags,
+                    "maxItems": tag_limit,
                     "items": obj(
                         {
                             "name": {"type": "string"},
@@ -439,7 +517,7 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
                 },
                 "existing_tags": {
                     "type": "array",
-                    "maxItems": max(len(existing_tags), 1),
+                    "maxItems": max(len(unplaced), 1),
                     "items": obj(
                         {
                             "name": name_schema,
@@ -454,11 +532,11 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         ),
         max_tokens=8000,
     )
-    advice = {t["name"]: t["advice"] for t in tags["existing_tags"] if t["name"] in existing_tags}
+    advice = {t["name"]: t["advice"] for t in tags["existing_tags"] if t["name"] in unplaced}
     # The model also proposes its own advice labels, document types and workflow or
     # person tags as domains; none of those is a subject.
     not_domains = {
-        "domein", "persoon", "veld", "verwijderen", "workflow",
+        "domein", "persoon", "veld", "verwijderen", "workflow", *ignored_tags,
         *(n.casefold() for n in type_names),
         *(n.casefold() for n, a in advice.items() if a in ("persoon", "verwijderen", "workflow")),
     }  # fmt: skip
@@ -473,6 +551,15 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     types["document_types"] = [
         t for t in types["document_types"] if any(i.strip().lower() in soorten for i in t["includes"])
     ] or types["document_types"]
+    all_types, new_types = merge_named(fixed_types, types["document_types"], ignored_types)
+    all_tags, new_tags = merge_named(fixed_tags, tags["tags"], set())
+    new_keep = sorted(n for n, a in advice.items() if a in ("workflow", "persoon"))
+    new_remove = sorted(n for n, a in advice.items() if a == "verwijderen")
+    correspondents, new_senders = merge_correspondents(
+        base.get("correspondents") or [],
+        group_correspondents(inv, summaries, args.min_sender_count),
+        ignored_senders,
+    )
     proposal = {
         "title_language": "nl",
         "title_rule": (
@@ -481,16 +568,21 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
             "van het document zelf: die staan al in hun eigen velden en in de bestandsnaam. "
             "Hoogstens 60 tekens."
         ),
-        "document_types": [
-            {"name": t["name"], "description": t["description"]} for t in types["document_types"]
-        ],
-        "tags": tags["tags"],
-        "keep_tags": sorted(n for n, a in advice.items() if a in ("workflow", "persoon")),
-        "remove_tags": sorted(n for n, a in advice.items() if a == "verwijderen"),
+        "document_types": all_types,
+        "tags": all_tags,
+        "keep_tags": [*(base.get("keep_tags") or []), *new_keep],
+        "remove_tags": [*(base.get("remove_tags") or []), *new_remove],
         "custom_fields": [],
-        "correspondents": group_correspondents(inv, summaries, args.min_sender_count),
+        "correspondents": correspondents,
     }
+    if base:
+        # Every other setting, ignore included, carries over as it is.
+        proposal = {**base, **{k: v for k, v in proposal.items() if k not in ("title_language", "title_rule", "custom_fields")}}
     header = (
+        "# Proposed by metadata.py from taxonomy.yaml plus new suggestions (see proposal.md).\n"
+        "# Compare: diff taxonomy.yaml taxonomy.proposed.yaml\n"
+        if base
+        else
         "# Proposed by metadata.py. Review it, then save it as taxonomy.yaml.\n"
         "# custom_fields example:\n"
         "#   - {name: Bedrag, type: monetary, description: Te betalen of ontvangen bedrag}\n"
@@ -517,6 +609,21 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         "then `summarize --redo --ids <ids>`:",
         ", ".join(map(str, bad_ocr)) or "-",
         "",
+    ]
+    if base:
+        report += [
+            "## New compared with taxonomy.yaml",
+            "",
+            f"- Document types: {', '.join(new_types) or '-'}",
+            f"- Domain tags: {', '.join(new_tags) or '-'}"
+            + (" (added at the end: move them to their place in the folder order)" if new_tags else ""),
+            f"- keep_tags: {', '.join(new_keep) or '-'}",
+            f"- remove_tags: {', '.join(new_remove) or '-'}",
+            "- Correspondents:" + ("" if new_senders else " -"),
+            *(f"  - {c}" for c in new_senders),
+            "",
+        ]
+    report += [
         "## Document types: which descriptions each one covers",
     ]
     for t in types["document_types"]:
