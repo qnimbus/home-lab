@@ -477,6 +477,7 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     type_names = [t["name"] for t in types["document_types"]]
     placed = {
         *(t["name"].casefold() for t in fixed_tags),
+        *(t["name"].casefold() for t in base.get("label_tags") or []),
         *(n.casefold() for n in base.get("keep_tags") or []),
         *(n.casefold() for n in base.get("remove_tags") or []),
         *ignored_tags,
@@ -537,6 +538,7 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     # person tags as domains; none of those is a subject.
     not_domains = {
         "domein", "persoon", "veld", "verwijderen", "workflow", *ignored_tags,
+        *(t["name"].casefold() for t in base.get("label_tags") or []),
         *(n.casefold() for n in type_names),
         *(n.casefold() for n, a in advice.items() if a in ("persoon", "verwijderen", "workflow")),
     }  # fmt: skip
@@ -643,7 +645,7 @@ def load_taxonomy(args: argparse.Namespace) -> dict:
     if not path.exists():
         sys.exit(f"{path} not found: review taxonomy.proposed.yaml and save it under that name")
     tax = yaml.safe_load(path.read_text(encoding="utf-8"))
-    for key in ("document_types", "tags", "keep_tags", "remove_tags", "custom_fields", "correspondents"):
+    for key in ("document_types", "tags", "label_tags", "keep_tags", "remove_tags", "custom_fields", "correspondents"):
         tax.setdefault(key, [])
     for field in tax["custom_fields"]:
         if field.get("type") not in CUSTOM_FIELD_TYPES:
@@ -765,6 +767,10 @@ def suggestion_schema(tax: dict, known: list[str]) -> dict:
         props["correspondent"] = {"type": "string", "enum": [*known, NEW_SENDER, UNKNOWN_SENDER]}
     props |= {
         "tags": str_list(4, enum=[t["name"] for t in tax["tags"]]),
+    }
+    if tax["label_tags"]:
+        props["labels"] = str_list(len(tax["label_tags"]), enum=[t["name"] for t in tax["label_tags"]])
+    props |= {
         "confidence": {"type": "string", "enum": ["hoog", "middel", "laag"]},
     }
     if fields:
@@ -809,6 +815,14 @@ def suggestion_prompt(
     parts += [
         f"Documentsoorten (kies er precies één):\n{listing(tax['document_types'])}",
         f"Domein-tags (kies er 1 tot 4 die echt passen):\n{listing(tax['tags'])}",
+        *(
+            [
+                "Labels (alleen als het label duidelijk op dit document van toepassing is; "
+                f"meestal geen, dan een lege lijst):\n{listing(tax['label_tags'])}"
+            ]
+            if tax["label_tags"]
+            else []
+        ),
         f"Titel ({language}): {tax.get('title_rule', '')}",
         sender_part,
     ]
@@ -948,7 +962,7 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
                     "correspondent": canonical,
                     "correspondent_status": status,
                     "current_tags": ", ".join(current["tags"]),
-                    "tags": ", ".join(s["tags"]),
+                    "tags": ", ".join([*s["tags"], *s.get("labels", [])]),
                     "summary": (s.get("samenvatting") or "").strip(),
                     "ocr": s.get("ocr_kwaliteit") or "",
                     "custom_fields": json.dumps(s.get("custom_fields") or {}, ensure_ascii=False),
@@ -1021,13 +1035,15 @@ def select_options(pl: Paperless, field_id: int) -> dict[str, str]:
 def tag_kept(name: str, tax: dict) -> bool:
     """Whether a tag already on a document survives apply.
 
-    With keep_tags set, only those survive: every other tag, nonsense included, is
+    Label tags always survive. With keep_tags set, only those do too: every other tag, nonsense included, is
     replaced by the suggested domain tags. Without it, only domain tags and
     remove_tags go, and every other tag stays.
     """
     name = name.casefold()
     if name in {t.casefold() for t in tax["remove_tags"]}:
         return False
+    if name in {t["name"].casefold() for t in tax["label_tags"]}:
+        return True
     if tax["keep_tags"]:
         return name in {t.casefold() for t in tax["keep_tags"]}
     return name not in {t["name"].casefold() for t in tax["tags"]}

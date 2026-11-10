@@ -60,7 +60,7 @@ About 6–7 seconds per document on the NAS, so a pass over every document takes
 ## What `apply` does to a document
 
 - **title, type and correspondent** are set to the CSV's values. A missing type, tag, correspondent or custom field is created, with paperless's Auto matching so it learns from the documents it is assigned to.
-- **tags**: only the tags in `keep_tags` (`Inbox`, people) stay; every other tag, nonsense ones included, is replaced by the CSV's domain tags. `remove_tags` always go, even when also in `keep_tags`. With `keep_tags` empty, apply only replaces domain tags and removes `remove_tags`, and every other tag stays. Both runs print each document's tag changes (`tags -[removed] +[added]`): read the dry run before `--yes`.
+- **tags**: only the tags in `keep_tags` (`Inbox`, people) and `label_tags` stay; every other tag, nonsense ones included, is replaced by the CSV's domain and label tags. `remove_tags` always go, even when also in `keep_tags`. With `keep_tags` empty, apply only replaces domain tags and removes `remove_tags`, and every other tag stays. Both runs print each document's tag changes (`tags -[removed] +[added]`): read the dry run before `--yes`.
 - **custom fields** from the CSV are set; the document's other fields stay.
 - **storage path**: removed when `clear_storage_paths: true`, so the archive layout below applies to the document.
 - paperless renames the file to match `PAPERLESS_FILENAME_FORMAT`, which uses the title and correspondent.
@@ -81,7 +81,12 @@ document_types:
   - { name: Factuur, description: Een verzoek om te betalen voor geleverde goederen of diensten }
 tags:
   - { name: Wonen, description: Het huis, energie, water, gemeentelijke belastingen }
-keep_tags: [Inbox] # the only tags apply leaves on a document, next to the domain tags
+label_tags: # optional: suggest adds them where they clearly apply; never an archive folder
+  - {
+      name: Garantie,
+      description: Een garantiebewijs of aankoopbewijs van een product met garantie,
+    }
+keep_tags: [Inbox] # the only tags apply leaves on a document, next to the domain and label tags
 remove_tags: [Archived] # removed from every document that apply touches
 custom_fields:
   - { name: Bedrag, type: monetary, description: Te betalen of ontvangen bedrag }
@@ -98,6 +103,8 @@ ignore: # names propose never suggests again
 ```
 
 Custom field types: `string`, `date`, `monetary`, `integer`.
+
+**Label tags** mark a property, not a subject: a warranty, a licence code. `suggest` adds one only where its description clearly applies, in the CSV's `tags` column after the domain tags. `apply` keeps a label tag a document already has. `layout` ignores label tags, so they never become a folder, and `propose` never offers them as a domain.
 
 **Summary and OCR quality.** With `summary_field` set, `suggest` writes a one-line Dutch summary of at most 128 characters per document (paperless's plain text field limit), before it classifies the document; with `ocr_field` set, it rates the OCR. Both land in the CSV's `summary` and `ocr` columns, to review and edit like the rest, and `apply` writes them to those custom fields, creating them if missing: the summary as Text, OCR quality as a Select with the options `goed`, `matig` and `slecht`. A field you created yourself keeps its type (Long Text works too). The summary shows on the document and as a list column, but paperless's plain search doesn't cover custom fields: only `custom_fields.value:<word>` finds it. It is the model's reading of the document at that moment, so it can be wrong and doesn't update when the document changes.
 
