@@ -41,7 +41,7 @@ The first 3000 (`summarize`) or 6000 (`suggest`) characters of paperless's OCR t
 
 The sender (`afzender`, `correspondent`) is the organisation that wrote or issued the document: the letterhead, or for a licence, card, diploma or certificate the issuing body. Never the holder, recipient or someone who only signs. When that isn't clear, it's left empty rather than guessed.
 
-`summarize` also rates the OCR (`goed`, `matig`, `slecht`). `proposal.md` lists the IDs rated `slecht`: run Redo OCR on them in paperless (bulk edit), then `summarize --redo --ids <ids>`.
+`summarize` also rates the OCR (`goed`, `matig`, `slecht`): the model's impression of the extracted text, not a measurement. It never sees the scan, and a page of numbers or tables can look worse than it is. `proposal.md` lists the IDs rated `slecht`. Reprocessing them only helps with paperless's OCR mode set to `redo` (or `force`): in the default `auto`, a PDF that already has more than 50 characters of text, such as a printer's own OCR layer, is never OCR'd again. Set the mode, reprocess those documents in paperless (bulk edit), then run `summarize --redo --ids <ids>`.
 
 ## Timing
 

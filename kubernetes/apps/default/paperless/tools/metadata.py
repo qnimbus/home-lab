@@ -495,7 +495,7 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         "",
         f"No clear sender: {no_sender} documents.",
         "",
-        "Documents with unreadable OCR: run Redo OCR on them in paperless (bulk edit), "
+        "Documents with unreadable OCR. With paperless's OCR mode set to redo (in auto, a PDF that has a text layer is never OCR'd again), reprocess them in paperless (bulk edit), "
         "then `summarize --redo --ids <ids>`:",
         ", ".join(map(str, bad_ocr)) or "-",
         "",
