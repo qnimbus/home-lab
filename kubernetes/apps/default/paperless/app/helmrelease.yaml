@@ -39,6 +39,7 @@ spec:
               PAPERLESS_AI_LLM_EMBEDDING_MODEL: harrier-oss-v1-0.6b
               PAPERLESS_AI_LLM_ENDPOINT: "https://llama.${DOMAIN_APP}/v1"
               PAPERLESS_AI_LLM_MODEL: Qwen3.6-35B-A3B
+              PAPERLESS_AI_LLM_OUTPUT_LANGUAGE: nl-nl
               PAPERLESS_APPS: "allauth.socialaccount.providers.openid_connect"
               PAPERLESS_CONSUMER_POLLING_INTERVAL: "15"
               PAPERLESS_CONSUMER_RECURSIVE: "true"
