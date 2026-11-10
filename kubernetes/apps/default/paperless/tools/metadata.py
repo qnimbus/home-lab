@@ -702,11 +702,12 @@ def load_taxonomy(args: argparse.Namespace) -> dict:
 
 
 def filename_template(tax: dict) -> str:
-    """PAPERLESS_FILENAME_FORMAT for <domain>/<type>/<year>/<date> <sender> - <title>.
+    """PAPERLESS_FILENAME_FORMAT for <domain>/<type>/<year>/<date> <sender> - <title> - <id>.
 
     The folder is the document's first domain tag in taxonomy.yaml's order, so
     put specific domains above general ones. A document without one goes in
-    layout_fallback. Missing type or sender parts drop out of the path.
+    layout_fallback. Missing type or sender parts drop out of the path. The
+    document ID keeps names unique and leads from a file back to its document.
     """
     domains = json.dumps([t["name"] for t in tax["tags"]], ensure_ascii=False)
     fallback = json.dumps(tax["layout_fallback"], ensure_ascii=False)
@@ -720,7 +721,7 @@ def filename_template(tax: dict) -> str:
             '{% if document_type != "none" %}{{ document_type }}/{% endif %}',
             "{{ created_year }}/{{ created }}",
             '{% if correspondent != "none" %} {{ correspondent }}{% endif %}',
-            " - {{ title }}",
+            " - {{ title }} - {{ doc_pk }}",
         ]
     )
 

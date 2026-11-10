@@ -128,13 +128,14 @@ An empty cell makes apply keep the document's current correspondent. With more t
 paperless names the files on disk (`/mnt/archive/media`, originals and archive copies alike) from `PAPERLESS_FILENAME_FORMAT`. `layout` turns `taxonomy.yaml` into a format that files every document as
 
 ```text
-<domain>/<type>/<year>/<date> <sender> - <title>.pdf
-Wonen/Factuur/2026/2026-11-03 Energiebedrijf - Jaarafrekening stroom en gas.pdf
+<domain>/<type>/<year>/<date> <sender> - <title> - <id>.pdf
+Wonen/Factuur/2026/2026-11-03 Energiebedrijf - Jaarafrekening stroom en gas - 1234.pdf
 ```
 
 - **The folder is the document's domain tag.** With several, the first one in `taxonomy.yaml`'s `tags` order wins, so list specific domains (Wonen, Auto) above general ones (Financiën). No domain tag: `layout_fallback`.
-- **No type or sender:** that part drops out (`Overig/2026/2026-11-10 - Notitie.pdf`).
+- **No type or sender:** that part drops out (`Overig/2026/2026-11-10 - Notitie - 1235.pdf`).
 - **The sender is in the file name, not a folder:** most senders have a handful of documents, and a rename or merge would move all of them.
+- **The document ID ends the name:** it keeps two documents with the same date, sender and title apart, and leads from a file (in a backup, say) to the document in paperless, whose URL holds the same number.
 - **A storage path overrides the format.** `clear_storage_paths: true` makes `apply` remove them; delete the unused storage paths in paperless afterwards.
 
 `layout` needs only `taxonomy.yaml`. It prints the plain format (paste it into a storage path's **Test** in paperless to try it on a document), the version escaped for the HelmRelease, and, with a `suggestions.csv`, how many documents would land in each folder.
