@@ -574,7 +574,9 @@ def suggestion_schema(tax: dict, known: list[str]) -> dict:
     return obj(props)
 
 
-def suggestion_prompt(tax: dict, known: list[str], doc: dict, chars: int) -> str:
+def suggestion_prompt(
+    tax: dict, known: list[str], doc: dict, chars: int, current: dict | None = None
+) -> str:
     """Everything before the document is the same for every call, so llama.cpp's
     prompt cache only has to process the document itself."""
 
@@ -605,14 +607,34 @@ def suggestion_prompt(tax: dict, known: list[str], doc: dict, chars: int) -> str
             "Velden (null als het document het niet vermeldt; datums als JJJJ-MM-DD, bedragen "
             f"als getal in euro):\n{listing(tax['custom_fields'])}"
         )
+    parts.append(
+        "confidence: hoe zeker je bent van soort en afzender samen. Kies 'laag' als je "
+        "vooral op de huidige gegevens hieronder steunt in plaats van op de inhoud."
+    )
+    if current is not None:
+        parts.append(current_metadata_block(current))
     parts += [
-        # The document's current metadata is left out on purpose: much of it is
-        # wrong, and the model follows a hint even when told it may be wrong.
-        "confidence: hoe zeker je bent van soort en afzender samen.",
         f"{FILENAME_NOTE} {doc.get('original_file_name') or ''}",
         f"Inhoud (eerste {chars} tekens):\n{(doc.get('content') or '')[:chars]}",
     ]
     return "\n\n".join(parts)
+
+
+def current_metadata_block(current: dict) -> str:
+    def shown(value: str) -> str:
+        return f"'{value}'" if value else "(leeg)"
+
+    return (
+        "Huidige gegevens in paperless. LET OP: deze zijn vaak fout, onvolledig of ooit "
+        "automatisch toegekend (een vaarbewijs als 'Factuur', tags die nergens op slaan, een "
+        "titel die een bestandsnaam van de scanner is). Het zijn geen feiten. Gaat de inhoud "
+        "van het document ertegenin, volg dan de inhoud. Gebruik ze alleen als aanvulling "
+        "wanneer de inhoud zelf onduidelijk is.\n"
+        f"- titel: {shown(current['title'])}\n"
+        f"- soort: {shown(current['document_type'])}\n"
+        f"- afzender: {shown(current['correspondent'])}\n"
+        f"- tags: {shown(', '.join(current['tags']))}"
+    )
 
 
 def names_resemble(a: str, b: str) -> bool:
@@ -695,7 +717,11 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
             current = current_names(doc, inv)
             start = time.monotonic()
             s = llm.json(
-                suggestion_prompt(tax, known, doc, args.chars), schema, max_tokens=600
+                suggestion_prompt(
+                    tax, known, doc, args.chars, None if args.ignore_current else current
+                ),
+                schema,
+                max_tokens=600,
             )
             canonical, status = resolve_correspondent(s, lookup, existing_correspondents)
             writer.writerow(
@@ -885,6 +911,11 @@ def main() -> None:
         sp.add_argument("--query", help="paperless search query to select documents")
         sp.add_argument("--ids", help="comma-separated document IDs")
         sp.add_argument("--chars", type=int, default=3000 if name == "summarize" else 6000)
+        if name == "suggest":
+            sp.add_argument(
+                "--ignore-current", action="store_true",
+                help="don't show the model the document's current title, type, sender and tags",
+            )  # fmt: skip
         if name == "summarize":
             sp.add_argument(
                 "--random", action="store_true",
