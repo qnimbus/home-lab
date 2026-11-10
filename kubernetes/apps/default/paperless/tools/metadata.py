@@ -273,8 +273,13 @@ def latest_per_id(records: list[dict]) -> list[dict]:
     return list({r["id"]: r for r in records}.values())
 
 
+# The model sometimes writes "null" or "onbekend" as text instead of a JSON null.
+NO_SENDER = {"", "-", "geen", "n.v.t.", "none", "null", "onbekend", "unknown"}
+
+
 def sender(summary: dict) -> str:
-    return (summary.get("afzender") or "").strip()
+    name = (summary.get("afzender") or "").strip()
+    return "" if name.casefold() in NO_SENDER else name
 
 
 def cmd_summarize(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
@@ -399,6 +404,7 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     )
 
     log("proposing domain tags ...")
+    type_names = [t["name"] for t in types["document_types"]]
     name_schema: dict = {"type": "string"}
     if existing_tags:
         name_schema["enum"] = sorted(existing_tags)
@@ -408,7 +414,10 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         f"Een taalmodel deelde de documenten zelf in onder:\n{counted(onderwerpen, 250)}\n\n"
         f"Stel hoogstens {args.max_tags} domein-tags voor: levensdomeinen waar een document "
         "bij hoort (wonen, auto, zorg, werk), in het Nederlands, met een hoofdletter, elkaar "
-        "zo weinig mogelijk overlappend. Alleen domeinen waar documenten hierboven echt onder "
+        "zo weinig mogelijk overlappend. Een domein-tag zegt waar een document over gaat, niet "
+        f"wát het is: geen documentsoort ({', '.join(type_names)}), geen persoon, geen vorm "
+        "(e-mail, scan) en geen verwerkingsstatus. Een naam wordt een mapnaam: geen '/'. "
+        "Alleen domeinen waar documenten hierboven echt onder "
         "vallen: liever minder tags dan tags waar niets onder valt. Geef per tag een naam, een "
         "omschrijving van één zin, en de indelingen van hierboven die erin opgaan.\n"
         "Geef daarnaast voor elke bestaande tag aan wat ermee moet: 'domein' (wordt of is een "
@@ -445,16 +454,25 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         ),
         max_tokens=8000,
     )
-    # A tag is only worth proposing if documents fall under it.
+    advice = {t["name"]: t["advice"] for t in tags["existing_tags"] if t["name"] in existing_tags}
+    # The model also proposes its own advice labels, document types and workflow or
+    # person tags as domains; none of those is a subject.
+    not_domains = {
+        "domein", "persoon", "veld", "verwijderen", "workflow",
+        *(n.casefold() for n in type_names),
+        *(n.casefold() for n, a in advice.items() if a in ("persoon", "verwijderen", "workflow")),
+    }  # fmt: skip
+    # A tag is only worth proposing if documents fall under it. Its name becomes a
+    # folder in the archive layout, so a "/" would add a level.
     tags["tags"] = [
-        {"name": t["name"], "description": t["description"]}
+        {"name": " en ".join(p.strip() for p in t["name"].split("/")), "description": t["description"]}
         for t in tags["tags"]
-        if any(i.strip().lower() in onderwerpen for i in t["includes"])
+        if t["name"].casefold() not in not_domains
+        and any(i.strip().lower() in onderwerpen for i in t["includes"])
     ]
     types["document_types"] = [
         t for t in types["document_types"] if any(i.strip().lower() in soorten for i in t["includes"])
     ] or types["document_types"]
-    advice = {t["name"]: t["advice"] for t in tags["existing_tags"] if t["name"] in existing_tags}
     proposal = {
         "title_language": "nl",
         "title_rule": (
@@ -502,7 +520,8 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         "## Document types: which descriptions each one covers",
     ]
     for t in types["document_types"]:
-        report.append(f"- **{t['name']}**: {', '.join(t['includes']) or '-'}")
+        includes = dict.fromkeys(i.strip().lower() for i in t["includes"])
+        report.append(f"- **{t['name']}**: {', '.join(includes) or '-'}")
     report += ["", "## Advice on existing tags"]
     report += [f"- {n}: {a}" for n, a in sorted(advice.items())]
     (args.out / "proposal.md").write_text("\n".join(report) + "\n", encoding="utf-8")
@@ -745,7 +764,7 @@ def names_resemble(a: str, b: str) -> bool:
 
 def resolve_correspondent(s: dict, lookup: dict[str, str], existing: set[str]) -> tuple[str, str]:
     """(correspondent for the CSV, correspondent_status)."""
-    written = (s.get("afzender") or "").strip()
+    written = sender(s)
     choice = (s.get("correspondent") or "").strip()
     if choice == UNKNOWN_SENDER or (not written and choice in ("", NEW_SENDER)):
         return "", "onbekend"
