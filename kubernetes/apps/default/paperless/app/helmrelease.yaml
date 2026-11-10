@@ -64,7 +64,7 @@ spec:
               PAPERLESS_DISABLE_REGULAR_LOGIN: "false"
               PAPERLESS_EXPORT_DIR: &exportPath /mnt/archive/export
               PAPERLESS_FILENAME_FORMAT: >-
-                {{"{{"}} created_year {{"}}"}}/{{"{{"}} correspondent {{"}}"}}/{{"{{"}} created {{"}}"}} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}
+                {%- set ns = namespace(folder=none) -%}{%- for d in ["Wonen", "Vervoer", "Gezondheid", "Kinderen", "Onderwijs", "Werk", "Telecom en internet", "Aankopen", "Reizen en vrije tijd", "Persoonlijk", "Financiën"] -%}{%- if ns.folder is none and d in tag_name_list -%}{%- set ns.folder = d -%}{%- endif -%}{%- endfor -%}{{"{{"}} ns.folder or "Overig" {{"}}"}}/{% if document_type != "none" %}{{"{{"}} document_type {{"}}"}}/{% endif %}{{"{{"}} created_year {{"}}"}}/{{"{{"}} created {{"}}"}}{% if correspondent != "none" %} {{"{{"}} correspondent {{"}}"}}{% endif %} - {{"{{"}} title {{"}}"}} - {{"{{"}} doc_pk {{"}}"}}
               PAPERLESS_FILENAME_FORMAT_REMOVE_NONE: "true"
               PAPERLESS_MEDIA_ROOT: &mediaPath /mnt/archive/media
               PAPERLESS_OCR_LANGUAGE: nld+eng
