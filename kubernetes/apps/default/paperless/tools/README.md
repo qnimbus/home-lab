@@ -52,6 +52,7 @@ About 6–7 seconds per document on the NAS, so a pass over every document takes
 - **title, type and correspondent** are set to the CSV's values. A missing type, tag, correspondent or custom field is created, with paperless's Auto matching so it learns from the documents it is assigned to.
 - **tags**: only the tags in `keep_tags` (`Inbox`, people) stay; every other tag, nonsense ones included, is replaced by the CSV's domain tags. `remove_tags` always go, even when also in `keep_tags`. With `keep_tags` empty, apply only replaces domain tags and removes `remove_tags`, and every other tag stays. Both runs print each document's tag changes (`tags -[removed] +[added]`): read the dry run before `--yes`.
 - **custom fields** from the CSV are set; the document's other fields stay.
+- **storage path**: removed when `clear_storage_paths: true`, so the archive layout below applies to the document.
 - paperless renames the file to match `PAPERLESS_FILENAME_FORMAT`, which uses the title and correspondent.
 - **a document an earlier run already changed is skipped**, unless that run was undone: `suggest` appends every batch to the same CSV, so the `x` marks of earlier batches are still there, and writing them again would overwrite whatever you fixed in paperless since. `--reapply` writes them anyway, for a row you edited after applying it.
 
@@ -76,6 +77,8 @@ custom_fields:
   - { name: Bedrag, type: monetary, description: Te betalen of ontvangen bedrag }
 summary_field: Samenvatting # optional: a one-line summary per document
 ocr_field: OCR-kwaliteit # optional: goed, matig or slecht
+clear_storage_paths: true # apply removes each document's storage path (see Archive layout)
+layout_fallback: Overig # the folder for a document without a domain tag
 correspondents:
   - { name: Voorbeeld Energie, aliases: [Voorbeeld Energie B.V.] }
 ```
@@ -95,3 +98,27 @@ Custom field types: `string`, `date`, `monetary`, `integer`.
 | `onbekend`                                        | empty                                                                   |
 
 An empty cell makes apply keep the document's current correspondent. With more than 1500 correspondents there is no list, and the written name is matched instead.
+
+## Archive layout
+
+paperless names the files on disk (`/mnt/archive/media`, originals and archive copies alike) from `PAPERLESS_FILENAME_FORMAT`. `layout` turns `taxonomy.yaml` into a format that files every document as
+
+```text
+<domain>/<type>/<year>/<date> <sender> - <title>.pdf
+Wonen/Factuur/2026/2026-11-03 Energiebedrijf - Jaarafrekening stroom en gas.pdf
+```
+
+- **The folder is the document's domain tag.** With several, the first one in `taxonomy.yaml`'s `tags` order wins, so list specific domains (Wonen, Auto) above general ones (Financiën). No domain tag: `layout_fallback`.
+- **No type or sender:** that part drops out (`Overig/2026/2026-11-10 - Notitie.pdf`).
+- **The sender is in the file name, not a folder:** most senders have a handful of documents, and a rename or merge would move all of them.
+- **A storage path overrides the format.** `clear_storage_paths: true` makes `apply` remove them; delete the unused storage paths in paperless afterwards.
+
+`layout` needs only `taxonomy.yaml`. It prints the plain format (paste it into a storage path's **Test** in paperless to try it on a document), the version escaped for the HelmRelease, and, with a `suggestions.csv`, how many documents would land in each folder.
+
+To switch:
+
+1. Run `layout` and put its escaped line in `kubernetes/apps/default/paperless/app/helmrelease.yaml` as `PAPERLESS_FILENAME_FORMAT`. It holds domain and type names only.
+2. Merge. paperless uses the format for every document saved from then on.
+3. Move the existing files: `document_renamer` in the `app` container. It renames on disk only; nothing in the database changes but the file name.
+
+Changing the domain list or its order later means running `layout` and these steps again.

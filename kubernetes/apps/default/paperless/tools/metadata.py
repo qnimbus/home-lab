@@ -524,7 +524,65 @@ def load_taxonomy(args: argparse.Namespace) -> dict:
             sys.exit(f"custom field {field.get('name')!r}: type must be one of {sorted(CUSTOM_FIELD_TYPES)}")
     tax.setdefault("summary_field", None)
     tax.setdefault("ocr_field", None)
+    tax.setdefault("clear_storage_paths", False)
+    tax.setdefault("layout_fallback", "Overig")
     return tax
+
+
+def filename_template(tax: dict) -> str:
+    """PAPERLESS_FILENAME_FORMAT for <domain>/<type>/<year>/<date> <sender> - <title>.
+
+    The folder is the document's first domain tag in taxonomy.yaml's order, so
+    put specific domains above general ones. A document without one goes in
+    layout_fallback. Missing type or sender parts drop out of the path.
+    """
+    domains = json.dumps([t["name"] for t in tax["tags"]], ensure_ascii=False)
+    fallback = json.dumps(tax["layout_fallback"], ensure_ascii=False)
+    return "".join(
+        [
+            "{%- set ns = namespace(folder=none) -%}",
+            "{%- for d in " + domains + " -%}",
+            "{%- if ns.folder is none and d in tag_name_list -%}{%- set ns.folder = d -%}{%- endif -%}",
+            "{%- endfor -%}",
+            "{{ ns.folder or " + fallback + " }}/",
+            '{% if document_type != "none" %}{{ document_type }}/{% endif %}',
+            "{{ created_year }}/{{ created }}",
+            '{% if correspondent != "none" %} {{ correspondent }}{% endif %}',
+            " - {{ title }}",
+        ]
+    )
+
+
+def helm_escaped(template: str) -> str:
+    """app-template runs env values through tpl, so {{ }} must be escaped."""
+    return (
+        template.replace("{{", "\x00")
+        .replace("}}", "\x01")
+        .replace("\x00", '{{"{{"}}')
+        .replace("\x01", '{{"}}"}}')
+    )
+
+
+def cmd_layout(args: argparse.Namespace) -> None:
+    tax = load_taxonomy(args)
+    template = filename_template(tax)
+    print("PAPERLESS_FILENAME_FORMAT (plain, for paperless's Storage path test):\n")
+    print(template)
+    print("\nFor kubernetes/apps/default/paperless/app/helmrelease.yaml (escaped for app-template):\n")
+    print("              PAPERLESS_FILENAME_FORMAT: >-")
+    print(f"                {helm_escaped(template)}")
+    path = args.out / "suggestions.csv"
+    if path.exists():
+        domain_order = [t["name"] for t in tax["tags"]]
+        counts: Counter = Counter()
+        with path.open(encoding="utf-8-sig", newline="") as fh:
+            for row in csv.DictReader(fh, delimiter=CSV_DELIMITER):
+                tags = {t.strip() for t in row["tags"].split(",")}
+                folder = next((d for d in domain_order if d in tags), tax["layout_fallback"])
+                counts[(folder, row["type"] or "-")] += 1
+        print(f"\nFolders the {sum(counts.values())} suggested documents would land in:\n")
+        for (folder, kind), n in sorted(counts.items()):
+            print(f"  {folder}/{kind}/  {n}")
 
 
 # paperless's plain text custom field holds 128 characters; a summary that fits
@@ -776,7 +834,7 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     log(f"suggested {count} documents, {len(done) + count} in {path}")
 
 
-UNDO_FIELDS = ("title", "document_type", "correspondent", "tags", "custom_fields")
+UNDO_FIELDS = ("title", "document_type", "correspondent", "tags", "custom_fields", "storage_path")
 
 
 class Journal:
@@ -887,6 +945,9 @@ def cmd_apply(pl: Paperless, args: argparse.Namespace) -> None:
         new_tags = [ensure(pl, inv, "tags", t, journal) for t in suggested]
         body: dict[str, Any] = {
             "title": row["title"].strip(),
+            # A storage path overrides PAPERLESS_FILENAME_FORMAT, so the layout
+            # only applies once it's gone.
+            **({"storage_path": None} if tax["clear_storage_paths"] else {}),
             "tags": sorted({*keep, *(t for t in new_tags if t is not None)}),
         }
         current = {tag_names.get(t, "") for t in doc["tags"]}
@@ -1019,8 +1080,14 @@ def main() -> None:
     up.add_argument("--run", help="run ID printed by apply (default: the last run)")
     up.add_argument("--all", action="store_true", help="undo every run that isn't undone yet")
     up.add_argument("--yes", action="store_true", help="really write; without it this is a dry run")
+    sub.add_parser(
+        "layout", help="print the PAPERLESS_FILENAME_FORMAT for taxonomy.yaml's folder layout"
+    )
     args = p.parse_args()
 
+    if args.command == "layout":  # needs only taxonomy.yaml, not paperless
+        cmd_layout(args)
+        return
     token = os.getenv("PAPERLESS_TOKEN")
     if not token:
         sys.exit("set PAPERLESS_TOKEN (a paperless API token, see README.md)")
