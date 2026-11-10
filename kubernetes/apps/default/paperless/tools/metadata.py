@@ -522,7 +522,15 @@ def load_taxonomy(args: argparse.Namespace) -> dict:
     for field in tax["custom_fields"]:
         if field.get("type") not in CUSTOM_FIELD_TYPES:
             sys.exit(f"custom field {field.get('name')!r}: type must be one of {sorted(CUSTOM_FIELD_TYPES)}")
+    tax.setdefault("summary_field", None)
+    tax.setdefault("ocr_field", None)
     return tax
+
+
+# paperless's plain text custom field holds 128 characters; a summary that fits
+# also reads well as a column in a document list.
+SUMMARY_MAX = 128
+OCR_LEVELS = ["goed", "matig", "slecht"]
 
 
 def correspondent_lookup(tax: dict, inv: dict) -> dict[str, str]:
@@ -556,9 +564,15 @@ def suggestion_schema(tax: dict, known: list[str]) -> dict:
     fields = {
         f["name"]: {"anyOf": [field_schema[f["type"]], {"type": "null"}]} for f in tax["custom_fields"]
     }
-    # Property order is generation order: the model writes the sender as the
-    # document names it before it picks from the list, so the pick has an anchor.
-    props: dict[str, Any] = {
+    # Property order is generation order. The summary comes first, so the model
+    # describes the document before it classifies it, and it writes the sender as
+    # the document names it before it picks from the list, so the pick has an anchor.
+    props: dict[str, Any] = {}
+    if tax["summary_field"]:
+        props["samenvatting"] = {"type": "string", "maxLength": SUMMARY_MAX}
+    if tax["ocr_field"]:
+        props["ocr_kwaliteit"] = {"type": "string", "enum": OCR_LEVELS}
+    props |= {
         "title": {"type": "string", "maxLength": 100},
         "document_type": {"type": "string", "enum": [t["name"] for t in tax["document_types"]]},
         "afzender": NULLABLE_STRING,
@@ -596,7 +610,19 @@ def suggestion_prompt(
             f"lijkt of in dezelfde branche zit. Staat ze er niet in, kies '{NEW_SENDER}'. Is "
             f"afzender null, kies '{UNKNOWN_SENDER}'.\n" + "\n".join(f"- {n}" for n in known)
         )
-    parts = [
+    parts = []
+    if tax["summary_field"]:
+        parts.append(
+            f"samenvatting: één zin in het Nederlands, hoogstens {SUMMARY_MAX - 8} tekens, over "
+            "wat dit document is en waar het over gaat. Alleen wat in de inhoud staat; geen "
+            "oordeel en geen gegevens die er niet in staan."
+        )
+    if tax["ocr_field"]:
+        parts.append(
+            "ocr_kwaliteit: hoe leesbaar de tekst is: goed, matig (fouten maar te volgen) of "
+            "slecht (grotendeels onleesbaar)."
+        )
+    parts += [
         f"Documentsoorten (kies er precies één):\n{listing(tax['document_types'])}",
         f"Domein-tags (kies er 1 tot 4 die echt passen):\n{listing(tax['tags'])}",
         f"Titel ({language}): {tax.get('title_rule', '')}",
@@ -687,7 +713,7 @@ CSV_COLUMNS = [
     "current_title", "title",
     "current_type", "type",
     "current_correspondent", "correspondent", "correspondent_status",
-    "current_tags", "tags", "custom_fields",
+    "current_tags", "tags", "summary", "ocr", "custom_fields",
 ]  # fmt: skip
 
 
@@ -739,6 +765,8 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
                     "correspondent_status": status,
                     "current_tags": ", ".join(current["tags"]),
                     "tags": ", ".join(s["tags"]),
+                    "summary": (s.get("samenvatting") or "").strip(),
+                    "ocr": s.get("ocr_kwaliteit") or "",
                     "custom_fields": json.dumps(s.get("custom_fields") or {}, ensure_ascii=False),
                 }
             )
@@ -780,12 +808,24 @@ def ensure(
     return created["id"]
 
 
-def format_field(kind: str, value: Any) -> Any:
+def format_field(kind: str, value: Any, options: dict[str, str] | None = None) -> Any:
     if kind == "monetary":
         return f"EUR{float(value):.2f}"
     if kind == "integer":
         return int(value)
+    if kind == "select":
+        # A select field stores the option's ID, not its label.
+        return (options or {}).get(str(value).casefold())
+    if kind == "string":
+        return str(value)[:SUMMARY_MAX]
     return str(value)
+
+
+def select_options(pl: Paperless, field_id: int) -> dict[str, str]:
+    """Option label (casefolded) -> option ID of a select custom field."""
+    field = pl.get(f"custom_fields/{field_id}/")
+    options = (field.get("extra_data") or {}).get("select_options") or []
+    return {o["label"].casefold(): o["id"] for o in options}
 
 
 def tag_kept(name: str, tax: dict) -> bool:
@@ -811,6 +851,17 @@ def cmd_apply(pl: Paperless, args: argparse.Namespace) -> None:
     if not tax["keep_tags"]:
         log("keep_tags is empty: tags that aren't domain tags or in remove_tags stay on documents")
     field_types = {f["name"]: f["type"] for f in tax["custom_fields"]}
+    if tax["summary_field"]:
+        field_types[tax["summary_field"]] = "string"
+    if tax["ocr_field"]:
+        field_types[tax["ocr_field"]] = "select"
+    # A field that already exists keeps its own type (say Long Text for the summary).
+    field_types |= {
+        f["name"]: f["data_type"]
+        for f in inv["custom_fields"]
+        if f["name"] in field_types and f.get("data_type")
+    }
+    options_cache: dict[int, dict[str, str]] = {}
     with (args.out / "suggestions.csv").open(encoding="utf-8-sig", newline="") as fh:
         rows = [r for r in csv.DictReader(fh, delimiter=CSV_DELIMITER) if r["apply"].strip().lower() in APPLY_YES]
     log(f"{len(rows)} rows marked to apply{' (dry run: add --yes to write)' if dry_run else ''}")
@@ -835,16 +886,28 @@ def cmd_apply(pl: Paperless, args: argparse.Namespace) -> None:
         if row["correspondent"].strip():
             body["correspondent"] = ensure(pl, inv, "correspondents", row["correspondent"].strip(), journal)
         values = {k: v for k, v in json.loads(row["custom_fields"] or "{}").items() if v not in (None, "")}
+        # CSVs from before these columns existed have no summary or ocr.
+        if tax["summary_field"] and (row.get("summary") or "").strip():
+            values[tax["summary_field"]] = row["summary"].strip()
+        if tax["ocr_field"] and (row.get("ocr") or "").strip():
+            values[tax["ocr_field"]] = row["ocr"].strip()
         if values:
             fields = {f["field"]: f["value"] for f in doc.get("custom_fields", [])}
             for name, value in values.items():
                 kind = field_types.get(name, "string")
-                fid = ensure(
-                    pl, inv, "custom_fields", name, journal,
-                    {"name": name, "data_type": kind},
-                )  # fmt: skip
-                if fid is not None:
-                    fields[fid] = format_field(kind, value)
+                create = {"name": name, "data_type": kind}
+                if kind == "select":
+                    create["extra_data"] = {"select_options": [{"label": o} for o in OCR_LEVELS]}
+                fid = ensure(pl, inv, "custom_fields", name, journal, create)
+                if fid is None:
+                    continue
+                if kind == "select" and fid not in options_cache:
+                    options_cache[fid] = select_options(pl, fid)
+                formatted = format_field(kind, value, options_cache.get(fid))
+                if formatted is None:
+                    log(f"document {row['id']}: {name!r} has no option {value!r}, skipped")
+                    continue
+                fields[fid] = formatted
             body["custom_fields"] = [{"field": f, "value": v} for f, v in fields.items()]
         if dry_run:
             continue

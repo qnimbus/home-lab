@@ -73,11 +73,15 @@ keep_tags: [Inbox] # the only tags apply leaves on a document, next to the domai
 remove_tags: [Archived] # removed from every document that apply touches
 custom_fields:
   - { name: Bedrag, type: monetary, description: Te betalen of ontvangen bedrag }
+summary_field: Samenvatting # optional: a one-line summary per document
+ocr_field: OCR-kwaliteit # optional: goed, matig or slecht
 correspondents:
   - { name: Voorbeeld Energie, aliases: [Voorbeeld Energie B.V.] }
 ```
 
 Custom field types: `string`, `date`, `monetary`, `integer`.
+
+**Summary and OCR quality.** With `summary_field` set, `suggest` writes a one-line Dutch summary of at most 128 characters per document (paperless's plain text field limit), before it classifies the document; with `ocr_field` set, it rates the OCR. Both land in the CSV's `summary` and `ocr` columns, to review and edit like the rest, and `apply` writes them to those custom fields, creating them if missing: the summary as Text, OCR quality as a Select with the options `goed`, `matig` and `slecht`. A field you created yourself keeps its type (Long Text works too). The summary shows on the document and as a list column, but paperless's plain search doesn't cover custom fields: only `custom_fields.value:<word>` finds it. It is the model's reading of the document at that moment, so it can be wrong and doesn't update when the document changes.
 
 **Correspondents.** `propose` groups spellings that differ only in case, punctuation or legal form (B.V., N.V.), and leaves out a sender paperless doesn't know unless at least two documents name it (`--min-sender-count`): one-off names are mostly misreads. In `suggest`, the model first writes the sender as the document names it, then picks from paperless's correspondents plus this list, or answers `(nieuw)` or `(onbekend)`. A list nudges a model to pick something, so the script checks the pick resembles what it wrote (shared word, initials such as KLM, similar spelling). The CSV's `correspondent_status`:
 
