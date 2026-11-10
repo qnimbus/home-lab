@@ -1,0 +1,19 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/kustomization
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ./externalsecret.yaml
+  - ./ocirepository.yaml
+  - ./helmrelease.yaml
+  - ./httproute.yaml
+configMapGenerator:
+  - name: paperless-gpt-prompts
+    files:
+      - correspondent_prompt.tmpl=./resources/correspondent_prompt.tmpl
+      - created_date_prompt.tmpl=./resources/created_date_prompt.tmpl
+      - document_type_prompt.tmpl=./resources/document_type_prompt.tmpl
+      - tag_prompt.tmpl=./resources/tag_prompt.tmpl
+      - title_prompt.tmpl=./resources/title_prompt.tmpl
+generatorOptions:
+  disableNameSuffixHash: true

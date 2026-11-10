@@ -13,6 +13,7 @@ resources:
   - ./homepage/ks.yaml
   - ./mail-archiver/ks.yaml
   - ./paperless/ks.yaml
+  - ./paperless-gpt/ks.yaml
   - ./unifi-voucher-site/ks.yaml
   - ./wallos/ks.yaml
   - ./wastebin/ks.yaml

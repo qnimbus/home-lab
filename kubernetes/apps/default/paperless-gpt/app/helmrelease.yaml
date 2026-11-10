@@ -1,0 +1,104 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/bjw-s-labs/helm-charts/main/charts/other/app-template/schemas/helmrelease-helm-v2.schema.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: paperless-gpt
+spec:
+  interval: 1h
+  chartRef:
+    kind: OCIRepository
+    name: paperless-gpt
+  driftDetection:
+    ignore:
+      - paths: ["/spec/replicas"]
+        target:
+          kind: Deployment
+  values:
+    defaultPodOptions:
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+    controllers:
+      paperless-gpt:
+        annotations:
+          reloader.stakater.com/auto: "true"
+        containers:
+          app:
+            image:
+              repository: ghcr.io/icereed/paperless-gpt
+              tag: v0.31.0@sha256:d668941a829552cc0eddbc7c22506b3480dfbf61bd0d6eae881ad9fcfe2de70c
+            env:
+              AUTO_TAG_COMPLETE: ""
+              LLM_LANGUAGE: Dutch
+              LLM_MODEL: Qwen3.6-35B-A3B
+              LLM_PROVIDER: openai
+              OPENAI_API_KEY: not-used
+              OPENAI_BASE_URL: "https://llama.${DOMAIN_APP}/v1"
+              PAPERLESS_BASE_URL: http://paperless:8000
+              PAPERLESS_PUBLIC_URL: "https://paperless.${DOMAIN_CLUSTER}"
+              PDF_OCR_TAGGING: "false"
+            envFrom:
+              - secretRef:
+                  name: paperless-gpt-secret
+            probes:
+              liveness: &probes
+                enabled: true
+                custom: true
+                spec:
+                  httpGet:
+                    path: /api/version
+                    port: &port 8080
+              readiness: *probes
+            resources:
+              requests:
+                cpu: 10m
+              limits:
+                memory: 256Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop: ["ALL"]
+    persistence:
+      data:
+        existingClaim: "${KOPIUR_CLAIM:=${APP}}"
+        globalMounts:
+          - path: /app/config
+            subPath: config
+          - path: /app/db
+            subPath: db
+      prompts:
+        type: configMap
+        name: paperless-gpt-prompts
+        globalMounts:
+          - path: /app/prompts/correspondent_prompt.tmpl
+            subPath: correspondent_prompt.tmpl
+            readOnly: true
+          - path: /app/prompts/created_date_prompt.tmpl
+            subPath: created_date_prompt.tmpl
+            readOnly: true
+          - path: /app/prompts/document_type_prompt.tmpl
+            subPath: document_type_prompt.tmpl
+            readOnly: true
+          - path: /app/prompts/tag_prompt.tmpl
+            subPath: tag_prompt.tmpl
+            readOnly: true
+          - path: /app/prompts/title_prompt.tmpl
+            subPath: title_prompt.tmpl
+            readOnly: true
+      tmpfs:
+        type: emptyDir
+        globalMounts:
+          - path: /app/prompts
+            subPath: prompts
+          - path: /tmp
+            subPath: tmp
+    service:
+      app:
+        ports:
+          http:
+            port: *port

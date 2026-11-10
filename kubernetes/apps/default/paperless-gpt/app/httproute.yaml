@@ -1,0 +1,23 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/gateway.networking.k8s.io/httproute_v1.json
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: paperless-gpt
+  annotations:
+    gethomepage.dev/description: "AI suggestions for Paperless-ngx"
+    gethomepage.dev/enabled: "true"
+    gethomepage.dev/group: "Documents"
+    gethomepage.dev/icon: "paperless-gpt"
+    gethomepage.dev/name: "paperless-gpt"
+spec:
+  hostnames:
+    - "paperless-gpt.${DOMAIN_CLUSTER}"
+  parentRefs:
+    - name: envoy-internal
+      namespace: network
+      sectionName: https
+  rules:
+    - backendRefs:
+        - name: paperless-gpt
+          port: 8080
