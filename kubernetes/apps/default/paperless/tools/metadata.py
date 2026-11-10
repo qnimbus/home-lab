@@ -608,8 +608,8 @@ def suggestion_prompt(
             f"als getal in euro):\n{listing(tax['custom_fields'])}"
         )
     parts.append(
-        "confidence: hoe zeker je bent van soort en afzender samen. Kies 'laag' als je "
-        "vooral op de huidige gegevens hieronder steunt in plaats van op de inhoud."
+        "confidence: hoe zeker je bent van soort en afzender samen. Kies 'laag' als de "
+        "inhoud ze niet ondersteunt en je alleen op de huidige gegevens hieronder steunt."
     )
     if current is not None:
         parts.append(current_metadata_block(current))
@@ -625,11 +625,11 @@ def current_metadata_block(current: dict) -> str:
         return f"'{value}'" if value else "(leeg)"
 
     return (
-        "Huidige gegevens in paperless. LET OP: deze zijn vaak fout, onvolledig of ooit "
-        "automatisch toegekend (een vaarbewijs als 'Factuur', tags die nergens op slaan, een "
-        "titel die een bestandsnaam van de scanner is). Het zijn geen feiten. Gaat de inhoud "
-        "van het document ertegenin, volg dan de inhoud. Gebruik ze alleen als aanvulling "
-        "wanneer de inhoud zelf onduidelijk is.\n"
+        "Huidige gegevens in paperless. Ze kunnen kloppen en nuttig zijn, maar ook verouderd, "
+        "onvolledig of fout (bijvoorbeeld automatisch toegekend, of een titel die de "
+        "bestandsnaam van de scanner is). Beoordeel elk gegeven aan de hand van de inhoud: "
+        "neem over wat de inhoud bevestigt of aannemelijk maakt, laat los wat ermee in strijd "
+        "is. Is de inhoud zelf onduidelijk, dan mogen ze de doorslag geven.\n"
         f"- titel: {shown(current['title'])}\n"
         f"- soort: {shown(current['document_type'])}\n"
         f"- afzender: {shown(current['correspondent'])}\n"
