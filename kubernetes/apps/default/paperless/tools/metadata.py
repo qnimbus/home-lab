@@ -220,21 +220,50 @@ def cmd_inventory(pl: Paperless, args: argparse.Namespace) -> None:
     log(f"wrote {args.out / 'inventory.json'}")
 
 
+NULLABLE_STRING = {"anyOf": [{"type": "string"}, {"type": "null"}]}
+
+SENDER_RULE = (
+    "De afzender is de organisatie die het document heeft opgesteld of uitgegeven: het "
+    "bedrijf of de instantie in het briefhoofd of logo, of bij een bewijs, pas, diploma, "
+    "certificaat of vergunning de uitgevende instantie (bijvoorbeeld CBR, RDW, gemeente). "
+    "Nooit de ontvanger, houder of eigenaar, en niet iemand die alleen tekent of als "
+    "contactpersoon genoemd wordt. Een persoon alleen bij een persoonlijke brief. "
+    "Gebruik null als de afzender niet duidelijk uit de tekst blijkt, bijvoorbeeld bij "
+    "onleesbare OCR: liever null dan een gok."
+)
+
+# Scans from a home printer get names like 0127_261109175022_001.pdf; PDF
+# metadata (author, producer) is never sent, as it describes the scanner.
+FILENAME_NOTE = (
+    "Bestandsnaam (vaak gemaakt door een scanner of download en dan nietszeggend; alleen "
+    "een hint als hij duidelijk iets over het document zegt):"
+)
+
 SUMMARY_SCHEMA = obj(
     {
         "samenvatting": {"type": "string"},
         "soort": {"type": "string"},
-        "afzender": {"type": "string"},
+        "afzender": NULLABLE_STRING,
         "onderwerpen": str_list(3, min_items=1),
         "taal": {"type": "string", "enum": ["nl", "en", "de", "fr", "anders"]},
+        "ocr_kwaliteit": {"type": "string", "enum": ["goed", "matig", "slecht"]},
     }
 )
+
+
+def latest_per_id(records: list[dict]) -> list[dict]:
+    """summaries.jsonl is append-only: a re-summarized document's last entry wins."""
+    return list({r["id"]: r for r in records}.values())
+
+
+def sender(summary: dict) -> str:
+    return (summary.get("afzender") or "").strip()
 
 
 def cmd_summarize(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     inv = load_inventory(pl)
     path = args.out / "summaries.jsonl"
-    done = {r["id"] for r in read_jsonl(path)}
+    done = set() if args.redo else {r["id"] for r in read_jsonl(path)}
     count = 0
     for doc in iter_documents(pl, args):
         if doc["id"] in done:
@@ -243,36 +272,54 @@ def cmd_summarize(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
             break
         content = (doc.get("content") or "")[: args.chars]
         prompt = (
-            f"Bestandsnaam: {doc.get('original_file_name') or ''}\n\n"
+            f"{FILENAME_NOTE} {doc.get('original_file_name') or ''}\n\n"
             f"Inhoud (eerste {args.chars} tekens):\n{content}\n\n"
             "Beschrijf dit document, in het Nederlands:\n"
             "- samenvatting: één zin over waar het document over gaat\n"
             "- soort: wat voor document het is, 1 tot 3 woorden (bijvoorbeeld factuur, "
             "loonstrook, polis, brief, aanslag, contract)\n"
-            "- afzender: de organisatie of persoon van wie het document komt, zoals die "
-            "zichzelf noemt\n"
+            f"- afzender: zoals die zichzelf noemt. {SENDER_RULE}\n"
             "- onderwerpen: 1 tot 3 levensdomeinen waar het bij hoort (bijvoorbeeld wonen, "
             "auto, zorg, werk, belastingen)\n"
-            "- taal: de taal waarin het document geschreven is"
+            "- taal: de taal waarin het document geschreven is\n"
+            "- ocr_kwaliteit: hoe leesbaar de tekst is: goed, matig (fouten maar te volgen) "
+            "of slecht (grotendeels onleesbaar)"
         )
         start = time.monotonic()
         summary = llm.json(prompt, SUMMARY_SCHEMA, max_tokens=400)
         append_jsonl(path, {"id": doc["id"], "summary": summary, "current": current_names(doc, inv)})
         count += 1
         log(f"[{count}] document {doc['id']} in {time.monotonic() - start:.0f}s")
-    log(f"summarized {count} documents, {len(done) + count} in {path}")
+    log(f"summarized {count} documents, {len(latest_per_id(read_jsonl(path)))} in {path}")
 
 
 def counted(counter: Counter, limit: int) -> str:
     return "\n".join(f"- {value} ({n})" for value, n in counter.most_common(limit))
 
 
-def group_correspondents(inv: dict, summaries: list[dict]) -> list[dict]:
-    """Group names that differ only in case, punctuation or legal form."""
+def group_correspondents(inv: dict, summaries: list[dict], min_count: int) -> list[dict]:
+    """Group names that differ only in case, punctuation or legal form.
+
+    A sender the LLM saw fewer than min_count times and paperless doesn't know is
+    left out: one-off names are mostly misreads (a holder, a signature, OCR noise).
+    """
     existing = {c["name"]: c.get("document_count") or 0 for c in inv["correspondents"]}
-    seen = Counter(s["summary"]["afzender"].strip() for s in summaries if s["summary"]["afzender"].strip())
+    seen = Counter(sender(s["summary"]) for s in summaries if sender(s["summary"]))
+    # Count spellings together: "X B.V." and "x bv" are one sender seen twice.
+    per_key = Counter()
+    for name, n in seen.items():
+        per_key[normalize_name(name)] += n
+    known_keys = {normalize_name(n) for n in existing}
+    candidates = [
+        *existing,
+        *(
+            n for n in seen
+            if n not in existing
+            and (normalize_name(n) in known_keys or per_key[normalize_name(n)] >= min_count)
+        ),
+    ]  # fmt: skip
     groups: dict[str, set[str]] = {}
-    for name in [*existing, *seen]:
+    for name in candidates:
         key = normalize_name(name)
         if not key:
             continue
@@ -291,9 +338,13 @@ def group_correspondents(inv: dict, summaries: list[dict]) -> list[dict]:
 
 def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     inv = load_inventory(pl)
-    summaries = read_jsonl(args.out / "summaries.jsonl")
+    summaries = latest_per_id(read_jsonl(args.out / "summaries.jsonl"))
     if not summaries:
         sys.exit("no summaries yet: run `summarize` first")
+    # Summaries from before ocr_kwaliteit existed count as unknown.
+    ocr = Counter(s["summary"].get("ocr_kwaliteit", "onbekend") for s in summaries)
+    bad_ocr = sorted(s["id"] for s in summaries if s["summary"].get("ocr_kwaliteit") == "slecht")
+    no_sender = sum(1 for s in summaries if not sender(s["summary"]))
     soorten = Counter(s["summary"]["soort"].strip().lower() for s in summaries)
     onderwerpen = Counter(o.strip().lower() for s in summaries for o in s["summary"]["onderwerpen"])
     talen = Counter(s["summary"]["taal"] for s in summaries)
@@ -402,7 +453,7 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         "keep_tags": sorted(n for n, a in advice.items() if a in ("workflow", "persoon")),
         "remove_tags": sorted(n for n, a in advice.items() if a == "verwijderen"),
         "custom_fields": [],
-        "correspondents": group_correspondents(inv, summaries),
+        "correspondents": group_correspondents(inv, summaries, args.min_sender_count),
     }
     header = (
         "# Proposed by metadata.py. Review it, then save it as taxonomy.yaml.\n"
@@ -421,6 +472,15 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         "",
         "## Languages",
         counted(talen, 10),
+        "",
+        "## OCR quality",
+        counted(ocr, 5),
+        "",
+        f"No clear sender: {no_sender} documents.",
+        "",
+        "Documents with unreadable OCR: run Redo OCR on them in paperless (bulk edit), "
+        "then `summarize --redo --ids <ids>`:",
+        ", ".join(map(str, bad_ocr)) or "-",
         "",
         "## Document types: which descriptions each one covers",
     ]
@@ -457,7 +517,19 @@ def correspondent_lookup(tax: dict, inv: dict) -> dict[str, str]:
     return lookup
 
 
-def suggestion_schema(tax: dict) -> dict:
+NEW_SENDER = "(nieuw)"
+UNKNOWN_SENDER = "(onbekend)"
+# Above this many correspondents the choice list gets too long for the prompt,
+# and the model names the sender freely instead.
+MAX_CORRESPONDENT_CHOICES = 1500
+
+
+def known_correspondents(tax: dict, inv: dict) -> list[str]:
+    names = {c["name"] for c in inv["correspondents"]} | {g["name"] for g in tax["correspondents"]}
+    return sorted(names, key=str.casefold)
+
+
+def suggestion_schema(tax: dict, known: list[str]) -> dict:
     field_schema = {
         "string": {"type": "string"},
         "date": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
@@ -470,7 +542,12 @@ def suggestion_schema(tax: dict) -> dict:
     props: dict[str, Any] = {
         "title": {"type": "string", "maxLength": 100},
         "document_type": {"type": "string", "enum": [t["name"] for t in tax["document_types"]]},
-        "correspondent": {"type": "string"},
+        "correspondent": (
+            {"type": "string", "enum": [*known, NEW_SENDER, UNKNOWN_SENDER]}
+            if len(known) <= MAX_CORRESPONDENT_CHOICES
+            else NULLABLE_STRING
+        ),
+        "new_correspondent": NULLABLE_STRING,
         "tags": str_list(4, enum=[t["name"] for t in tax["tags"]]),
         "confidence": {"type": "string", "enum": ["hoog", "middel", "laag"]},
     }
@@ -479,7 +556,10 @@ def suggestion_schema(tax: dict) -> dict:
     return obj(props)
 
 
-def suggestion_prompt(tax: dict, doc: dict, current: dict, chars: int) -> str:
+def suggestion_prompt(tax: dict, known: list[str], doc: dict, current: dict, chars: int) -> str:
+    """Everything before the document is the same for every call, so llama.cpp's
+    prompt cache only has to process the document itself."""
+
     def listing(items: list[dict]) -> str:
         return "\n".join(f"- {i['name']}: {i.get('description', '')}" for i in items)
 
@@ -488,11 +568,20 @@ def suggestion_prompt(tax: dict, doc: dict, current: dict, chars: int) -> str:
         if tax.get("title_language", "nl") == "nl"
         else "in de taal van het document"
     )
+    if len(known) <= MAX_CORRESPONDENT_CHOICES:
+        sender_part = (
+            f"correspondent: {SENDER_RULE} Kies de afzender uit deze lijst. Staat hij er niet "
+            f"in, kies dan '{NEW_SENDER}' en zet de officiële naam in new_correspondent. Is "
+            f"de afzender niet duidelijk, kies '{UNKNOWN_SENDER}'.\n"
+            + "\n".join(f"- {n}" for n in known)
+        )
+    else:
+        sender_part = f"correspondent: de officiële naam. {SENDER_RULE}"
     parts = [
         f"Documentsoorten (kies er precies één):\n{listing(tax['document_types'])}",
         f"Domein-tags (kies er 1 tot 4 die echt passen):\n{listing(tax['tags'])}",
         f"Titel ({language}): {tax.get('title_rule', '')}",
-        "Afzender: de organisatie of persoon van wie het document komt, met de officiële naam.",
+        sender_part,
     ]
     if tax["custom_fields"]:
         parts.append(
@@ -503,7 +592,7 @@ def suggestion_prompt(tax: dict, doc: dict, current: dict, chars: int) -> str:
         "confidence: hoe zeker je bent van soort en afzender samen.",
         f"Huidige gegevens (kunnen fout of leeg zijn): soort '{current['document_type']}', "
         f"afzender '{current['correspondent']}'",
-        f"Bestandsnaam: {doc.get('original_file_name') or ''}",
+        f"{FILENAME_NOTE} {doc.get('original_file_name') or ''}",
         f"Inhoud (eerste {chars} tekens):\n{(doc.get('content') or '')[:chars]}",
     ]
     return "\n\n".join(parts)
@@ -523,7 +612,8 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     inv = load_inventory(pl)
     lookup = correspondent_lookup(tax, inv)
     existing_correspondents = {c["name"] for c in inv["correspondents"]}
-    schema = suggestion_schema(tax)
+    known = known_correspondents(tax, inv)
+    schema = suggestion_schema(tax, known)
     path = args.out / "suggestions.csv"
     done: set[int] = set()
     if path.exists():
@@ -542,11 +632,16 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
                 break
             current = current_names(doc, inv)
             start = time.monotonic()
-            s = llm.json(suggestion_prompt(tax, doc, current, args.chars), schema, max_tokens=600)
-            name = s["correspondent"].strip()
-            canonical = lookup.get(normalize_name(name))
-            if canonical is None:
-                status, canonical = "nieuw", name
+            s = llm.json(
+                suggestion_prompt(tax, known, doc, current, args.chars), schema, max_tokens=600
+            )
+            choice = (s["correspondent"] or "").strip()
+            name = (s["new_correspondent"] or "").strip() if choice == NEW_SENDER else choice
+            canonical = lookup.get(normalize_name(name)) if name else None
+            if choice == UNKNOWN_SENDER or not name:
+                status, canonical = "onbekend", ""
+            elif canonical is None:
+                status, canonical = "nieuw: controleren", name
             elif canonical in existing_correspondents:
                 status = "bestaand" if canonical == name else f"alias van {canonical}"
             else:
@@ -719,9 +814,18 @@ def main() -> None:
         sp.add_argument("--query", help="paperless search query to select documents")
         sp.add_argument("--ids", help="comma-separated document IDs")
         sp.add_argument("--chars", type=int, default=3000 if name == "summarize" else 6000)
+        if name == "summarize":
+            sp.add_argument(
+                "--redo", action="store_true",
+                help="describe documents again even if they have a summary (the new one wins)",
+            )  # fmt: skip
     pp = sub.add_parser("propose", help="propose a taxonomy from the summaries")
     pp.add_argument("--max-types", type=int, default=25)
     pp.add_argument("--max-tags", type=int, default=15)
+    pp.add_argument(
+        "--min-sender-count", type=int, default=2,
+        help="propose a sender paperless doesn't know only if this many documents name it",
+    )  # fmt: skip
     ap = sub.add_parser("apply", help="write the rows marked in suggestions.csv to paperless")
     ap.add_argument("--yes", action="store_true", help="really write; without it this is a dry run")
     up = sub.add_parser("undo", help="restore the documents an apply run changed")

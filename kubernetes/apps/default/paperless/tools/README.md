@@ -29,7 +29,15 @@ Run every step as `kubernetes/apps/default/paperless/tools/metadata.py <step>` (
 | `apply`     | Writes the marked rows. A dry run unless `--yes`.                                                                                       | `apply-journal.jsonl`, changes in paperless |
 | `undo`      | Restores what an apply run changed. A dry run unless `--yes`.                                                                           | changes in paperless                        |
 
-`summarize` and `suggest` take `--limit N`, `--query '<paperless search>'` and `--ids 1,2,3`, and resume where they stopped: run them again to continue.
+`summarize` and `suggest` take `--limit N`, `--query '<paperless search>'` and `--ids 1,2,3`, and resume where they stopped: run them again to continue. `summarize --redo` describes documents again; the newest summary of a document wins.
+
+## What the LLM sees
+
+The first 3000 (`summarize`) or 6000 (`suggest`) characters of paperless's OCR text, and the original filename, flagged as often meaningless (scanner and download names). Never the PDF's own metadata: on a home scan its author and producer are the printer.
+
+The sender (`afzender`, `correspondent`) is the organisation that wrote or issued the document: the letterhead, or for a licence, card, diploma or certificate the issuing body. Never the holder, recipient or someone who only signs. When that isn't clear, it's left empty rather than guessed.
+
+`summarize` also rates the OCR (`goed`, `matig`, `slecht`). `proposal.md` lists the IDs rated `slecht`: run Redo OCR on them in paperless (bulk edit), then `summarize --redo --ids <ids>`.
 
 ## Timing
 
@@ -65,4 +73,6 @@ correspondents:
   - { name: Voorbeeld Energie, aliases: [Voorbeeld Energie B.V.] }
 ```
 
-Custom field types: `string`, `date`, `monetary`, `integer`. Correspondents are free text in the suggestion; the script maps a name or alias (ignoring case, punctuation and legal forms such as B.V.) onto the canonical name and marks the rest `nieuw` in the CSV.
+Custom field types: `string`, `date`, `monetary`, `integer`.
+
+**Correspondents.** `propose` groups spellings that differ only in case, punctuation or legal form (B.V., N.V.), and leaves out a sender paperless doesn't know unless at least two documents name it (`--min-sender-count`): one-off names are mostly misreads. In `suggest`, the model picks from paperless's correspondents plus this list, or answers `(nieuw)` with a name or `(onbekend)`. The CSV's `correspondent_status` says which: `bestaand`, `alias van X`, `nieuw (uit taxonomy)`, `nieuw: controleren` or `onbekend` (left empty: apply keeps the document's current correspondent). With more than 1500 correspondents it names the sender freely instead.
