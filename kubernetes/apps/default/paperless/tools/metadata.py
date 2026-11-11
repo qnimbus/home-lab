@@ -23,6 +23,7 @@ import random
 import re
 import sys
 import time
+import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterator
@@ -147,6 +148,20 @@ def str_list(max_items: int, enum: list[str] | None = None, min_items: int = 0) 
     if enum is not None:
         items["enum"] = enum
     return {"type": "array", "items": items, "minItems": min_items, "maxItems": max_items}
+
+
+FORMULA_START = "=+-@"
+
+
+def clean(text: str) -> str:
+    """One line of plain text, safe for a spreadsheet cell and a paperless field.
+
+    Newlines and other whitespace runs become one space, control characters go,
+    and so does a leading =, +, - or @, which a spreadsheet would run as a formula.
+    """
+    text = re.sub(r"\s+", " ", text or "")
+    text = "".join(c for c in text if unicodedata.category(c) != "Cc")
+    return text.strip().lstrip(FORMULA_START).strip()
 
 
 def normalize_name(name: str) -> str:
@@ -998,8 +1013,7 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
                 max_tokens=600,
             )
             canonical, status = resolve_correspondent(s, lookup, existing_correspondents)
-            writer.writerow(
-                {
+            row = {
                     "apply": "x" if args.mark and premarked(s["confidence"], status) else "",
                     "id": doc["id"],
                     "url": f"{pl.url}/documents/{doc['id']}/details",
@@ -1017,7 +1031,8 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
                     "ocr": s.get("ocr_kwaliteit") or "",
                     "custom_fields": json.dumps(s.get("custom_fields") or {}, ensure_ascii=False),
                 }
-            )
+            # custom_fields is JSON, whose strings can't hold a raw newline.
+            writer.writerow({k: v if k == "custom_fields" else clean(str(v)) for k, v in row.items()})
             fh.flush()
             count += 1
             log(f"[{count}] document {doc['id']} in {time.monotonic() - start:.0f}s")
@@ -1071,8 +1086,8 @@ def format_field(kind: str, value: Any, options: dict[str, str] | None = None) -
         # A select field stores the option's ID, not its label.
         return (options or {}).get(str(value).casefold())
     if kind == "string":
-        return str(value)[:SUMMARY_MAX]
-    return str(value)
+        return clean(str(value))[:SUMMARY_MAX]
+    return clean(str(value))
 
 
 def select_options(pl: Paperless, field_id: int) -> dict[str, str]:
@@ -1119,7 +1134,12 @@ def cmd_apply(pl: Paperless, args: argparse.Namespace) -> None:
     }
     options_cache: dict[int, dict[str, str]] = {}
     with (args.out / "suggestions.csv").open(encoding="utf-8-sig", newline="") as fh:
-        rows = [r for r in csv.DictReader(fh, delimiter=CSV_DELIMITER) if r["apply"].strip().lower() in APPLY_YES]
+        # Cleaned again: a cell edited in a spreadsheet can hold a newline too.
+        rows = [
+            {k: v if k == "custom_fields" else clean(v) for k, v in r.items()}
+            for r in csv.DictReader(fh, delimiter=CSV_DELIMITER)
+            if r["apply"].strip().lower() in APPLY_YES
+        ]
     # suggest appends every batch to one CSV, so earlier batches' marked rows are
     # still there. Writing them again would overwrite fixes made in paperless since.
     if not args.reapply:
