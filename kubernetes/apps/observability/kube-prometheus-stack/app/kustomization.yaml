@@ -23,6 +23,13 @@ configMapGenerator:
     options:
       annotations:
         kustomize.toolkit.fluxcd.io/substitute: disabled
+  - name: truenas-cpu-dashboard
+    namespace: observability
+    files:
+      - truenas-cpu.json=./resources/truenas-cpu.json
+    options:
+      annotations:
+        kustomize.toolkit.fluxcd.io/substitute: disabled
 generatorOptions:
   labels:
     reconcile.fluxcd.io/watch: "Enabled"

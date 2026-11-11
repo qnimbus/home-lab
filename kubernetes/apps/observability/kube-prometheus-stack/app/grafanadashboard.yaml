@@ -142,3 +142,16 @@ spec:
   instanceSelector:
     matchLabels:
       dashboards: grafana
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/grafana.integreatly.org/grafanadashboard_v1beta1.json
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: truenas-cpu
+spec:
+  configMapRef:
+    key: truenas-cpu.json
+    name: truenas-cpu-dashboard
+  instanceSelector:
+    matchLabels:
+      dashboards: grafana
