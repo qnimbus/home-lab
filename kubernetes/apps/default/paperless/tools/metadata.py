@@ -713,6 +713,16 @@ def load_taxonomy(args: argparse.Namespace) -> dict:
     tax.setdefault("ocr_field", None)
     tax.setdefault("clear_storage_paths", False)
     tax.setdefault("layout_fallback", "Overig")
+    tax.setdefault("layout_reference_folder", "Naslag")
+    types = {t["name"] for t in tax["document_types"]}
+    for key in ("layout_undated_types", "layout_reference_types"):
+        tax[key] = tax.get(key) or []
+        unknown = sorted(set(tax[key]) - types)
+        if unknown:
+            sys.exit(f"{key}: not in document_types: {', '.join(unknown)}")
+    both = sorted(set(tax["layout_undated_types"]) & set(tax["layout_reference_types"]))
+    if both:
+        sys.exit(f"in both layout_undated_types and layout_reference_types: {', '.join(both)}")
     return tax
 
 
@@ -723,22 +733,57 @@ def filename_template(tax: dict) -> str:
     put specific domains above general ones. A document without one goes in
     layout_fallback. Missing type or sender parts drop out of the path. The
     document ID keeps names unique and leads from a file back to its document.
+
+    Two exceptions by type. layout_undated_types (a passport, a deed) skip the
+    year folder: they're looked up by what they are, not when they came in.
+    layout_reference_types (manuals, recipes) go under layout_reference_folder
+    as <type>/<sender> - <title> - <id>, outside the domains and without a date.
     """
-    domains = json.dumps([t["name"] for t in tax["tags"]], ensure_ascii=False)
-    fallback = json.dumps(tax["layout_fallback"], ensure_ascii=False)
-    return "".join(
+
+    def literal(value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False)
+
+    domains = literal([t["name"] for t in tax["tags"]])
+    sender = '{% if correspondent != "none" %} {{ correspondent }}{% endif %}'
+    dated = "".join(
         [
             "{%- set ns = namespace(folder=none) -%}",
             "{%- for d in " + domains + " -%}",
             "{%- if ns.folder is none and d in tag_name_list -%}{%- set ns.folder = d -%}{%- endif -%}",
             "{%- endfor -%}",
-            "{{ ns.folder or " + fallback + " }}/",
+            "{{ ns.folder or " + literal(tax["layout_fallback"]) + " }}/",
             '{% if document_type != "none" %}{{ document_type }}/{% endif %}',
-            "{{ created_year }}/{{ created }}",
-            '{% if correspondent != "none" %} {{ correspondent }}{% endif %}',
-            " - {{ title }} - {{ doc_pk }}",
+            (
+                "{% if document_type not in " + literal(tax["layout_undated_types"]) + " %}{{ created_year }}/{% endif %}"
+                if tax["layout_undated_types"]
+                else "{{ created_year }}/"
+            ),
+            "{{ created }}" + sender + " - {{ title }} - {{ doc_pk }}",
         ]
     )
+    if not tax["layout_reference_types"]:
+        return dated
+    reference = (
+        tax["layout_reference_folder"]
+        + '/{{ document_type }}/{% if correspondent != "none" %}{{ correspondent }} - {% endif %}'
+        + "{{ title }} - {{ doc_pk }}"
+    )
+    return (
+        "{%- if document_type in " + literal(tax["layout_reference_types"]) + " -%}"
+        + reference
+        + "{%- else -%}"
+        + dated
+        + "{%- endif -%}"
+    )
+
+
+def layout_folder(tax: dict, type_name: str, tags: set[str]) -> str:
+    """The folder filename_template puts a document in, for the layout preview."""
+    if type_name in tax["layout_reference_types"]:
+        return f"{tax['layout_reference_folder']}/{type_name}/"
+    folder = next((t["name"] for t in tax["tags"] if t["name"] in tags), tax["layout_fallback"])
+    path = f"{folder}/{type_name}/" if type_name else f"{folder}/"
+    return path if type_name in tax["layout_undated_types"] else path + "<year>/"
 
 
 def helm_escaped(template: str) -> str:
@@ -761,16 +806,14 @@ def cmd_layout(args: argparse.Namespace) -> None:
     print(f"                {helm_escaped(template)}")
     path = args.out / "suggestions.csv"
     if path.exists():
-        domain_order = [t["name"] for t in tax["tags"]]
         counts: Counter = Counter()
         with path.open(encoding="utf-8-sig", newline="") as fh:
             for row in csv.DictReader(fh, delimiter=CSV_DELIMITER):
                 tags = {t.strip() for t in row["tags"].split(",")}
-                folder = next((d for d in domain_order if d in tags), tax["layout_fallback"])
-                counts[(folder, row["type"] or "-")] += 1
+                counts[layout_folder(tax, row["type"].strip(), tags)] += 1
         print(f"\nFolders the {sum(counts.values())} suggested documents would land in:\n")
-        for (folder, kind), n in sorted(counts.items()):
-            print(f"  {folder}/{kind}/  {n}")
+        for folder, n in sorted(counts.items()):
+            print(f"  {folder}  {n}")
 
 
 # paperless's plain text custom field holds 128 characters; a summary that fits

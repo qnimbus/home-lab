@@ -99,6 +99,9 @@ summary_field: Samenvatting # optional: a one-line summary per document
 ocr_field: OCR-kwaliteit # optional: goed, matig or slecht
 clear_storage_paths: true # apply removes each document's storage path (see Archive layout)
 layout_fallback: Overig # the folder for a document without a domain tag
+layout_undated_types: [Identificatie, Akte] # no year folder (see Archive layout)
+layout_reference_types: [Handleiding] # filed under layout_reference_folder, without a date
+layout_reference_folder: Naslag
 correspondents:
   - { name: Voorbeeld Energie, aliases: [Voorbeeld Energie B.V.] }
 ignore: # names propose never suggests again
@@ -136,6 +139,9 @@ Wonen/Factuur/2026/2026-11-03 Energiebedrijf - Jaarafrekening stroom en gas - 12
 
 - **The folder is the document's domain tag.** With several, the first one in `taxonomy.yaml`'s `tags` order wins, so list specific domains (Wonen, Auto) above general ones (Financiën). No domain tag: `layout_fallback`.
 - **No type or sender:** that part drops out (`Overig/2026/2026-11-10 - Notitie - 1235.pdf`).
+- **`layout_undated_types` skip the year folder** (`Persoonlijk/Identificatie/2024-01-10 Gemeente - Paspoort - 301.pdf`): a passport or deed is looked up by what it is, not by when it came in. The date still leads the file name, so they sort in time order.
+- **`layout_reference_types` go under `layout_reference_folder`** (default `Naslag`), outside the domains and without a date: `<folder>/<type>/<sender> - <title> - <id>.pdf`, as in `Naslag/Handleiding/Fabrikant - Vaatwasser - 77.pdf`. For a manual or recipe the brand and product matter, not when it was scanned.
+- **A type can be in only one of the two lists**, and must be in `document_types`. The format holds these type names as fixed text, like the domain tags: after renaming such a type, run `layout` again.
 - **The sender is in the file name, not a folder:** most senders have a handful of documents, and a rename or merge would move all of them.
 - **The document ID ends the name:** it keeps two documents with the same date, sender and title apart, and leads from a file (in a backup, say) to the document in paperless, whose URL holds the same number.
 - **A storage path overrides the format.** `clear_storage_paths: true` makes `apply` remove them; delete the unused storage paths in paperless afterwards.
