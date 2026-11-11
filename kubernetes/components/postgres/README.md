@@ -12,7 +12,7 @@ grep -rl components/postgres kubernetes/apps --include=ks.yaml
 | ----------------- | ------------------------------ | --------------------------------------------------------------------------------- |
 | `Cluster`         | `${APP}-postgres`              | The database, on node-local `openebs-hostpath` storage                            |
 | `ObjectStore`     | `${APP}-postgres-backup`       | Barman Cloud S3 target for base backups and WAL archiving                         |
-| `ScheduledBackup` | `${APP}-daily`                 | Base backup on `POSTGRES_BACKUP_SCHEDULE`                                         |
+| `ScheduledBackup` | `${APP}-postgres`              | Base backup on `POSTGRES_BACKUP_SCHEDULE`                                         |
 | `ExternalSecret`  | `${APP}-postgres`              | S3 credentials from the `cloudnative-pg` 1Password item                           |
 | `HelmRelease`     | `${APP}-postgres-backup-local` | CronJob that `pg_dump`s the database to the NAS ([backup-local](./backup-local/)) |
 | `PrometheusRule`  | `${APP}-postgres-backup-local` | `PostgresDumpMissed`: no successful dump in 25 hours                              |

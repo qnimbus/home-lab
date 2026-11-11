@@ -3,7 +3,7 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
-  name: ${APP}-daily
+  name: ${APP}-postgres
 spec:
   backupOwnerReference: self
   cluster:
