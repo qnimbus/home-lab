@@ -1148,7 +1148,14 @@ def cmd_apply(pl: Paperless, args: argparse.Namespace) -> None:
         rows = [r for r in rows if int(r["id"]) not in applied]
         if skipped:
             log(f"skipping {len(skipped)} marked rows an earlier run already applied (--reapply writes them)")
-    log(f"{len(rows)} rows marked to apply{' (dry run: add --yes to write)' if dry_run else ''}")
+    marked = len(rows)
+    if args.limit:
+        # CSV order; the next run picks up where this one stopped, as written rows are skipped.
+        rows = rows[: args.limit]
+    log(
+        f"{len(rows)} of {marked} rows marked to apply"
+        f"{' (dry run: add --yes to write)' if dry_run else ''}"
+    )
     tag_names = by_id(inv["tags"])
     for n, row in enumerate(rows, 1):
         doc = pl.get(f"documents/{row['id']}/")
@@ -1288,6 +1295,7 @@ def main() -> None:
     )  # fmt: skip
     ap = sub.add_parser("apply", help="write the rows marked in suggestions.csv to paperless")
     ap.add_argument("--yes", action="store_true", help="really write; without it this is a dry run")
+    ap.add_argument("--limit", type=int, default=0, help="write at most this many marked rows")
     ap.add_argument(
         "--reapply", action="store_true",
         help="also write rows for documents an earlier run already changed",
