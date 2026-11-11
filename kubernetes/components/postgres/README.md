@@ -62,6 +62,7 @@ The app reads its connection from the CNPG-generated `${APP}-postgres-app` Secre
 | `POSTGRES_ENABLE_PDB`        | no       | `false`        | CNPG PodDisruptionBudgets; `"true"` only with `POSTGRES_INSTANCES` ≥ 2         |
 | `POSTGRES_STORAGE`           | no       | `5Gi`          | Per-instance PVC size                                                          |
 | `POSTGRES_BACKUP_SCHEDULE`   | no       | `0 40 4 * * *` | Base-backup cron. **Six fields, seconds first**: `0 40 4 * * *` is 04:40 daily |
+| `POSTGRES_BACKUP_RETENTION`  | no       | `14d`          | Barman recovery window on S3; see [Backups](#backups)                          |
 | `POSTGRES_DUMP_SCHEDULE`     | no       | `0 2 * * *`    | NAS dump cron: a normal five-field Kubernetes CronJob, in UTC                  |
 | `POSTGRES_DUMP_MEMORY_LIMIT` | no       | `512Mi`        | NAS dump container's memory limit; see [NAS dumps](#nas-dumps)                 |
 
@@ -118,7 +119,9 @@ Every name, including the S3 path, derives from `${APP}`, so a rename creates a 
 
 ## Backups
 
-Base backups on the schedule above, plus continuous WAL archiving, go to one shared Backblaze B2 bucket (`vwn-io-cluster-cnpg`), each app under its own `dedicated/${APP}/` prefix. They're bzip2-compressed, AES256-encrypted and kept for 14 days.
+Base backups on the schedule above, plus continuous WAL archiving, go to one shared Backblaze B2 bucket (`vwn-io-cluster-cnpg`), each app under its own `dedicated/${APP}/` prefix. They're bzip2-compressed, AES256-encrypted and kept for `POSTGRES_BACKUP_RETENTION` (14 days by default).
+
+**Every base backup is a full copy of the database**, so the bucket holds roughly one copy per scheduled run inside the window, plus the WAL. For a large database, back up less often rather than shortening the window alone: WAL still allows a restore to any point in the window, and the retention keeps the last base backup before it, so a weekly schedule with `7d` keeps two copies. `mail-archiver`, whose attachments make it the largest, does that.
 
 - **Keep the `AWS_*_CHECKSUM_*: when_required` env on the `ObjectStore` sidecar.** Newer botocore sends chunked-trailer checksums without `Content-Length`, which B2 rejects with `MissingContentLength`.
 - The superuser needs no 1Password wiring: `enableSuperuserAccess` without a `superuserSecret` makes CNPG generate one per cluster, and the NAS dump logs in with it.

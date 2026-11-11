@@ -14,7 +14,8 @@ spec:
   postBuild:
     substitute:
       APP: *app
-      POSTGRES_BACKUP_SCHEDULE: "0 18 2 * * *"
+      POSTGRES_BACKUP_RETENTION: 7d
+      POSTGRES_BACKUP_SCHEDULE: "0 18 2 * * 0"
       POSTGRES_DUMP_MEMORY_LIMIT: 1Gi
       POSTGRES_STORAGE: 50Gi
   prune: true
