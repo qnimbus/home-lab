@@ -87,7 +87,7 @@ About 6–7 seconds per document on the NAS, so a pass over every document takes
 
 - **Every text value is one line**, in the CSV and in paperless: `suggest` and `apply` both turn newlines into spaces, drop control characters, and strip a leading `=`, `+`, `-` or `@`, which a spreadsheet would run as a formula.
 - **title, type and correspondent** are set to the CSV's values. A missing type, tag, correspondent or custom field is created, with paperless's Auto matching so it learns from the documents it is assigned to.
-- **tags**: only the tags in `keep_tags` (`Inbox`, people) and `label_tags` stay; every other tag, nonsense ones included, is replaced by the CSV's domain and label tags. `remove_tags` always go, even when also in `keep_tags`. With `keep_tags` empty, apply only replaces domain tags and removes `remove_tags`, and every other tag stays. Both runs print each document's tag changes (`tags -[removed] +[added]`): read the dry run before `--yes`.
+- **tags**: only the tags in `keep_tags` (`Inbox`, people) and `label_tags` stay, next to the script's own `review_tag` and `Redo OCR`; every other tag, nonsense ones included, is replaced by the CSV's domain and label tags. `remove_tags` always go, even when also in `keep_tags`. With `keep_tags` empty, apply only replaces domain tags and removes `remove_tags`, and every other tag stays. Both runs print each document's tag changes (`tags -[removed] +[added]`): read the dry run before `--yes`.
 - **custom fields** from the CSV are set; the document's other fields stay.
 - **storage path**: removed when `clear_storage_paths: true`, so the archive layout below applies to the document.
 - paperless renames the file to match `PAPERLESS_FILENAME_FORMAT`, which uses the title and correspondent.

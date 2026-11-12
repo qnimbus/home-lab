@@ -1278,6 +1278,8 @@ def tag_kept(name: str, tax: dict) -> bool:
         return True
     if tax["review_tag"] and name == tax["review_tag"].casefold():
         return True  # you remove it in paperless once you've checked the document
+    if name == DEFAULT_WORK_TAG.casefold():
+        return True  # `tag`'s selection for reprocessing; `tag --remove` deletes it
     if tax["keep_tags"]:
         return name in {t.casefold() for t in tax["keep_tags"]}
     return name not in {t["name"].casefold() for t in tax["tags"]}
