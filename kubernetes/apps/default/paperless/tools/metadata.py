@@ -1106,13 +1106,26 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     if dropped := compact_suggestions(path):
         log(f"replaced {dropped} rows in {path} by their newer ones")
     done = {int(r["id"]) for r in read_suggestions(path)}
-    if args.redo_unmarked:
-        unmarked = [r["id"] for r in read_suggestions(path) if not r["apply"].strip()]
-        if not unmarked:
-            sys.exit(f"no rows with an empty apply cell in {path}")
-        args.ids = ",".join(unmarked)
-        log(f"suggesting again for the {len(unmarked)} rows with an empty apply cell")
-    redo = args.redo or args.redo_unmarked
+    redo = args.redo
+    if selected := redo_selection(args, read_suggestions(path)):
+        if args.ids or args.query:
+            sys.exit("--redo-unmarked, --redo-type and --redo-tag pick the rows themselves: leave out --ids and --query")
+        marks = Counter(r["apply"].strip() or "empty" for r in selected)
+        applied = Journal(args.out, dry_run=True).applied_documents() & {int(r["id"]) for r in selected}
+        log(
+            f"suggesting again for {len(selected)} rows ("
+            + ", ".join(f"{n} {mark}" for mark, n in sorted(marks.items()))
+            + ")"
+            + (
+                f"; {len(applied)} of their documents were applied already, so apply skips them unless --reapply"
+                if applied
+                else ""
+            )
+        )
+        args.ids = ",".join(r["id"] for r in selected)
+        redo = True
+    elif args.redo_unmarked or args.redo_type or args.redo_tag:
+        sys.exit(f"no rows in {path} match")
     new_file = not path.exists()
     count = 0
     try:
@@ -1137,6 +1150,26 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         if redo and (dropped := compact_suggestions(path)):
             log(f"replaced {dropped} rows by their new ones; the file before is {path.name}.bak")
     log(f"suggested {count} documents, {len(read_suggestions(path))} in {path}")
+
+
+def redo_selection(args: argparse.Namespace, rows: list[dict]) -> list[dict]:
+    """The CSV rows --redo-unmarked, --redo-type and --redo-tag pick, in CSV order.
+
+    Types and tags are matched on the suggestion (the type and tags columns),
+    case-insensitively, so a name taxonomy.yaml no longer has still matches.
+    """
+
+    def names(values: list[str] | None) -> set[str]:
+        return {n.strip().casefold() for v in values or [] for n in v.split(",") if n.strip()}
+
+    types, tags = names(args.redo_type), names(args.redo_tag)
+    return [
+        r
+        for r in rows
+        if (args.redo_unmarked and not r["apply"].strip())
+        or r["type"].strip().casefold() in types
+        or tags & {t.strip().casefold() for t in r["tags"].split(",")}
+    ]
 
 
 def suggestion_row(
@@ -1421,6 +1454,14 @@ def main() -> None:
             sp.add_argument(
                 "--redo-unmarked", action="store_true",
                 help="suggest again for every row whose apply cell is empty",
+            )  # fmt: skip
+            sp.add_argument(
+                "--redo-type", action="append", metavar="NAME",
+                help="suggest again for the rows with this suggested type (repeatable, or comma-separated)",
+            )  # fmt: skip
+            sp.add_argument(
+                "--redo-tag", action="append", metavar="NAME",
+                help="suggest again for the rows with this suggested tag or label (repeatable, or comma-separated)",
             )  # fmt: skip
             sp.add_argument(
                 "--ignore-current", action="store_true",

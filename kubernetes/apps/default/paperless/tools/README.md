@@ -42,7 +42,20 @@ Spot-check the `x` rows and change any mark you disagree with; `suggest --no-mar
 
 **Empty rows: fix the OCR first.** `tag --bad-ocr --yes` tags every document `summarize` or `suggest` rated `slecht` (see the OCR paragraph below). Once paperless has reprocessed them, `suggest --redo-unmarked` suggests again for every row whose `apply` cell is empty, now from the new text.
 
-`summarize` and `suggest` take `--limit N`, `--query '<paperless search>'` and `--ids 1,2,3`, and resume where they stopped: run them again to continue. `summarize --redo` describes documents again; the newest summary of a document wins. `suggest --redo` (with `--ids` or `--query`) and `suggest --redo-unmarked` suggest again for documents already in the CSV: the new row takes the place of the old one, and the file before goes to `suggestions.csv.bak`. A cell you edited in a redone row is lost, so mark what you want to keep first. Close the CSV in your spreadsheet before running `suggest`.
+`summarize` and `suggest` take `--limit N`, `--query '<paperless search>'` and `--ids 1,2,3`, and resume where they stopped: run them again to continue. `summarize --redo` describes documents again; the newest summary of a document wins.
+
+**Suggesting again** for documents already in the CSV, after a change to `taxonomy.yaml` or the OCR:
+
+| Option                         | Rows                                                                                    |
+| ------------------------------ | --------------------------------------------------------------------------------------- |
+| `--redo --ids …` / `--query …` | the documents you name                                                                  |
+| `--redo-unmarked`              | every row whose `apply` cell is empty                                                   |
+| `--redo-type Factuur,Brief`    | every row whose suggested `type` is one of these, whatever its mark                     |
+| `--redo-tag Aankopen`          | every row whose suggested `tags` (labels included) hold one of these, whatever its mark |
+
+The last three combine (a row matching any of them is redone), take `--limit`, and can't be combined with `--ids` or `--query`. Names match case-insensitively on what the row suggests, so a type or tag you've since renamed or removed from `taxonomy.yaml` still finds its rows. Before it starts, `suggest` says how many rows it picked, per mark, and how many of their documents an earlier `apply` already wrote: apply skips those unless `--reapply`.
+
+The new row takes the place of the old one, with a fresh mark, and the file before goes to `suggestions.csv.bak`. A cell you edited in a redone row is lost. Close the CSV in your spreadsheet before running `suggest`.
 
 Both go newest first. For the taxonomy sample, use `summarize --random --limit 1000`: newest first would leave out the kinds of documents and senders that only older documents have. Each `--random` run skips documents that already have a summary, so running it again adds another random batch.
 
