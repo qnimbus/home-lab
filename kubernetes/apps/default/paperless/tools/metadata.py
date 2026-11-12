@@ -21,6 +21,7 @@ import json
 import os
 import random
 import re
+import shutil
 import sys
 import time
 import unicodedata
@@ -43,6 +44,8 @@ MATCH_AUTO = 6
 DEFAULT_WORK_TAG = "Redo OCR"
 CSV_DELIMITER = ";"  # what Excel and LibreOffice expect in a Dutch locale
 APPLY_YES = {"x", "j", "ja", "y", "yes", "1"}
+# Write the row and put review_tag on the document, to check it in paperless.
+REVIEW_MARK = "?"
 CUSTOM_FIELD_TYPES = {"string", "date", "monetary", "integer"}
 LEGAL_SUFFIXES = r"\b(b\.?v\.?|n\.?v\.?|v\.?o\.?f\.?|gmbh|ltd|inc|s\.?a\.?|ag|plc)\b"
 
@@ -212,8 +215,16 @@ def iter_documents(
     params: dict[str, Any] = {"ordering": "-added"}
     if args.query:
         params["query"] = args.query
-    if args.ids:
-        params["id__in"] = args.ids
+    ids = [i.strip() for i in (args.ids or "").split(",") if i.strip()]
+    if ids and not getattr(args, "random", False):
+        # In batches: hundreds of IDs make a URL too long.
+        for start in range(0, len(ids), 50):
+            yield from pl.all(
+                "documents/", fields=DOC_FIELDS, **params, id__in=",".join(ids[start : start + 50])
+            )
+        return
+    if ids:
+        params["id__in"] = ",".join(ids)
     if not getattr(args, "random", False):
         yield from pl.all("documents/", fields=DOC_FIELDS, **params)
         return
@@ -237,6 +248,43 @@ def current_names(doc: dict, inv: dict) -> dict:
         "correspondent": by_id(inv["correspondents"]).get(doc.get("correspondent"), ""),
         "tags": [tags[t] for t in doc.get("tags", []) if t in tags],
     }
+
+
+def read_suggestions(path: Path) -> list[dict]:
+    """suggestions.csv's rows, one per document: a redone document's newest row
+    wins, in the place of its first."""
+    if not path.exists():
+        return []
+    with path.open(encoding="utf-8-sig", newline="") as fh:
+        latest: dict[str, dict] = {}
+        for row in csv.DictReader(fh, delimiter=CSV_DELIMITER):
+            latest[row["id"]] = row  # a dict keeps a key's first position
+    return list(latest.values())
+
+
+def compact_suggestions(path: Path) -> int:
+    """Rewrite suggestions.csv with one row per document; returns rows dropped.
+
+    `suggest --redo` appends, so a crash loses nothing; this then puts each new
+    row in the place of the old one. The file before goes to suggestions.csv.bak.
+    """
+    if not path.exists():
+        return 0
+    with path.open(encoding="utf-8-sig", newline="") as fh:
+        reader = csv.DictReader(fh, delimiter=CSV_DELIMITER)
+        total = sum(1 for _ in reader)
+        columns = reader.fieldnames or CSV_COLUMNS
+    rows = read_suggestions(path)
+    if len(rows) == total:
+        return 0
+    shutil.copy2(path, path.with_name(path.name + ".bak"))
+    tmp = path.with_name(path.name + ".tmp")
+    with tmp.open("w", encoding="utf-8-sig", newline="") as fh:
+        writer = csv.DictWriter(fh, columns, delimiter=CSV_DELIMITER, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+    os.replace(tmp, path)
+    return total - len(rows)
 
 
 def private_dir(path: Path) -> Path:
@@ -354,7 +402,13 @@ def cmd_tag(pl: Paperless, args: argparse.Namespace) -> None:
             pl.delete(f"tags/{tag['id']}/")
     else:
         if args.bad_ocr:
-            ids = bad_ocr_ids(latest_per_id(read_jsonl(args.out / "summaries.jsonl")))
+            # Both rate the OCR; suggest's rating is the newer one for a redone document.
+            from_summaries = set(bad_ocr_ids(latest_per_id(read_jsonl(args.out / "summaries.jsonl"))))
+            from_suggestions = {
+                int(r["id"]) for r in read_suggestions(args.out / "suggestions.csv") if r.get("ocr") == "slecht"
+            }
+            ids = sorted(from_summaries | from_suggestions)
+            log(f"OCR rated slecht: {len(from_summaries)} in summaries, {len(from_suggestions)} in suggestions")
         else:
             ids = [int(i) for i in (args.ids or "").split(",") if i.strip()]
         if not ids:
@@ -533,6 +587,7 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         *(t["name"].casefold() for t in base.get("label_tags") or []),
         *(n.casefold() for n in base.get("keep_tags") or []),
         *(n.casefold() for n in base.get("remove_tags") or []),
+        *([base["review_tag"].casefold()] if base.get("review_tag") else []),
         *ignored_tags,
     }
     unplaced = sorted(n for n in existing_tags if n.casefold() not in placed)
@@ -591,6 +646,7 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     # person tags as domains; none of those is a subject.
     not_domains = {
         "domein", "persoon", "veld", "verwijderen", "workflow", *ignored_tags,
+        *([base["review_tag"].casefold()] if base.get("review_tag") else []),
         *(t["name"].casefold() for t in base.get("label_tags") or []),
         *(n.casefold() for n in type_names),
         *(n.casefold() for n, a in advice.items() if a in ("persoon", "verwijderen", "workflow")),
@@ -665,7 +721,8 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         "",
         f"1. `tag --bad-ocr --yes` tags them `{DEFAULT_WORK_TAG}`.",
         f"2. In paperless, filter on the tag `{DEFAULT_WORK_TAG}`, select all, and bulk edit → Reprocess.",
-        "3. Once paperless has finished: `summarize --redo --ids <ids below>`.",
+        "3. Once paperless has finished: `summarize --redo --ids <ids below>`, and "
+        "`suggest --redo-unmarked` for their suggestions.",
         "4. `tag --remove --yes` deletes the tag again.",
         "",
         ", ".join(map(str, bad_ocr)) or "-",
@@ -714,6 +771,16 @@ def load_taxonomy(args: argparse.Namespace) -> dict:
     tax.setdefault("clear_storage_paths", False)
     tax.setdefault("layout_fallback", "Overig")
     tax.setdefault("layout_reference_folder", "Naslag")
+    tax["review_tag"] = tax.get("review_tag") or None
+    if tax["review_tag"]:
+        review = tax["review_tag"].casefold()
+        clashes = [
+            key
+            for key in ("tags", "label_tags", "remove_tags")
+            if review in {(t["name"] if isinstance(t, dict) else t).casefold() for t in tax[key]}
+        ]
+        if clashes:
+            sys.exit(f"review_tag {tax['review_tag']!r} is also in {', '.join(clashes)}")
     types = {t["name"] for t in tax["document_types"]}
     for key in ("layout_undated_types", "layout_reference_types"):
         tax[key] = tax.get(key) or []
@@ -807,10 +874,9 @@ def cmd_layout(args: argparse.Namespace) -> None:
     path = args.out / "suggestions.csv"
     if path.exists():
         counts: Counter = Counter()
-        with path.open(encoding="utf-8-sig", newline="") as fh:
-            for row in csv.DictReader(fh, delimiter=CSV_DELIMITER):
-                tags = {t.strip() for t in row["tags"].split(",")}
-                counts[layout_folder(tax, row["type"].strip(), tags)] += 1
+        for row in read_suggestions(path):
+            tags = {t.strip() for t in row["tags"].split(",")}
+            counts[layout_folder(tax, row["type"].strip(), tags)] += 1
         print(f"\nFolders the {sum(counts.values())} suggested documents would land in:\n")
         for folder, n in sorted(counts.items()):
             print(f"  {folder}  {n}")
@@ -1018,68 +1084,93 @@ CSV_COLUMNS = [
 ]  # fmt: skip
 
 
-def premarked(confidence: str, status: str) -> bool:
-    """Rows the model is sure of and whose correspondent needs no check start with an x."""
-    return confidence == "hoog" and not status.startswith(("nieuw:", "controleren"))
+def premark(confidence: str, status: str, ocr: str, review: bool) -> str:
+    """The apply cell a new row starts with.
+
+    x: the model is sure and the correspondent needs no check. ?: write it and
+    check it in paperless (only with a review_tag). Empty: unreadable OCR, where
+    the suggestion is a guess; reprocess the OCR first and suggest again.
+    """
+    if confidence == "hoog" and not status.startswith(("nieuw:", "controleren")):
+        return "x"
+    if ocr == "slecht" or not review:
+        return ""
+    return REVIEW_MARK
 
 
 def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     tax = load_taxonomy(args)
     inv = load_inventory(pl)
-    lookup = correspondent_lookup(tax, inv)
-    existing_correspondents = {c["name"] for c in inv["correspondents"]}
-    known = known_correspondents(tax, inv)
-    schema = suggestion_schema(tax, known)
     path = args.out / "suggestions.csv"
-    done: set[int] = set()
-    if path.exists():
-        with path.open(encoding="utf-8-sig", newline="") as fh:
-            done = {int(r["id"]) for r in csv.DictReader(fh, delimiter=CSV_DELIMITER)}
+    # An interrupted redo leaves a document's old and new rows: tidy up first.
+    if dropped := compact_suggestions(path):
+        log(f"replaced {dropped} rows in {path} by their newer ones")
+    done = {int(r["id"]) for r in read_suggestions(path)}
+    if args.redo_unmarked:
+        unmarked = [r["id"] for r in read_suggestions(path) if not r["apply"].strip()]
+        if not unmarked:
+            sys.exit(f"no rows with an empty apply cell in {path}")
+        args.ids = ",".join(unmarked)
+        log(f"suggesting again for the {len(unmarked)} rows with an empty apply cell")
+    redo = args.redo or args.redo_unmarked
     new_file = not path.exists()
     count = 0
-    with path.open("a", encoding="utf-8-sig" if new_file else "utf-8", newline="") as fh:
-        writer = csv.DictWriter(fh, CSV_COLUMNS, delimiter=CSV_DELIMITER)
-        if new_file:
-            writer.writeheader()
-        for doc in iter_documents(pl, args):
-            if doc["id"] in done:
-                continue
-            if args.limit and count >= args.limit:
-                break
-            current = current_names(doc, inv)
-            start = time.monotonic()
-            s = llm.json(
-                suggestion_prompt(
-                    tax, known, doc, args.chars, None if args.ignore_current else current
-                ),
-                schema,
-                max_tokens=600,
-            )
-            canonical, status = resolve_correspondent(s, lookup, existing_correspondents)
-            row = {
-                    "apply": "x" if args.mark and premarked(s["confidence"], status) else "",
-                    "id": doc["id"],
-                    "url": f"{pl.url}/documents/{doc['id']}/details",
-                    "confidence": s["confidence"],
-                    "current_title": current["title"],
-                    "title": s["title"].strip(),
-                    "current_type": current["document_type"],
-                    "type": s["document_type"],
-                    "current_correspondent": current["correspondent"],
-                    "correspondent": canonical,
-                    "correspondent_status": status,
-                    "current_tags": ", ".join(current["tags"]),
-                    "tags": ", ".join([*s["tags"], *s.get("labels", [])]),
-                    "summary": (s.get("samenvatting") or "").strip(),
-                    "ocr": s.get("ocr_kwaliteit") or "",
-                    "custom_fields": json.dumps(s.get("custom_fields") or {}, ensure_ascii=False),
-                }
-            # custom_fields is JSON, whose strings can't hold a raw newline.
-            writer.writerow({k: v if k == "custom_fields" else clean(str(v)) for k, v in row.items()})
-            fh.flush()
-            count += 1
-            log(f"[{count}] document {doc['id']} in {time.monotonic() - start:.0f}s")
-    log(f"suggested {count} documents, {len(done) + count} in {path}")
+    try:
+        with path.open("a", encoding="utf-8-sig" if new_file else "utf-8", newline="") as fh:
+            writer = csv.DictWriter(fh, CSV_COLUMNS, delimiter=CSV_DELIMITER)
+            if new_file:
+                writer.writeheader()
+            for doc in iter_documents(pl, args):
+                if doc["id"] in done and not redo:
+                    continue
+                if args.limit and count >= args.limit:
+                    break
+                start = time.monotonic()
+                row = suggestion_row(pl, llm, args, tax, inv, doc)
+                # custom_fields is JSON, whose strings can't hold a raw newline.
+                writer.writerow({k: v if k == "custom_fields" else clean(str(v)) for k, v in row.items()})
+                fh.flush()  # appended row by row, so an interrupted run loses nothing
+                count += 1
+                log(f"[{count}] document {doc['id']} in {time.monotonic() - start:.0f}s")
+    finally:
+        # A redone document's new row takes the place of its old one.
+        if redo and (dropped := compact_suggestions(path)):
+            log(f"replaced {dropped} rows by their new ones; the file before is {path.name}.bak")
+    log(f"suggested {count} documents, {len(read_suggestions(path))} in {path}")
+
+
+def suggestion_row(
+    pl: Paperless, llm: LLM, args: argparse.Namespace, tax: dict, inv: dict, doc: dict
+) -> dict:
+    known = known_correspondents(tax, inv)
+    current = current_names(doc, inv)
+    s = llm.json(
+        suggestion_prompt(tax, known, doc, args.chars, None if args.ignore_current else current),
+        suggestion_schema(tax, known),
+        max_tokens=600,
+    )
+    canonical, status = resolve_correspondent(
+        s, correspondent_lookup(tax, inv), {c["name"] for c in inv["correspondents"]}
+    )
+    ocr = s.get("ocr_kwaliteit") or ""
+    return {
+        "apply": premark(s["confidence"], status, ocr, bool(tax["review_tag"])) if args.mark else "",
+        "id": doc["id"],
+        "url": f"{pl.url}/documents/{doc['id']}/details",
+        "confidence": s["confidence"],
+        "current_title": current["title"],
+        "title": s["title"].strip(),
+        "current_type": current["document_type"],
+        "type": s["document_type"],
+        "current_correspondent": current["correspondent"],
+        "correspondent": canonical,
+        "correspondent_status": status,
+        "current_tags": ", ".join(current["tags"]),
+        "tags": ", ".join([*s["tags"], *s.get("labels", [])]),
+        "summary": (s.get("samenvatting") or "").strip(),
+        "ocr": ocr,
+        "custom_fields": json.dumps(s.get("custom_fields") or {}, ensure_ascii=False),
+    }
 
 
 UNDO_FIELDS = ("title", "document_type", "correspondent", "tags", "custom_fields", "storage_path")
@@ -1152,6 +1243,8 @@ def tag_kept(name: str, tax: dict) -> bool:
         return False
     if name in {t["name"].casefold() for t in tax["label_tags"]}:
         return True
+    if tax["review_tag"] and name == tax["review_tag"].casefold():
+        return True  # you remove it in paperless once you've checked the document
     if tax["keep_tags"]:
         return name in {t.casefold() for t in tax["keep_tags"]}
     return name not in {t["name"].casefold() for t in tax["tags"]}
@@ -1176,13 +1269,15 @@ def cmd_apply(pl: Paperless, args: argparse.Namespace) -> None:
         if f["name"] in field_types and f.get("data_type")
     }
     options_cache: dict[int, dict[str, str]] = {}
-    with (args.out / "suggestions.csv").open(encoding="utf-8-sig", newline="") as fh:
-        # Cleaned again: a cell edited in a spreadsheet can hold a newline too.
-        rows = [
-            {k: v if k == "custom_fields" else clean(v) for k, v in r.items()}
-            for r in csv.DictReader(fh, delimiter=CSV_DELIMITER)
-            if r["apply"].strip().lower() in APPLY_YES
-        ]
+    # Cleaned again: a cell edited in a spreadsheet can hold a newline too.
+    rows = [
+        {k: v if k == "custom_fields" else clean(v or "") for k, v in r.items() if k is not None}
+        for r in read_suggestions(args.out / "suggestions.csv")
+        if r["apply"].strip().lower() in APPLY_YES or r["apply"].strip() == REVIEW_MARK
+    ]
+    review_rows = sum(1 for r in rows if r["apply"].strip() == REVIEW_MARK)
+    if review_rows and not tax["review_tag"]:
+        sys.exit(f"{review_rows} rows are marked {REVIEW_MARK!r}: set review_tag in taxonomy.yaml first")
     # suggest appends every batch to one CSV, so earlier batches' marked rows are
     # still there. Writing them again would overwrite fixes made in paperless since.
     if not args.reapply:
@@ -1197,7 +1292,8 @@ def cmd_apply(pl: Paperless, args: argparse.Namespace) -> None:
         rows = rows[: args.limit]
     log(
         f"{len(rows)} of {marked} rows marked to apply"
-        f"{' (dry run: add --yes to write)' if dry_run else ''}"
+        + (f", {sum(1 for r in rows if r['apply'].strip() == REVIEW_MARK)} of them with {tax['review_tag']!r}" if tax["review_tag"] else "")
+        + (" (dry run: add --yes to write)" if dry_run else "")
     )
     tag_names = by_id(inv["tags"])
     for n, row in enumerate(rows, 1):
@@ -1205,6 +1301,12 @@ def cmd_apply(pl: Paperless, args: argparse.Namespace) -> None:
         keep = [t for t in doc["tags"] if tag_kept(tag_names.get(t, ""), tax)]
         suggested = [t.strip() for t in row["tags"].split(",") if t.strip()]
         new_tags = [ensure(pl, inv, "tags", t, journal) for t in suggested]
+        if row["apply"].strip() == REVIEW_MARK:
+            suggested.append(tax["review_tag"])
+            # No matching: paperless must never put the review tag on new documents.
+            new_tags.append(
+                ensure(pl, inv, "tags", tax["review_tag"], journal, {"name": tax["review_tag"], "matching_algorithm": MATCH_NONE})
+            )
         body: dict[str, Any] = {
             "title": row["title"].strip(),
             # A storage path overrides PAPERLESS_FILENAME_FORMAT, so the layout
@@ -1313,6 +1415,14 @@ def main() -> None:
         sp.add_argument("--chars", type=int, default=3000 if name == "summarize" else 6000)
         if name == "suggest":
             sp.add_argument(
+                "--redo", action="store_true",
+                help="suggest again for documents already in the CSV (with --ids or --query); the new row replaces the old",
+            )  # fmt: skip
+            sp.add_argument(
+                "--redo-unmarked", action="store_true",
+                help="suggest again for every row whose apply cell is empty",
+            )  # fmt: skip
+            sp.add_argument(
                 "--ignore-current", action="store_true",
                 help="don't show the model the document's current title, type, sender and tags",
             )  # fmt: skip
@@ -1353,7 +1463,9 @@ def main() -> None:
     tp = sub.add_parser("tag", help="put a temporary tag on documents, to select them in paperless")
     tp.add_argument("--name", default=DEFAULT_WORK_TAG, help=f"the tag (default: {DEFAULT_WORK_TAG})")
     which = tp.add_mutually_exclusive_group(required=True)
-    which.add_argument("--bad-ocr", action="store_true", help="the documents summarize rated slecht")
+    which.add_argument(
+        "--bad-ocr", action="store_true", help="the documents summarize or suggest rated slecht"
+    )
     which.add_argument("--ids", help="comma-separated document IDs")
     which.add_argument("--remove", action="store_true", help="delete the tag, and so take it off every document")
     tp.add_argument("--yes", action="store_true", help="really write; without it this is a dry run")

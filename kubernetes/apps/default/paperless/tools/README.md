@@ -25,14 +25,24 @@ Run every step as `kubernetes/apps/default/paperless/tools/metadata.py <step>` (
 | `propose`   | Turns the summaries into a proposed taxonomy: at most 25 types, 15 domain tags, advice per existing tag, and correspondent name groups. | `taxonomy.proposed.yaml`, `proposal.md`     |
 | (you)       | Edit the proposal and save it as `taxonomy.yaml`. That file is the convention.                                                          |                                             |
 | `suggest`   | Per document: title, one type, correspondent, 1–4 domain tags and the custom fields, constrained to `taxonomy.yaml`.                    | `suggestions.csv`                           |
-| (you)       | Review the CSV in a spreadsheet and edit cells. Rows with `x` in `apply` get written; `suggest` pre-marks the confident ones.           |                                             |
+| (you)       | Review the CSV in a spreadsheet and edit cells. `x` in `apply` writes a row, `?` writes it and tags it for review; `suggest` pre-marks. |                                             |
 | `apply`     | Writes the marked rows. A dry run unless `--yes`.                                                                                       | `apply-journal.jsonl`, changes in paperless |
 | `undo`      | Restores what an apply run changed. A dry run unless `--yes`.                                                                           | changes in paperless                        |
 | `tag`       | Puts a temporary tag (`Redo OCR` unless `--name`) on `--bad-ocr` or `--ids` documents; `--remove` deletes it. A dry run unless `--yes`. | a tag in paperless                          |
 
-**Pre-marked rows.** `suggest` puts `x` in `apply` when the model's `confidence` is `hoog` and the correspondent needs no check (`correspondent_status` isn't `nieuw: controleren` or `controleren: …`). Review the empty rows, and spot-check the marked ones: clear the `x` on any you don't want. `suggest --no-mark` leaves every cell empty.
+**Pre-marked rows.** `suggest` fills the `apply` cell of each new row:
 
-`summarize` and `suggest` take `--limit N`, `--query '<paperless search>'` and `--ids 1,2,3`, and resume where they stopped: run them again to continue. `summarize --redo` describes documents again; the newest summary of a document wins.
+| Mark  | When                                                                                                                                | What `apply` does                                    |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `x`   | `confidence` is `hoog` and the correspondent needs no check (`correspondent_status` isn't `nieuw: controleren` or `controleren: …`) | writes the row                                       |
+| `?`   | anything else with readable OCR, when `taxonomy.yaml` has a `review_tag`                                                            | writes the row and puts `review_tag` on the document |
+| empty | OCR rated `slecht` (the suggestion is a guess), or no `review_tag`                                                                  | nothing                                              |
+
+Spot-check the `x` rows and change any mark you disagree with; `suggest --no-mark` leaves every cell empty. A `?` row is quicker to check in paperless than in the spreadsheet, with the scan next to the metadata: filter on the review tag (a saved view on the dashboard helps), fix what's wrong, and take the tag off. `apply` never removes it, and paperless never adds it by itself (no matching). Once nothing has it any more, delete it: `tag --name <review_tag> --remove --yes`.
+
+**Empty rows: fix the OCR first.** `tag --bad-ocr --yes` tags every document `summarize` or `suggest` rated `slecht` (see the OCR paragraph below). Once paperless has reprocessed them, `suggest --redo-unmarked` suggests again for every row whose `apply` cell is empty, now from the new text.
+
+`summarize` and `suggest` take `--limit N`, `--query '<paperless search>'` and `--ids 1,2,3`, and resume where they stopped: run them again to continue. `summarize --redo` describes documents again; the newest summary of a document wins. `suggest --redo` (with `--ids` or `--query`) and `suggest --redo-unmarked` suggest again for documents already in the CSV: the new row takes the place of the old one, and the file before goes to `suggestions.csv.bak`. A cell you edited in a redone row is lost, so mark what you want to keep first. Close the CSV in your spreadsheet before running `suggest`.
 
 Both go newest first. For the taxonomy sample, use `summarize --random --limit 1000`: newest first would leave out the kinds of documents and senders that only older documents have. Each `--random` run skips documents that already have a summary, so running it again adds another random batch.
 
@@ -54,7 +64,7 @@ The first 3000 (`summarize`) or 6000 (`suggest`) characters of paperless's OCR t
 
 The sender (`afzender`, `correspondent`) is the organisation that wrote or issued the document: the letterhead, or for a licence, card, diploma or certificate the issuing body. Never the holder, recipient or someone who only signs. When that isn't clear, it's left empty rather than guessed.
 
-`summarize` also rates the OCR (`goed`, `matig`, `slecht`): the model's impression of the extracted text, not a measurement. It never sees the scan, and a page of numbers or tables can look worse than it is. `proposal.md` lists the IDs rated `slecht`. Reprocessing them only helps with paperless's OCR mode set to `redo` (or `force`): in the default `auto`, a PDF that already has more than 50 characters of text, such as a printer's own OCR layer, is never OCR'd again. paperless's document list can't filter on a list of IDs (and full-text search treats `id:` as a word), so `tag --bad-ocr --yes` tags them `Redo OCR`, without matching, so paperless never adds it to new documents. Filter on that tag, bulk edit → Reprocess, run `summarize --redo --ids <ids>` once paperless has finished, then `tag --remove --yes`.
+`summarize` also rates the OCR (`goed`, `matig`, `slecht`): the model's impression of the extracted text, not a measurement. It never sees the scan, and a page of numbers or tables can look worse than it is. `proposal.md` lists the IDs rated `slecht`; `suggest` rates the OCR again in its `ocr` column. Reprocessing them only helps with paperless's OCR mode set to `redo` (or `force`): in the default `auto`, a PDF that already has more than 50 characters of text, such as a printer's own OCR layer, is never OCR'd again. paperless's document list can't filter on a list of IDs (and full-text search treats `id:` as a word), so `tag --bad-ocr --yes` tags them `Redo OCR`, without matching, so paperless never adds it to new documents. Filter on that tag, bulk edit → Reprocess, and once paperless has finished run `suggest --redo-unmarked` (and `summarize --redo --ids <ids>`, if you'll run `propose` again), then `tag --remove --yes`.
 
 ## Timing
 
@@ -93,6 +103,7 @@ label_tags: # optional: suggest adds them where they clearly apply; never an arc
     }
 keep_tags: [Inbox] # the only tags apply leaves on a document, next to the domain and label tags
 remove_tags: [Archived] # removed from every document that apply touches
+review_tag: Controleren # optional: apply puts it on rows marked ?, to check them in paperless
 custom_fields:
   - { name: Bedrag, type: monetary, description: Te betalen of ontvangen bedrag }
 summary_field: Samenvatting # optional: a one-line summary per document
