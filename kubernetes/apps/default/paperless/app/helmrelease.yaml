@@ -74,6 +74,7 @@ spec:
               PAPERLESS_REDIRECT_LOGIN_TO_SSO: "false"
               PAPERLESS_REDIS: "redis://${APP}-dragonfly:6379"
               PAPERLESS_TASK_WORKERS: "2"
+              PAPERLESS_THREADS_PER_WORKER: "4"
               PAPERLESS_TIKA_ENABLED: "1"
               PAPERLESS_TIKA_ENDPOINT: http://localhost:9998
               PAPERLESS_TIKA_GOTENBERG_ENDPOINT: http://localhost:3000
