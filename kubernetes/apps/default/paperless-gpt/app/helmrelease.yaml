@@ -33,14 +33,19 @@ spec:
               tag: v0.31.0@sha256:d668941a829552cc0eddbc7c22506b3480dfbf61bd0d6eae881ad9fcfe2de70c
             env:
               AUTO_TAG_COMPLETE: ""
+              IMAGE_MAX_RENDER_DPI: "300"
               LLM_LANGUAGE: Dutch
               LLM_MODEL: Qwen3.6-35B-A3B
               LLM_PROVIDER: openai
+              OCR_LIMIT_PAGES: "0"
               OPENAI_API_KEY: not-used
               OPENAI_BASE_URL: "https://llama.${DOMAIN_APP}/v1"
               PAPERLESS_BASE_URL: http://paperless:8000
               PAPERLESS_PUBLIC_URL: "https://paperless.${DOMAIN_CLUSTER}"
               PDF_OCR_TAGGING: "false"
+              VISION_LLM_MODEL: GLM-OCR
+              VISION_LLM_PROVIDER: openai
+              VISION_LLM_TEMPERATURE: "0"
             envFrom:
               - secretRef:
                   name: paperless-gpt-secret
@@ -83,6 +88,9 @@ spec:
             readOnly: true
           - path: /app/prompts/document_type_prompt.tmpl
             subPath: document_type_prompt.tmpl
+            readOnly: true
+          - path: /app/prompts/ocr_prompt.tmpl
+            subPath: ocr_prompt.tmpl
             readOnly: true
           - path: /app/prompts/tag_prompt.tmpl
             subPath: tag_prompt.tmpl

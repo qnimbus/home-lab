@@ -37,7 +37,7 @@ services:
       - --models-preset
       - /config/models.ini
       - --models-max
-      - "1"
+      - "2"
     container_name: llama-server
     devices:
       - /dev/dri:/dev/dri

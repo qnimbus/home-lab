@@ -4,7 +4,7 @@ Two [llama.cpp](https://github.com/ggml-org/llama.cpp) servers on the NAS's Rade
 
 | Service           | Address                      | Presets                                                                |
 | ----------------- | ---------------------------- | ---------------------------------------------------------------------- |
-| `llama-server`    | `https://llama.vwn.app`      | `config/models.ini`: chat models, one loaded at a time                 |
+| `llama-server`    | `https://llama.vwn.app`      | `config/models.ini`: chat and OCR models, two loaded at a time         |
 | `llama-embedding` | `https://embeddings.vwn.app` | `config/models.embedding.ini`: harrier-oss-v1-0.6b, last-token pooling |
 
 The model files live on the NAS in `/mnt/tank/AI/models`, mounted read-only at `/models`. They are not in Git: download a new one there before adding a preset that points at it.
@@ -24,7 +24,9 @@ The model files live on the NAS in `/mnt/tank/AI/models`, mounted read-only at `
 
 ## Gotchas
 
-- **They share the GPU and the system RAM** (the 890M has no memory of its own). Vulkan sees about 42 GB: a chat model (17–22 GB at Q4) with its 32K context and the embedding model fit together, two chat models barely; `--models-max 1` keeps it to one.
+- **They share the GPU and the system RAM** (the 890M has no memory of its own). Vulkan sees about 42 GB: a chat model (17–22 GB at Q4) with its 32K context, `GLM-OCR` (about 1.5 GB with its projector) and the embedding model fit together. `--models-max 2` keeps Qwen3.6 and GLM-OCR loaded side by side, so paperless-gpt's OCR doesn't evict the model paperless and paperless-gpt suggest metadata with. A third preset evicts the least recently used one; two chat models together barely fit, so load `Qwen3.8-27B` only when nothing else uses Qwen3.6.
+- **Vision needs a projector (`mmproj`)** next to the model file. `Qwen3.6-35B-A3B` reads images with `mmproj-Qwen3.6-35B-A3B-F16.gguf` (Unsloth's `mmproj-F16.gguf`, renamed; a Qwen3.5 projector doesn't fit), and `GLM-OCR` with `mmproj-GLM-OCR-Q8_0.gguf` from `ggml-org/GLM-OCR-GGUF`. The Thinking preset has none, as it is a separate instance that nothing sends images to.
+- **`GLM-OCR` is an OCR specialist**, not a chat model: it expects an image followed by just `OCR`, and transcribes. `temp 0` and `top-k 1` make it deterministic, and `n-predict 4096` stops a reply that loops. paperless-gpt can't cap it itself: its `VISION_LLM_MAX_TOKENS` downloads a tokenizer from the internet (see `kubernetes/apps/default/README.md`).
 - **Qwen3.8-27B is dense**: every token reads all 27B weights, against 3B for Qwen3.6-35B-A3B. llama-bench on the 890M: about 4.5 tokens/s generated against 22, and 140 against 580 for prompt processing. Qwen3.6-35B-A3B stays the default; the 27B is there to compare quality, and has no thinking preset because a reasoning reply would take minutes.
 - **Sampling defaults are Qwen's recommendations**, set per preset: non-thinking temp 0.7, top-p 0.8, presence-penalty 1.5; thinking temp 1.0, top-p 0.95; top-k 20 and min-p 0 for both. A client that sends its own sampling values overrides them.
 - **`Qwen3.6-35B-A3B` has no presence-penalty**: paperless (`PAPERLESS_AI_LLM_MODEL`) uses it for structured suggestions (titles, tags, fields), which repeat quotes, brackets and field names, and a penalty pushes the model away from tokens it has already written.
