@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.12"
-# dependencies = ["httpx>=0.27", "pyyaml>=6"]
+# dependencies = ["httpx>=0.27", "pillow>=11", "pypdfium2>=4.30", "pyyaml>=6"]
 # ///
 """Review and clean up paperless metadata with the local LLM on the NAS.
 
@@ -15,9 +15,12 @@ the results land in --out. Nothing is printed except progress and counts.
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import difflib
+import io
 import json
+import math
 import os
 import random
 import re
@@ -27,10 +30,12 @@ import time
 import unicodedata
 from collections import Counter
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 import httpx
+import pypdfium2
 import yaml
+from PIL import Image
 
 DEFAULT_PAPERLESS = "https://paperless.cluster.vwn.io"
 DEFAULT_LLM = "https://llama.vwn.app/v1"
@@ -103,7 +108,8 @@ class LLM:
         self.model = model
         self.http = httpx.Client(base_url=url.rstrip("/") + "/", timeout=900)
 
-    def json(self, prompt: str, schema: dict, max_tokens: int = 1000) -> dict:
+    def json(self, prompt: str | list[dict], schema: dict, max_tokens: int = 1000) -> dict:
+        """prompt is the user message: plain text, or OpenAI content parts with images."""
         body = {
             "model": self.model,
             "temperature": 0.2,
@@ -287,6 +293,84 @@ def compact_suggestions(path: Path) -> int:
     return total - len(rows)
 
 
+# Page images for a vision model. 110 DPI reads a letterhead and normal print
+# (A4 is 1.2 million pixels): on the NAS that took 11 s per document against
+# 19 s at 150 DPI, with the same answer. A page is capped at 3 million pixels,
+# so a drawing or poster is sent smaller instead of as dozens of megapixels.
+IMAGE_DPI = 110
+IMAGE_MAX_PIXELS = 3_000_000
+
+
+def page_images(pl: Paperless, doc_id: int, pages: int, dpi: int = IMAGE_DPI) -> list[str]:
+    """JPEG data URLs of a document's first pages, rendered on this machine.
+
+    paperless's download is the archive PDF when there is one (scans, photos
+    and office files all have one), else the original. Anything that can't be
+    rendered gives no images, and the caller goes on with the text alone.
+    """
+    if pages <= 0:
+        return []
+    try:
+        r = pl.http.get(f"documents/{doc_id}/download/")
+        r.raise_for_status()
+        data = r.content
+        images = []
+        if data[:5] == b"%PDF-":
+            pdf = pypdfium2.PdfDocument(data)
+            for i in range(min(pages, len(pdf))):
+                width, height = pdf[i].get_size()  # in points, 72 per inch
+                scale = min(dpi / 72, math.sqrt(IMAGE_MAX_PIXELS / max(width * height, 1)))
+                images.append(pdf[i].render(scale=scale).to_pil())
+        else:
+            img = Image.open(io.BytesIO(data))
+            factor = math.sqrt(IMAGE_MAX_PIXELS / max(img.width * img.height, 1))
+            if factor < 1:
+                img = img.resize((int(img.width * factor), int(img.height * factor)))
+            images.append(img)
+    # pypdfium2 and Pillow raise their own exception types, Pillow's
+    # DecompressionBombError among them.
+    except Exception as exc:  # noqa: BLE001
+        log(f"document {doc_id}: no page image ({exc.__class__.__name__}), text only")
+        return []
+    urls = []
+    for img in images:
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, "JPEG", quality=85)
+        urls.append("data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode())
+    return urls
+
+
+def ask_with_images(
+    llm: LLM,
+    args: argparse.Namespace,
+    images: list[str],
+    build: Callable[[bool], tuple[str, str]],
+    schema: dict,
+    max_tokens: int,
+) -> tuple[dict, int]:
+    """Ask with the page images between the fixed instructions and the document
+    text, so llama.cpp's prompt cache still covers the instructions.
+
+    build(vision) returns (instructions, document text). A model without
+    vision rejects the images: the run then goes on without them.
+    Returns the answer and the number of images it was given.
+    """
+    if images and args.image_pages > 0:
+        prefix, rest = build(True)
+        parts = [
+            {"type": "text", "text": prefix},
+            *({"type": "image_url", "image_url": {"url": url}} for url in images),
+            {"type": "text", "text": rest},
+        ]
+        try:
+            return llm.json(parts, schema, max_tokens), len(images)
+        except RuntimeError as exc:
+            log(f"the model didn't take the page images ({exc}); going on without them")
+            args.image_pages = 0
+    prefix, rest = build(False)
+    return llm.json(prefix + "\n\n" + rest, schema, max_tokens), 0
+
+
 def private_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     path.chmod(0o700)
@@ -314,8 +398,35 @@ SENDER_RULE = (
     "certificaat of vergunning de uitgevende instantie (bijvoorbeeld CBR, RDW, gemeente). "
     "Nooit de ontvanger, houder of eigenaar, en niet iemand die alleen tekent of als "
     "contactpersoon genoemd wordt. Een persoon alleen bij een persoonlijke brief. "
-    "Gebruik null als de afzender niet duidelijk uit de tekst blijkt, bijvoorbeeld bij "
+    "Gebruik null als de afzender niet duidelijk uit het document blijkt, bijvoorbeeld bij "
     "onleesbare OCR: liever null dan een gok."
+)
+
+# With page images the model can compare the OCR text with the page itself;
+# without them it can only judge whether the text reads as language.
+OCR_RULE_TEXT = (
+    "hoe leesbaar de tekst is: goed, matig (fouten maar te volgen) of slecht (grotendeels "
+    "onleesbaar)"
+)
+OCR_RULE_VISION = (
+    "hoe goed de OCR-tekst weergeeft wat op de afbeelding staat: goed (alle leesbare tekst "
+    "van de pagina staat erin, hooguit met een enkele fout), matig (te volgen, maar met "
+    "duidelijke fouten, of er ontbreekt een deel van de tekst), slecht (grotendeels "
+    "onleesbaar, of de meeste tekst van de pagina ontbreekt). Is de OCR-tekst leeg terwijl je "
+    "op de afbeelding tekst kunt lezen, al is het maar een paar woorden, dan is het slecht. "
+    "Alleen een pagina zonder enige tekst, zoals een foto, met lege OCR-tekst is goed. "
+    "Beoordeel alleen het deel van het document dat je op de afbeelding ziet"
+)
+VISION_NOTE = (
+    "Je krijgt de eerste pagina('s) van het document als afbeelding, en daarna de tekst die "
+    "OCR eruit las. Gebruik de afbeelding voor wat de tekst mist of verkeerd leest: "
+    "briefhoofd, logo, opmaak, tabellen, stempels, handschrift en foto's. Neem geen "
+    "gegevens over die je ook op de afbeelding niet kunt lezen."
+)
+UNCLEAR_RULE = (
+    "Is niet duidelijk wat het document is, begin dan met 'Onduidelijk:' en beschrijf alleen "
+    "wat je wel ziet (bijvoorbeeld 'Onduidelijk: handgeschreven briefje met bedragen'); "
+    "verzin geen soort, afzender of onderwerp."
 )
 
 # Scans from a home printer get names like 0127_261109175022_001.pdf; PDF
@@ -325,16 +436,57 @@ FILENAME_NOTE = (
     "een hint als hij duidelijk iets over het document zegt):"
 )
 
+# Property order is generation order: the model judges the OCR and how clear
+# the document is before it classifies it, and writes the summary last, so an
+# unclear document gets a summary that says so.
+CLARITY_LEVELS = ["duidelijk", "deels", "onduidelijk"]
 SUMMARY_SCHEMA = obj(
     {
-        "samenvatting": {"type": "string"},
+        "ocr_kwaliteit": {"type": "string", "enum": ["goed", "matig", "slecht"]},
+        "duidelijkheid": {"type": "string", "enum": CLARITY_LEVELS},
         "soort": {"type": "string"},
         "afzender": NULLABLE_STRING,
         "onderwerpen": str_list(3, min_items=1),
         "taal": {"type": "string", "enum": ["nl", "en", "de", "fr", "anders"]},
-        "ocr_kwaliteit": {"type": "string", "enum": ["goed", "matig", "slecht"]},
+        "samenvatting": {"type": "string"},
     }
 )
+
+
+def ocr_text(doc: dict, chars: int) -> str:
+    """The document's OCR text for a prompt. Empty text is said out loud: a model
+    shown nothing under the heading reads it as a page without text."""
+    text = (doc.get("content") or "")[:chars]
+    return text if text.strip() else "(leeg: OCR vond geen tekst)"
+
+
+def summary_prompt(doc: dict, chars: int, vision: bool) -> tuple[str, str]:
+    """(instructions, document text); the instructions are the same for every document."""
+    instructions = (
+        (VISION_NOTE + "\n\n" if vision else "")
+        + "Beschrijf dit document, in het Nederlands:\n"
+        f"- ocr_kwaliteit: {OCR_RULE_VISION if vision else OCR_RULE_TEXT}\n"
+        "- duidelijkheid: hoe duidelijk het is wat dit document is en van wie: duidelijk, deels "
+        "(soort of afzender is een redelijke inschatting) of onduidelijk (ook "
+        + ("met de afbeelding " if vision else "")
+        + "niet vast te stellen)\n"
+        "- soort: wat voor document het is, 1 tot 3 woorden (bijvoorbeeld factuur, "
+        "loonstrook, polis, brief, aanslag, contract), of 'onduidelijk'\n"
+        f"- afzender: zoals die zichzelf noemt. {SENDER_RULE}\n"
+        "- onderwerpen: 1 tot 3 levensdomeinen waar het bij hoort (bijvoorbeeld wonen, "
+        "auto, zorg, werk, belastingen)\n"
+        "- taal: de taal waarin het document geschreven is\n"
+        "- samenvatting: één zin over wat het document is en waar het over gaat, die past bij "
+        "duidelijkheid. Bij onduidelijk begin je met 'Onduidelijk:' en beschrijf je alleen wat "
+        "je wel ziet (bijvoorbeeld 'Onduidelijk: handgeschreven briefje met bedragen'), zonder "
+        "soort, afzender of onderwerp te verzinnen. Bij deels zeg je wat onzeker is "
+        "(bijvoorbeeld 'Waarschijnlijk een factuur van ...'). Bij duidelijk gewoon de zin."
+    )
+    text = (
+        f"{FILENAME_NOTE} {doc.get('original_file_name') or ''}\n\n"
+        f"Inhoud (OCR, eerste {chars} tekens):\n{ocr_text(doc, chars)}"
+    )
+    return instructions, text
 
 
 def bad_ocr_ids(summaries: list[dict]) -> list[int]:
@@ -365,26 +517,18 @@ def cmd_summarize(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
             continue
         if args.limit and count >= args.limit:
             break
-        content = (doc.get("content") or "")[: args.chars]
-        prompt = (
-            f"{FILENAME_NOTE} {doc.get('original_file_name') or ''}\n\n"
-            f"Inhoud (eerste {args.chars} tekens):\n{content}\n\n"
-            "Beschrijf dit document, in het Nederlands:\n"
-            "- samenvatting: één zin over waar het document over gaat\n"
-            "- soort: wat voor document het is, 1 tot 3 woorden (bijvoorbeeld factuur, "
-            "loonstrook, polis, brief, aanslag, contract)\n"
-            f"- afzender: zoals die zichzelf noemt. {SENDER_RULE}\n"
-            "- onderwerpen: 1 tot 3 levensdomeinen waar het bij hoort (bijvoorbeeld wonen, "
-            "auto, zorg, werk, belastingen)\n"
-            "- taal: de taal waarin het document geschreven is\n"
-            "- ocr_kwaliteit: hoe leesbaar de tekst is: goed, matig (fouten maar te volgen) "
-            "of slecht (grotendeels onleesbaar)"
-        )
         start = time.monotonic()
-        summary = llm.json(prompt, SUMMARY_SCHEMA, max_tokens=400)
-        append_jsonl(path, {"id": doc["id"], "summary": summary, "current": current_names(doc, inv)})
+        images = page_images(pl, doc["id"], args.image_pages, args.image_dpi)
+        summary, seen = ask_with_images(
+            llm, args, images, lambda vision: summary_prompt(doc, args.chars, vision),
+            SUMMARY_SCHEMA, max_tokens=500,
+        )  # fmt: skip
+        append_jsonl(
+            path,
+            {"id": doc["id"], "summary": summary, "current": current_names(doc, inv), "images": seen},
+        )
         count += 1
-        log(f"[{count}] document {doc['id']} in {time.monotonic() - start:.0f}s")
+        log(f"[{count}] document {doc['id']} in {time.monotonic() - start:.0f}s, {seen} page images")
     log(f"summarized {count} documents, {len(latest_per_id(read_jsonl(path)))} in {path}")
 
 
@@ -543,6 +687,9 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     ocr = Counter(s["summary"].get("ocr_kwaliteit", "onbekend") for s in summaries)
     bad_ocr = bad_ocr_ids(summaries)
     no_sender = sum(1 for s in summaries if not sender(s["summary"]))
+    # Summaries from before duidelijkheid existed don't count.
+    unclear = sorted(s["id"] for s in summaries if s["summary"].get("duidelijkheid") == "onduidelijk")
+    with_images = sum(1 for s in summaries if s.get("images"))
     soorten = Counter(s["summary"]["soort"].strip().lower() for s in summaries)
     onderwerpen = Counter(o.strip().lower() for s in summaries for o in s["summary"]["onderwerpen"])
     talen = Counter(s["summary"]["taal"] for s in summaries)
@@ -715,6 +862,11 @@ def cmd_propose(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         counted(ocr, 5),
         "",
         f"No clear sender: {no_sender} documents.",
+        "",
+        f"Summarized with page images: {with_images} of {len(summaries)}.",
+        "",
+        f"Unclear what they are, even to the model: {len(unclear)} documents. "
+        "Look at these yourself: " + (", ".join(map(str, unclear)) or "-"),
         "",
         "Documents with unreadable OCR. With paperless's OCR mode set to redo (in auto, a PDF "
         "that has a text layer is never OCR'd again):",
@@ -948,10 +1100,11 @@ def suggestion_schema(tax: dict, known: list[str]) -> dict:
 
 
 def suggestion_prompt(
-    tax: dict, known: list[str], doc: dict, chars: int, current: dict | None = None
-) -> str:
-    """Everything before the document is the same for every call, so llama.cpp's
-    prompt cache only has to process the document itself."""
+    tax: dict, known: list[str], doc: dict, chars: int, current: dict | None = None, vision: bool = False
+) -> tuple[str, str]:
+    """(instructions, document part). The instructions are the same for every
+    call, so llama.cpp's prompt cache only has to process the page images and
+    the document itself."""
 
     def listing(items: list[dict]) -> str:
         return "\n".join(f"- {i['name']}: {i.get('description', '')}" for i in items)
@@ -969,18 +1122,16 @@ def suggestion_prompt(
             f"lijkt of in dezelfde branche zit. Staat ze er niet in, kies '{NEW_SENDER}'. Is "
             f"afzender null, kies '{UNKNOWN_SENDER}'.\n" + "\n".join(f"- {n}" for n in known)
         )
-    parts = []
+    parts = [VISION_NOTE] if vision else []
+    source = "de inhoud of op de afbeelding" if vision else "de inhoud"
     if tax["summary_field"]:
         parts.append(
             f"samenvatting: één zin in het Nederlands, hoogstens {SUMMARY_MAX - 8} tekens, over "
-            "wat dit document is en waar het over gaat. Alleen wat in de inhoud staat; geen "
-            "oordeel en geen gegevens die er niet in staan."
+            f"wat dit document is en waar het over gaat. Alleen wat in {source} staat; geen "
+            f"oordeel en geen gegevens die er niet in staan. {UNCLEAR_RULE}"
         )
     if tax["ocr_field"]:
-        parts.append(
-            "ocr_kwaliteit: hoe leesbaar de tekst is: goed, matig (fouten maar te volgen) of "
-            "slecht (grotendeels onleesbaar)."
-        )
+        parts.append(f"ocr_kwaliteit: {OCR_RULE_VISION if vision else OCR_RULE_TEXT}.")
     parts += [
         f"Documentsoorten (kies er precies één):\n{listing(tax['document_types'])}",
         f"Domein-tags (kies er 1 tot 4 die echt passen):\n{listing(tax['tags'])}",
@@ -1002,15 +1153,15 @@ def suggestion_prompt(
         )
     parts.append(
         "confidence: hoe zeker je bent van soort en afzender samen. Kies 'laag' als de "
-        "inhoud ze niet ondersteunt en je alleen op de huidige gegevens hieronder steunt."
+        "inhoud ze niet ondersteunt en je alleen op de huidige gegevens hieronder steunt"
+        + (", of als ook de afbeelding niet duidelijk maakt wat het document is." if vision else ".")
     )
-    if current is not None:
-        parts.append(current_metadata_block(current))
-    parts += [
+    document = [current_metadata_block(current)] if current is not None else []
+    document += [
         f"{FILENAME_NOTE} {doc.get('original_file_name') or ''}",
-        f"Inhoud (eerste {chars} tekens):\n{(doc.get('content') or '')[:chars]}",
+        f"Inhoud (OCR, eerste {chars} tekens):\n{ocr_text(doc, chars)}",
     ]
-    return "\n\n".join(parts)
+    return "\n\n".join(parts), "\n\n".join(document)
 
 
 def current_metadata_block(current: dict) -> str:
@@ -1177,11 +1328,12 @@ def suggestion_row(
 ) -> dict:
     known = known_correspondents(tax, inv)
     current = current_names(doc, inv)
-    s = llm.json(
-        suggestion_prompt(tax, known, doc, args.chars, None if args.ignore_current else current),
-        suggestion_schema(tax, known),
-        max_tokens=600,
-    )
+    shown = None if args.ignore_current else current
+    s, _ = ask_with_images(
+        llm, args, page_images(pl, doc["id"], args.image_pages, args.image_dpi),
+        lambda vision: suggestion_prompt(tax, known, doc, args.chars, shown, vision),
+        suggestion_schema(tax, known), max_tokens=600,
+    )  # fmt: skip
     canonical, status = resolve_correspondent(
         s, correspondent_lookup(tax, inv), {c["name"] for c in inv["correspondents"]}
     )
@@ -1448,6 +1600,14 @@ def main() -> None:
         sp.add_argument("--query", help="paperless search query to select documents")
         sp.add_argument("--ids", help="comma-separated document IDs")
         sp.add_argument("--chars", type=int, default=3000 if name == "summarize" else 6000)
+        sp.add_argument(
+            "--image-pages", type=int, default=1, metavar="N",
+            help="send the first N pages as images too, for a vision model (default 1, 0 for text only)",
+        )  # fmt: skip
+        sp.add_argument(
+            "--image-dpi", type=int, default=IMAGE_DPI,
+            help=f"resolution of those images (default {IMAGE_DPI}; higher reads small print, but is slower)",
+        )  # fmt: skip
         if name == "suggest":
             sp.add_argument(
                 "--redo", action="store_true",
