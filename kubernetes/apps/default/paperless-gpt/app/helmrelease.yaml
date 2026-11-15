@@ -77,6 +77,8 @@ spec:
             subPath: config
           - path: /app/db
             subPath: db
+          - path: /app/prompts/workflows
+            subPath: workflows
       prompts:
         type: configMap
         name: paperless-gpt-prompts
