@@ -42,7 +42,7 @@ spec:
               OPENAI_BASE_URL: "https://llama.${DOMAIN_APP}/v1"
               PAPERLESS_BASE_URL: http://paperless:8000
               PAPERLESS_PUBLIC_URL: "https://paperless.${DOMAIN_CLUSTER}"
-              PDF_OCR_TAGGING: "false"
+              PDF_OCR_TAGGING: "true"
               VISION_LLM_MODEL: GLM-OCR
               VISION_LLM_PROVIDER: openai
               VISION_LLM_TEMPERATURE: "0"
