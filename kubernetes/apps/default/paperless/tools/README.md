@@ -38,7 +38,7 @@ flowchart TD
   setup["Setup: token, llama-server"] --> w1
   w1["1. Build the taxonomy<br/>summarize → propose → taxonomy.yaml"] --> w2
   w2["2. Clean up a batch<br/>suggest → review the CSV → apply"] -->|next batch| w2
-  w2 -->|rows left empty: bad OCR| w3["3. Fix the OCR<br/>tag → Reprocess → suggest again"]
+  w2 -->|rows left empty: bad OCR| w3["3. Fix the OCR<br/>tag for paperless-gpt → suggest again"]
   w3 --> w2
   w2 -->|a type or tag needs changing| w4["4. Change the taxonomy<br/>edit taxonomy.yaml → suggest again"]
   w4 --> w2
@@ -95,21 +95,21 @@ A run that went wrong: `metadata.py undo` shows what it would restore, `undo --y
 
 ```mermaid
 flowchart LR
-  tag["tag --bad-ocr --yes"] --> rep[/"paperless: filter on Redo OCR,<br/>bulk edit → Reprocess"/]
-  rep --> sug["suggest --redo-unmarked<br/>--redo-bad-ocr"]
+  tag["tag --bad-ocr<br/>--name paperless-gpt-ocr-auto --yes"] --> gpt[/"paperless-gpt: LLM OCR,<br/>takes the tag off"/]
+  gpt --> sug["suggest --redo-unmarked<br/>--redo-bad-ocr"]
   sug --> apply[/"review and apply<br/>(workflow 2, steps 3–6)"/]
-  apply --> rm["tag --remove --yes"]
 ```
 
-**First check the OCR mode.** Reprocessing only helps with `PAPERLESS_OCR_MODE` set to `redo` (or `force`) in `../app/helmrelease.yaml`. In `auto`, a PDF that already has more than 50 characters of text, such as a printer's own OCR layer, is never OCR'd again, and Reprocess gives it the same text.
+The new text comes from paperless-gpt's LLM OCR (GLM-OCR, see [`../../README.md`](../../README.md)), not from paperless. **Don't use Reprocess in paperless:** it runs paperless's own OCR and overwrites any text paperless-gpt wrote, whatever `PAPERLESS_OCR_MODE` says.
 
-1. `metadata.py tag --bad-ocr` (a dry run) counts the documents rated `slecht`, and names any that are no longer in paperless; those are skipped. The rating comes from the CSV's `ocr` column, your edits included, and from `summarize` for documents the CSV doesn't rate yet (see [OCR ratings](#ocr-ratings)).
-2. `metadata.py tag --bad-ocr --yes` puts the `Redo OCR` tag on them. paperless's document list can't filter on a list of IDs, so the tag is how you select them. It has no matching, so paperless never adds it to new documents. `tag --ids 12,34 --yes` tags documents you name instead.
-3. In paperless, filter on `Redo OCR`, select all, bulk edit → Reprocess. Wait until paperless's task list shows them done.
+1. `metadata.py tag --bad-ocr --name paperless-gpt-ocr-auto` (a dry run) counts the documents rated `slecht`, and names any that are no longer in paperless; those are skipped. The rating comes from the CSV's `ocr` column, your edits included, and from `summarize` for documents the CSV doesn't rate yet (see [OCR ratings](#ocr-ratings)). `--ids 12,34` instead of `--bad-ocr` tags documents you name.
+2. The same with `--yes` puts paperless-gpt's OCR trigger tag on them. paperless-gpt reads every page, writes the text into the document's content, takes the trigger tag off and adds `paperless-gpt-ocr-complete`. It skips a document that already has `paperless-gpt-ocr-complete`: a `slecht` rating there means the LLM text is poor too. Remove that tag first to OCR it again.
+3. Wait until no document has `paperless-gpt-ocr-auto` any more. `paperless-gpt-failed` marks the ones whose OCR failed.
 4. Close the CSV, then `metadata.py suggest --redo-unmarked --redo-bad-ocr` suggests again for every row whose `apply` cell is empty or whose `ocr` is `slecht`, now from the new text. Both flags are needed: a row the model was sure about gets an `x` even with bad OCR, and `--redo-unmarked` alone would keep its old rating.
 5. Review and apply the redone rows as in workflow 2, steps 3–6. A document an earlier `apply` already wrote is skipped: `apply --ids 12,34 --reapply --yes` writes it again.
 6. If you'll run `propose` again: `metadata.py summarize --redo --ids <the IDs proposal.md lists>`.
-7. `metadata.py tag --remove --yes` deletes the `Redo OCR` tag, which takes it off every document.
+
+The `Redo OCR` tag (`tag` without `--name`) is for selecting documents in paperless's UI by hand; `tag --remove --yes` deletes it again. Don't `--remove` paperless-gpt's tags.
 
 ### 4. Change the taxonomy
 
