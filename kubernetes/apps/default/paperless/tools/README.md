@@ -42,8 +42,6 @@ flowchart TD
   w3 --> w2
   w2 -->|a type or tag needs changing| w4["4. Change the taxonomy<br/>edit taxonomy.yaml → suggest again"]
   w4 --> w2
-  w1 -.-> w5["5. Archive layout<br/>layout → HelmRelease"]
-  w4 -.->|domain tags or layout types changed| w5
   w2 -.->|a run went wrong| undo["undo"]
 ```
 
@@ -117,24 +115,12 @@ The `Redo OCR` tag (`tag` without `--name`) is for selecting documents in paperl
 flowchart LR
   edit[/"you: edit taxonomy.yaml<br/>(rename in paperless too)"/] --> sug["suggest --redo-type / --redo-tag"]
   sug --> apply[/"review and apply<br/>(workflow 2, steps 3–6)"/]
-  apply -.->|domain tags or layout types changed| lay["workflow 5"]
 ```
 
 1. Edit `taxonomy.yaml`. To rename a type or tag that documents already have, rename it in paperless as well: the documents follow it there, and `apply` would otherwise create the new name next to the old one.
 2. Close the CSV, then suggest again for the rows the change affects, for example `metadata.py suggest --redo-type Factuur,Brief` or `--redo-tag Aankopen`. Names match what the row suggests, so a name you've since renamed or removed still finds its rows. Before it starts, `suggest` says how many rows it picked and how many of their documents an earlier `apply` already wrote (see [Suggesting again](#suggesting-again)).
 3. Review and apply as in workflow 2, steps 3–6. Documents an earlier run wrote are skipped: write them with `apply --ids … --reapply`. `--reapply` on its own writes every marked row again, overwriting what you've fixed in paperless since.
-4. Changed a domain tag, the order of `tags`, or the `layout_*` types: workflow 5.
-
-### 5. Archive layout
-
-```mermaid
-flowchart LR
-  lay["layout"] --> hr[/"you: PAPERLESS_FILENAME_FORMAT<br/>in the HelmRelease"/]
-  hr --> merge[/"merge"/]
-  merge --> ren[/"document_renamer<br/>in the app container"/]
-```
-
-`layout` turns `taxonomy.yaml` into a `PAPERLESS_FILENAME_FORMAT` that files every document under its domain, type and year. [Archive layout](#archive-layout) has the format, the steps, and what to keep in sync afterwards.
+4. A new type that should be filed differently gets a storage path and a workflow in paperless (see [paperless file names](../../README.md)); the script never sets storage paths.
 
 ## Steps
 
@@ -147,9 +133,8 @@ flowchart LR
 | `apply`     | Writes the marked rows. A dry run unless `--yes`.                                                                                       | `apply-journal.jsonl`, changes in paperless |
 | `undo`      | Restores what an apply run changed. A dry run unless `--yes`.                                                                           | changes in paperless                        |
 | `tag`       | Puts a temporary tag (`Redo OCR` unless `--name`) on `--bad-ocr` or `--ids` documents; `--remove` deletes it. A dry run unless `--yes`. | a tag in paperless                          |
-| `layout`    | Prints the `PAPERLESS_FILENAME_FORMAT` for `taxonomy.yaml`, and with a CSV how many documents land in each folder. No paperless needed. | nothing                                     |
 
-What each step reads and writes in `~/paperless-metadata` (every step except `layout` also talks to paperless, and `summarize`, `propose` and `suggest` to the LLM):
+What each step reads and writes in `~/paperless-metadata` (every step also talks to paperless, and `summarize`, `propose` and `suggest` to the LLM):
 
 ```mermaid
 flowchart LR
@@ -168,8 +153,6 @@ flowchart LR
   f_jnl --> s_undo["undo"]
   f_csv --> s_tag["tag --bad-ocr"]
   f_sum --> s_tag
-  f_tax --> s_lay["layout"]
-  f_csv --> s_lay
 ```
 
 `summarize` and `suggest` take `--limit N`, `--query '<paperless search>'` and `--ids 1,2,3`, and resume where they stopped: run them again to continue. `summarize --redo` describes documents again; the newest summary of a document wins.
@@ -259,8 +242,7 @@ About 11 seconds per document on the NAS with the page image, 5–7 without. Wit
 - **title, type and correspondent** are set to the CSV's values. A missing type, tag, correspondent or custom field is created, with paperless's Auto matching so it learns from the documents it is assigned to.
 - **tags**: only the tags in `keep_tags` (`Inbox`, people) and `label_tags` stay, next to the script's own `review_tag` and `Redo OCR`; every other tag, nonsense ones included, is replaced by the CSV's domain and label tags. `remove_tags` always go, even when also in `keep_tags`. With `keep_tags` empty, apply only replaces domain tags and removes `remove_tags`, and every other tag stays. Both runs print each document's tag changes (`tags -[removed] +[added]`): read the dry run before `--yes`.
 - **custom fields** from the CSV are set; the document's other fields stay.
-- **storage path**: removed when `clear_storage_paths: true`, so the archive layout below applies to the document.
-- paperless renames the file to match `PAPERLESS_FILENAME_FORMAT`, which uses the title and correspondent.
+- **storage path**: never set or removed. paperless renames the file to match the document's storage path, or `PAPERLESS_FILENAME_FORMAT` without one; both use the title and correspondent, and a storage path workflow on the type may assign a new path (see [paperless file names](../../README.md)).
 - **a document an earlier run already changed is skipped**, unless that run was undone: `suggest` appends every batch to the same CSV, so the `x` marks of earlier batches are still there, and writing them again would overwrite whatever you fixed in paperless since. `--reapply` writes them anyway, for a row you edited after applying it.
 - **`--limit N`** writes only the first N marked rows, in CSV order. Written rows are skipped next time, so the next run continues with the rest: a way to try a few documents and check them in paperless first. With `--reapply`, a limited run starts at the top again.
 - **`--ids 12,34`** writes only those documents' rows, and only when they are marked; it says which IDs it skipped, as not in the CSV or not marked. The earlier-run check still applies, so add `--reapply` to write one again.
@@ -299,11 +281,6 @@ custom_fields:
   - { name: Bedrag, type: monetary, description: Te betalen of ontvangen bedrag }
 summary_field: Samenvatting # optional: a one-line summary per document
 ocr_field: OCR-kwaliteit # optional: goed, matig or slecht
-clear_storage_paths: true # apply removes each document's storage path (see Archive layout)
-layout_fallback: Overig # the folder for a document without a domain tag
-layout_undated_types: [Identificatie, Akte] # no year folder (see Archive layout)
-layout_reference_types: [Handleiding] # filed under layout_reference_folder, without a date
-layout_reference_folder: Naslag
 correspondents:
   - { name: Voorbeeld Energie, aliases: [Voorbeeld Energie B.V.] }
 ignore: # names propose never suggests again
@@ -314,7 +291,7 @@ ignore: # names propose never suggests again
 
 Custom field types: `string`, `date`, `monetary`, `integer`.
 
-**Label tags** mark a property, not a subject: a warranty, a licence code. `suggest` adds one only where its description clearly applies, in the CSV's `tags` column after the domain tags. `apply` keeps a label tag a document already has. `layout` ignores label tags, so they never become a folder, and `propose` never offers them as a domain.
+**Label tags** mark a property, not a subject: a warranty, a licence code. `suggest` adds one only where its description clearly applies, in the CSV's `tags` column after the domain tags. `apply` keeps a label tag a document already has, and `propose` never offers them as a domain.
 
 **Classification rules.** `tag_classification` and `label_tag_classification` hold optional `rules`: guidelines in your own words that `suggest` puts in the prompt right under the domain tags and the labels, after their descriptions, so they apply to every document and stay in llama.cpp's prompt cache. The prompt calls the two lists domeinlabels and eigenschapslabels, so rules can name them that way. `max` caps how many of each the model may pick; the answer's schema enforces it, so a rule that says "at most 3" and `max: 3` agree. A rule that asks for fewer ("bij voorkeur 1 tot 2") is guidance the model mostly follows, not a hard limit. `propose` carries both sections over unchanged.
 
@@ -331,33 +308,3 @@ Custom field types: `string`, `date`, `monetary`, `integer`.
 | `onbekend`                                        | empty                                                                   |
 
 An empty cell makes apply keep the document's current correspondent. With more than 1500 correspondents there is no list, and the written name is matched instead.
-
-## Archive layout
-
-paperless names the files on disk (`/mnt/archive/media`, originals and archive copies alike) from `PAPERLESS_FILENAME_FORMAT`. `layout` turns `taxonomy.yaml` into a format that files every document as
-
-```text
-<domain>/<type>/<year>/<date> <sender> - <title> - <id>.pdf
-Wonen/Factuur/2026/2026-11-03 Energiebedrijf - Jaarafrekening stroom en gas - 1234.pdf
-```
-
-- **The folder is the document's domain tag.** With several, the first one in `taxonomy.yaml`'s `tags` order wins, so list specific domains (Wonen, Auto) above general ones (Financiën). No domain tag: `layout_fallback`.
-- **No type or sender:** that part drops out (`Overig/2026/2026-11-10 - Notitie - 1235.pdf`).
-- **`layout_undated_types` skip the year folder** (`Persoonlijk/Identificatie/2024-01-10 Gemeente - Paspoort - 301.pdf`): a passport or deed is looked up by what it is, not by when it came in. The date still leads the file name, so they sort in time order.
-- **`layout_reference_types` go under `layout_reference_folder`** (default `Naslag`), outside the domains and without a date: `<folder>/<type>/<sender> - <title> - <id>.pdf`, as in `Naslag/Handleiding/Fabrikant - Vaatwasser - 77.pdf`. For a manual or recipe the brand and product matter, not when it was scanned.
-- **A type can be in only one of the two lists**, and must be in `document_types`. The format holds these type names as fixed text, like the domain tags: after renaming such a type, run `layout` again.
-- **The sender is in the file name, not a folder:** most senders have a handful of documents, and a rename or merge would move all of them.
-- **The document ID ends the name:** it keeps two documents with the same date, sender and title apart, and leads from a file (in a backup, say) to the document in paperless, whose URL holds the same number.
-- **A storage path overrides the format.** `clear_storage_paths: true` makes `apply` remove them; delete the unused storage paths in paperless afterwards.
-
-`layout` needs only `taxonomy.yaml`. It prints the plain format (paste it into a storage path's **Test** in paperless to try it on a document), the version escaped for the HelmRelease, and, with a `suggestions.csv`, how many documents would land in each folder.
-
-To switch:
-
-1. Run `layout` and put its escaped line in `kubernetes/apps/default/paperless/app/helmrelease.yaml` as `PAPERLESS_FILENAME_FORMAT`. It holds domain and type names only.
-2. Merge. paperless uses the format for every document saved from then on.
-3. Move the existing files: `document_renamer` in the `app` container. It renames on disk only; nothing in the database changes but the file name.
-
-Changing the domain list or its order later means running `layout` and these steps again.
-
-**The format holds the domain tag names as fixed text.** Renaming or deleting a domain tag in paperless itself, without updating `taxonomy.yaml` and the format, silently files its documents under `layout_fallback`. Rename in `taxonomy.yaml` and paperless together, then rerun `layout` and update the HelmRelease. And since the folder follows the tags, adding or removing a domain tag on a document moves its file: that is the layout working, not a fault.
