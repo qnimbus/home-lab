@@ -14,9 +14,127 @@ Nothing here is deployed: Flux only applies `../app`.
    export PAPERLESS_TOKEN=$(op read op://homelab/paperless/API_TOKEN)
    ```
 
-Run every step as `kubernetes/apps/default/paperless/tools/metadata.py <step>` (it runs through `uv`).
+Run every step as `kubernetes/apps/default/paperless/tools/metadata.py <step>` (it runs through `uv`); below it is shortened to `metadata.py <step>`.
 
-`--debug` (before the step: `metadata.py --debug suggest --ids 3760`) writes every request to the model, and its reply, to `~/paperless-metadata/debug-<time>.log`, one file per run; `--debug-file FILE` picks the file (and appends to it). The terminal only says where the log is. It holds the system prompt and every text part verbatim, in the order they are sent, each page image as a placeholder with its size, and the JSON schema the answer must follow. It holds document text, so the file is created readable only by you; keep it on your machine.
+**Dry runs.** `apply`, `undo` and `tag` change paperless only with `--yes`. Without it they print what they would do: run each without `--yes` first and read the output.
+
+**Options before the step** (`metadata.py --debug suggest --ids 3760`):
+
+| Option              | Environment     | Default                               |
+| ------------------- | --------------- | ------------------------------------- |
+| `--paperless URL`   | `PAPERLESS_URL` | `https://paperless.${DOMAIN_CLUSTER}` |
+| `--llm URL`         | `LLM_URL`       | `https://llama.${DOMAIN_APP}/v1`      |
+| `--model NAME`      | `LLM_MODEL`     | `Qwen3.6-35B-A3B`                     |
+| `--out DIR`         | `METADATA_OUT`  | `~/paperless-metadata`                |
+| `--debug`           |                 | off                                   |
+| `--debug-file FILE` |                 | implies `--debug`                     |
+
+`--debug` writes every request to the model, and its reply, to `~/paperless-metadata/debug-<time>.log`, one file per run; `--debug-file FILE` picks the file (and appends to it). The terminal only says where the log is. It holds the system prompt and every text part verbatim, in the order they are sent, each page image as a placeholder with its size, and the JSON schema the answer must follow. It holds document text, so the file is created readable only by you; keep it on your machine.
+
+## Workflows
+
+```mermaid
+flowchart TD
+  setup["Setup: token, llama-server"] --> w1
+  w1["1. Build the taxonomy<br/>summarize → propose → taxonomy.yaml"] --> w2
+  w2["2. Clean up a batch<br/>suggest → review the CSV → apply"] -->|next batch| w2
+  w2 -->|rows left empty: bad OCR| w3["3. Fix the OCR<br/>tag → Reprocess → suggest again"]
+  w3 --> w2
+  w2 -->|a type or tag needs changing| w4["4. Change the taxonomy<br/>edit taxonomy.yaml → suggest again"]
+  w4 --> w2
+  w1 -.-> w5["5. Archive layout<br/>layout → HelmRelease"]
+  w4 -.->|domain tags or layout types changed| w5
+  w2 -.->|a run went wrong| undo["undo"]
+```
+
+Workflow 1 runs once, workflow 2 once per batch until every document is done, and the others when they're needed.
+
+### 1. Build the taxonomy
+
+```mermaid
+flowchart LR
+  inv["inventory<br/>(optional)"] --> sum["summarize --random --limit 1000"]
+  sum --> prop["propose"]
+  prop --> edit[/"you: edit, save as taxonomy.yaml"/]
+  edit -.->|more summaries later| sum
+```
+
+1. **Optional:** `metadata.py inventory` writes `inventory.json`, the current types, tags, correspondents, storage paths and custom fields with document counts, for you to read. No other step reads it: each fetches what it needs from paperless.
+2. `metadata.py summarize --random --limit 1000` describes a random sample of 1000 documents (about two hours). Newest first would leave out the kinds of documents and senders that only older documents have. Run it again for another random batch: it skips documents that already have a summary.
+3. `metadata.py propose` writes `taxonomy.proposed.yaml` and `proposal.md`. `proposal.md` explains the proposal, and lists the unclear documents and the IDs whose OCR was rated `slecht`.
+4. Edit the proposal and save it as `taxonomy.yaml` (see [`taxonomy.yaml`](#taxonomyyaml)). That file is the convention: `suggest` can only pick what it lists.
+
+`propose` can run again after more summaries; it then builds on `taxonomy.yaml` (see [Proposing again](#proposing-again)).
+
+### 2. Clean up a batch
+
+```mermaid
+flowchart TD
+  sug["suggest --limit 200"] --> rev[/"you: review suggestions.csv"/]
+  rev --> dry["apply (dry run)"]
+  dry -->|tag changes look right| yes["apply --yes"]
+  dry -->|not right| rev
+  yes --> chk[/"you: check the ? documents in paperless,<br/>take the review tag off"/]
+  chk -->|next batch| sug
+  yes -.->|wrong| undo["undo, then undo --yes"]
+```
+
+1. **Before the first real `apply`**, take a database backup: `just k8s db-backup default paperless`.
+2. Close `suggestions.csv` in your spreadsheet, then run `metadata.py suggest --limit 200` (roughly half an hour). It adds a row per document to the CSV, newest documents first, and continues where the last run stopped. The `apply` cell of each new row is pre-marked (see [Marks](#marks-in-suggestionscsv)).
+3. Review the new rows in a spreadsheet: spot-check the `x` rows, edit cells that are wrong, and change any mark you disagree with.
+4. `metadata.py apply` (a dry run) prints each document's changes, tags included (`tags -[removed] +[added]`). The first time, try a few: `apply --limit 5 --yes`, and check those documents in paperless.
+5. `metadata.py apply --yes` writes the rest of the marked rows. Rows an earlier run wrote are skipped, so earlier batches' marks are safe to leave in the CSV.
+6. In paperless, filter on the review tag (`review_tag`, a saved view on the dashboard helps), check each `?` document against its scan, fix what's wrong, and take the tag off.
+7. Next batch: back to step 2.
+
+Rows left empty because the OCR is rated `slecht` are guesses: fix the OCR first (workflow 3). When the CSV has no unchecked rows left and nothing has the review tag, delete it: `metadata.py tag --name <review_tag> --remove --yes`.
+
+A run that went wrong: `metadata.py undo` shows what it would restore, `undo --yes` restores it (see [Undo and backups](#undo-and-backups)).
+
+### 3. Fix the OCR
+
+```mermaid
+flowchart LR
+  tag["tag --bad-ocr --yes"] --> rep[/"paperless: filter on Redo OCR,<br/>bulk edit → Reprocess"/]
+  rep --> sug["suggest --redo-unmarked<br/>--redo-bad-ocr"]
+  sug --> apply[/"review and apply<br/>(workflow 2, steps 3–6)"/]
+  apply --> rm["tag --remove --yes"]
+```
+
+**First check the OCR mode.** Reprocessing only helps with `PAPERLESS_OCR_MODE` set to `redo` (or `force`) in `../app/helmrelease.yaml`. In `auto`, a PDF that already has more than 50 characters of text, such as a printer's own OCR layer, is never OCR'd again, and Reprocess gives it the same text.
+
+1. `metadata.py tag --bad-ocr` (a dry run) counts the documents rated `slecht`, and names any that are no longer in paperless; those are skipped. The rating comes from the CSV's `ocr` column, your edits included, and from `summarize` for documents the CSV doesn't rate yet (see [OCR ratings](#ocr-ratings)).
+2. `metadata.py tag --bad-ocr --yes` puts the `Redo OCR` tag on them. paperless's document list can't filter on a list of IDs, so the tag is how you select them. It has no matching, so paperless never adds it to new documents. `tag --ids 12,34 --yes` tags documents you name instead.
+3. In paperless, filter on `Redo OCR`, select all, bulk edit → Reprocess. Wait until paperless's task list shows them done.
+4. Close the CSV, then `metadata.py suggest --redo-unmarked --redo-bad-ocr` suggests again for every row whose `apply` cell is empty or whose `ocr` is `slecht`, now from the new text. Both flags are needed: a row the model was sure about gets an `x` even with bad OCR, and `--redo-unmarked` alone would keep its old rating.
+5. Review and apply the redone rows as in workflow 2, steps 3–6. A document an earlier `apply` already wrote is skipped: `apply --ids 12,34 --reapply --yes` writes it again.
+6. If you'll run `propose` again: `metadata.py summarize --redo --ids <the IDs proposal.md lists>`.
+7. `metadata.py tag --remove --yes` deletes the `Redo OCR` tag, which takes it off every document.
+
+### 4. Change the taxonomy
+
+```mermaid
+flowchart LR
+  edit[/"you: edit taxonomy.yaml<br/>(rename in paperless too)"/] --> sug["suggest --redo-type / --redo-tag"]
+  sug --> apply[/"review and apply<br/>(workflow 2, steps 3–6)"/]
+  apply -.->|domain tags or layout types changed| lay["workflow 5"]
+```
+
+1. Edit `taxonomy.yaml`. To rename a type or tag that documents already have, rename it in paperless as well: the documents follow it there, and `apply` would otherwise create the new name next to the old one.
+2. Close the CSV, then suggest again for the rows the change affects, for example `metadata.py suggest --redo-type Factuur,Brief` or `--redo-tag Aankopen`. Names match what the row suggests, so a name you've since renamed or removed still finds its rows. Before it starts, `suggest` says how many rows it picked and how many of their documents an earlier `apply` already wrote (see [Suggesting again](#suggesting-again)).
+3. Review and apply as in workflow 2, steps 3–6. Documents an earlier run wrote are skipped: write them with `apply --ids … --reapply`. `--reapply` on its own writes every marked row again, overwriting what you've fixed in paperless since.
+4. Changed a domain tag, the order of `tags`, or the `layout_*` types: workflow 5.
+
+### 5. Archive layout
+
+```mermaid
+flowchart LR
+  lay["layout"] --> hr[/"you: PAPERLESS_FILENAME_FORMAT<br/>in the HelmRelease"/]
+  hr --> merge[/"merge"/]
+  merge --> ren[/"document_renamer<br/>in the app container"/]
+```
+
+`layout` turns `taxonomy.yaml` into a `PAPERLESS_FILENAME_FORMAT` that files every document under its domain, type and year. [Archive layout](#archive-layout) has the format, the steps, and what to keep in sync afterwards.
 
 ## Steps
 
@@ -25,14 +143,40 @@ Run every step as `kubernetes/apps/default/paperless/tools/metadata.py <step>` (
 | `inventory` | Exports types, tags, correspondents, storage paths and custom fields, with document counts. No document content.                        | `inventory.json`                            |
 | `summarize` | The LLM describes each document: one-line summary, kind, sender, life domains, language. Newest first.                                  | `summaries.jsonl`                           |
 | `propose`   | Turns the summaries into a proposed taxonomy: at most 25 types, 15 domain tags, advice per existing tag, and correspondent name groups. | `taxonomy.proposed.yaml`, `proposal.md`     |
-| (you)       | Edit the proposal and save it as `taxonomy.yaml`. That file is the convention.                                                          |                                             |
-| `suggest`   | Per document: title, one type, correspondent, 1–4 domain tags and the custom fields, constrained to `taxonomy.yaml`.                    | `suggestions.csv`                           |
-| (you)       | Review the CSV in a spreadsheet and edit cells. `x` in `apply` writes a row, `?` writes it and tags it for review; `suggest` pre-marks. |                                             |
+| `suggest`   | Per document: title, one type, correspondent, 1–4 domain tags and the custom fields, constrained to `taxonomy.yaml`. Newest first.      | `suggestions.csv`                           |
 | `apply`     | Writes the marked rows. A dry run unless `--yes`.                                                                                       | `apply-journal.jsonl`, changes in paperless |
 | `undo`      | Restores what an apply run changed. A dry run unless `--yes`.                                                                           | changes in paperless                        |
 | `tag`       | Puts a temporary tag (`Redo OCR` unless `--name`) on `--bad-ocr` or `--ids` documents; `--remove` deletes it. A dry run unless `--yes`. | a tag in paperless                          |
+| `layout`    | Prints the `PAPERLESS_FILENAME_FORMAT` for `taxonomy.yaml`, and with a CSV how many documents land in each folder. No paperless needed. | nothing                                     |
 
-**Pre-marked rows.** `suggest` fills the `apply` cell of each new row:
+What each step reads and writes in `~/paperless-metadata` (every step except `layout` also talks to paperless, and `summarize`, `propose` and `suggest` to the LLM):
+
+```mermaid
+flowchart LR
+  s_inv["inventory"] --> f_inv[("inventory.json")]
+  s_sum["summarize"] --> f_sum[("summaries.jsonl")]
+  f_sum --> s_prop["propose"]
+  s_prop --> f_prop[("taxonomy.proposed.yaml<br/>proposal.md")]
+  f_prop -. you .-> f_tax[("taxonomy.yaml")]
+  f_tax --> s_prop
+  f_tax --> s_sug["suggest"]
+  s_sug --> f_csv[("suggestions.csv")]
+  f_csv -. you edit .-> f_csv
+  f_csv --> s_app["apply"]
+  s_app --> f_jnl[("apply-journal.jsonl")]
+  f_jnl --> s_app
+  f_jnl --> s_undo["undo"]
+  f_csv --> s_tag["tag --bad-ocr"]
+  f_sum --> s_tag
+  f_tax --> s_lay["layout"]
+  f_csv --> s_lay
+```
+
+`summarize` and `suggest` take `--limit N`, `--query '<paperless search>'` and `--ids 1,2,3`, and resume where they stopped: run them again to continue. `summarize --redo` describes documents again; the newest summary of a document wins.
+
+## Marks in `suggestions.csv`
+
+`x` in the `apply` cell writes a row, `?` writes it and tags the document for review, empty skips it. `suggest` fills the cell of each new row:
 
 | Mark  | When                                                                                                                                | What `apply` does                                    |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
@@ -40,13 +184,11 @@ Run every step as `kubernetes/apps/default/paperless/tools/metadata.py <step>` (
 | `?`   | anything else with readable OCR, when `taxonomy.yaml` has a `review_tag`                                                            | writes the row and puts `review_tag` on the document |
 | empty | OCR rated `slecht` (the suggestion is a guess), or no `review_tag`                                                                  | nothing                                              |
 
-Spot-check the `x` rows and change any mark you disagree with; `suggest --no-mark` leaves every cell empty. A `?` row is quicker to check in paperless than in the spreadsheet, with the scan next to the metadata: filter on the review tag (a saved view on the dashboard helps), fix what's wrong, and take the tag off. `apply` never removes it, and paperless never adds it by itself (no matching). Once nothing has it any more, delete it: `tag --name <review_tag> --remove --yes`.
+`suggest --no-mark` leaves every cell empty. A `?` row is quicker to check in paperless than in the spreadsheet, with the scan next to the metadata. `apply` never removes the review tag, and paperless never adds it by itself (no matching).
 
-**Empty rows: fix the OCR first.** `tag --bad-ocr --yes` tags every document rated `slecht` (see the OCR paragraph below). Once paperless has reprocessed them, `suggest --redo-unmarked --redo-bad-ocr` suggests again for every row whose `apply` cell is empty or whose `ocr` is `slecht`, now from the new text. `--redo-bad-ocr` is needed because a row the model was sure about gets an `x` even with bad OCR, and `--redo-unmarked` alone would leave its old rating.
+## Suggesting again
 
-`summarize` and `suggest` take `--limit N`, `--query '<paperless search>'` and `--ids 1,2,3`, and resume where they stopped: run them again to continue. `summarize --redo` describes documents again; the newest summary of a document wins.
-
-**Suggesting again** for documents already in the CSV, after a change to `taxonomy.yaml` or the OCR:
+For documents already in the CSV, after a change to `taxonomy.yaml` or the OCR:
 
 | Option                         | Rows                                                                                    |
 | ------------------------------ | --------------------------------------------------------------------------------------- |
@@ -60,9 +202,9 @@ The last four combine (a row matching any of them is redone), take `--limit`, an
 
 The new row takes the place of the old one, with a fresh mark, and the file before goes to `suggestions.csv.bak`. A cell you edited in a redone row is lost. Close the CSV in your spreadsheet before running `suggest`.
 
-Both go newest first. For the taxonomy sample, use `summarize --random --limit 1000`: newest first would leave out the kinds of documents and senders that only older documents have. Each `--random` run skips documents that already have a summary, so running it again adds another random batch.
+## Proposing again
 
-`propose` can run again after more summaries. Once `taxonomy.yaml` exists, it builds on that file:
+Once `taxonomy.yaml` exists, `propose` builds on that file:
 
 - **Kept unchanged:** its types, domain tags and correspondent groups, in their order, and every other setting.
 - **New types and domains** are added at the end.
@@ -103,7 +245,9 @@ The script downloads the document and renders the pages on your machine at 110 D
 
 The sender (`afzender`, `correspondent`) is the organisation that wrote or issued the document: the letterhead, or for a licence, card, diploma or certificate the issuing body. Never the holder, recipient or someone who only signs. When that isn't clear, it's left empty rather than guessed.
 
-`summarize` and `suggest` also rate the OCR (`goed`, `matig`, `slecht`). With the page image the model compares the OCR text with the page: `goed` means all readable text of the page is in it, `matig` clear errors or a missing part, `slecht` mostly unreadable or mostly missing. Empty OCR text on a page with even a few readable words is `slecht`, and a page without any text, such as a photo, with empty OCR text is `goed`; the prompt says empty OCR text out loud, as a model reads an empty section as a page without text. It only judges the page it sees, not the rest of the document. Without an image it is the model's impression of the text alone, and a page of numbers or tables can look worse than it is. `proposal.md` lists the IDs rated `slecht`; `suggest` rates the OCR again in its `ocr` column. That rating is the one `tag --bad-ocr` goes by, edits included: it has seen twice the text, maybe page images, and it is refreshed after reprocessing. `summarize`'s rating only counts for documents the CSV has no rating for. Reprocessing them only helps with paperless's OCR mode set to `redo` (or `force`): in the default `auto`, a PDF that already has more than 50 characters of text, such as a printer's own OCR layer, is never OCR'd again. paperless's document list can't filter on a list of IDs (and full-text search treats `id:` as a word), so `tag --bad-ocr --yes` tags them `Redo OCR`, without matching, so paperless never adds it to new documents. Filter on that tag, bulk edit → Reprocess, and once paperless has finished run `suggest --redo-unmarked --redo-bad-ocr` (and `summarize --redo --ids <ids>`, if you'll run `propose` again), then `tag --remove --yes`.
+### OCR ratings
+
+`summarize` and `suggest` also rate the OCR (`goed`, `matig`, `slecht`). With the page image the model compares the OCR text with the page: `goed` means all readable text of the page is in it, `matig` clear errors or a missing part, `slecht` mostly unreadable or mostly missing. Empty OCR text on a page with even a few readable words is `slecht`, and a page without any text, such as a photo, with empty OCR text is `goed`; the prompt says empty OCR text out loud, as a model reads an empty section as a page without text. It only judges the page it sees, not the rest of the document. Without an image it is the model's impression of the text alone, and a page of numbers or tables can look worse than it is. `proposal.md` lists the IDs rated `slecht`; `suggest` rates the OCR again in its `ocr` column. That rating is the one `tag --bad-ocr` goes by, edits included: it has seen twice the text, maybe page images, and it is refreshed after reprocessing. `summarize`'s rating only counts for documents the CSV has no rating for. [Fix the OCR](#3-fix-the-ocr) has the steps to reprocess the `slecht` ones.
 
 ## Timing
 
