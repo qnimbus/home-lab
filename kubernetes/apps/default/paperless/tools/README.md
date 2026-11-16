@@ -119,6 +119,7 @@ About 11 seconds per document on the NAS with the page image, 5–7 without. Wit
 - paperless renames the file to match `PAPERLESS_FILENAME_FORMAT`, which uses the title and correspondent.
 - **a document an earlier run already changed is skipped**, unless that run was undone: `suggest` appends every batch to the same CSV, so the `x` marks of earlier batches are still there, and writing them again would overwrite whatever you fixed in paperless since. `--reapply` writes them anyway, for a row you edited after applying it.
 - **`--limit N`** writes only the first N marked rows, in CSV order. Written rows are skipped next time, so the next run continues with the rest: a way to try a few documents and check them in paperless first. With `--reapply`, a limited run starts at the top again.
+- **`--ids 12,34`** writes only those documents' rows, and only when they are marked; it says which IDs it skipped, as not in the CSV or not marked. The earlier-run check still applies, so add `--reapply` to write one again.
 
 ## Undo and backups
 

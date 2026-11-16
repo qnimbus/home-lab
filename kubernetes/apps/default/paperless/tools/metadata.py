@@ -1762,11 +1762,19 @@ def cmd_apply(pl: Paperless, args: argparse.Namespace) -> None:
     }
     options_cache: dict[int, dict[str, str]] = {}
     # Cleaned again: a cell edited in a spreadsheet can hold a newline too.
+    every = read_suggestions(args.out / "suggestions.csv")
+    if args.ids:
+        wanted = {i.strip() for i in args.ids.split(",") if i.strip()}
+        every = [r for r in every if r["id"] in wanted]
+        if missing := wanted - {r["id"] for r in every}:
+            log(f"not in the CSV, so not applied: {', '.join(sorted(missing, key=int))}")
     rows = [
         {k: v if k == "custom_fields" else clean(v or "") for k, v in r.items() if k is not None}
-        for r in read_suggestions(args.out / "suggestions.csv")
+        for r in every
         if r["apply"].strip().lower() in APPLY_YES or r["apply"].strip() == REVIEW_MARK
     ]
+    if args.ids and (unmarked := [r["id"] for r in every if r["id"] not in {x["id"] for x in rows}]):
+        log(f"not marked, so not applied: {', '.join(unmarked)}")
     review_rows = sum(1 for r in rows if r["apply"].strip() == REVIEW_MARK)
     if review_rows and not tax["review_tag"]:
         sys.exit(f"{review_rows} rows are marked {REVIEW_MARK!r}: set review_tag in taxonomy.yaml first")
@@ -1976,6 +1984,7 @@ def main() -> None:
     ap = sub.add_parser("apply", help="write the rows marked in suggestions.csv to paperless")
     ap.add_argument("--yes", action="store_true", help="really write; without it this is a dry run")
     ap.add_argument("--limit", type=int, default=0, help="write at most this many marked rows")
+    ap.add_argument("--ids", help="only these comma-separated document IDs (their rows must still be marked)")
     ap.add_argument(
         "--reapply", action="store_true",
         help="also write rows for documents an earlier run already changed",
