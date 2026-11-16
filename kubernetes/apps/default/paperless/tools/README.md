@@ -124,15 +124,16 @@ flowchart LR
 
 ## Steps
 
-| Step        | What it does                                                                                                                            | Writes                                      |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| `inventory` | Exports types, tags, correspondents, storage paths and custom fields, with document counts. No document content.                        | `inventory.json`                            |
-| `summarize` | The LLM describes each document: one-line summary, kind, sender, life domains, language. Newest first.                                  | `summaries.jsonl`                           |
-| `propose`   | Turns the summaries into a proposed taxonomy: at most 25 types, 15 domain tags, advice per existing tag, and correspondent name groups. | `taxonomy.proposed.yaml`, `proposal.md`     |
-| `suggest`   | Per document: title, one type, correspondent, 1–4 domain tags and the custom fields, constrained to `taxonomy.yaml`. Newest first.      | `suggestions.csv`                           |
-| `apply`     | Writes the marked rows. A dry run unless `--yes`.                                                                                       | `apply-journal.jsonl`, changes in paperless |
-| `undo`      | Restores what an apply run changed. A dry run unless `--yes`.                                                                           | changes in paperless                        |
-| `tag`       | Puts a temporary tag (`Redo OCR` unless `--name`) on `--bad-ocr` or `--ids` documents; `--remove` deletes it. A dry run unless `--yes`. | a tag in paperless                          |
+| Step             | What it does                                                                                                                            | Writes                                             |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `inventory`      | Exports types, tags, correspondents, storage paths and custom fields, with document counts. No document content.                        | `inventory.json`                                   |
+| `summarize`      | The LLM describes each document: one-line summary, kind, sender, life domains, language. Newest first.                                  | `summaries.jsonl`                                  |
+| `propose`        | Turns the summaries into a proposed taxonomy: at most 25 types, 15 domain tags, advice per existing tag, and correspondent name groups. | `taxonomy.proposed.yaml`, `proposal.md`            |
+| `suggest`        | Per document: title, one type, correspondent, 1–4 domain tags and the custom fields, constrained to `taxonomy.yaml`. Newest first.      | `suggestions.csv`                                  |
+| `apply`          | Writes the marked rows. A dry run unless `--yes`.                                                                                       | `apply-journal.jsonl`, changes in paperless        |
+| `undo`           | Restores what an apply run changed. A dry run unless `--yes`.                                                                           | changes in paperless                               |
+| `tag`            | Puts a temporary tag (`Redo OCR` unless `--name`) on `--bad-ocr` or `--ids` documents; `--remove` deletes it. A dry run unless `--yes`. | a tag in paperless                                 |
+| `correspondents` | Shows groups of correspondents with similar names and merges the ones you pick, under the name you give. A dry run unless `--yes`.      | `correspondent-merges.jsonl`, changes in paperless |
 
 What each step reads and writes in `~/paperless-metadata` (every step also talks to paperless, and `summarize`, `propose` and `suggest` to the LLM):
 
@@ -252,6 +253,19 @@ About 11 seconds per document on the NAS with the page image, 5–7 without. Wit
 Before it changes a document, `apply` records the document's old title, type, correspondent, tags and custom fields in `apply-journal.jsonl`. `undo` (the last run), `undo --run <id>` or `undo --all` puts them back and deletes what the run created, unless another document uses it by then. paperless renames the files back.
 
 The journal lives in `~/paperless-metadata` only. Take a database backup before the first real `apply` anyway: `just k8s db-backup default paperless`.
+
+## Merging correspondents
+
+`metadata.py correspondents` lists correspondents whose names look alike, one group at a time, with their document counts. It asks which to merge (Enter for all, numbers such as `1,3` for some, `n` for none, `q` to stop) and the merged name, defaulting to the one with most documents. Two names look alike when they are equal apart from case, punctuation, legal form (B.V., N.V.) or a web address (`www.`, `.nl`, `.com`); when one is the other plus words (ING, ING Bank); when one is the other's initials (KLM); or when their spelling matches for at least `--threshold` (default 0.85). Shared words alone don't count, so Gemeente Utrecht and Gemeente Amsterdam aren't grouped.
+
+A merge moves every document to the correspondent that stays (the one already called that name, else the one with most documents), deletes the others and then renames the one that stays. A name that another correspondent outside the group already has is offered for the merge too. The script does not:
+
+- copy the matching rules: the correspondent that stays keeps its own. With Auto matching it learns from the documents it now has.
+- change workflows or saved views. Before it merges, it names each workflow that assigns or filters on a correspondent it will delete; point those at the new one in paperless afterwards. Saved views that filter on a deleted correspondent lose that filter and need checking too.
+- change `taxonomy.yaml`. Give the correspondent group there the merged name if it had another; a merged-away spelling can stay in its `aliases`, which `suggest` maps to that name.
+- delete a correspondent that still has documents the API token can't see.
+
+`correspondent-merges.jsonl` records each merge (the document IDs it moved, and the old IDs and names) and each group you kept separate. That group isn't shown again unless it changes, or with `--again`. There is no `undo`: put a merge back by hand from that record, or from the database backup.
 
 ## `taxonomy.yaml`
 

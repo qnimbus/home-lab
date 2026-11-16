@@ -826,6 +826,207 @@ def cmd_tag(pl: Paperless, args: argparse.Namespace) -> None:
         log("dry run: add --yes to write")
 
 
+# Left out when comparing correspondent names: "Fietsenwinkel.nl" is "Fietsenwinkel".
+WEB_PARTS = {"www", "nl", "com", "be", "de", "eu", "org", "net"}
+NAME_NOISE = {"de", "het", "van", "en", "der", "the", "of", "and"}
+
+
+def merge_key(name: str) -> str:
+    return " ".join(w for w in normalize_name(name).split() if w not in WEB_PARTS)
+
+
+def similar_names(a: str, b: str, threshold: float) -> bool:
+    """Equal apart from case, punctuation, legal form or web address; one is the
+    other plus words (ING, ING Bank); one is the other's initials; or spelled alike."""
+    ka, kb = merge_key(a), merge_key(b)
+    if not ka or not kb:
+        return False
+    fa, fb = ka.replace(" ", ""), kb.replace(" ", "")
+    if fa == fb:
+        return True
+    short, long_ = sorted((ka, kb), key=len)
+    if len(short.replace(" ", "")) >= 3 and f" {short} " in f" {long_} ":
+        return True
+
+    def initials(key: str) -> str:
+        words = [w for w in key.split() if w not in NAME_NOISE]
+        return "".join(w[0] for w in words) if len(words) >= 2 else ""
+
+    if fa == initials(kb) or fb == initials(ka):
+        return True
+    m = difflib.SequenceMatcher(None, fa, fb)
+    return m.real_quick_ratio() >= threshold and m.quick_ratio() >= threshold and m.ratio() >= threshold
+
+
+def similar_groups(items: list[dict], threshold: float) -> list[list[dict]]:
+    """Correspondents linked by similar names, each group sorted by document count."""
+    parent = list(range(len(items)))
+
+    def root(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i, a in enumerate(items):
+        for j in range(i + 1, len(items)):
+            if similar_names(a["name"], items[j]["name"], threshold):
+                parent[root(j)] = root(i)
+    groups: dict[int, list[dict]] = {}
+    for i, item in enumerate(items):
+        groups.setdefault(root(i), []).append(item)
+    return sorted(
+        (sorted(g, key=lambda c: (-(c.get("document_count") or 0), c["name"])) for g in groups.values() if len(g) > 1),
+        key=lambda g: merge_key(g[0]["name"]),
+    )
+
+
+def ask(prompt: str) -> str:
+    try:
+        return input(prompt).strip()
+    except EOFError:
+        raise SystemExit("\nstopped")
+
+
+def pick_members(group: list[dict]) -> list[dict] | None:
+    """The correspondents to merge; [] for none, None to quit."""
+    while True:
+        answer = ask("merge which? numbers such as 1,3 · Enter = all · n = none · q = quit: ").lower()
+        if answer == "q":
+            return None
+        if answer in ("n", "nee", "no"):
+            return []
+        if not answer:
+            return group
+        try:
+            picked = sorted({int(n) for n in re.split(r"[,\s]+", answer) if n})
+        except ValueError:
+            picked = []
+        if len(picked) >= 2 and all(1 <= n <= len(group) for n in picked):
+            return [group[n - 1] for n in picked]
+        print(f"give at least two numbers from 1 to {len(group)}")
+
+
+def merge_name(members: list[dict], others: dict[str, dict]) -> tuple[str, list[dict]]:
+    """The merged correspondent's name, and the members, plus an existing
+    correspondent outside the group that already has that name."""
+    default = members[0]["name"]
+    while True:
+        name = ask(f"name of the merged correspondent [{default}]: ") or default
+        clash = others.get(name.casefold())
+        if clash is None or clash in members:
+            return name, members
+        n = clash.get("document_count") or 0
+        if ask(f"{clash['name']!r} already exists ({n} documents); merge it in too? [y/N]: ").lower() in APPLY_YES:
+            return name, [*members, clash]
+
+
+def workflow_uses(workflows: list[dict], ids: set[int]) -> list[str]:
+    """Names of the workflows that assign or filter on one of these correspondents."""
+    used = []
+    for w in workflows:
+        refs = {a.get("assign_correspondent") for a in w.get("actions", [])}
+        refs |= {t.get("filter_has_correspondent") for t in w.get("triggers", [])}
+        if refs & ids:
+            used.append(w.get("name", f"#{w.get('id')}"))
+    return used
+
+
+def merge_target(members: list[dict], name: str) -> dict:
+    """The one that stays: the one already named so, else the one with most documents."""
+    return next((c for c in members if c["name"].casefold() == name.casefold()), members[0])
+
+
+def merge_into_one(
+    pl: Paperless, members: list[dict], name: str, dry_run: bool, journal: Path, run: str
+) -> set[int]:
+    """Move every document onto one correspondent, delete the others, then rename it.
+    Returns the IDs deleted (or that would be)."""
+    target = merge_target(members, name)
+    deleted = set()
+    for c in members:
+        if c is target:
+            continue
+        docs = [d["id"] for d in pl.all("documents/", correspondent__id=c["id"], fields="id")]
+        log(f"{'would move' if dry_run else 'moving'} {len(docs)} documents from {c['name']!r}")
+        if c.get("matching_algorithm") not in (MATCH_NONE, MATCH_AUTO) and c.get("match"):
+            log(f"  {c['name']!r} matched on {c['match']!r}; {name!r} keeps its own matching rule")
+        if dry_run:
+            deleted.add(c["id"])
+            continue
+        # Journal first, so a half-done merge can still be put back by hand.
+        append_jsonl(journal, {
+            "run": run, "into": target["id"], "into_name": target["name"], "name": name,
+            "from": c["id"], "from_name": c["name"], "documents": docs,
+        })  # fmt: skip
+        for i in range(0, len(docs), 500):
+            pl.post("documents/bulk_edit/", {
+                "documents": docs[i : i + 500], "method": "set_correspondent",
+                "parameters": {"correspondent": target["id"]},
+            })  # fmt: skip
+        # Documents this token can't see would lose their correspondent: keep it then.
+        left = pl.first("documents/", 1, correspondent__id=c["id"], fields="id")
+        if left:
+            log(f"  kept {c['name']!r}: it still has documents this token can't change")
+        else:
+            pl.delete(f"correspondents/{c['id']}/")
+            deleted.add(c["id"])
+    if target["name"] != name:
+        log(f"{'would rename' if dry_run else 'renaming'} {target['name']!r} to {name!r}")
+        if not dry_run:
+            pl.patch(f"correspondents/{target['id']}/", {"name": name})
+    return deleted
+
+
+def cmd_correspondents(pl: Paperless, args: argparse.Namespace) -> None:
+    """Find correspondents with similar names and merge the ones you pick."""
+    dry_run = not args.yes
+    journal = args.out / "correspondent-merges.jsonl"
+    decided = {frozenset(r["separate"]) for r in read_jsonl(journal) if "separate" in r}
+    items = list(pl.all("correspondents/"))
+    groups = [g for g in similar_groups(items, args.threshold) if args.again or frozenset(c["id"] for c in g) not in decided]
+    workflows = list(pl.all("workflows/"))
+    log(f"{len(items)} correspondents, {len(groups)} groups of similar names to check")
+    by_name = {c["name"].casefold(): c for c in items}
+    run = time.strftime("%Y%m%dT%H%M%S")
+    merged = 0
+    for n, group in enumerate(groups, 1):
+        print(f"\n[{n}/{len(groups)}]")
+        width = max(len(c["name"]) for c in group)
+        for i, c in enumerate(group, 1):
+            print(f"  {i:>2}  {c['name']:<{width}}  {c.get('document_count') or 0:>5} documents")
+        members = pick_members(group)
+        if members is None:
+            break
+        deleted: set[int] = set()
+        if members:
+            name, members = merge_name(members, by_name)
+            total = sum(c.get("document_count") or 0 for c in members)
+            target = merge_target(members, name)
+            ids = {c["id"] for c in members if c is not target}
+            for w in workflow_uses(workflows, ids):
+                print(f"  workflow {w!r} uses a correspondent that will be deleted: point it at {name!r} afterwards")
+            prompt = f"merge {len(members)} correspondents ({total} documents) into {name!r}? [y/N]: "
+            if ask(prompt).lower() in APPLY_YES:
+                deleted = merge_into_one(pl, members, name, dry_run, journal, run)
+                merged += 1
+                # A later group may show the one that stays (pulled in by its name).
+                for c in members:
+                    if c["id"] in deleted:
+                        by_name.pop(c["name"].casefold(), None)
+                by_name.pop(target["name"].casefold(), None)
+                target["name"] = name
+                target["document_count"] = total
+                by_name[name.casefold()] = target
+        # Don't ask about the same group again: what's left of it stays separate.
+        left = {c["id"] for c in group} - deleted
+        if len(left) > 1 and not dry_run:
+            append_jsonl(journal, {"run": run, "separate": sorted(left)})
+    log(f"{'would merge' if dry_run else 'merged'} {merged} groups")
+    if dry_run:
+        log("dry run: add --yes to write")
+
+
 def counted(counter: Counter, limit: int) -> str:
     return "\n".join(f"- {value} ({n})" for value, n in counter.most_common(limit))
 
@@ -2014,6 +2215,13 @@ def main() -> None:
     which.add_argument("--ids", help="comma-separated document IDs")
     which.add_argument("--remove", action="store_true", help="delete the tag, and so take it off every document")
     tp.add_argument("--yes", action="store_true", help="really write; without it this is a dry run")
+    cp = sub.add_parser("correspondents", help="find correspondents with similar names and merge the ones you pick")
+    cp.add_argument(
+        "--threshold", type=float, default=0.85,
+        help="how alike two spellings must be, 0 to 1 (default 0.85), next to the other rules",
+    )  # fmt: skip
+    cp.add_argument("--again", action="store_true", help="also ask about groups you chose to keep separate")
+    cp.add_argument("--yes", action="store_true", help="really write; without it this is a dry run")
     args = p.parse_args()
 
     token = os.getenv("PAPERLESS_TOKEN")
@@ -2038,6 +2246,8 @@ def main() -> None:
             cmd_apply(pl, args)
         case "undo":
             cmd_undo(pl, args)
+        case "correspondents":
+            cmd_correspondents(pl, args)
         case "tag":
             cmd_tag(pl, args)
 
