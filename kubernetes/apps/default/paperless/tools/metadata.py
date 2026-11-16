@@ -299,57 +299,126 @@ def compact_suggestions(path: Path) -> int:
 # so a drawing or poster is sent smaller instead of as dozens of megapixels.
 IMAGE_DPI = 110
 IMAGE_MAX_PIXELS = 3_000_000
+# The OCR text that goes with each page image, so the model can compare the
+# two even for a page past the --chars the prompt otherwise holds.
+PAGE_TEXT_CHARS = 1500
+# A page with less text than this and hardly any ink is the empty back of a
+# duplex scan, not worth an image.
+BLANK_TEXT_CHARS = 5
+BLANK_INK_SHARE = 0.003
+
+# Which extra pages a reason calls for, on top of page 1 (see choose_pages).
+OCR_REASONS = ("photo or image file", "little or no OCR text", "OCR text looks garbled", "OCR slecht")
+CLARITY_REASONS = ("no sender", "duidelijkheid", "confidence laag")
 
 
-def page_images(pl: Paperless, doc_id: int, pages: int, dpi: int = IMAGE_DPI) -> list[str]:
-    """JPEG data URLs of a document's first pages, rendered on this machine.
+def choose_pages(texts: list[str], is_blank: Callable[[int], bool], reason: str, limit: int) -> list[int]:
+    """0-based page numbers to send, at most limit, in page order.
+
+    Page 1 (or the first page that isn't blank) always: the letterhead, logo,
+    type, date and title. Then, by why the document gets images:
+    - bad OCR: the page with the worst OCR text, if it is worse than the
+      thresholds, so the OCR rating covers the worst part;
+    - no sender or unclear: page 2 of a 2-page document (often the back of a
+      card or licence), or the last page of a longer one (signature, stamp,
+      issuer, totals).
+    """
+    count = len(texts)
+    candidates = [i for i in range(count) if not is_blank(i)] or [0]
+    chosen = [candidates[0]]
+
+    def quality(i: int) -> float:
+        sig = text_signals({"content": texts[i], "page_count": 1})
+        return 0.0 if sig["chars_per_page"] < MIN_CHARS_PER_PAGE else sig["wordlike_share"]
+
+    if any(r in reason for r in OCR_REASONS):
+        rest = [i for i in candidates if i not in chosen]
+        worst = min(rest, key=quality, default=None)
+        if worst is not None and quality(worst) < MIN_WORDLIKE_SHARE:
+            chosen.append(worst)
+    if any(r in reason for r in CLARITY_REASONS) and count >= 2:
+        extra = 1 if count == 2 else count - 1
+        if extra in candidates and extra not in chosen:
+            chosen.append(extra)
+    return sorted(chosen[: max(limit, 1)])
+
+
+def page_images(
+    pl: Paperless, doc: dict, limit: int, dpi: int = IMAGE_DPI, reason: str = ""
+) -> list[dict]:
+    """Page images for the model, rendered on this machine: one dict per page
+    with its number, the document's page count, a JPEG data URL, and the OCR
+    text of that page (None when it can't be told apart).
 
     paperless's download is the archive PDF when there is one (scans, photos
-    and office files all have one), else the original. Anything that can't be
-    rendered gives no images, and the caller goes on with the text alone.
+    and office files all have one), else the original. Its text layer holds
+    the OCR text per page, which paperless's own content doesn't: there the
+    pages run together. When content and text layer disagree (paperless-gpt's
+    LLM OCR replaces the content but not the PDF), the layer's text is left
+    out. Anything that can't be rendered gives no images, and the caller goes
+    on with the text alone.
     """
-    if pages <= 0:
+    if limit <= 0:
         return []
+    doc_id = doc["id"]
     try:
         r = pl.http.get(f"documents/{doc_id}/download/")
         r.raise_for_status()
         data = r.content
-        images = []
-        if data[:5] == b"%PDF-":
-            pdf = pypdfium2.PdfDocument(data)
-            for i in range(min(pages, len(pdf))):
-                width, height = pdf[i].get_size()  # in points, 72 per inch
-                scale = min(dpi / 72, math.sqrt(IMAGE_MAX_PIXELS / max(width * height, 1)))
-                images.append(pdf[i].render(scale=scale).to_pil())
-        else:
+        if data[:5] != b"%PDF-":
             img = Image.open(io.BytesIO(data))
             factor = math.sqrt(IMAGE_MAX_PIXELS / max(img.width * img.height, 1))
             if factor < 1:
                 img = img.resize((int(img.width * factor), int(img.height * factor)))
-            images.append(img)
+            return [{"page": 1, "of": 1, "url": jpeg_url(img), "text": None}]
+        pdf = pypdfium2.PdfDocument(data)
+        texts = [pdf[i].get_textpage().get_text_bounded() for i in range(len(pdf))]
+
+        def is_blank(i: int) -> bool:
+            if len(texts[i].strip()) >= BLANK_TEXT_CHARS:
+                return False
+            thumb = pdf[i].render(scale=0.1).to_pil().convert("L")
+            dark = sum(1 for v in thumb.getdata() if v < 160)
+            return dark / max(thumb.width * thumb.height, 1) < BLANK_INK_SHARE
+
+        pages = choose_pages(texts, is_blank, reason, limit)
+        layer = "".join(texts)
+        content = (doc.get("content") or "").strip()
+        # The layer is paperless's OCR text when the two start alike.
+        same_text = not content or difflib.SequenceMatcher(None, layer[:1000], content[:1000]).quick_ratio() > 0.6
+        out = []
+        for i in pages:
+            width, height = pdf[i].get_size()  # in points, 72 per inch
+            scale = min(dpi / 72, math.sqrt(IMAGE_MAX_PIXELS / max(width * height, 1)))
+            out.append({
+                "page": i + 1, "of": len(pdf), "url": jpeg_url(pdf[i].render(scale=scale).to_pil()),
+                "text": texts[i][:PAGE_TEXT_CHARS] if same_text else None,
+            })  # fmt: skip
+        return out
     # pypdfium2 and Pillow raise their own exception types, Pillow's
     # DecompressionBombError among them.
     except Exception as exc:  # noqa: BLE001
         log(f"document {doc_id}: no page image ({exc.__class__.__name__}), text only")
         return []
-    urls = []
-    for img in images:
-        buf = io.BytesIO()
-        img.convert("RGB").save(buf, "JPEG", quality=85)
-        urls.append("data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode())
-    return urls
+
+
+def jpeg_url(img: Image.Image) -> str:
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, "JPEG", quality=85)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
 def ask_with_images(
     llm: LLM,
     args: argparse.Namespace,
-    images: list[str],
+    images: list[dict],
     build: Callable[[bool], tuple[str, str]],
     schema: dict,
     max_tokens: int,
 ) -> tuple[dict, int]:
     """Ask with the page images between the fixed instructions and the document
-    text, so llama.cpp's prompt cache still covers the instructions.
+    text, so llama.cpp's prompt cache still covers the instructions. Each image
+    comes with its page number and, where known, that page's OCR text.
 
     build(vision) returns (instructions, document text). A model without
     vision rejects the images: the run then goes on without them.
@@ -357,11 +426,14 @@ def ask_with_images(
     """
     if images and args.image_pages > 0:
         prefix, rest = build(True)
-        parts = [
-            {"type": "text", "text": prefix},
-            *({"type": "image_url", "image_url": {"url": url}} for url in images),
-            {"type": "text", "text": rest},
-        ]
+        parts: list[dict] = [{"type": "text", "text": prefix}]
+        for img in images:
+            parts.append({"type": "text", "text": f"Pagina {img['page']} van {img['of']}:"})
+            parts.append({"type": "image_url", "image_url": {"url": img["url"]}})
+            if img["text"] is not None:
+                text = img["text"] if img["text"].strip() else "(leeg: OCR vond geen tekst)"
+                parts.append({"type": "text", "text": f"OCR-tekst van pagina {img['page']}:\n{text}"})
+        parts.append({"type": "text", "text": rest})
         try:
             return llm.json(parts, schema, max_tokens), len(images)
         except RuntimeError as exc:
@@ -430,7 +502,7 @@ def ask_auto(
         if not weakness:
             return answer, 0, ""
         reason = f"weak text-only answer: {weakness}"
-    images = page_images(pl, doc["id"], args.image_pages, args.image_dpi)
+    images = page_images(pl, doc, args.image_pages, args.image_dpi, reason)
     if not images and answer is not None:
         return answer, 0, ""  # nothing to add: keep the text-only answer
     answer, seen = ask_with_images(llm, args, images, build, schema, max_tokens)
@@ -497,7 +569,9 @@ OCR_RULE_TEXT = (
     "onleesbaar)"
 )
 OCR_RULE_VISION = (
-    "hoe goed de OCR-tekst weergeeft wat op de afbeelding staat: goed (alle leesbare tekst "
+    "hoe goed de OCR-tekst weergeeft wat op de afbeeldingen staat; vergelijk elke pagina met "
+    "de OCR-tekst die erbij staat, of anders met het begin van de inhoud, en geef het oordeel "
+    "van de slechtste pagina: goed (alle leesbare tekst "
     "van de pagina staat erin, hooguit met een enkele fout), matig (te volgen, maar met "
     "duidelijke fouten, of er ontbreekt een deel van de tekst), slecht (grotendeels "
     "onleesbaar, of de meeste tekst van de pagina ontbreekt). Is de OCR-tekst leeg terwijl je "
@@ -506,8 +580,10 @@ OCR_RULE_VISION = (
     "Beoordeel alleen het deel van het document dat je op de afbeelding ziet"
 )
 VISION_NOTE = (
-    "Je krijgt de eerste pagina('s) van het document als afbeelding, en daarna de tekst die "
-    "OCR eruit las. Gebruik de afbeelding voor wat de tekst mist of verkeerd leest: "
+    "Je krijgt een of meer pagina's van het document als afbeelding, elk met het "
+    "paginanummer en meestal de OCR-tekst van die pagina, en daarna het begin van de tekst "
+    "die OCR uit het hele document las. Gebruik de afbeeldingen voor wat de tekst mist of "
+    "verkeerd leest: "
     "briefhoofd, logo, opmaak, tabellen, stempels, handschrift en foto's. Neem geen "
     "gegevens over die je ook op de afbeelding niet kunt lezen."
 )
@@ -1694,8 +1770,9 @@ def main() -> None:
             "text-only answer is weak), always, or never (default auto)",
         )  # fmt: skip
         sp.add_argument(
-            "--image-pages", type=int, default=1, metavar="N",
-            help="pages sent when a document gets images (default 1; 0 is --images never)",
+            "--image-pages", type=int, default=3, metavar="N",
+            help="at most N page images per document, chosen by why it gets them "
+            "(default 3; 0 is --images never)",
         )  # fmt: skip
         sp.add_argument(
             "--image-dpi", type=int, default=IMAGE_DPI,
