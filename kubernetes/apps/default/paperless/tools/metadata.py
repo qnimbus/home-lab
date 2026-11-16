@@ -782,13 +782,22 @@ def cmd_tag(pl: Paperless, args: argparse.Namespace) -> None:
             pl.delete(f"tags/{tag['id']}/")
     else:
         if args.bad_ocr:
-            # Both rate the OCR; suggest's rating is the newer one for a redone document.
-            from_summaries = set(bad_ocr_ids(latest_per_id(read_jsonl(args.out / "summaries.jsonl"))))
-            from_suggestions = {
-                int(r["id"]) for r in read_suggestions(args.out / "suggestions.csv") if r.get("ocr") == "slecht"
+            # suggest's rating decides: it saw twice the text, maybe page images,
+            # and your edits. summarize's only counts for documents suggest didn't rate.
+            rated = {
+                int(r["id"]): (r.get("ocr") or "").strip()
+                for r in read_suggestions(args.out / "suggestions.csv")
+                if (r.get("ocr") or "").strip()
             }
-            ids = sorted(from_summaries | from_suggestions)
-            log(f"OCR rated slecht: {len(from_summaries)} in summaries, {len(from_suggestions)} in suggestions")
+            from_suggestions = {i for i, o in rated.items() if o == "slecht"}
+            from_summaries = {
+                i for i in bad_ocr_ids(latest_per_id(read_jsonl(args.out / "summaries.jsonl"))) if i not in rated
+            }
+            ids = sorted(from_suggestions | from_summaries)
+            log(
+                f"OCR rated slecht: {len(from_suggestions)} by suggest, "
+                f"{len(from_summaries)} by summarize (documents suggest didn't rate)"
+            )
         else:
             ids = [int(i) for i in (args.ids or "").split(",") if i.strip()]
         if not ids:
