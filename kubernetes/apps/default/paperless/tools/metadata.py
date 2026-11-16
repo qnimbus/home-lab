@@ -1086,6 +1086,15 @@ def load_taxonomy(args: argparse.Namespace) -> dict:
     tax.setdefault("layout_fallback", "Overig")
     tax.setdefault("layout_reference_folder", "Naslag")
     tax["review_tag"] = tax.get("review_tag") or None
+    for key, kinds in (("tag_classification", "tags"), ("label_tag_classification", "label_tags")):
+        section = tax.get(key) or {}
+        rules = section.get("rules") or []
+        if not isinstance(rules, list) or not all(isinstance(r, str) for r in rules):
+            sys.exit(f"{key}.rules: a list of texts")
+        tax[key] = {
+            "rules": [" ".join(r.split()) for r in rules],
+            "max": int(section.get("max") or (4 if kinds == "tags" else max(len(tax[kinds]), 1))),
+        }
     if tax["review_tag"]:
         review = tax["review_tag"].casefold()
         clashes = [
@@ -1249,10 +1258,13 @@ def suggestion_schema(tax: dict, known: list[str]) -> dict:
     if len(known) <= MAX_CORRESPONDENT_CHOICES:
         props["correspondent"] = {"type": "string", "enum": [*known, NEW_SENDER, UNKNOWN_SENDER]}
     props |= {
-        "tags": str_list(4, enum=[t["name"] for t in tax["tags"]]),
+        "tags": str_list(tax["tag_classification"]["max"], enum=[t["name"] for t in tax["tags"]]),
     }
     if tax["label_tags"]:
-        props["labels"] = str_list(len(tax["label_tags"]), enum=[t["name"] for t in tax["label_tags"]])
+        props["labels"] = str_list(
+            min(tax["label_tag_classification"]["max"], len(tax["label_tags"])),
+            enum=[t["name"] for t in tax["label_tags"]],
+        )
     props |= {
         "confidence": {"type": "string", "enum": ["hoog", "middel", "laag"]},
     }
@@ -1269,7 +1281,10 @@ def suggestion_prompt(
     the document itself."""
 
     def listing(items: list[dict]) -> str:
-        return "\n".join(f"- {i['name']}: {i.get('description', '')}" for i in items)
+        return "\n".join(f"- {i['name']}: {' '.join((i.get('description') or '').split())}" for i in items)
+
+    def rules(section: dict) -> str:
+        return "".join(f"\n- {r}" for r in section["rules"])
 
     language = (
         "in het Nederlands"
@@ -1296,11 +1311,19 @@ def suggestion_prompt(
         parts.append(f"ocr_kwaliteit: {OCR_RULE_VISION if vision else OCR_RULE_TEXT}.")
     parts += [
         f"Documentsoorten (kies er precies één):\n{listing(tax['document_types'])}",
-        f"Domein-tags (kies er 1 tot 4 die echt passen):\n{listing(tax['tags'])}",
+        f"Domeinlabels, het veld tags (hoogstens {tax['tag_classification']['max']}, alleen "
+        f"domeinen die echt passen):\n{listing(tax['tags'])}"
+        + (f"\n\nRegels voor domeinlabels:{rules(tax['tag_classification'])}" if tax["tag_classification"]["rules"] else ""),
         *(
             [
-                "Labels (alleen als het label duidelijk op dit document van toepassing is; "
-                f"meestal geen, dan een lege lijst):\n{listing(tax['label_tags'])}"
+                "Eigenschapslabels, het veld labels: kenmerken van het document (alleen als het label "
+                "duidelijk op dit document van toepassing is; meestal geen, dan een lege lijst):\n"
+                f"{listing(tax['label_tags'])}"
+                + (
+                    f"\n\nRegels voor eigenschapslabels:{rules(tax['label_tag_classification'])}"
+                    if tax["label_tag_classification"]["rules"]
+                    else ""
+                )
             ]
             if tax["label_tags"]
             else []

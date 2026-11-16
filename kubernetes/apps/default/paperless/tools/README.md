@@ -130,11 +130,18 @@ document_types:
   - { name: Factuur, description: Een verzoek om te betalen voor geleverde goederen of diensten }
 tags:
   - { name: Wonen, description: Het huis, energie, water, gemeentelijke belastingen }
+tag_classification: # optional
+  max: 3 # domain tags per document (default 4), enforced by the answer's schema
+  rules: # added to the prompt under the domain tags
+    - Geef voorrang aan specifieke domeinen zoals Wonen boven algemene zoals Financiën.
 label_tags: # optional: suggest adds them where they clearly apply; never an archive folder
   - {
       name: Garantie,
       description: Een garantiebewijs of aankoopbewijs van een product met garantie,
     }
+label_tag_classification: # optional, as tag_classification (max defaults to all labels)
+  rules:
+    - Ken alleen labels toe wanneer de eigenschap expliciet uit het document blijkt.
 keep_tags: [Inbox] # the only tags apply leaves on a document, next to the domain and label tags
 remove_tags: [Archived] # removed from every document that apply touches
 review_tag: Controleren # optional: apply puts it on rows marked ?, to check them in paperless
@@ -158,6 +165,8 @@ ignore: # names propose never suggests again
 Custom field types: `string`, `date`, `monetary`, `integer`.
 
 **Label tags** mark a property, not a subject: a warranty, a licence code. `suggest` adds one only where its description clearly applies, in the CSV's `tags` column after the domain tags. `apply` keeps a label tag a document already has. `layout` ignores label tags, so they never become a folder, and `propose` never offers them as a domain.
+
+**Classification rules.** `tag_classification` and `label_tag_classification` hold optional `rules`: guidelines in your own words that `suggest` puts in the prompt right under the domain tags and the labels, after their descriptions, so they apply to every document and stay in llama.cpp's prompt cache. The prompt calls the two lists domeinlabels and eigenschapslabels, so rules can name them that way. `max` caps how many of each the model may pick; the answer's schema enforces it, so a rule that says "at most 3" and `max: 3` agree. A rule that asks for fewer ("bij voorkeur 1 tot 2") is guidance the model mostly follows, not a hard limit. `propose` carries both sections over unchanged.
 
 **Summary and OCR quality.** With `summary_field` set, `suggest` writes a one-line Dutch summary of at most 128 characters per document (paperless's plain text field limit), before it classifies the document; with `ocr_field` set, it rates the OCR. Both land in the CSV's `summary` and `ocr` columns, to review and edit like the rest, and `apply` writes them to those custom fields, creating them if missing: the summary as Text, OCR quality as a Select with the options `goed`, `matig` and `slecht`. A field you created yourself keeps its type (Long Text works too). The summary shows on the document and as a list column, but paperless's plain search doesn't cover custom fields: only `custom_fields.value:<word>` finds it. It is the model's reading of the document at that moment, so it can be wrong and doesn't update when the document changes.
 
