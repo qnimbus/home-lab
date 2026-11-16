@@ -1561,7 +1561,7 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
     redo = args.redo
     if selected := redo_selection(args, read_suggestions(path)):
         if args.ids or args.query:
-            sys.exit("--redo-unmarked, --redo-type and --redo-tag pick the rows themselves: leave out --ids and --query")
+            sys.exit("the --redo-* options pick the rows themselves: leave out --ids and --query")
         marks = Counter(r["apply"].strip() or "empty" for r in selected)
         applied = Journal(args.out, dry_run=True).applied_documents() & {int(r["id"]) for r in selected}
         log(
@@ -1576,7 +1576,7 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         )
         args.ids = ",".join(r["id"] for r in selected)
         redo = True
-    elif args.redo_unmarked or args.redo_type or args.redo_tag:
+    elif args.redo_unmarked or args.redo_bad_ocr or args.redo_type or args.redo_tag:
         sys.exit(f"no rows in {path} match")
     new_file = not path.exists()
     count = 0
@@ -1605,7 +1605,7 @@ def cmd_suggest(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
 
 
 def redo_selection(args: argparse.Namespace, rows: list[dict]) -> list[dict]:
-    """The CSV rows --redo-unmarked, --redo-type and --redo-tag pick, in CSV order.
+    """The CSV rows --redo-unmarked, --redo-bad-ocr, --redo-type and --redo-tag pick, in CSV order.
 
     Types and tags are matched on the suggestion (the type and tags columns),
     case-insensitively, so a name taxonomy.yaml no longer has still matches.
@@ -1619,6 +1619,8 @@ def redo_selection(args: argparse.Namespace, rows: list[dict]) -> list[dict]:
         r
         for r in rows
         if (args.redo_unmarked and not r["apply"].strip())
+        # A sure row gets an x even with bad OCR, so --redo-unmarked misses it.
+        or (args.redo_bad_ocr and (r.get("ocr") or "").strip() == "slecht")
         or r["type"].strip().casefold() in types
         or tags & {t.strip().casefold() for t in r["tags"].split(",")}
     ]
@@ -1934,6 +1936,10 @@ def main() -> None:
             sp.add_argument(
                 "--redo-unmarked", action="store_true",
                 help="suggest again for every row whose apply cell is empty",
+            )  # fmt: skip
+            sp.add_argument(
+                "--redo-bad-ocr", action="store_true",
+                help="suggest again for every row whose ocr cell is slecht, whatever its mark",
             )  # fmt: skip
             sp.add_argument(
                 "--redo-type", action="append", metavar="NAME",
