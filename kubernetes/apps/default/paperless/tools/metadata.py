@@ -445,7 +445,7 @@ def page_images(
             if len(texts[i].strip()) >= BLANK_TEXT_CHARS:
                 return False
             thumb = pdf[i].render(scale=0.1).to_pil().convert("L")
-            dark = sum(1 for v in thumb.getdata() if v < 160)
+            dark = sum(thumb.histogram()[:160])  # pixels darker than 160
             return dark / max(thumb.width * thumb.height, 1) < BLANK_INK_SHARE
 
         pages = choose_pages(texts, is_blank, reason, limit)
