@@ -106,13 +106,16 @@ class Paperless:
         return r.json()
 
     def post(self, path: str, body: dict) -> dict:
-        r = self.http.post(path, json=body)
-        r.raise_for_status()
-        return r.json()
+        return self._json(self.http.post(path, json=body))
 
     def patch(self, path: str, body: dict) -> dict:
-        r = self.http.patch(path, json=body)
-        r.raise_for_status()
+        return self._json(self.http.patch(path, json=body))
+
+    @staticmethod
+    def _json(r: httpx.Response) -> dict:
+        # Paperless says in the body what it refused; raise_for_status drops that.
+        if r.is_error:
+            sys.exit(f"{r.request.method} {r.url}: {r.status_code} {r.text[:1000]}")
         return r.json()
 
     def delete(self, path: str) -> None:
@@ -800,6 +803,11 @@ def cmd_tag(pl: Paperless, args: argparse.Namespace) -> None:
             )
         else:
             ids = [int(i) for i in (args.ids or "").split(",") if i.strip()]
+        # bulk_edit refuses the whole request if one document is gone.
+        existing = {d["id"] for d in pl.all("documents/", fields="id")}
+        if gone := [i for i in ids if i not in existing]:
+            log(f"skipping {len(gone)} documents no longer in paperless: {', '.join(map(str, gone))}")
+            ids = [i for i in ids if i in existing]
         if not ids:
             sys.exit("no documents: pass --bad-ocr or --ids")
         log(f"{'would tag' if dry_run else 'tagging'} {len(ids)} documents with {args.name!r}")
