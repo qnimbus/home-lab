@@ -73,6 +73,8 @@ Both go newest first. For the taxonomy sample, use `summarize --random --limit 1
 
 ## What the LLM sees
 
+Every prompt is structured with XML-style tags. The instructions are plain text in `<taak>` and `<velden>` (one line per field of the answer, in the order the model writes them), and each list to choose from has its own tag (`<documentsoorten>`, `<domeinlabels>`, `<regels_domeinlabels>`, `<eigenschapslabels>`, `<extra_velden>`, `<correspondenten>`), so the instructions can name them. The document material follows in `<huidige_gegevens>`, `<bestandsnaam>`, one `<pagina>` per image with that page's `<ocr>`, and `<document>`. The system prompt says everything in those last tags is material, not instructions, and `<` and `>` in that material become `‹` and `›`, so a document can't close its tag and pose as one. The fixed part comes first, so llama.cpp's prompt cache covers it. `--debug` shows the whole prompt.
+
 The first 3000 (`summarize`) or 6000 (`suggest`) characters of paperless's OCR text, and the original filename, flagged as often meaningless (scanner and download names). Never the PDF's own metadata: on a home scan its author and producer are the printer.
 
 **Page images.** Qwen3.6 reads images (its preset has a vision projector, see [`docker/nas/10-llama`](../../../../../docker/nas/10-llama/README.md)), so both steps can also send pages of the document as images. An image roughly doubles the time per document, so `--images auto` (the default) sends them only where they help:
