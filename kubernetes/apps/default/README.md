@@ -33,9 +33,9 @@ Personal apps with no better home: finance, documents, git, a pastebin, the dash
 
 Gotenberg and Tika run as sidecars in the same pod and are reached over `localhost`.
 
-**paperless file names.** `PAPERLESS_FILENAME_FORMAT` is the default for every document without a storage path: `<year>/<date> <correspondent> - <title>`, as in `2026/2026-11-03 Energiebedrijf - Jaarafrekening.pdf`. Without a correspondent that part drops out, and paperless adds `_01` to a name that's already taken. The format names no tags or types, so changing those never moves a file, and the taxonomy stays out of this public repo.
+**paperless file names.** `PAPERLESS_FILENAME_FORMAT` is the default for every document without a storage path: `<year>/<date> <correspondent> - <title> - <id>`, as in `2026/2026-11-03 Energiebedrijf - Jaarafrekening - 1234.pdf`. Without a correspondent that part drops out. The document ID keeps two documents with the same date, sender and title apart, and leads from a file (in a backup, say) to the document in paperless, whose URL holds the same number. Give every storage path the same ending. The format names no tags or types, so changing those never moves a file, and the taxonomy stays out of this public repo.
 
-A document type that needs another shape gets its own storage path in paperless, for example reference material without a date (`Naslag/{{ document_type }}/{{ correspondent }} - {{ title }}`):
+A document type that needs another shape gets its own storage path in paperless, for example reference material without a date (`Naslag/{{ document_type }}/{{ correspondent }} - {{ title }} - {{ doc_pk }}`):
 
 - **Assign it with a workflow, one per storage path:** triggers Document Added and Document Updated, filtered on the document type, action "assign storage path". A storage path's own matching looks at a document's text, not its type, so set it to None.
 - **A type without its own path:** the old storage path stays on a document whose type changes to one. Take it off with bulk edit, or give the workflow a removal action.
