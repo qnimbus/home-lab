@@ -104,8 +104,9 @@ class Paperless:
 
 
 class LLM:
-    def __init__(self, url: str, model: str) -> None:
+    def __init__(self, url: str, model: str, debug: bool = False) -> None:
         self.model = model
+        self.debug = debug
         self.http = httpx.Client(base_url=url.rstrip("/") + "/", timeout=900)
 
     def json(self, prompt: str | list[dict], schema: dict, max_tokens: int = 1000) -> dict:
@@ -125,15 +126,46 @@ class LLM:
             },
         }
         last: Exception | None = None
+        if self.debug:
+            log(debug_request(body))
         for attempt in range(3):
             try:
                 r = self.http.post("chat/completions", json=body)
                 r.raise_for_status()
-                return json.loads(r.json()["choices"][0]["message"]["content"])
+                content = r.json()["choices"][0]["message"]["content"]
+                if self.debug:
+                    log(f"──── reply\n{content}\n────")
+                return json.loads(content)
             except (httpx.HTTPError, json.JSONDecodeError, KeyError, IndexError) as exc:
                 last = exc
                 time.sleep(5 * (attempt + 1))
         raise RuntimeError(f"LLM request failed three times: {last!r}")
+
+
+def debug_request(body: dict) -> str:
+    """A request as it goes to the model, readable: every message and text part
+    verbatim, each image as a placeholder with its size, and the schema the
+    answer must follow. For --debug; it holds document text, so keep it local."""
+    lines = [
+        f"──── request: model {body['model']}, temperature {body['temperature']}, "
+        f"max_tokens {body['max_tokens']}"
+    ]
+    for message in body["messages"]:
+        lines.append(f"[{message['role']}]")
+        content = message["content"]
+        if isinstance(content, str):
+            lines.append(content)
+            continue
+        for part in content:
+            if part["type"] == "text":
+                lines.append(part["text"])
+            else:
+                url = part["image_url"]["url"]
+                kind = url.split(";", 1)[0].removeprefix("data:")
+                lines.append(f"[image: {kind}, {len(url) * 3 // 4 // 1024} KB]")
+    schema = body["response_format"]["json_schema"]["schema"]
+    lines += ["[response_format: json_schema]", json.dumps(schema, ensure_ascii=False, indent=1)]
+    return "\n".join(lines)
 
 
 # --------------------------------------------------------------------------- helpers
@@ -1776,6 +1808,10 @@ def main() -> None:
     p.add_argument("--llm", default=os.getenv("LLM_URL", DEFAULT_LLM))
     p.add_argument("--model", default=os.getenv("LLM_MODEL", DEFAULT_MODEL))
     p.add_argument("--out", type=Path, default=Path(os.getenv("METADATA_OUT", DEFAULT_OUT)))
+    p.add_argument(
+        "--debug", action="store_true",
+        help="print every prompt sent to the model, and its reply, to stderr (holds document text)",
+    )  # fmt: skip
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("inventory", help="export types, tags, correspondents and fields with counts")
     for name, help_text in (
@@ -1875,7 +1911,7 @@ def main() -> None:
         sys.exit("set PAPERLESS_TOKEN (a paperless API token, see README.md)")
     private_dir(args.out)
     pl = Paperless(args.paperless, token)
-    llm = LLM(args.llm, args.model)
+    llm = LLM(args.llm, args.model, args.debug)
     match args.command:
         case "inventory":
             cmd_inventory(pl, args)

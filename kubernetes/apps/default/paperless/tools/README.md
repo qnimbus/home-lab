@@ -16,6 +16,8 @@ Nothing here is deployed: Flux only applies `../app`.
 
 Run every step as `kubernetes/apps/default/paperless/tools/metadata.py <step>` (it runs through `uv`).
 
+`--debug` (before the step: `metadata.py --debug suggest --ids 3760`) prints every request to the model on stderr, and its reply: the system prompt and every text part verbatim, in the order they are sent, each page image as a placeholder with its size, and the JSON schema the answer must follow. It holds document text: keep it on your machine (`2> ~/paperless-metadata/debug.log` keeps it in the private directory).
+
 ## Steps
 
 | Step        | What it does                                                                                                                            | Writes                                      |
