@@ -210,7 +210,7 @@ def by_name(items: list[dict]) -> dict[str, int]:
     return {i["name"].casefold(): i["id"] for i in items}
 
 
-DOC_FIELDS = "id,title,content,created,correspondent,document_type,tags,original_file_name,custom_fields"
+DOC_FIELDS = "id,title,content,created,correspondent,document_type,tags,original_file_name,custom_fields,page_count,mime_type"
 
 
 def iter_documents(
@@ -371,6 +371,94 @@ def ask_with_images(
     return llm.json(prefix + "\n\n" + rest, schema, max_tokens), 0
 
 
+# --images auto sends a page image up front only when the OCR text alone is
+# clearly not enough, and otherwise asks again with the image when the
+# text-only answer is weak. The thresholds come from comparing these signals
+# with the model's own text-only OCR ratings on this archive: together they
+# flagged 58% of the documents rated slecht, 15% of matig and 14% of goed
+# (mostly pages with no text at all, which a text-only rating can't judge).
+MIN_CHARS_PER_PAGE = 100
+MIN_WORDLIKE_SHARE = 0.65
+VOWELS = set("aeiouyáàäâéèëêíìïîóòöôúùüû")
+
+
+def text_signals(doc: dict) -> dict:
+    """Cheap measures of the OCR text: characters per page, and the share of
+    words that look like words (3+ letters with a vowel), which OCR garbage
+    such as 'Gar ge Vo rb ld' lacks."""
+    text = (doc.get("content") or "").strip()
+    words = re.findall(r"[^\W\d_]+", text)
+    wordlike = sum(1 for w in words if len(w) >= 3 and VOWELS & set(w.lower()))
+    return {
+        "chars_per_page": len(text) / max(doc.get("page_count") or 1, 1),
+        "wordlike_share": wordlike / len(words) if words else 0.0,
+    }
+
+
+def image_reason_upfront(doc: dict) -> str:
+    """Why a document gets a page image before the model sees it, or ''."""
+    if (doc.get("mime_type") or "").startswith("image/"):
+        return "photo or image file"
+    sig = text_signals(doc)
+    if sig["chars_per_page"] < MIN_CHARS_PER_PAGE:
+        return "little or no OCR text"
+    if sig["wordlike_share"] < MIN_WORDLIKE_SHARE:
+        return "OCR text looks garbled"
+    return ""
+
+
+def ask_auto(
+    pl: Paperless,
+    llm: LLM,
+    args: argparse.Namespace,
+    doc: dict,
+    build: Callable[[bool], tuple[str, str]],
+    schema: dict,
+    max_tokens: int,
+    weak: Callable[[dict], str],
+) -> tuple[dict, int, str]:
+    """Ask with or without page images, per --images. Returns the answer, the
+    number of images it was given, and why it got them."""
+    if args.images == "never" or args.image_pages <= 0:
+        answer, seen = ask_with_images(llm, args, [], build, schema, max_tokens)
+        return answer, seen, ""
+    reason = "always" if args.images == "always" else image_reason_upfront(doc)
+    answer: dict | None = None
+    if not reason:
+        answer, _ = ask_with_images(llm, args, [], build, schema, max_tokens)
+        weakness = weak(answer)
+        if not weakness:
+            return answer, 0, ""
+        reason = f"weak text-only answer: {weakness}"
+    images = page_images(pl, doc["id"], args.image_pages, args.image_dpi)
+    if not images and answer is not None:
+        return answer, 0, ""  # nothing to add: keep the text-only answer
+    answer, seen = ask_with_images(llm, args, images, build, schema, max_tokens)
+    return answer, seen, reason if seen else ""
+
+
+def weak_summary(s: dict) -> str:
+    """Why a text-only summary needs a second look with the page image, or ''."""
+    if s.get("ocr_kwaliteit") == "slecht":
+        return "OCR slecht"
+    if s.get("duidelijkheid") != "duidelijk":
+        return f"duidelijkheid {s.get('duidelijkheid')}"
+    if not sender(s):
+        return "no sender"
+    return ""
+
+
+def weak_suggestion(s: dict) -> str:
+    """Why a text-only suggestion needs a second look with the page image, or ''."""
+    if s.get("ocr_kwaliteit") == "slecht":
+        return "OCR slecht"
+    if s.get("confidence") == "laag":
+        return "confidence laag"
+    if not sender(s):
+        return "no sender"
+    return ""
+
+
 def private_dir(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     path.chmod(0o700)
@@ -518,17 +606,15 @@ def cmd_summarize(pl: Paperless, llm: LLM, args: argparse.Namespace) -> None:
         if args.limit and count >= args.limit:
             break
         start = time.monotonic()
-        images = page_images(pl, doc["id"], args.image_pages, args.image_dpi)
-        summary, seen = ask_with_images(
-            llm, args, images, lambda vision: summary_prompt(doc, args.chars, vision),
-            SUMMARY_SCHEMA, max_tokens=500,
+        summary, seen, why = ask_auto(
+            pl, llm, args, doc, lambda vision: summary_prompt(doc, args.chars, vision),
+            SUMMARY_SCHEMA, 500, weak_summary,
         )  # fmt: skip
-        append_jsonl(
-            path,
-            {"id": doc["id"], "summary": summary, "current": current_names(doc, inv), "images": seen},
-        )
+        record = {"id": doc["id"], "summary": summary, "current": current_names(doc, inv)}
+        append_jsonl(path, record | {"images": seen, "image_reason": why})
         count += 1
-        log(f"[{count}] document {doc['id']} in {time.monotonic() - start:.0f}s, {seen} page images")
+        shown = f", {seen} page images ({why})" if seen else ""
+        log(f"[{count}] document {doc['id']} in {time.monotonic() - start:.0f}s{shown}")
     log(f"summarized {count} documents, {len(latest_per_id(read_jsonl(path)))} in {path}")
 
 
@@ -1329,11 +1415,13 @@ def suggestion_row(
     known = known_correspondents(tax, inv)
     current = current_names(doc, inv)
     shown = None if args.ignore_current else current
-    s, _ = ask_with_images(
-        llm, args, page_images(pl, doc["id"], args.image_pages, args.image_dpi),
+    s, seen, why = ask_auto(
+        pl, llm, args, doc,
         lambda vision: suggestion_prompt(tax, known, doc, args.chars, shown, vision),
-        suggestion_schema(tax, known), max_tokens=600,
+        suggestion_schema(tax, known), 600, weak_suggestion,
     )  # fmt: skip
+    if seen:
+        log(f"document {doc['id']}: {seen} page images ({why})")
     canonical, status = resolve_correspondent(
         s, correspondent_lookup(tax, inv), {c["name"] for c in inv["correspondents"]}
     )
@@ -1601,8 +1689,13 @@ def main() -> None:
         sp.add_argument("--ids", help="comma-separated document IDs")
         sp.add_argument("--chars", type=int, default=3000 if name == "summarize" else 6000)
         sp.add_argument(
+            "--images", choices=["auto", "always", "never"], default="auto",
+            help="page images for a vision model: auto (when the OCR text is poor, or the "
+            "text-only answer is weak), always, or never (default auto)",
+        )  # fmt: skip
+        sp.add_argument(
             "--image-pages", type=int, default=1, metavar="N",
-            help="send the first N pages as images too, for a vision model (default 1, 0 for text only)",
+            help="pages sent when a document gets images (default 1; 0 is --images never)",
         )  # fmt: skip
         sp.add_argument(
             "--image-dpi", type=int, default=IMAGE_DPI,
