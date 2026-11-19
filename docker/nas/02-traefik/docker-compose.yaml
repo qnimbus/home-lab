@@ -31,7 +31,7 @@ services:
     container_name: traefik
     environment:
       - CLOUDFLARE_DNS_API_TOKEN=${CF_API_TOKEN}
-    image: traefik:v3.7.17@sha256:30ff62491aacdb862ceb8c9edcf2627da638d7deafdd4b6dab32fe34f8aa3e90
+    image: traefik:v3.7.19@sha256:a6c0194dda77bcb804824580f36fa7edc56e315b1acfe933366c8b52844a78a4
     labels:
       dexd.enabled: "true"
       traefik.enable: "true"
