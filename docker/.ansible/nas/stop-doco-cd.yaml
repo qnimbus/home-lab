@@ -11,14 +11,8 @@
     - name: Check host connectivity
       ansible.builtin.ping: {}
 
-    - name: doco-cd
-      vars:
-        dococd_config_dir: /home/truenas_admin/.config/doco-cd
-      block:
-        - name: doco-cd | Stop
-          community.docker.docker_compose_v2:
-            project_src: "{{ dococd_config_dir }}"
-            files:
-              - docker-compose.yaml
-            state: stopped
-          when: not ansible_check_mode
+    # `restart: unless-stopped` keeps it stopped across reboots; `just bootstrap nas` starts it again
+    - name: doco-cd | Stop
+      ansible.builtin.command: docker stop doco-cd
+      changed_when: true
+      when: not ansible_check_mode

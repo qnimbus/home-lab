@@ -41,6 +41,8 @@
     - name: doco-cd
       vars:
         dococd_config_dir: /home/truenas_admin/.config/doco-cd
+        # The stack's directory under docker/nas/: doco-cd uses it as the project name
+        dococd_project: 99-doco-cd
       block:
         - name: doco-cd | Create directory
           ansible.builtin.file:
@@ -50,14 +52,15 @@
             group: truenas_admin
             mode: "0700"
 
-        - name: doco-cd | Copy docker-compose app file
+        # Only used to start doco-cd when none is running; after that doco-cd deploys its
+        # stack from its own checkout.
+        - name: doco-cd | Copy docker-compose file
           ansible.builtin.copy:
-            src: ../../../docker/nas/.doco-cd/docker-compose.app.yaml
+            src: ../../../docker/nas/99-doco-cd/docker-compose.yaml
             dest: "{{ dococd_config_dir }}/docker-compose.yaml"
             owner: truenas_admin
             group: truenas_admin
             mode: "0644"
-          register: compose_file
 
         # root-owned: doco-cd runs with cap_drop ALL, so root in the container
         # can't read files owned by anyone else (no DAC_OVERRIDE).
@@ -70,6 +73,7 @@
             group: root
             mode: "0600"
           no_log: true
+          register: dococd_secrets
           loop:
             - name: op_token
               content: "{{ doco_op_service_account_token }}"
@@ -80,12 +84,6 @@
             # Not `full`, which adds deleting projects.
             - name: api_keys
               content: "{{ [{'key': doco_api_key, 'role': 'write'}] | to_nice_yaml }}"
-
-        # doco-cd < 0.134 read API_SECRET_FILE from it; nothing reads it now
-        - name: doco-cd | Remove the old API secret
-          ansible.builtin.file:
-            path: "{{ dococd_config_dir }}/api_secret"
-            state: absent
 
         - name: doco-cd | Create shared apps network
           community.docker.docker_network:
@@ -99,14 +97,62 @@
                 iprange: 172.16.8.128/25
             state: present
 
-        - name: doco-cd | Run docker-compose
+        - name: doco-cd | Create data volume
+          community.docker.docker_volume:
+            name: doco-cd_data
+            state: present
+
+        - name: doco-cd | Inspect the doco-cd container
+          community.docker.docker_container_info:
+            name: doco-cd
+          register: dococd_container
+
+        - name: doco-cd | Find its Compose project
+          ansible.builtin.set_fact:
+            dococd_container_project: "{{ dococd_container.container.Config.Labels['com.docker.compose.project'] | default('') if dococd_container.exists else '' }}"
+
+        # A doco-cd from any other Compose project (the `doco-cd` project from before it
+        # managed itself) holds the container name; doco-cd wouldn't see it as itself.
+        - name: doco-cd | Remove doco-cd from another project
+          when:
+            - dococd_container.exists
+            - dococd_container_project != dococd_project
+            - not ansible_check_mode
+          block:
+            - name: doco-cd | Remove the container
+              community.docker.docker_container:
+                name: doco-cd
+                state: absent
+
+            - name: doco-cd | Remove its project network
+              community.docker.docker_network:
+                name: "{{ dococd_container_project }}_default"
+                state: absent
+              when: dococd_container_project | length > 0
+
+        # Once doco-cd runs from its own project it deploys itself: starting it again here
+        # would undo or race a self-update.
+        - name: doco-cd | Start
           community.docker.docker_compose_v2:
             project_src: "{{ dococd_config_dir }}"
+            project_name: "{{ dococd_project }}"
             files:
               - docker-compose.yaml
             pull: always
             state: present
-          when: not ansible_check_mode
+          when:
+            - dococd_container_project != dococd_project
+            - not ansible_check_mode
+
+        # Secret files are read only at startup. A stopped container (`just docker
+        # stop-doco-cd`) is started as it is, without applying this checkout's compose file.
+        - name: doco-cd | Start or restart its own container
+          ansible.builtin.command: docker {{ 'restart' if dococd_container.container.State.Running else 'start' }} doco-cd
+          changed_when: true
+          when:
+            - dococd_container_project == dococd_project
+            - dococd_secrets.changed or not dococd_container.container.State.Running
+            - not ansible_check_mode
 
         - name: doco-cd | Wait for healthy
           community.docker.docker_container_info:

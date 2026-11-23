@@ -12,15 +12,12 @@
       ansible.builtin.ping: {}
 
     - name: doco-cd
-      vars:
-        dococd_config_dir: /home/truenas_admin/.config/doco-cd
       block:
+        # The container as it is: doco-cd deploys its own stack (docker/nas/99-doco-cd), so
+        # nothing here applies a compose file
         - name: doco-cd | Restart
-          community.docker.docker_compose_v2:
-            project_src: "{{ dococd_config_dir }}"
-            files:
-              - docker-compose.yaml
-            state: restarted
+          ansible.builtin.command: docker restart doco-cd
+          changed_when: true
           when: not ansible_check_mode
 
         - name: doco-cd | Wait for healthy

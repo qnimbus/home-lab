@@ -182,4 +182,4 @@ just docker logs           # latest log lines per stack
 - **Declaring `apps` without `external: true`**: Compose makes a second network, `NN-<app>_apps`, that Traefik isn't on.
 - **Using `${DOMAIN_APP}` or another cluster variable**: it isn't defined on the NAS and becomes an empty string.
 - **Putting the app under a hostname the cluster already routes**: the gateway then holds two answers for one name.
-- **Changing `docker/nas/.doco-cd/docker-compose.app.yaml` for an app**: that file is doco-cd itself, placed by `just bootstrap nas`, not a stack.
+- **Changing `docker/nas/99-doco-cd/docker-compose.yaml` for an app**: that stack is doco-cd itself, and a change to it replaces the deployer.

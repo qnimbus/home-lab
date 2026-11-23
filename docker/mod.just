@@ -71,6 +71,8 @@ stop-doco-cd:
     projects=$(curl -fsS -m 30 "{{ doco_url }}/v1/api/projects" -H "x-api-key: $key" | jq -r '.content[].Name')
     for dir in "{{ source_directory() }}"/nas/*/; do
         stack=$(basename "$dir")
+        # doco-cd's own stack: the playbook below stops it last
+        [ "$stack" = 99-doco-cd ] && continue
         grep -qxF "$stack" <<< "$projects" || continue
         just log info "Stopping stack" stack "$stack"
         curl -fsS -m 60 -o /dev/null -X POST "{{ doco_url }}/v1/api/project/$stack/stop" -H "x-api-key: $key"

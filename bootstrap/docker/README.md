@@ -8,14 +8,28 @@ just bootstrap nas
 
 This runs the [Ansible playbook](./nas/bootstrap.yaml) against the TrueNAS host in
 `ansible/inventory.yaml` (as `truenas_admin`, sudo password from `op://homelab/truenas/password`).
-It copies doco-cd's own compose file (`docker/nas/.doco-cd/docker-compose.app.yaml`) to
-`/home/truenas_admin/.config/doco-cd/`, writes its secret files next to it and starts it. From then
-on doco-cd polls `main` and deploys every `docker/nas/NN-<app>/` stack itself; this directory is not
-used again until the next provisioning.
+It writes doco-cd's secret files to `/home/truenas_admin/.config/doco-cd/`, creates the `apps`
+network and the `doco-cd_data` volume, and starts doco-cd from its stack,
+`docker/nas/99-doco-cd/docker-compose.yaml`, as Compose project `99-doco-cd`. From then on doco-cd
+polls `main` and deploys every `docker/nas/NN-<app>/` stack, its own included.
 
-doco-cd can't redeploy itself, so after merging a doco-cd version bump (or any change to
-`docker-compose.app.yaml`) re-run `just bootstrap nas`. `just docker restart-doco-cd` only restarts
-the running container.
+**doco-cd deploys itself** (`SELF_UPDATE_ENABLED`). A merged change to `99-doco-cd`, a Renovate
+version bump included, makes doco-cd replace its own container. It publishes host ports and sets
+`container_name`, so it uses the `applier` strategy: a throwaway copy recreates the container, waits
+for its healthcheck, and restores the previous container if the new one never turns healthy. The
+webhook may answer `503` meanwhile, and the next poll catches up. A failed self-update isn't retried
+until the next commit; the reason is in `sudo docker logs doco-cd`. See
+[Self-Updating](https://doco.cd/latest/Advanced/Self-Updating/).
+
+Re-running the playbook is safe while doco-cd runs from `99-doco-cd`: it leaves the container alone,
+starts it if stopped, and restarts it when a secret file changed (doco-cd reads them only at
+startup). It never applies the compose file to a running doco-cd, which would race a self-update.
+A doco-cd from any other Compose project holds the `doco-cd` container name, so the playbook removes
+it and starts the stack under `99-doco-cd`.
+
+**Run it before merging a change that needs a new secret file.** The new container reads its secret
+files when it starts, right after the merge. `just docker restart-doco-cd` restarts the running
+container as it is.
 
 ## The `apps` network
 

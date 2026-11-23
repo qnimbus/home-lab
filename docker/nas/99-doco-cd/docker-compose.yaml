@@ -1,5 +1,7 @@
 ---
-# This file is not managed by doco-cd because it can't manage itself
+# doco-cd deploys this stack itself (SELF_UPDATE_ENABLED). `just bootstrap nas` only starts it
+# when no doco-cd from this project is running, passing the directory name as the project name:
+# doco-cd recognises its own container by that name and the `app` service.
 
 secrets:
   op_token:
@@ -25,8 +27,19 @@ services:
           interval: 3600
       SECRET_PROVIDER: 1password
       SECRET_PROVIDER_ACCESS_TOKEN_FILE: /run/secrets/op_token
+      SELF_UPDATE_ENABLED: "true"
       WEBHOOK_SECRET_FILE: /run/secrets/webhook_secret
       TZ: Europe/Amsterdam
+    # Self-update waits for this before it removes the old container
+    healthcheck:
+      test:
+        - CMD
+        - /doco-cd
+        - healthcheck
+      interval: 30s
+      retries: 3
+      start_period: 15s
+      timeout: 5s
     ports:
       - 8880:8880
       - 9120:9120
@@ -38,4 +51,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - data:/data
 volumes:
-  data: {}
+  # Created by `just bootstrap nas`; external, so the repo cache and the self-update journal keep
+  # their volume whatever the project is called
+  data:
+    external: true
+    name: doco-cd_data

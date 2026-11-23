@@ -69,7 +69,8 @@ REGISTRY: list[SurfaceDef] = [
     d("bootstrap", ["bootstrap/**", "kubernetes/bootstrap/**", "ops/bootstrap/**"], "cluster", ("control_plane", "credentials"),
       ("manual",), render_required=True),  # fmt: skip
     d("ansible", ["ansible/**"], "host", ("control_plane", "credentials"), ("manual",), render_required=True),
-    d("doco-cd", ["docker/nas/.doco-cd/**"], "host", ("credentials",), ("manual",)),  # needs `just bootstrap nas`
+    # doco-cd deploys its own stack; `.doco-cd/` is where it lived before it managed itself.
+    d("doco-cd", ["docker/nas/99-doco-cd/**", "docker/nas/.doco-cd/**"], "host", ("credentials",)),
     d("doco-cd:config", ["docker/nas/.doco-cd.yaml"], "host", ("credentials",)),
     # A compose file is the whole truth (no templating), so the git diff is its render.
     d("nas:{stack}", ["docker/nas/{stack}/**", "truenas/docker/{stack}/**"], "app", ("availability",)),
