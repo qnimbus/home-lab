@@ -11,13 +11,13 @@
 
 It is advisory and fails open. A crash, Jev or Konflate being down, or a missing key leaves the labels as they are, and the job never fails because of them.
 
-It runs on every same-repo, non-draft PR to `main` (opened, pushed to, reopened, marked ready, or its title or body edited), and on demand for any open same-repo PR:
+Its `pull_request` trigger is disabled while `.github/workflows/claude-review.yaml` reviews PRs, so it runs on demand only, for any open same-repo PR:
 
 ```bash
 gh workflow run pr-risk.yaml -f pr=174
 ```
 
-From 2026-09-28 it ran on demand only, while the in-cluster runner intermittently failed to reach 1Password over IPv6 (`bea8f4e`); the PR trigger came back on 2026-09-30.
+New PRs get no `risk/*` label until it is run on them, so `just github merge-safe` and `merge-review` only see PRs it has classified. The workflow's header comment has the trigger to add back.
 
 ## The model
 

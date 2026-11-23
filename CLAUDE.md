@@ -101,7 +101,9 @@ Renovate (`.renovaterc.json5`, extends `home-operations/renovate-presets`) opens
 
 On a PR, konflate (`kubernetes/apps/flux-system/konflate/`) receives a GitHub webhook, renders the PR with flate, and posts a "Konflate" check plus a rendered-diff comment. Its UI is public at `konflate.${DOMAIN_APP}` (no auth; the repo is public) and internal at `konflate.${DOMAIN_CLUSTER}`.
 
-`.github/workflows/pr-risk.yaml` (every same-repo PR, or `workflow_dispatch` with a PR number) labels a PR's merge risk (`risk/*`). It is advisory and fail-open, and `PR_RISK_MODE` (`shadow` by default, or `comment`) controls what it publishes. Its model, rules and policy live in `.github/scripts/pr-risk/` (see its README).
+`.github/workflows/claude-review.yaml` has Claude review every same-repo, non-draft PR (on open, ready and reopen, and on each Renovate push) and post one verdict comment with inline findings; the owner commenting `/bot-review` requests a fresh review. It reads its OAuth token from `op://GitHub/claude-review/CLAUDE_CODE_OAUTH_TOKEN`.
+
+`.github/workflows/pr-risk.yaml` (`workflow_dispatch` with a PR number only; its PR trigger is disabled while Claude Review runs) labels a PR's merge risk (`risk/*`), which `merge-safe`/`merge-review` select on. It is advisory and fail-open, and `PR_RISK_MODE` (`shadow` by default, or `comment`) controls what it publishes. Its model, rules and policy live in `.github/scripts/pr-risk/` (see its README).
 
 **Merging to `main` is the deploy.** Flux reconciles `kubernetes/apps` on its own interval, and doco-cd polls and redeploys the `docker/nas` stacks. There is no separate deploy step.
 

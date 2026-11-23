@@ -8,14 +8,12 @@ name: PR Risk
 # Jev or Konflate outage publishes nothing. No step here can fail the job over a classification
 # problem. PR_RISK_MODE picks what it publishes: shadow (default: job summary + artifact),
 # labels, or comment (labels + comment).
-# Runs on every same-repo PR to main, and on demand (`gh workflow run pr-risk.yaml -f pr=<number>`).
+# Disabled on PRs while Claude Review (claude-review.yaml) reviews them: runs on demand only
+# (`gh workflow run pr-risk.yaml -f pr=<number>`). To re-enable, add back the trigger
+#   pull_request: {branches: [main], types: [opened, synchronize, reopened, ready_for_review, edited]}
 # See .github/scripts/pr-risk/README.md.
 
 on:
-  pull_request:
-    branches:
-      - main
-    types: [opened, synchronize, reopened, ready_for_review, edited]
   workflow_dispatch:
     inputs:
       pr:
