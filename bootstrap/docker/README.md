@@ -48,21 +48,20 @@ with `docker network connect` (`--ip 172.16.8.2` for Traefik), or redeploy its s
 
 The playbook reads the item `doco-cd` in the `homelab` vault:
 
-| Field                      | Used as                                                                                          |
-| -------------------------- | ------------------------------------------------------------------------------------------------ |
-| `OP_SERVICE_ACCOUNT_TOKEN` | doco-cd's secret provider, resolving `op://` references in `docker/nas/.doco-cd.yaml`            |
-| `SSH_PRIVATE_KEY`          | read-only GitHub deploy key for this (private) repo, OpenSSH format with its `BEGIN`/`END` lines |
+| Field                      | Written to       | Used as                                                                                 |
+| -------------------------- | ---------------- | --------------------------------------------------------------------------------------- |
+| `OP_SERVICE_ACCOUNT_TOKEN` | `op_token`       | doco-cd's secret provider, resolving `op://` references in `docker/nas/.doco-cd.yaml`   |
+| `WEBHOOK_SECRET`           | `webhook_secret` | checks GitHub's signature on `/v1/webhook`                                              |
+| `API_SECRET`               | `api_keys`       | the REST API key, with role `write`; `just docker` reads the same field to call the API |
 
-The service account only needs read access to the vault(s) the stacks reference. Create the deploy
-key with `ssh-keygen -t ed25519 -C "doco-cd@truenas" -N ""` and register the public half with
-`gh repo deploy-key add <key>.pub --repo qnimbus/home-lab --title "doco-cd (TrueNAS, read-only)"`,
-without write access.
+The service account only needs read access to the vault(s) the stacks reference. doco-cd needs no
+Git credentials: the repo is public, and `POLL_CONFIG` clones it over HTTPS.
 
 ## Verify
 
 ```sh
 ssh truenas_admin@nas.lan.home.vwn.io 'sudo docker logs -f doco-cd'
-curl http://10.10.0.41:18080/v1/health
+curl http://10.10.0.41:8880/v1/health
 curl -s http://10.10.0.41:9100/metrics | head
 curl -s http://10.10.0.41:9633/metrics | head
 ```
