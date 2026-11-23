@@ -25,7 +25,7 @@
         - key: homelab/doco-cd/WEBHOOK_SECRET
           var: doco_webhook_secret
         - key: homelab/doco-cd/API_SECRET
-          var: doco_api_secret
+          var: doco_api_key
       check_mode: false
       changed_when: false
       no_log: true
@@ -35,7 +35,7 @@
       ansible.builtin.set_fact:
         doco_op_service_account_token: "{{ secrets_raw.results[0].stdout }}"
         doco_webhook_secret: "{{ secrets_raw.results[1].stdout }}"
-        doco_api_secret: "{{ secrets_raw.results[2].stdout }}"
+        doco_api_key: "{{ secrets_raw.results[2].stdout }}"
       no_log: true
 
     - name: doco-cd
@@ -75,8 +75,17 @@
               content: "{{ doco_op_service_account_token }}"
             - name: webhook_secret
               content: "{{ doco_webhook_secret }}"
-            - name: api_secret
-              content: "{{ doco_api_secret }}"
+            # doco-cd's API_KEYS_FILE. `write` covers every docker/mod.just recipe:
+            # listing and inspecting projects, stopping them, poll runs and run lookups.
+            # Not `full`, which adds deleting projects.
+            - name: api_keys
+              content: "{{ [{'key': doco_api_key, 'role': 'write'}] | to_nice_yaml }}"
+
+        # doco-cd < 0.134 read API_SECRET_FILE from it; nothing reads it now
+        - name: doco-cd | Remove the old API secret
+          ansible.builtin.file:
+            path: "{{ dococd_config_dir }}/api_secret"
+            state: absent
 
         - name: doco-cd | Create shared apps network
           community.docker.docker_network:

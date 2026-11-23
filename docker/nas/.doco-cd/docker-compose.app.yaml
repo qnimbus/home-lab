@@ -4,8 +4,8 @@
 secrets:
   op_token:
     file: /home/truenas_admin/.config/doco-cd/op_token
-  api_secret:
-    file: /home/truenas_admin/.config/doco-cd/api_secret
+  api_keys:
+    file: /home/truenas_admin/.config/doco-cd/api_keys
   webhook_secret:
     file: /home/truenas_admin/.config/doco-cd/webhook_secret
 services:
@@ -14,7 +14,8 @@ services:
     image: ghcr.io/kimdre/doco-cd:0.136.0@sha256:fa55a3a431e479163a06dd42b8d59ceb90483e958056fd8f325b304aaf3d2a97
     restart: unless-stopped
     environment:
-      API_SECRET_FILE: /run/secrets/api_secret
+      # A YAML list of keys, each with a role; read only at startup
+      API_KEYS_FILE: /run/secrets/api_keys
       DEPLOY_CONFIG_BASE_DIR: ./docker/nas/
       HTTP_PORT: 8880
       LOG_LEVEL: info
@@ -31,7 +32,7 @@ services:
       - 9120:9120
     secrets:
       - op_token
-      - api_secret
+      - api_keys
       - webhook_secret
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
