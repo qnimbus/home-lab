@@ -1,376 +1,466 @@
 {
-  $schema: "https://docs.renovatebot.com/renovate-schema.json",
-  // To test renovate:
-  //
-  // LOG_LEVEL=debug LOG_FORMAT=json timeout 580 npx -y renovate@ --platform=local --dry-run=extract
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: [
-    "github>home-operations/renovate-presets#11.0.0",
-    "github>home-operations/renovate-presets//apps/cnpg.json5#11.0.0",
-    "github>home-operations/renovate-presets//apps/grafanaDashboards.json5#11.0.0",
-    "github>home-operations/renovate-presets//apps/talosFactory.json5#11.0.0",
-    ":timezone(Europe/Amsterdam)",
+    'github>home-operations/renovate-presets#11.0.0',
+    'github>home-operations/renovate-presets//apps/cnpg.json5#11.0.0',
+    'github>home-operations/renovate-presets//apps/grafanaDashboards.json5#11.0.0',
+    'github>home-operations/renovate-presets//apps/talosFactory.json5#11.0.0',
+    ':timezone(Europe/Amsterdam)',
   ],
-  dependencyDashboardTitle: "Renovate Dashboard for my home-lab 🤖",
+  dependencyDashboard: {
+    title: 'Renovate Dashboard for my home-lab 🤖',
+  },
   lockFileMaintenance: {
     enabled: true,
-    schedule: ["before 3am on the first day of the month"],
-    commitMessageExtra: "({{manager}})",
-    additionalBranchPrefix: "{{manager}}-",
+    schedule: [
+      'before 3am on the first day of the month',
+    ],
+    commitMessageExtra: '({{manager}})',
+    additionalBranchPrefix: '{{manager}}-',
   },
-  // main doesn't require up-to-date branches, and the default (`auto`) would
-  // rebase every open automerge PR, and re-run its checks, each time main moves
-  rebaseWhen: "conflicted",
-  // Dependencies managed outside Renovate — do not open PRs for these.
-  // etcd: CLI tool in .mise/config.toml — must match the etcd version bundled with the running Talos release.
-  ignoreDeps: ["etcd"],
+  rebaseWhen: 'conflicted',
+  ignoreDeps: [
+    'etcd',
+  ],
   logLevelRemap: [
     {
       matchMessage: "/Some .+ did not have a releaseTimestamp, but as we're running with minimumReleaseAgeBehaviour=timestamp-optional, proceeding/",
-      newLogLevel: "info",
+      newLogLevel: 'info',
     },
   ],
-  // No managerFilePatterns here: the preset sets each manager's, and patterns
-  // set here are added to those, never replace them. To narrow what a manager
-  // scans, use ignorePaths
-  //
-  // ── Package rule overrides ──────────────────────────────────────────
   packageRules: [
-    //
-    // Allowed versions rules
-    //
     {
-      // Ceph numbers release candidates x.1.z and stable releases x.2.z, so the
-      // minor is pinned too. The major is the newest one the pinned Rook operator
-      // supports (rook-ceph/rook-ceph/operator): raise it by hand, after the Rook
-      // bump that adds the next Ceph major
-      description: "Keep Ceph on stable 20.2.x (Tentacle)",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["quay.io/ceph/ceph"],
-      allowedVersions: "/^v?20\\.2\\.\\d+$/",
+      description: 'Keep Ceph on stable 20.2.x (Tentacle)',
+      matchDatasources: [
+        'docker',
+      ],
+      matchPackageNames: [
+        'quay.io/ceph/ceph',
+      ],
+      allowedVersions: '/^v?20\\.2\\.\\d+$/',
     },
     {
-      // The chart renders Driver/OperatorConfig CRs for the ceph-csi-operator
-      // that the rook-ceph chart bundles as a subchart, so it must not run ahead
-      // of it. The cap is that subchart's version (rook-ceph/rook-ceph/operator):
-      // raise it by hand, after the Rook bump that moves the subchart
-      description: "Keep ceph-csi-drivers at the ceph-csi-operator Rook bundles",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["ghcr.io/home-operations/charts-mirror/ceph-csi-drivers"],
-      allowedVersions: "<=1.1.0",
+      description: 'Keep ceph-csi-drivers at the ceph-csi-operator Rook bundles',
+      matchDatasources: [
+        'docker',
+      ],
+      matchPackageNames: [
+        'ghcr.io/home-operations/charts-mirror/ceph-csi-drivers',
+      ],
+      allowedVersions: '<=1.1.0',
     },
     {
-      description: "Keep PostgreSQL on version 18.x",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["/postgresql/"],
-      allowedVersions: "<19",
+      description: 'Keep PostgreSQL on version 18.x',
+      matchDatasources: [
+        'docker',
+      ],
+      matchPackageNames: [
+        '/postgresql/',
+      ],
+      allowedVersions: '<19',
     },
     {
-      // Every 5.x tag so far is a GitHub pre-release, but the registry gives
-      // Renovate no way to tell. Raise the cap by hand once v5 is stable
-      description: "Keep Sonarr on version 4.x",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["ghcr.io/home-operations/sonarr"],
-      allowedVersions: "<5",
+      description: 'Keep Sonarr on version 4.x',
+      matchDatasources: [
+        'docker',
+      ],
+      matchPackageNames: [
+        'ghcr.io/home-operations/sonarr',
+      ],
+      allowedVersions: '<5',
     },
     {
-      // The mise Python runs the pypi tools: ansible-core 2.21 crashes on 3.15
-      // (dataclasses._is_type is gone), and pyyaml 6.0.3, which yamllint and
-      // ansible need, has no 3.15 wheels. Locked installs never build from
-      // source, so neither installs. Raise the cap by hand once both support 3.15
-      description: "Keep the mise Python on 3.14.x",
-      matchManagers: ["mise"],
-      matchDepNames: ["python"],
-      allowedVersions: "<3.15",
+      description: 'Keep the mise Python on 3.14.x',
+      matchManagers: [
+        'mise',
+      ],
+      matchDepNames: [
+        'python',
+      ],
+      allowedVersions: '<3.15',
     },
     {
-      // WAHA tags carry the engine name as a prefix (gows-2026.4.3, noweb-2026.4.3),
-      // which docker versioning can't parse. Anchoring on gows- also keeps updates
-      // within the same engine
-      description: "WAHA: parse the version from the gows-YYYY.M.P tag",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["docker.io/devlikeapro/waha"],
-      versioning: "regex:^gows-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$",
+      description: 'WAHA: parse the version from the gows-YYYY.M.P tag',
+      matchDatasources: [
+        'docker',
+      ],
+      matchPackageNames: [
+        'docker.io/devlikeapro/waha',
+      ],
+      versioning: 'regex:^gows-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$',
     },
     {
-      // Docker versioning reads -rN as a suffix that must stay identical, so
-      // 2.8.5-r1 would only ever update to another -r1 tag
-      description: "nut-upsd: the -rN suffix is the Alpine package release",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["docker.io/instantlinux/nut-upsd"],
-      versioning: "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-r(?<build>\\d+)$",
+      description: 'nut-upsd: the -rN suffix is the Alpine package release',
+      matchDatasources: [
+        'docker',
+      ],
+      matchPackageNames: [
+        'docker.io/instantlinux/nut-upsd',
+      ],
+      versioning: 'regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-r(?<build>\\d+)$',
     },
     {
-      // llama.cpp tags its builds <variant>-bNNNN (server-vulkan-b10548), which
-      // docker versioning can't parse. Anchoring on server-vulkan- keeps updates
-      // within the same variant; every build is a major, so none auto-merges
-      description: "llama.cpp: parse the build number from the server-vulkan-bNNNN tag",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["ghcr.io/ggml-org/llama.cpp"],
-      versioning: "regex:^server-vulkan-b(?<major>\\d+)$",
+      description: 'llama.cpp: parse the build number from the server-vulkan-bNNNN tag',
+      matchDatasources: [
+        'docker',
+      ],
+      matchPackageNames: [
+        'ghcr.io/ggml-org/llama.cpp',
+      ],
+      versioning: 'regex:^server-vulkan-b(?<major>\\d+)$',
     },
-    //
-    // Auto-merge rules
-    //
     {
-      description: "Auto-merge trusted OCI digests",
-      matchDatasources: ["docker"],
-      matchUpdateTypes: ["digest"],
+      description: 'Auto-merge trusted OCI digests',
+      matchDatasources: [
+        'docker',
+      ],
+      matchUpdateTypes: [
+        'digest',
+      ],
       automerge: true,
-      automergeType: "pr",
+      automergeType: 'pr',
       ignoreTests: false,
       matchPackageNames: [
-        "/bjw-s/{/,}**",
-        "/bjw-s-labs/{/,}**",
-        "/qnimbus/{/,}**",
-        "/home-operations/{/,}**",
-        "/onedr0p/{/,}**",
+        '/bjw-s/{/,}**',
+        '/bjw-s-labs/{/,}**',
+        '/qnimbus/{/,}**',
+        '/home-operations/{/,}**',
+        '/onedr0p/{/,}**',
       ],
     },
     {
-      description: "Auto-merge high-cadence OCI packages weekly",
-      matchDatasources: ["docker"],
-      matchUpdateTypes: ["minor", "patch"],
-      matchPackageNames: ["/kube-prometheus-stack/"],
-      automerge: true,
-      automergeType: "pr",
-      ignoreTests: false,
-      schedule: ["before 6am on Monday"],
-    },
-    {
-      // Rebuilds of the same Postgres version (base OS updates). A merge restarts
-      // every app's single-instance cluster at once, so merge only in a quiet
-      // window that starts after the last nightly base backup (03:50 UTC) and NAS
-      // dump (02:00 UTC). The PR itself opens straight away
-      description: "Auto-merge CNPG PostgreSQL digests weekly",
-      matchDatasources: ["docker"],
-      matchUpdateTypes: ["digest"],
-      matchPackageNames: ["ghcr.io/cloudnative-pg/postgresql"],
-      automerge: true,
-      automergeType: "pr",
-      ignoreTests: false,
-      automergeSchedule: ["after 6am and before 10am on Monday"],
-    },
-    {
-      // Rebuilds of the same Traefik tag on the NAS. Docker Hub gives release
-      // timestamps, so the age check holds back a bad re-push for a day
-      description: "Auto-merge Traefik digests",
-      matchDatasources: ["docker"],
-      matchUpdateTypes: ["digest"],
-      matchPackageNames: ["traefik"],
-      automerge: true,
-      automergeType: "pr",
-      ignoreTests: false,
-      minimumReleaseAge: "1 day",
-    },
-    {
-      // Both matchers must hit: only these images, and only in these namespaces
-      description: "Auto-merge patch updates for media and downloads apps",
-      matchFileNames: ["kubernetes/apps/downloads/**", "kubernetes/apps/media/**"],
-      matchDatasources: ["docker"],
-      matchUpdateTypes: ["patch"],
+      description: 'Auto-merge high-cadence OCI packages weekly',
+      matchDatasources: [
+        'docker',
+      ],
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+      ],
       matchPackageNames: [
-        "ghcr.io/home-operations/plex",
-        "ghcr.io/home-operations/prowlarr",
-        "ghcr.io/home-operations/radarr",
-        "ghcr.io/raydak-labs/configarr",
-        "ghcr.io/home-operations/sonarr",
-        "ghcr.io/home-operations/sabnzbd",
+        '/kube-prometheus-stack/',
       ],
       automerge: true,
-      automergeType: "pr",
+      automergeType: 'pr',
       ignoreTests: false,
-      minimumReleaseAge: "1 day",
-      minimumReleaseAgeBehaviour: "timestamp-optional",
+      schedule: [
+        'before 6am on Monday',
+      ],
     },
     {
-      description: "Auto-merge GitHub Actions",
-      matchManagers: ["github-actions"],
-      matchUpdateTypes: ["minor", "patch", "digest"],
-      automerge: true,
-      automergeType: "branch",
-      minimumReleaseAge: "3 days",
-      ignoreTests: true,
-    },
-    {
-      description: "Auto-merge trusted GitHub Actions",
-      matchManagers: ["github-actions"],
-      matchPackageNames: ["/^actions\\//", "/^renovatebot\\//"],
-      matchUpdateTypes: ["minor", "patch", "digest"],
-      automerge: true,
-      automergeType: "branch",
-      minimumReleaseAge: "1 minute",
-      ignoreTests: true,
-    },
-    {
-      // The dashboard datasource's versioning is the revision number alone, so
-      // every revision bump is a major
-      description: "Auto-merge Grafana dashboards",
-      matchDatasources: ["custom.grafana-dashboards"],
-      matchUpdateTypes: ["major"],
-      automerge: true,
-      automergeType: "branch",
-      ignoreTests: true,
-    },
-    {
-      description: "Auto-merge Renovate Presets",
-      matchManagers: ["renovate-config"],
-      matchUpdateTypes: ["minor", "patch"],
-      automerge: true,
-      automergeType: "branch",
-      ignoreTests: true,
-    },
-    //
-    // Grouping rules
-    //
-    {
-      description: "Actions Runner Controller Group",
-      groupName: "actions-runner-controller",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["/gha-runner-scale-set-controller/", "/gha-runner-scale-set/"],
-      group: {
-        commitMessageTopic: "{{{groupName}}} group",
-      },
-      minimumGroupSize: 2,
-    },
-    {
-      description: "Flux Operator Group",
-      groupName: "flux-operator",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["/flux-operator/", "/flux-instance/"],
-      group: {
-        commitMessageTopic: "{{{groupName}}} group",
-      },
-      minimumGroupSize: 2,
-    },
-    {
-      description: "Kubernetes Group",
-      groupName: "kubernetes",
-      matchDatasources: ["docker"],
+      description: 'Auto-merge CNPG PostgreSQL digests weekly',
+      matchDatasources: [
+        'docker',
+      ],
+      matchUpdateTypes: [
+        'digest',
+      ],
       matchPackageNames: [
-        "/kube-apiserver/",
-        "/kube-controller-manager/",
-        "/kube-proxy/",
-        "/kube-scheduler/",
-        "/kubelet/",
+        'ghcr.io/cloudnative-pg/postgresql',
+      ],
+      automerge: true,
+      automergeType: 'pr',
+      ignoreTests: false,
+      automergeSchedule: [
+        'after 6am and before 10am on Monday',
+      ],
+    },
+    {
+      description: 'Auto-merge Traefik digests',
+      matchDatasources: [
+        'docker',
+      ],
+      matchUpdateTypes: [
+        'digest',
+      ],
+      matchPackageNames: [
+        'traefik',
+      ],
+      automerge: true,
+      automergeType: 'pr',
+      ignoreTests: false,
+      minimumReleaseAge: '1 day',
+    },
+    {
+      description: 'Auto-merge patch updates for media and downloads apps',
+      matchFileNames: [
+        'kubernetes/apps/downloads/**',
+        'kubernetes/apps/media/**',
+      ],
+      matchDatasources: [
+        'docker',
+      ],
+      matchUpdateTypes: [
+        'patch',
+      ],
+      matchPackageNames: [
+        'ghcr.io/home-operations/plex',
+        'ghcr.io/home-operations/prowlarr',
+        'ghcr.io/home-operations/radarr',
+        'ghcr.io/raydak-labs/configarr',
+        'ghcr.io/home-operations/sonarr',
+        'ghcr.io/home-operations/sabnzbd',
+      ],
+      automerge: true,
+      automergeType: 'pr',
+      ignoreTests: false,
+      minimumReleaseAge: '1 day',
+      minimumReleaseAgeBehaviour: 'timestamp-optional',
+    },
+    {
+      description: 'Auto-merge GitHub Actions',
+      matchManagers: [
+        'github-actions',
+      ],
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+        'digest',
+      ],
+      automerge: true,
+      automergeType: 'branch',
+      minimumReleaseAge: '3 days',
+      ignoreTests: true,
+    },
+    {
+      description: 'Auto-merge trusted GitHub Actions',
+      matchManagers: [
+        'github-actions',
+      ],
+      matchPackageNames: [
+        '/^actions\\//',
+        '/^renovatebot\\//',
+      ],
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+        'digest',
+      ],
+      automerge: true,
+      automergeType: 'branch',
+      minimumReleaseAge: '1 minute',
+      ignoreTests: true,
+    },
+    {
+      description: 'Auto-merge Grafana dashboards',
+      matchDatasources: [
+        'custom.grafana-dashboards',
+      ],
+      matchUpdateTypes: [
+        'major',
+      ],
+      automerge: true,
+      automergeType: 'branch',
+      ignoreTests: true,
+    },
+    {
+      description: 'Auto-merge Renovate Presets',
+      matchManagers: [
+        'renovate-config',
+      ],
+      matchUpdateTypes: [
+        'minor',
+        'patch',
+      ],
+      automerge: true,
+      automergeType: 'branch',
+      ignoreTests: true,
+    },
+    {
+      description: 'Actions Runner Controller Group',
+      groupName: 'actions-runner-controller',
+      matchDatasources: [
+        'docker',
+      ],
+      matchPackageNames: [
+        '/gha-runner-scale-set-controller/',
+        '/gha-runner-scale-set/',
       ],
       group: {
-        commitMessageTopic: "{{{groupName}}} group",
+        commitMessageTopic: '{{{groupName}}} group',
       },
       minimumGroupSize: 2,
     },
     {
-      description: "Mise Tools Group",
-      matchManagers: ["mise"],
-      matchDepNames: ["!node", "!oxfmt"],
-      groupName: "mise tools",
-      groupSlug: "mise-tools",
-    },
-    {
-      // The runners sidecar must match n8n's version exactly, or the task
-      // broker rejects it — never merge one without the other
-      description: "n8n Group",
-      groupName: "n8n",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["ghcr.io/n8n-io/n8n", "ghcr.io/n8n-io/runners"],
+      description: 'Flux Operator Group',
+      groupName: 'flux-operator',
+      matchDatasources: [
+        'docker',
+      ],
+      matchPackageNames: [
+        '/flux-operator/',
+        '/flux-instance/',
+      ],
       group: {
-        commitMessageTopic: "{{{groupName}}} group",
+        commitMessageTopic: '{{{groupName}}} group',
       },
       minimumGroupSize: 2,
     },
     {
-      // Same release published twice: the container image the workflow runs
-      // and the npm package the lefthook config-validator runs — bump together
-      description: "Renovate Group",
-      groupName: "renovate",
-      matchDatasources: ["docker", "npm"],
-      matchPackageNames: ["ghcr.io/renovatebot/renovate", "renovate"],
+      description: 'Kubernetes Group',
+      groupName: 'kubernetes',
+      matchDatasources: [
+        'docker',
+      ],
+      matchPackageNames: [
+        '/kube-apiserver/',
+        '/kube-controller-manager/',
+        '/kube-proxy/',
+        '/kube-scheduler/',
+        '/kubelet/',
+      ],
       group: {
-        commitMessageTopic: "{{{groupName}}} group",
+        commitMessageTopic: '{{{groupName}}} group',
       },
-      // No release age for either member. GHCR gives Renovate no release
-      // timestamps, so any age lets the image through at once while the npm
-      // package waits, and the two land on different versions. Unset, the image
-      // would inherit the GitHub Actions rule's 3 days instead
+      minimumGroupSize: 2,
+    },
+    {
+      description: 'Mise Tools Group',
+      matchManagers: [
+        'mise',
+      ],
+      matchDepNames: [
+        '!node',
+        '!oxfmt',
+      ],
+      groupName: 'mise tools',
+      groupSlug: 'mise-tools',
+    },
+    {
+      description: 'n8n Group',
+      groupName: 'n8n',
+      matchDatasources: [
+        'docker',
+      ],
+      matchPackageNames: [
+        'ghcr.io/n8n-io/n8n',
+        'ghcr.io/n8n-io/runners',
+      ],
+      group: {
+        commitMessageTopic: '{{{groupName}}} group',
+      },
+      minimumGroupSize: 2,
+    },
+    {
+      description: 'Renovate Group',
+      groupName: 'renovate',
+      matchDatasources: [
+        'docker',
+        'npm',
+      ],
+      matchPackageNames: [
+        'ghcr.io/renovatebot/renovate',
+        'renovate',
+      ],
+      group: {
+        commitMessageTopic: '{{{groupName}}} group',
+      },
       minimumGroupSize: 2,
       minimumReleaseAge: null,
       automerge: true,
-      automergeType: "branch",
+      automergeType: 'branch',
       ignoreTests: true,
     },
     {
-      description: "Rook-Ceph Group",
-      groupName: "rook-ceph",
-      matchDatasources: ["docker"],
-      matchPackageNames: ["/rook-ceph/", "/rook-ceph-cluster/"],
+      description: 'Rook-Ceph Group',
+      groupName: 'rook-ceph',
+      matchDatasources: [
+        'docker',
+      ],
+      matchPackageNames: [
+        '/rook-ceph/',
+        '/rook-ceph-cluster/',
+      ],
       group: {
-        commitMessageTopic: "{{{groupName}}} group",
+        commitMessageTopic: '{{{groupName}}} group',
       },
       minimumGroupSize: 2,
     },
     {
-      // After the mise tools catch-all so talos wins its own group. Unites
-      // kubernetes/talos/version.yaml, tuppr's TalosUpgrade and the mise
-      // talosctl pin, which must match the version the cluster runs
-      description: "Talos Group",
-      groupName: "talos",
-      matchPackageNames: ["siderolabs/talos"],
+      description: 'Talos Group',
+      groupName: 'talos',
+      matchPackageNames: [
+        'siderolabs/talos',
+      ],
       group: {
-        commitMessageTopic: "{{{groupName}}} group",
+        commitMessageTopic: '{{{groupName}}} group',
       },
       minimumGroupSize: 2,
     },
-    //
-    // Post-upgrade tasks
-    //
     {
-      // Renovate's own `mise lock` has no uv, so it leaves a pypi tool without
-      // its dependency lock under .mise/locks/ and validate's locked install
-      // fails. This re-locks them with uv, in mise's safe mode as Renovate's
-      // own run is. The command must match allowedCommands in renovate.yaml
-      description: "Write the dependency locks of the mise pypi tools",
-      matchManagers: ["mise"],
+      description: 'Write the dependency locks of the mise pypi tools',
+      matchManagers: [
+        'mise',
+      ],
       postUpgradeTasks: {
-        commands: ["env MISE_SAFE=1 mise lock yamllint pypi:ansible pypi:ansible-core"],
-        executionMode: "branch",
-        fileFilters: [".mise/**"],
-        installTools: { mise: {}, uv: {} },
+        commands: [
+          'env MISE_SAFE=1 mise lock yamllint pypi:ansible pypi:ansible-core',
+        ],
+        executionMode: 'branch',
+        fileFilters: [
+          '.mise/**',
+        ],
+        installTools: {
+          mise: {},
+          uv: {},
+        },
       },
     },
-    //
-    // Scheduling rules
-    //
     {
-      // mise hides releases younger than 24h from uv, so no dependency lock
-      // can be written for one before then
-      description: "Hold the mise pypi tools for a day",
-      matchManagers: ["mise"],
-      matchDepNames: ["/^pypi:/", "yamllint"],
-      minimumReleaseAge: "1 day",
+      description: 'Hold the mise pypi tools for a day',
+      matchManagers: [
+        'mise',
+      ],
+      matchDepNames: [
+        '/^pypi:/',
+        'yamllint',
+      ],
+      minimumReleaseAge: '1 day',
     },
     {
-      description: "High-cadence mise tools monthly",
-      matchManagers: ["mise"],
-      matchDepNames: ["node", "oxfmt"],
-      schedule: ["before 3am on the first day of the month"],
-    },
-    //
-    // Labeling rules
-    //
-    {
-      matchUpdateTypes: ["major"],
-      addLabels: ["type/major"],
-    },
-    {
-      matchUpdateTypes: ["minor"],
-      addLabels: ["type/minor"],
+      description: 'High-cadence mise tools monthly',
+      matchManagers: [
+        'mise',
+      ],
+      matchDepNames: [
+        'node',
+        'oxfmt',
+      ],
+      schedule: [
+        'before 3am on the first day of the month',
+      ],
     },
     {
-      matchUpdateTypes: ["patch"],
-      addLabels: ["type/patch"],
+      matchUpdateTypes: [
+        'major',
+      ],
+      addLabels: [
+        'type/major',
+      ],
     },
     {
-      matchUpdateTypes: ["digest"],
-      addLabels: ["type/digest"],
+      matchUpdateTypes: [
+        'minor',
+      ],
+      addLabels: [
+        'type/minor',
+      ],
+    },
+    {
+      matchUpdateTypes: [
+        'patch',
+      ],
+      addLabels: [
+        'type/patch',
+      ],
+    },
+    {
+      matchUpdateTypes: [
+        'digest',
+      ],
+      addLabels: [
+        'type/digest',
+      ],
     },
   ],
 }
