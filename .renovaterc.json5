@@ -10,7 +10,7 @@
     "github>home-operations/renovate-presets//apps/talosFactory.json5#11.0.0",
     ":timezone(Europe/Amsterdam)",
   ],
-  dependencyDashboardTitle: "Renovate Dashboard for my home-lab 🤖",
+  dependencyDashboard: { title: "Renovate Dashboard for my home-lab 🤖" },
   lockFileMaintenance: {
     enabled: true,
     schedule: ["before 3am on the first day of the month"],
