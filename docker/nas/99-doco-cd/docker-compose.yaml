@@ -13,7 +13,7 @@ secrets:
 services:
   app:
     container_name: doco-cd
-    image: ghcr.io/kimdre/doco-cd:0.136.0@sha256:fa55a3a431e479163a06dd42b8d59ceb90483e958056fd8f325b304aaf3d2a97
+    image: ghcr.io/kimdre/doco-cd:0.137.0@sha256:0846e2d0af76aa1d73ff517ff9a570f3ced9350cf5be052f013a7fe084a517bd
     restart: unless-stopped
     environment:
       # A YAML list of keys, each with a role; read only at startup
