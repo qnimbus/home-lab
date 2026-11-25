@@ -32,14 +32,14 @@ Talos and Kubernetes upgrades never run concurrently: whichever starts first run
 
 ## What a Talos run does
 
-`TalosUpgrade/cluster` targets every node, **one at a time** (`parallelism: 1`). Two control-plane nodes down together would break etcd quorum on this 3 CP + 2 worker cluster.
+`TalosUpgrade/cluster` targets every node, **one at a time**: `parallelism` is left at its default of 1, so the two workers go one by one too. Control-plane nodes always go one at a time, whatever `parallelism` says: tuppr enforces that itself, so two of them never take etcd below quorum on this 3 CP + 2 worker cluster.
 
 Per run:
 
 1. **Pre-pull** (on by default): the installer image is pulled onto every node before anything is cordoned. A bad tag or schematic parks the run in `Pending` before any disruption. Spegel serves the image peer-to-peer, so this normally clears in under two minutes.
-2. **Health gate**, re-checked every 10s before each node; the node waits until every check passes:
-   - **Backups:** no kopiur `Snapshot` may be `Running` (a just-created one without a status also blocks) and no `Restore` may be `Resolving`/`Restoring`. Timeout 30m, which leaves room for a large first backup.
-   - **Ceph:** the `CephCluster` must report `HEALTH_OK`. Because this runs before _every_ node, each reboot waits until Ceph has fully recovered from the previous one, instead of stacking a second outage on a degraded cluster. Timeout 30m, since recovery after a reboot can outlast tuppr's 10m default.
+2. **Health gate**, checked before each node; the node waits until every check passes. A failing check never fails the run: tuppr retries every 30s at first, backing off to every 5m, and the run sits in `HealthChecking` meanwhile. Checks carry no `timeout`: the field does nothing, and the webhook warns about it.
+   - **Backups:** no kopiur `Snapshot` may be `Running` (a just-created one without a status also blocks) and no `Restore` may be `Resolving`/`Restoring`.
+   - **Ceph:** the `CephCluster` must report `HEALTH_OK`. Because this runs before _every_ node, each reboot waits until Ceph has fully recovered from the previous one, instead of stacking a second outage on a degraded cluster.
 
    The flip side: any _lingering_ `HEALTH_WARN` blocks the whole run, not just a recovering one. The usual suspect after reboots is `RECENT_CRASH`, which stays for about two weeks unless archived (`ceph crash archive-all` from `just k8s toolbox`). Muted warnings (e.g. the insecure-key-type auth warnings) leave the cluster at `HEALTH_OK` and don't block.
 
@@ -58,7 +58,8 @@ Things to know about timing:
 
 - `policy.timeout` (30m) bounds each node's `talosctl` command, **not** the drain. The drain has its own hard-coded 10m timeout, and the volume-detach wait is a best-effort 2m.
 - Rook's OSD/mon/mgr PDBs block eviction while Ceph recovers from the previous node, so a full run is serialised on Ceph recovery and can take hours. The Ceph health gate adds the full wait for `HEALTH_OK` on top of that.
-- If a drain fails, tuppr rolls the batch back and uncordons every node, including the failing one, then retries after 1m. Nodes are not left cordoned.
+- A PDB that refuses an eviction is retried every 5s, within the drain's 10m. If a drain fails, tuppr rolls the batch back and uncordons every node, including the failing one, then retries after 1m. Nodes are not left cordoned.
+- A node still labelled `tuppr.home-operations.com/upgrading` (left by a plan deleted mid-upgrade, say) holds back every control-plane node until the label is removed: `kubectl label node <node> tuppr.home-operations.com/upgrading-`. The run waits in `Pending` (reason `WaitingForOtherUpgrade`, the message names the node), so `TalosUpgradePending` fires.
 
 ### How the upgrade image is chosen
 

@@ -18,18 +18,14 @@ spec:
       kind: Snapshot
       description: no kopiur backup is running
       expr: status.phase != 'Running'
-      timeout: 30m
     - apiVersion: kopiur.home-operations.com/v1alpha1
       kind: Restore
       description: no kopiur restore is running
       expr: "!(status.phase in ['Resolving', 'Restoring'])"
-      timeout: 30m
     - apiVersion: ceph.rook.io/v1
       kind: CephCluster
       expr: |-
         status.ceph.health in ['HEALTH_OK']
-      timeout: 30m
-  parallelism: 1
   silences:
     - matchers:
         - name: alertname
