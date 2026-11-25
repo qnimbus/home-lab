@@ -90,97 +90,97 @@ url = "https://github.com/etcd-io/etcd/releases/download/v3.6.14/etcd-v3.6.14-wi
 url_api = "https://api.github.com/repos/etcd-io/etcd/releases/assets/487552231"
 
 [[tools.flux-operator]]
-version = "0.62.1"
+version = "0.63.1"
 backend = "aqua:controlplaneio-fluxcd/flux-operator"
-specifiers = ["0.62.1"]
+specifiers = ["0.63.1"]
 
 [tools.flux-operator."platforms.linux-arm64"]
-checksum = "sha256:4f427dd86747472f83144487404b8f77296660356d0b90859a14abbe6065a8e8"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator_0.62.1_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028325"
+checksum = "sha256:0b0422de327f8efa8d83c04ac4bc2c7e567706867dfbf554179caaefd7a7d5dc"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator_0.63.1_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900321"
 provenance = "github-attestations"
 
 [tools.flux-operator."platforms.linux-arm64-musl"]
-checksum = "sha256:4f427dd86747472f83144487404b8f77296660356d0b90859a14abbe6065a8e8"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator_0.62.1_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028325"
+checksum = "sha256:0b0422de327f8efa8d83c04ac4bc2c7e567706867dfbf554179caaefd7a7d5dc"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator_0.63.1_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900321"
 provenance = "github-attestations"
 
 [tools.flux-operator."platforms.linux-x64"]
-checksum = "sha256:7bb9e54d370039d8701d4271b38aed57d6c89668432b7caddce69f4e26e24c1b"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator_0.62.1_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028324"
+checksum = "sha256:7b714410401138cc1e7ceee34656f9b740b8347827870692d5bf5bac0cea6585"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator_0.63.1_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900326"
 provenance = "github-attestations"
 
 [tools.flux-operator."platforms.linux-x64-musl"]
-checksum = "sha256:7bb9e54d370039d8701d4271b38aed57d6c89668432b7caddce69f4e26e24c1b"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator_0.62.1_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028324"
+checksum = "sha256:7b714410401138cc1e7ceee34656f9b740b8347827870692d5bf5bac0cea6585"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator_0.63.1_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900326"
 provenance = "github-attestations"
 
 [tools.flux-operator."platforms.macos-arm64"]
-checksum = "sha256:3a245269899e20a193c474f74dc1b8ca2088dac1afd489b88424448755144f5c"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator_0.62.1_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028322"
+checksum = "sha256:cdb70b08d45bd2b1a87122994e737311effa67190a1fc69b7ea23fb6d1a298f7"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator_0.63.1_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900324"
 provenance = "github-attestations"
 
 [tools.flux-operator."platforms.macos-x64"]
-checksum = "sha256:228cbce18426fe7e6b413a38726a48ded4921734013dcd7a02d0543281d8e0ce"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator_0.62.1_darwin_amd64.tar.gz"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028318"
+checksum = "sha256:6faa4af7202562fa3224a5b67ff47df1ff0ee0a12191ade4b46f1e89389dc0f2"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator_0.63.1_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900323"
 provenance = "github-attestations"
 
 [tools.flux-operator."platforms.windows-x64"]
-checksum = "sha256:572b35a430453fd5174cdca30c76f15ff8183e6e785a2fab18f13e1a24ce548d"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator_0.62.1_windows_amd64.zip"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028528"
+checksum = "sha256:b4938221391e9bc3cb14dbc59426090392c393e0104c0021c6460e786066aa46"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator_0.63.1_windows_amd64.zip"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900463"
 provenance = "github-attestations"
 
 [[tools.flux-operator-mcp]]
-version = "0.62.1"
+version = "0.63.1"
 backend = "aqua:controlplaneio-fluxcd/flux-operator/flux-operator-mcp"
-specifiers = ["0.62.1"]
+specifiers = ["0.63.1"]
 
 [tools.flux-operator-mcp."platforms.linux-arm64"]
-checksum = "sha256:6a3d9345b25a3662879c81587854b7ba9a130e8d8eb353379fd10da797444a7e"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator-mcp_0.62.1_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028425"
+checksum = "sha256:5586fcb993ab73ac6c643ebefa2a9c2be7f49699ddbcc9d280daad46c4ddd883"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator-mcp_0.63.1_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900410"
 provenance = "github-attestations"
 
 [tools.flux-operator-mcp."platforms.linux-arm64-musl"]
-checksum = "sha256:6a3d9345b25a3662879c81587854b7ba9a130e8d8eb353379fd10da797444a7e"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator-mcp_0.62.1_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028425"
+checksum = "sha256:5586fcb993ab73ac6c643ebefa2a9c2be7f49699ddbcc9d280daad46c4ddd883"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator-mcp_0.63.1_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900410"
 provenance = "github-attestations"
 
 [tools.flux-operator-mcp."platforms.linux-x64"]
-checksum = "sha256:13ec856169d8a2905e822bdfad761728290d7b9d72c3f68ab3f39b1508e80327"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator-mcp_0.62.1_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028437"
+checksum = "sha256:19eedf701d77c64553396cdb160552d2c4cc7ef09a2aaca800312b699c8ea90f"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator-mcp_0.63.1_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900408"
 provenance = "github-attestations"
 
 [tools.flux-operator-mcp."platforms.linux-x64-musl"]
-checksum = "sha256:13ec856169d8a2905e822bdfad761728290d7b9d72c3f68ab3f39b1508e80327"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator-mcp_0.62.1_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028437"
+checksum = "sha256:19eedf701d77c64553396cdb160552d2c4cc7ef09a2aaca800312b699c8ea90f"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator-mcp_0.63.1_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900408"
 provenance = "github-attestations"
 
 [tools.flux-operator-mcp."platforms.macos-arm64"]
-checksum = "sha256:138d3a45d442481df15504607b36342db334ca42d8c82021881c43c020614b1f"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator-mcp_0.62.1_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028446"
+checksum = "sha256:a37e0810de8d742fc2175128fb9979b83c4b4d88ed047f2c78ff05ed1116e8e0"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator-mcp_0.63.1_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900395"
 provenance = "github-attestations"
 
 [tools.flux-operator-mcp."platforms.macos-x64"]
-checksum = "sha256:f4d454e226c0519c57e9758dc0481da400c85211de533be134af1f6133d6266f"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator-mcp_0.62.1_darwin_amd64.tar.gz"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028445"
+checksum = "sha256:6320bc4c78ed4209deb365826bd8ef6372ebd335548619bea6a3aea3043616de"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator-mcp_0.63.1_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900409"
 provenance = "github-attestations"
 
 [tools.flux-operator-mcp."platforms.windows-x64"]
-checksum = "sha256:cc5c74c31dceba6ad9151e7403e65b713eb12283f7b95b45080a2d070ddd09cd"
-url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.62.1/flux-operator-mcp_0.62.1_windows_amd64.zip"
-url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/682028540"
+checksum = "sha256:327e25c9cc07cbd81743e38d80dda02535b4523167a466b282716e15c26aae04"
+url = "https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v0.63.1/flux-operator-mcp_0.63.1_windows_amd64.zip"
+url_api = "https://api.github.com/repos/controlplaneio-fluxcd/flux-operator/releases/assets/778900515"
 provenance = "github-attestations"
 
 [[tools.flux2]]
@@ -278,138 +278,145 @@ url_api = "https://api.github.com/repos/cli/cli/releases/assets/761188741"
 provenance = "github-attestations"
 
 [[tools."github:elsesiy/kubectl-view-secret"]]
-version = "0.16.0"
-backend = "github:elsesiy/kubectl-view-secret"
-specifiers = ["v0.16.0"]
-
-[tools."github:elsesiy/kubectl-view-secret"."platforms.linux-arm64"]
-checksum = "sha256:04644e43378f74a09cf60a081759e8b8bbe8281924c0dc20dab31e9d00ab0f37"
-checksum_source = "mise-versions"
-url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112648"
-
-[tools."github:elsesiy/kubectl-view-secret"."platforms.linux-arm64-musl"]
-checksum = "sha256:04644e43378f74a09cf60a081759e8b8bbe8281924c0dc20dab31e9d00ab0f37"
-checksum_source = "mise-versions"
-url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112648"
-
-[tools."github:elsesiy/kubectl-view-secret"."platforms.linux-x64"]
-checksum = "sha256:dad8f7d257e17e0a382f139bd756cdb437268d77973ad8ba3c55b346ce5bdd92"
-checksum_source = "mise-versions"
-url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112645"
-
-[tools."github:elsesiy/kubectl-view-secret"."platforms.linux-x64-musl"]
-checksum = "sha256:dad8f7d257e17e0a382f139bd756cdb437268d77973ad8ba3c55b346ce5bdd92"
-checksum_source = "mise-versions"
-url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112645"
-
-[tools."github:elsesiy/kubectl-view-secret"."platforms.macos-arm64"]
-checksum = "sha256:53ab023f7b60396c790a396f6a3bc33e173b5ebf14081cfac18354a0d23264d4"
-checksum_source = "mise-versions"
-url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112653"
-
-[tools."github:elsesiy/kubectl-view-secret"."platforms.macos-x64"]
-checksum = "sha256:090d96a5a9728171ecebba42a15ab2c7835d3b63fb4fdc6d76e615ea0b7fb7e1"
-checksum_source = "mise-versions"
-url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_darwin_amd64.tar.gz"
-url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112647"
-
-[tools."github:elsesiy/kubectl-view-secret"."platforms.windows-x64"]
-checksum = "sha256:5e1401d5438524b93661cb360d3763967bfd9a9bc00ed859783e03dec09915a1"
-checksum_source = "mise-versions"
-url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_windows_amd64.tar.gz"
-url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112646"
-
-[[tools."github:fluxcd/flux-schema"]]
 version = "0.17.0"
-backend = "github:fluxcd/flux-schema"
+backend = "github:elsesiy/kubectl-view-secret"
 specifiers = ["v0.17.0"]
 
+[tools."github:elsesiy/kubectl-view-secret"."platforms.linux-arm64"]
+checksum = "sha256:900b5c65d8f3b73c357293fdcfc495cbd4c23ef5f8a5fc9a19d956a646199a6d"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.17.0/kubectl-view-secret_v0.17.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/726481577"
+
+[tools."github:elsesiy/kubectl-view-secret"."platforms.linux-arm64-musl"]
+checksum = "sha256:900b5c65d8f3b73c357293fdcfc495cbd4c23ef5f8a5fc9a19d956a646199a6d"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.17.0/kubectl-view-secret_v0.17.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/726481577"
+
+[tools."github:elsesiy/kubectl-view-secret"."platforms.linux-x64"]
+checksum = "sha256:1c8aca396e7379c497f46bae938032cfa4ce446888fa038d7b1b891e39caa0c1"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.17.0/kubectl-view-secret_v0.17.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/726481576"
+
+[tools."github:elsesiy/kubectl-view-secret"."platforms.linux-x64-musl"]
+checksum = "sha256:1c8aca396e7379c497f46bae938032cfa4ce446888fa038d7b1b891e39caa0c1"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.17.0/kubectl-view-secret_v0.17.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/726481576"
+
+[tools."github:elsesiy/kubectl-view-secret"."platforms.macos-arm64"]
+checksum = "sha256:ec37a1842b1f15e636e79909ffddeaea5d929b860ca83989e7717af3a53d2a73"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.17.0/kubectl-view-secret_v0.17.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/726481579"
+
+[tools."github:elsesiy/kubectl-view-secret"."platforms.macos-x64"]
+checksum = "sha256:85d136082d174101f7739de1a6fcfd38debb4a285050634f6bd3ee5b79541ef0"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.17.0/kubectl-view-secret_v0.17.0_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/726481573"
+
+[tools."github:elsesiy/kubectl-view-secret"."platforms.windows-x64"]
+checksum = "sha256:0c860dc997aa77ec0abf58f490dbaef370cb062b6dd9e469d008a1c2a304a483"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.17.0/kubectl-view-secret_v0.17.0_windows_amd64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/726481614"
+
+[[tools."github:fluxcd/flux-schema"]]
+version = "0.18.0"
+backend = "github:fluxcd/flux-schema"
+specifiers = ["v0.18.0"]
+
 [tools."github:fluxcd/flux-schema"."platforms.linux-arm64"]
-checksum = "sha256:305a717fc4bcdff3e117aa269e7d6f8224db98c399b5db7ac1cd7da02960db2f"
-url = "https://github.com/fluxcd/flux-schema/releases/download/v0.17.0/flux-schema_0.17.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/669586365"
+checksum = "sha256:eb8993c39b2556a71ed80bc3c2bf771f2d537dec3a8148e518d2e760c94c24f3"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.18.0/flux-schema_0.18.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/772097980"
 provenance = "github-attestations"
 
 [tools."github:fluxcd/flux-schema"."platforms.linux-arm64-musl"]
-checksum = "sha256:305a717fc4bcdff3e117aa269e7d6f8224db98c399b5db7ac1cd7da02960db2f"
-url = "https://github.com/fluxcd/flux-schema/releases/download/v0.17.0/flux-schema_0.17.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/669586365"
+checksum = "sha256:eb8993c39b2556a71ed80bc3c2bf771f2d537dec3a8148e518d2e760c94c24f3"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.18.0/flux-schema_0.18.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/772097980"
 provenance = "github-attestations"
 
 [tools."github:fluxcd/flux-schema"."platforms.linux-x64"]
-checksum = "sha256:d9a429f6c1c5fe687a1eee25a0c130e4d7abbc560d497a4ee9054ef4dff621ee"
-url = "https://github.com/fluxcd/flux-schema/releases/download/v0.17.0/flux-schema_0.17.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/669586366"
+checksum = "sha256:6a5d509ae993ae75ae5a3c3b636ba7c6479d81e517b15c96a83b06ff3c84e6e8"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.18.0/flux-schema_0.18.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/772097982"
 provenance = "github-attestations"
 
 [tools."github:fluxcd/flux-schema"."platforms.linux-x64-musl"]
-checksum = "sha256:d9a429f6c1c5fe687a1eee25a0c130e4d7abbc560d497a4ee9054ef4dff621ee"
-url = "https://github.com/fluxcd/flux-schema/releases/download/v0.17.0/flux-schema_0.17.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/669586366"
+checksum = "sha256:6a5d509ae993ae75ae5a3c3b636ba7c6479d81e517b15c96a83b06ff3c84e6e8"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.18.0/flux-schema_0.18.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/772097982"
 provenance = "github-attestations"
 
 [tools."github:fluxcd/flux-schema"."platforms.macos-arm64"]
-checksum = "sha256:f98afcba4ef7a135d967c1e724645bdd4fc49aa579ebe85149aa9daab79c9098"
-url = "https://github.com/fluxcd/flux-schema/releases/download/v0.17.0/flux-schema_0.17.0_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/669586364"
+checksum = "sha256:511a405dcad1d599dc4d89fb8d4fbff9559e4173286d604cedff103fe4605dd4"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.18.0/flux-schema_0.18.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/772097977"
 provenance = "github-attestations"
 
 [tools."github:fluxcd/flux-schema"."platforms.macos-x64"]
-checksum = "sha256:991099f2ebdfca60a5d9d4a64578d0259dfcda2ac388fb0a698ee31950f04e81"
-url = "https://github.com/fluxcd/flux-schema/releases/download/v0.17.0/flux-schema_0.17.0_darwin_amd64.tar.gz"
-url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/669586369"
+checksum = "sha256:25773f0221b830936a443b12ab8204b2e6e818836062634de66c2884d9dacf6b"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.18.0/flux-schema_0.18.0_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/772097983"
 provenance = "github-attestations"
 
 [tools."github:fluxcd/flux-schema"."platforms.windows-x64"]
-checksum = "sha256:c9a91b50f2d26ca5458fc6778b3f207cca50f5f32571ed85c5288a04d83e7a33"
-url = "https://github.com/fluxcd/flux-schema/releases/download/v0.17.0/flux-schema_0.17.0_windows_amd64.zip"
-url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/669586408"
+checksum = "sha256:b7b132b6e24be657d497c310ff4f7ae20f893b77e9a2b84cf5de2ab33770ad68"
+url = "https://github.com/fluxcd/flux-schema/releases/download/v0.18.0/flux-schema_0.18.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/fluxcd/flux-schema/releases/assets/772098091"
 provenance = "github-attestations"
 
 [[tools."github:home-operations/flate"]]
-version = "0.6.5"
+version = "0.8.0"
 backend = "github:home-operations/flate"
-specifiers = ["v0.6.5"]
+specifiers = ["v0.8.0"]
 
 [tools."github:home-operations/flate"."platforms.linux-arm64"]
-checksum = "sha256:7f514814890df4a095887943ae606be1a8af878606b7bd0575efe75402cd38dc"
-url = "https://github.com/home-operations/flate/releases/download/v0.6.5/flate_0.6.5_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/541337295"
+checksum = "sha256:4ae502e56054ee9c5019995554856c1f6f8f44b3f6fef087704b2d31c27ab9c6"
+checksum_source = "mise-versions"
+url = "https://github.com/home-operations/flate/releases/download/v0.8.0/flate_0.8.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/768879872"
 
 [tools."github:home-operations/flate"."platforms.linux-arm64-musl"]
-checksum = "sha256:7f514814890df4a095887943ae606be1a8af878606b7bd0575efe75402cd38dc"
-url = "https://github.com/home-operations/flate/releases/download/v0.6.5/flate_0.6.5_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/541337295"
+checksum = "sha256:4ae502e56054ee9c5019995554856c1f6f8f44b3f6fef087704b2d31c27ab9c6"
+checksum_source = "mise-versions"
+url = "https://github.com/home-operations/flate/releases/download/v0.8.0/flate_0.8.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/768879872"
 
 [tools."github:home-operations/flate"."platforms.linux-x64"]
-checksum = "sha256:37eb0cd91a6752340754375743aa616c263cd8367ce594abd42ee955e1ec0099"
-url = "https://github.com/home-operations/flate/releases/download/v0.6.5/flate_0.6.5_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/541337294"
+checksum = "sha256:76940fb6ff060e09a40e1a835fc9c5cd24e18fdd29e4e79382852821e0ac01c2"
+checksum_source = "mise-versions"
+url = "https://github.com/home-operations/flate/releases/download/v0.8.0/flate_0.8.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/768879874"
 
 [tools."github:home-operations/flate"."platforms.linux-x64-musl"]
-checksum = "sha256:37eb0cd91a6752340754375743aa616c263cd8367ce594abd42ee955e1ec0099"
-url = "https://github.com/home-operations/flate/releases/download/v0.6.5/flate_0.6.5_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/541337294"
+checksum = "sha256:76940fb6ff060e09a40e1a835fc9c5cd24e18fdd29e4e79382852821e0ac01c2"
+checksum_source = "mise-versions"
+url = "https://github.com/home-operations/flate/releases/download/v0.8.0/flate_0.8.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/768879874"
 
 [tools."github:home-operations/flate"."platforms.macos-arm64"]
-checksum = "sha256:76274be5ef8b016e80ea0abf7b6f612adc76a89f7613d2e7f7e3550af5b9e186"
-url = "https://github.com/home-operations/flate/releases/download/v0.6.5/flate_0.6.5_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/541337298"
+checksum = "sha256:b881cfbef651084d0c9b97c6c2d60103022b43a2caeddc1d06febf93c065dd7d"
+checksum_source = "mise-versions"
+url = "https://github.com/home-operations/flate/releases/download/v0.8.0/flate_0.8.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/768879873"
 
 [tools."github:home-operations/flate"."platforms.macos-x64"]
-checksum = "sha256:4b1dcefb4613b4c02f3374c8fc8d4082d42d893f4303daa16e24e37d58bccb78"
-url = "https://github.com/home-operations/flate/releases/download/v0.6.5/flate_0.6.5_darwin_amd64.tar.gz"
-url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/541337300"
+checksum = "sha256:cf78f16c81df6d399558a4e9db8cfc30d16bdf8f18647abd6e04e0e329982cc1"
+checksum_source = "mise-versions"
+url = "https://github.com/home-operations/flate/releases/download/v0.8.0/flate_0.8.0_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/768879875"
 
 [tools."github:home-operations/flate"."platforms.windows-x64"]
-checksum = "sha256:3fd13fa65907312ee77ebf96bb76554558cd8f63ab65c3026b643be2e7003118"
-url = "https://github.com/home-operations/flate/releases/download/v0.6.5/flate_0.6.5_windows_amd64.zip"
-url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/541337344"
+checksum = "sha256:521ce2cd7f550cdb60acd6113305f85eba7c5f39261c0ba749af9a99ddf9e8d9"
+checksum_source = "mise-versions"
+url = "https://github.com/home-operations/flate/releases/download/v0.8.0/flate_0.8.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/home-operations/flate/releases/assets/768880022"
 
 [[tools."github:mitsuhiko/minijinja"]]
 version = "3.1.0"
@@ -800,50 +807,50 @@ url = "https://github.com/derailed/k9s/releases/download/v0.51.0/k9s_Windows_amd
 url_api = "https://api.github.com/repos/derailed/k9s/releases/assets/440224317"
 
 [[tools.kubecolor]]
-version = "0.8.0"
+version = "0.9.0"
 backend = "aqua:kubecolor/kubecolor"
-specifiers = ["0.8.0"]
+specifiers = ["0.9.0"]
 
 [tools.kubecolor."platforms.linux-arm64"]
-checksum = "sha256:8a53d33769dc2c984338973f6490ffdad60f130d60d172bef8109a76332c0c60"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890534"
+checksum = "sha256:78a3d101436dc99b506bb0233d45d008eac8b94635ae641b1154e4ed31101c83"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.9.0/kubecolor_0.9.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/779055634"
 provenance = "github-attestations"
 
 [tools.kubecolor."platforms.linux-arm64-musl"]
-checksum = "sha256:8a53d33769dc2c984338973f6490ffdad60f130d60d172bef8109a76332c0c60"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_linux_arm64.tar.gz"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890534"
+checksum = "sha256:78a3d101436dc99b506bb0233d45d008eac8b94635ae641b1154e4ed31101c83"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.9.0/kubecolor_0.9.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/779055634"
 provenance = "github-attestations"
 
 [tools.kubecolor."platforms.linux-x64"]
-checksum = "sha256:87289f8641ba18f4cb491ad6b30baa0da5f769c688aa7ce05489604da6099b28"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890521"
+checksum = "sha256:286ef7abc25a1c7b136761b32303b64838929bee83a2ed12e74c67531d7221f2"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.9.0/kubecolor_0.9.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/779055609"
 provenance = "github-attestations"
 
 [tools.kubecolor."platforms.linux-x64-musl"]
-checksum = "sha256:87289f8641ba18f4cb491ad6b30baa0da5f769c688aa7ce05489604da6099b28"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_linux_amd64.tar.gz"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890521"
+checksum = "sha256:286ef7abc25a1c7b136761b32303b64838929bee83a2ed12e74c67531d7221f2"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.9.0/kubecolor_0.9.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/779055609"
 provenance = "github-attestations"
 
 [tools.kubecolor."platforms.macos-arm64"]
-checksum = "sha256:c3a771a74dc1ac9b74c5b738e85715f530c660d27e480f8d9c859d8cbff33984"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_darwin_arm64.tar.gz"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890494"
+checksum = "sha256:8eeb8297a54eeca266bc29fbe0d10ffcef8a7185e4c4400295696405db75ae6a"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.9.0/kubecolor_0.9.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/779055563"
 provenance = "github-attestations"
 
 [tools.kubecolor."platforms.macos-x64"]
-checksum = "sha256:f97f55b7bdfdc6836e332717846c152643c7271ebf2d7c39fa69f657f86a9715"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_darwin_amd64.tar.gz"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890496"
+checksum = "sha256:7e72064b0346761589b7ecc230710fc22707ca775b7a177ae27e87f0295db957"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.9.0/kubecolor_0.9.0_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/779055562"
 provenance = "github-attestations"
 
 [tools.kubecolor."platforms.windows-x64"]
-checksum = "sha256:64e1b12fc56662bf4bb67a760a396b0d7306c30774a52714e26c9ac075cef20b"
-url = "https://github.com/kubecolor/kubecolor/releases/download/v0.8.0/kubecolor_0.8.0_windows_amd64.zip"
-url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/574890550"
+checksum = "sha256:0a357d019d8cd070617bea75a678baa16063a7c0f646d0a436f11bcdda6fa0e4"
+url = "https://github.com/kubecolor/kubecolor/releases/download/v0.9.0/kubecolor_0.9.0_windows_amd64.zip"
+url_api = "https://api.github.com/repos/kubecolor/kubecolor/releases/assets/779055685"
 provenance = "github-attestations"
 
 [[tools.kubeconform]]
@@ -1046,10 +1053,10 @@ backend = "npm:oxfmt"
 specifiers = ["0.75.0"]
 
 [[tools."pypi:ansible"]]
-version = "14.6.0"
+version = "15.0.0"
 backend = "pypi:ansible"
-specifiers = ["14.6.0"]
-uv = { path = "locks/pypi-ansible/14.6.0", digest = "sha256:5f7b3e109427275eee34df2fb38ba6bfbea2b5cd64f0dd881d9a8ce38a608262" }
+specifiers = ["15.0.0"]
+uv = { path = "locks/pypi-ansible/15.0.0", digest = "sha256:5136203d7eb9c81f68a43d5a0354b442f4f1c594d0ce590c03abf38e95e69d85" }
 
 [[tools."pypi:ansible-core"]]
 version = "2.22.0"
