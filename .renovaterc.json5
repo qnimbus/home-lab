@@ -73,6 +73,16 @@
       allowedVersions: "<5",
     },
     {
+      // Gotenberg 9 moved /forms/pdfengines/* to /forms/pdf/* and dropped the
+      // pdfa field, but paperless-ngx talks to it through gotenberg-client, which
+      // still speaks the Gotenberg 8 API. Raise the cap by hand once a
+      // paperless-ngx release ships a gotenberg-client that supports 9
+      description: "Keep Gotenberg on version 8.x",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["docker.io/gotenberg/gotenberg"],
+      allowedVersions: "<9",
+    },
+    {
       // The mise Python runs the pypi tools: ansible-core 2.21 crashes on 3.15
       // (dataclasses._is_type is gone), and pyyaml 6.0.3, which yamllint and
       // ansible need, has no 3.15 wheels. Locked installs never build from
