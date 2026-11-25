@@ -8,10 +8,6 @@ TALOSCONFIG = "{{config_root}}/talosconfig"
 [settings]
 pypi.uvx = true
 
-[plugins]
-# krew = "https://github.com/soupglasses/mise-krew"
-krew = "https://github.com/soupglasses/mise-krew#a1da38e9253d3714ebe1f3ca6c4a7a132c112147" # Temp pin for view-secret fix: https://github.com/soupglasses/mise-krew/pull/15
-
 [tools]
 "cloudflared" = "2026.10.7"
 "etcd" = "3.6.14"
@@ -19,6 +15,7 @@ krew = "https://github.com/soupglasses/mise-krew#a1da38e9253d3714ebe1f3ca6c4a7a1
 "flux-operator-mcp" = "0.62.1"
 "flux2" = "2.10.0"
 "gh" = "2.103.3"
+"github:elsesiy/kubectl-view-secret" = "v0.16.0"
 "github:fluxcd/flux-schema" = "v0.17.0"
 "github:home-operations/flate" = "v0.6.5"
 "github:mitsuhiko/minijinja" = "3.0.5"
@@ -30,7 +27,6 @@ krew = "https://github.com/soupglasses/mise-krew#a1da38e9253d3714ebe1f3ca6c4a7a1
 "jq" = "1.8.2"
 "just" = "1.59.0"
 "k9s" = "0.51.0"
-"krew:view-secret" = "v0.16.0"
 "kubecolor" = "0.8.0"
 "kubeconform" = "0.8.0"
 "kubectl" = "1.37.2"

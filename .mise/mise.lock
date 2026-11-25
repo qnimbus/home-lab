@@ -277,6 +277,53 @@ url = "https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_windows_
 url_api = "https://api.github.com/repos/cli/cli/releases/assets/679195750"
 provenance = "github-attestations"
 
+[[tools."github:elsesiy/kubectl-view-secret"]]
+version = "0.16.0"
+backend = "github:elsesiy/kubectl-view-secret"
+specifiers = ["v0.16.0"]
+
+[tools."github:elsesiy/kubectl-view-secret"."platforms.linux-arm64"]
+checksum = "sha256:04644e43378f74a09cf60a081759e8b8bbe8281924c0dc20dab31e9d00ab0f37"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112648"
+
+[tools."github:elsesiy/kubectl-view-secret"."platforms.linux-arm64-musl"]
+checksum = "sha256:04644e43378f74a09cf60a081759e8b8bbe8281924c0dc20dab31e9d00ab0f37"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_linux_arm64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112648"
+
+[tools."github:elsesiy/kubectl-view-secret"."platforms.linux-x64"]
+checksum = "sha256:dad8f7d257e17e0a382f139bd756cdb437268d77973ad8ba3c55b346ce5bdd92"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112645"
+
+[tools."github:elsesiy/kubectl-view-secret"."platforms.linux-x64-musl"]
+checksum = "sha256:dad8f7d257e17e0a382f139bd756cdb437268d77973ad8ba3c55b346ce5bdd92"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_linux_amd64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112645"
+
+[tools."github:elsesiy/kubectl-view-secret"."platforms.macos-arm64"]
+checksum = "sha256:53ab023f7b60396c790a396f6a3bc33e173b5ebf14081cfac18354a0d23264d4"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_darwin_arm64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112653"
+
+[tools."github:elsesiy/kubectl-view-secret"."platforms.macos-x64"]
+checksum = "sha256:090d96a5a9728171ecebba42a15ab2c7835d3b63fb4fdc6d76e615ea0b7fb7e1"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_darwin_amd64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112647"
+
+[tools."github:elsesiy/kubectl-view-secret"."platforms.windows-x64"]
+checksum = "sha256:5e1401d5438524b93661cb360d3763967bfd9a9bc00ed859783e03dec09915a1"
+checksum_source = "mise-versions"
+url = "https://github.com/elsesiy/kubectl-view-secret/releases/download/v0.16.0/kubectl-view-secret_v0.16.0_windows_amd64.tar.gz"
+url_api = "https://api.github.com/repos/elsesiy/kubectl-view-secret/releases/assets/403112646"
+
 [[tools."github:fluxcd/flux-schema"]]
 version = "0.17.0"
 backend = "github:fluxcd/flux-schema"
@@ -751,11 +798,6 @@ url_api = "https://api.github.com/repos/derailed/k9s/releases/assets/440224322"
 checksum = "sha256:bba299f1877913979831543a008f2e104995d2ea4ac8f23d7f49c0444857d973"
 url = "https://github.com/derailed/k9s/releases/download/v0.51.0/k9s_Windows_amd64.zip"
 url_api = "https://api.github.com/repos/derailed/k9s/releases/assets/440224317"
-
-[[tools."krew:view-secret"]]
-version = "v0.16.0"
-backend = "krew:view-secret"
-specifiers = ["v0.16.0"]
 
 [[tools.kubecolor]]
 version = "0.8.0"

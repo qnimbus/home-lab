@@ -336,14 +336,15 @@
       // Renovate's own `mise lock` has no uv, so it leaves a pypi tool without
       // its dependency lock under .mise/locks/ and validate's locked install
       // fails. This re-locks them with uv, in mise's safe mode as Renovate's
-      // own run is. The command must match allowedCommands in renovate.yaml
+      // own run is. The command must match allowedCommands in renovate.yaml.
+      // Containerbase installs uv from PyPI with pip, so it needs python too
       description: "Write the dependency locks of the mise pypi tools",
       matchManagers: ["mise"],
       postUpgradeTasks: {
         commands: ["env MISE_SAFE=1 mise lock yamllint pypi:ansible pypi:ansible-core"],
         executionMode: "branch",
         fileFilters: [".mise/**"],
-        installTools: { mise: {}, uv: {} },
+        installTools: { mise: {}, python: {}, uv: {} },
       },
     },
     //
