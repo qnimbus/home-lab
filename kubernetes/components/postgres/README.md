@@ -119,7 +119,7 @@ Every name, including the S3 path, derives from `${APP}`, so a rename creates a 
 
 ## Backups
 
-Base backups on the schedule above, plus continuous WAL archiving, go to one shared Backblaze B2 bucket (`vwn-io-cluster-cnpg`), each app under its own `dedicated/${APP}/` prefix. They're bzip2-compressed, AES256-encrypted and kept for `POSTGRES_BACKUP_RETENTION` (14 days by default).
+Base backups on the schedule above, plus continuous WAL archiving, go to one shared Backblaze B2 bucket (`vwn-io-cluster-cnpg`), each app under its own `dedicated/${APP}/` prefix. Base backups and WAL are zstd-compressed, AES256-encrypted and kept for `POSTGRES_BACKUP_RETENTION` (14 days by default).
 
 **Every base backup is a full copy of the database**, so the bucket holds roughly one copy per scheduled run inside the window, plus the WAL. For a large database, back up less often rather than shortening the window alone: WAL still allows a restore to any point in the window, and the retention keeps the last base backup before it, so a weekly schedule with `7d` keeps two copies. `mail-archiver`, whose attachments make it the largest, does that.
 
