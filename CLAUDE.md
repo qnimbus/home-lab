@@ -100,7 +100,7 @@ Renovate (`.renovaterc.json5`, extends `home-operations/renovate-presets`) opens
 
 On a PR, konflate (`kubernetes/apps/flux-system/konflate/`) receives a GitHub webhook, renders the PR with flate, and posts a "Konflate" check plus a rendered-diff comment. Its UI is public at `konflate.${DOMAIN_APP}` (no auth; the repo is public) and internal at `konflate.${DOMAIN_CLUSTER}`.
 
-`.github/workflows/claude-review.yaml` has Claude review every same-repo, non-draft PR (on open, ready and reopen, and on each Renovate push) and post one verdict comment with inline findings; the owner commenting `/bot-review` requests a fresh review. `just github merge` shows the verdict before each merge. It reads its OAuth token from `op://GitHub/claude-review/CLAUDE_CODE_OAUTH_TOKEN`.
+`.github/workflows/claude-review.yaml` has Claude review every same-repo, non-draft PR (on open, ready and reopen, and on each Renovate push) and post one verdict comment with inline findings; the owner commenting `/bot-review` requests a fresh review. It reads its OAuth token from `op://GitHub/claude-review/CLAUDE_CODE_OAUTH_TOKEN`. `just github merge` shows the verdict before each merge.
 
 **Merging to `main` is the deploy.** Flux reconciles `kubernetes/apps` on its own interval, and doco-cd polls and redeploys the `docker/nas` stacks. There is no separate deploy step.
 
