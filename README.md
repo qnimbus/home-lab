@@ -56,7 +56,7 @@ _Declarative home infrastructure managed with Talos, Kubernetes, Flux, Ansible, 
 
 This repository contains the declarative configuration for my home infrastructure. It is what happens when someone who only wanted to watch a film on the couch discovers GitOps.
 
-It is intentionally a little over-engineered (for "a little", read "five nodes, a Ceph cluster and a risk classifier"): the goal is not merely to run a few services, but to make the infrastructure **repeatable, reviewable, recoverable, and largely self-managing** — so that when I break it, I can at least break it the same way twice.
+It is intentionally a little over-engineered (for "a little", read "five nodes, a Ceph cluster and an AI code reviewer"): the goal is not merely to run a few services, but to make the infrastructure **repeatable, reviewable, recoverable, and largely self-managing** — so that when I break it, I can at least break it the same way twice.
 
 The repository currently manages two complementary platforms:
 
@@ -190,7 +190,7 @@ graph TD
     H[Renovate] -->|Dependency PR| A
     I[GitHub Actions] -->|Validate PR| A
     J[Konflate] -->|Rendered diff| A
-    K[PR Risk Classifier] -->|Risk assessment| A
+    K[Claude Review] -->|Review verdict| A
 ```
 
 A normal application change therefore follows:
@@ -199,7 +199,7 @@ A normal application change therefore follows:
 2. GitHub Actions validates the change.
 3. Renovate may propose dependency updates automatically.
 4. Konflate can render the resulting Kubernetes changes.
-5. The PR risk classifier evaluates the change and its evidence.
+5. Claude Review checks the change and posts a verdict.
 6. The change is reviewed and merged.
 7. Flux detects the new Git revision.
 8. Flux reconciles the desired state into the cluster.
@@ -404,31 +404,12 @@ GitHub Actions currently cover, among other things:
 - Kubernetes manifest validation;
 - Flux schema validation;
 - Kustomize validation;
-- PR-risk classifier tests;
 - Renovate configuration validation;
 - shell validation;
 - GitHub Actions validation;
 - GitHub Actions security analysis with `zizmor`.
 
 Actions are pinned to immutable commit SHAs where practical.
-
-### PR Risk
-
-This repository also contains a purpose-built PR risk classifier. For a repository with exactly one human contributor, this is either admirable diligence or a cry for help.
-
-The classifier combines:
-
-- Git-level findings;
-- rendered Konflate changes;
-- TypeSafe Jev analysis;
-- evidence collected for individual change surfaces;
-- deterministic policy.
-
-The important design principle is that the model is **advisory rather than authoritative**:
-
-> Code determines the baseline risk; AI can raise the level, but it cannot make an unsafe change safe.
-
-The classifier is deliberately fail-open with respect to infrastructure availability: if supporting analysis such as Konflate or Jev is unavailable, the result is marked unavailable/uncertain rather than silently treated as safe.
 
 ---
 
@@ -558,7 +539,6 @@ Areas of ongoing development include:
 - further improving Kubernetes storage and Ceph resilience;
 - expanding network automation and routing capabilities;
 - improving observability and operational diagnostics;
-- strengthening automated PR risk analysis;
 - increasing the amount of infrastructure that can be safely recovered from a clean workstation;
 - reducing remaining imperative operational procedures;
 - continuing to improve the boundary between deterministic automation and AI-assisted operations.

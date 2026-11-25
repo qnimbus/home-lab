@@ -29,53 +29,59 @@ runner-hosted:
     gh variable set RUNNER --body ubuntu-24.04
     just log info "Workflows run on GitHub-hosted runners" "runner" "ubuntu-24.04"
 
-[doc('Rebase and merge risk/safe PRs one by one: ask (confirm each, default), all, or a PR number')]
+# Claude Review's verdict comments come from the bot App. The author check matters: the repo is
+# public, so anyone can post a comment that starts with **Verdict**.
+review_bot := "qnimbus-homelab-assistant"
+
+[doc("Rebase and merge open PRs one by one, showing Claude Review's verdict: ask (each, default) or a PR number")]
 [script]
-merge-safe target="ask":
+merge target="ask":
     # Serial on purpose: each merge moves main, so the next PR is rebased onto the new main
-    # and its checks rerun before it is merged.
+    # and its checks rerun before it is merged. Always asks: the verdict is shown, the
+    # decision is yours.
     case "{{ target }}" in
-        all|ask) prs=$(gh pr list --label risk/safe --state open --json number --jq '.[].number' | sort -n) ;;
-        *[!0-9]*) just log error "Target must be all, ask or a PR number" "target" "{{ target }}"; exit 1 ;;
+        ask) prs=$(gh pr list --state open --search 'draft:false' --json number --jq '.[].number' | sort -n) ;;
+        *[!0-9]*) just log error "Target must be ask or a PR number" "target" "{{ target }}"; exit 1 ;;
         *)
-            if ! gh pr view "{{ target }}" --json labels --jq '.labels[].name' | grep -qx 'risk/safe'; then
-                just log error "PR is not labelled risk/safe" "pr" "{{ target }}"
+            if [[ $(gh pr view "{{ target }}" --json state --jq .state) != OPEN ]]; then
+                just log error "PR is not open" "pr" "{{ target }}"
                 exit 1
             fi
             prs="{{ target }}"
             ;;
     esac
     if [[ -z "$prs" ]]; then
-        just log info "No open risk/safe PRs"
+        just log info "No open PRs"
         exit 0
     fi
     for pr in $prs; do
-        if [[ "{{ target }}" == ask ]] \
-            && ! gum confirm "Rebase and merge #$pr: $(gh pr view "$pr" --json title --jq .title)?"; then
+        just github _show-pr "$pr"
+        if ! gum confirm "Rebase and merge #$pr?"; then
             just log info "Skipped" "pr" "$pr"
             continue
         fi
         just github _rebase-merge "$pr"
     done
 
-[doc('Rebase and merge risk/review PRs (but not risk/uncertain) one by one, confirming each')]
+[private]
 [script]
-merge-review:
-    # Always asks: these PRs need a look before they deploy. Serial for the same reason as
-    # merge-safe.
-    prs=$(gh pr list --state open --search 'label:risk/review -label:risk/uncertain' \
-        --json number --jq '.[].number' | sort -n)
-    if [[ -z "$prs" ]]; then
-        just log info "No open risk/review PRs"
-        exit 0
-    fi
-    for pr in $prs; do
-        if ! gum confirm "Rebase and merge #$pr: $(gh pr view "$pr" --json title --jq .title)?"; then
-            just log info "Skipped" "pr" "$pr"
-            continue
-        fi
-        just github _rebase-merge "$pr"
-    done
+_show-pr pr:
+    # Title, author and the latest Claude Review verdict, flagged when the PR was pushed to
+    # after that review.
+    gh pr view "{{ pr }}" --json title,author,commits,comments \
+        | jq -r --arg bot "{{ review_bot }}" '
+            .commits[-1].committedDate as $pushed
+            | ([.comments[]
+                | select(.author.login == $bot and (.body | startswith("**Verdict**")))]
+                | last) as $review
+            | "#{{ pr }} \(.title)",
+              "  author:  \(.author.login)",
+              if $review == null then "  verdict: none yet"
+              else
+                "  verdict: \($review.body | split("\n")[0] | sub("^\\*\\*Verdict\\*\\*: *"; ""))"
+                + (if $review.createdAt < $pushed then " (from before the last push)" else "" end),
+                "  review:  \($review.url)"
+              end'
 
 [private]
 [script]

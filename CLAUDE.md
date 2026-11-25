@@ -14,14 +14,14 @@ mise pins the tools (`.mise/config.toml`) and sets `KUBECONFIG`, `TALOSCONFIG` a
 
 `just` (`.justfile`) is the command runner. Recipes are namespaced by module; `just` lists them all.
 
-| Module              | File                                | For                                                                  |
-| ------------------- | ----------------------------------- | -------------------------------------------------------------------- |
-| `just k8s`          | `kubernetes/mod.just`               | day-2 cluster operations                                             |
-| `just k8s database` | `kubernetes/apps/database/mod.just` | `dump`/`restore`: `pg_dump`/`pg_restore` against a CNPG cluster      |
-| `just talos`        | `kubernetes/talos/mod.just`         | Talos node operations                                                |
-| `just bootstrap`    | `bootstrap/mod.just`                | end-to-end bring-up                                                  |
-| `just docker`       | `docker/mod.just`                   | NAS doco-cd operations                                               |
-| `just github`       | `.github/mod.just`                  | the `RUNNER` repo variable (`runner*`), `merge-safe`, `merge-review` |
+| Module              | File                                | For                                                             |
+| ------------------- | ----------------------------------- | --------------------------------------------------------------- |
+| `just k8s`          | `kubernetes/mod.just`               | day-2 cluster operations                                        |
+| `just k8s database` | `kubernetes/apps/database/mod.just` | `dump`/`restore`: `pg_dump`/`pg_restore` against a CNPG cluster |
+| `just talos`        | `kubernetes/talos/mod.just`         | Talos node operations                                           |
+| `just bootstrap`    | `bootstrap/mod.just`                | end-to-end bring-up                                             |
+| `just docker`       | `docker/mod.just`                   | NAS doco-cd operations                                          |
+| `just github`       | `.github/mod.just`                  | the `RUNNER` repo variable (`runner*`), `merge`                 |
 
 Recipes whose name doesn't say it all:
 
@@ -29,8 +29,7 @@ Recipes whose name doesn't say it all:
 - `just k8s apply-ks`/`delete-ks <ns> <ks>` renders a Flux Kustomization locally via `flate` and applies/deletes it.
 - `just k8s db-backup <ns> <app>` takes a manual CNPG backup of an `<app>-postgres` cluster.
 - `just k8s cron-minute <name>` gives a stable pseudo-random cron minute.
-- `just github merge-safe [ask|all|<pr>]` rebases and merges the open `risk/safe` PRs one at a time, waiting for checks after each rebase. The default, `ask`, confirms each PR; `all` merges them without asking, and a number merges just that one. Merging is the deploy.
-- `just github merge-review` does the same for open `risk/review` PRs that aren't also `risk/uncertain`, and always confirms each one.
+- `just github merge [ask|<pr>]` rebases and merges open, non-draft PRs one at a time, waiting for checks after each rebase. Before each one it shows the title, the author and Claude Review's latest verdict, flagged when the PR was pushed to after that review, and asks. `ask`, the default, goes through every open PR; a number does just that one. Merging is the deploy.
 - `just talos gen-talosconfig` recovers the talosconfig from 1Password.
 - `just bootstrap cluster` brings the cluster up end to end. `just bootstrap nas` runs the Ansible playbook that (re)deploys doco-cd on TrueNAS; `just docker restart-doco-cd` restarts it, and `just docker sync-stacks` makes it poll `main` now.
 
@@ -101,9 +100,7 @@ Renovate (`.renovaterc.json5`, extends `home-operations/renovate-presets`) opens
 
 On a PR, konflate (`kubernetes/apps/flux-system/konflate/`) receives a GitHub webhook, renders the PR with flate, and posts a "Konflate" check plus a rendered-diff comment. Its UI is public at `konflate.${DOMAIN_APP}` (no auth; the repo is public) and internal at `konflate.${DOMAIN_CLUSTER}`.
 
-`.github/workflows/claude-review.yaml` has Claude review every same-repo, non-draft PR (on open, ready and reopen, and on each Renovate push) and post one verdict comment with inline findings; the owner commenting `/bot-review` requests a fresh review. It reads its OAuth token from `op://GitHub/claude-review/CLAUDE_CODE_OAUTH_TOKEN`.
-
-`.github/workflows/pr-risk.yaml` (`workflow_dispatch` with a PR number only; its PR trigger is disabled while Claude Review runs) labels a PR's merge risk (`risk/*`), which `merge-safe`/`merge-review` select on. It is advisory and fail-open, and `PR_RISK_MODE` (`shadow` by default, or `comment`) controls what it publishes. Its model, rules and policy live in `.github/scripts/pr-risk/` (see its README).
+`.github/workflows/claude-review.yaml` has Claude review every same-repo, non-draft PR (on open, ready and reopen, and on each Renovate push) and post one verdict comment with inline findings; the owner commenting `/bot-review` requests a fresh review. `just github merge` shows the verdict before each merge. It reads its OAuth token from `op://GitHub/claude-review/CLAUDE_CODE_OAUTH_TOKEN`.
 
 **Merging to `main` is the deploy.** Flux reconciles `kubernetes/apps` on its own interval, and doco-cd polls and redeploys the `docker/nas` stacks. There is no separate deploy step.
 
