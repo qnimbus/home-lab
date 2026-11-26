@@ -11,8 +11,8 @@ pypi.uvx = true
 [tools]
 "cloudflared" = "2026.11.2"
 "etcd" = "3.6.14"
-"flux-operator" = "0.63.1"
-"flux-operator-mcp" = "0.63.1"
+"flux-operator" = "0.64.0"
+"flux-operator-mcp" = "0.64.0"
 "flux2" = "2.10.1"
 "gh" = "2.106.0"
 "github:elsesiy/kubectl-view-secret" = "v0.17.0"
