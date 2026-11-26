@@ -42,7 +42,7 @@ spec:
       inputName: DS_PROMETHEUS
   grafanaCom:
     id: 15757
-    revision: 43
+    revision: 46
   instanceSelector:
     matchLabels:
       dashboards: grafana
