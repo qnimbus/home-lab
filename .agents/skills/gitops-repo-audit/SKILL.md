@@ -6,7 +6,7 @@ description: >
   management, and produces a prioritized GitOps report. Use when users ask to audit, analyze,
   validate, review, or security-check a GitOps repo.
 license: Apache-2.0
-compatibility: Requires flux, flux-schema, and kustomize or kubectl
+compatibility: Requires flux (v2.10+) and flux-schema
 ---
 
 # GitOps Repository Auditor
@@ -77,12 +77,14 @@ Check for deprecated Flux API versions.
    scripts/check-deprecated.sh -d <repo-root>
    ```
 
-   The script runs `flux migrate -f . --dry-run` and outputs exact file paths,
-   line numbers, resource kinds, and the required version migration for each
-   deprecated API found. Exit code 1 means deprecated APIs were found.
+   It runs `flux migrate -f . --dry-run` and prints file:line, kind and target version per finding. Exit codes:
+   - `0`: scan completed, no deprecated APIs found
+   - `1`: scan completed, deprecated APIs found
+   - `2`: scan incomplete. Report Phase 3 as failed with the output, never as clean, even if some migration lines were printed
 
-2. If deprecated APIs are found, read [api-migration.md](references/api-migration.md) for the
-   migration procedure and include the steps in the report.
+2. If deprecated APIs are found, include the steps from [api-migration.md](references/api-migration.md).
+   Notification `v1beta3` (Alert, Provider) is deprecated in 2.10 but still served: a Warning, not
+   Critical. Flag Alert `spec.summary` and Provider `spec.proxy`/`spec.interval` on any version (dropped in `v1`).
 
 ### Phase 4: Best Practices Assessment
 
@@ -151,27 +153,27 @@ Structure findings as a markdown report with these sections if applicable:
 
 Use this table to check API versions and grep the field index before recommending YAML changes.
 
-| Controller                  | Kind                     | apiVersion                               | Field Index                                                                                                   |
-| --------------------------- | ------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| flux-operator               | FluxInstance             | `fluxcd.controlplane.io/v1`              | [fluxinstance-fluxcd-v1.fields.txt](assets/schemas/fluxinstance-fluxcd-v1.fields.txt)                         |
-| flux-operator               | FluxReport               | `fluxcd.controlplane.io/v1`              | [fluxreport-fluxcd-v1.fields.txt](assets/schemas/fluxreport-fluxcd-v1.fields.txt)                             |
-| flux-operator               | ResourceSet              | `fluxcd.controlplane.io/v1`              | [resourceset-fluxcd-v1.fields.txt](assets/schemas/resourceset-fluxcd-v1.fields.txt)                           |
-| flux-operator               | ResourceSetInputProvider | `fluxcd.controlplane.io/v1`              | [resourcesetinputprovider-fluxcd-v1.fields.txt](assets/schemas/resourcesetinputprovider-fluxcd-v1.fields.txt) |
-| source-controller           | GitRepository            | `source.toolkit.fluxcd.io/v1`            | [gitrepository-source-v1.fields.txt](assets/schemas/gitrepository-source-v1.fields.txt)                       |
-| source-controller           | OCIRepository            | `source.toolkit.fluxcd.io/v1`            | [ocirepository-source-v1.fields.txt](assets/schemas/ocirepository-source-v1.fields.txt)                       |
-| source-controller           | Bucket                   | `source.toolkit.fluxcd.io/v1`            | [bucket-source-v1.fields.txt](assets/schemas/bucket-source-v1.fields.txt)                                     |
-| source-controller           | HelmRepository           | `source.toolkit.fluxcd.io/v1`            | [helmrepository-source-v1.fields.txt](assets/schemas/helmrepository-source-v1.fields.txt)                     |
-| source-controller           | HelmChart                | `source.toolkit.fluxcd.io/v1`            | [helmchart-source-v1.fields.txt](assets/schemas/helmchart-source-v1.fields.txt)                               |
-| source-controller           | ExternalArtifact         | `source.toolkit.fluxcd.io/v1`            | [externalartifact-source-v1.fields.txt](assets/schemas/externalartifact-source-v1.fields.txt)                 |
-| source-watcher              | ArtifactGenerator        | `source.extensions.fluxcd.io/v1beta1`    | [artifactgenerator-source-v1beta1.fields.txt](assets/schemas/artifactgenerator-source-v1beta1.fields.txt)     |
-| kustomize-controller        | Kustomization            | `kustomize.toolkit.fluxcd.io/v1`         | [kustomization-kustomize-v1.fields.txt](assets/schemas/kustomization-kustomize-v1.fields.txt)                 |
-| helm-controller             | HelmRelease              | `helm.toolkit.fluxcd.io/v2`              | [helmrelease-helm-v2.fields.txt](assets/schemas/helmrelease-helm-v2.fields.txt)                               |
-| notification-controller     | Provider                 | `notification.toolkit.fluxcd.io/v1beta3` | [provider-notification-v1beta3.fields.txt](assets/schemas/provider-notification-v1beta3.fields.txt)           |
-| notification-controller     | Alert                    | `notification.toolkit.fluxcd.io/v1beta3` | [alert-notification-v1beta3.fields.txt](assets/schemas/alert-notification-v1beta3.fields.txt)                 |
-| notification-controller     | Receiver                 | `notification.toolkit.fluxcd.io/v1`      | [receiver-notification-v1.fields.txt](assets/schemas/receiver-notification-v1.fields.txt)                     |
-| image-reflector-controller  | ImageRepository          | `image.toolkit.fluxcd.io/v1`             | [imagerepository-image-v1.fields.txt](assets/schemas/imagerepository-image-v1.fields.txt)                     |
-| image-reflector-controller  | ImagePolicy              | `image.toolkit.fluxcd.io/v1`             | [imagepolicy-image-v1.fields.txt](assets/schemas/imagepolicy-image-v1.fields.txt)                             |
-| image-automation-controller | ImageUpdateAutomation    | `image.toolkit.fluxcd.io/v1`             | [imageupdateautomation-image-v1.fields.txt](assets/schemas/imageupdateautomation-image-v1.fields.txt)         |
+| Controller                  | Kind                     | apiVersion                            | Field Index                                                                                                   |
+| --------------------------- | ------------------------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| flux-operator               | FluxInstance             | `fluxcd.controlplane.io/v1`           | [fluxinstance-fluxcd-v1.fields.txt](assets/schemas/fluxinstance-fluxcd-v1.fields.txt)                         |
+| flux-operator               | FluxReport               | `fluxcd.controlplane.io/v1`           | [fluxreport-fluxcd-v1.fields.txt](assets/schemas/fluxreport-fluxcd-v1.fields.txt)                             |
+| flux-operator               | ResourceSet              | `fluxcd.controlplane.io/v1`           | [resourceset-fluxcd-v1.fields.txt](assets/schemas/resourceset-fluxcd-v1.fields.txt)                           |
+| flux-operator               | ResourceSetInputProvider | `fluxcd.controlplane.io/v1`           | [resourcesetinputprovider-fluxcd-v1.fields.txt](assets/schemas/resourcesetinputprovider-fluxcd-v1.fields.txt) |
+| source-controller           | GitRepository            | `source.toolkit.fluxcd.io/v1`         | [gitrepository-source-v1.fields.txt](assets/schemas/gitrepository-source-v1.fields.txt)                       |
+| source-controller           | OCIRepository            | `source.toolkit.fluxcd.io/v1`         | [ocirepository-source-v1.fields.txt](assets/schemas/ocirepository-source-v1.fields.txt)                       |
+| source-controller           | Bucket                   | `source.toolkit.fluxcd.io/v1`         | [bucket-source-v1.fields.txt](assets/schemas/bucket-source-v1.fields.txt)                                     |
+| source-controller           | HelmRepository           | `source.toolkit.fluxcd.io/v1`         | [helmrepository-source-v1.fields.txt](assets/schemas/helmrepository-source-v1.fields.txt)                     |
+| source-controller           | HelmChart                | `source.toolkit.fluxcd.io/v1`         | [helmchart-source-v1.fields.txt](assets/schemas/helmchart-source-v1.fields.txt)                               |
+| source-controller           | ExternalArtifact         | `source.toolkit.fluxcd.io/v1`         | [externalartifact-source-v1.fields.txt](assets/schemas/externalartifact-source-v1.fields.txt)                 |
+| source-watcher              | ArtifactGenerator        | `source.extensions.fluxcd.io/v1beta1` | [artifactgenerator-source-v1beta1.fields.txt](assets/schemas/artifactgenerator-source-v1beta1.fields.txt)     |
+| kustomize-controller        | Kustomization            | `kustomize.toolkit.fluxcd.io/v1`      | [kustomization-kustomize-v1.fields.txt](assets/schemas/kustomization-kustomize-v1.fields.txt)                 |
+| helm-controller             | HelmRelease              | `helm.toolkit.fluxcd.io/v2`           | [helmrelease-helm-v2.fields.txt](assets/schemas/helmrelease-helm-v2.fields.txt)                               |
+| notification-controller     | Provider                 | `notification.toolkit.fluxcd.io/v1`   | [provider-notification-v1.fields.txt](assets/schemas/provider-notification-v1.fields.txt)                     |
+| notification-controller     | Alert                    | `notification.toolkit.fluxcd.io/v1`   | [alert-notification-v1.fields.txt](assets/schemas/alert-notification-v1.fields.txt)                           |
+| notification-controller     | Receiver                 | `notification.toolkit.fluxcd.io/v1`   | [receiver-notification-v1.fields.txt](assets/schemas/receiver-notification-v1.fields.txt)                     |
+| image-reflector-controller  | ImageRepository          | `image.toolkit.fluxcd.io/v1`          | [imagerepository-image-v1.fields.txt](assets/schemas/imagerepository-image-v1.fields.txt)                     |
+| image-reflector-controller  | ImagePolicy              | `image.toolkit.fluxcd.io/v1`          | [imagepolicy-image-v1.fields.txt](assets/schemas/imagepolicy-image-v1.fields.txt)                             |
+| image-automation-controller | ImageUpdateAutomation    | `image.toolkit.fluxcd.io/v1`          | [imageupdateautomation-image-v1.fields.txt](assets/schemas/imageupdateautomation-image-v1.fields.txt)         |
 
 ## Loading References
 

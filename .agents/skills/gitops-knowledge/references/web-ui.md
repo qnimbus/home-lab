@@ -305,7 +305,7 @@ web:
 ### Audit Notifications to Slack
 
 ```yaml
-apiVersion: notification.toolkit.fluxcd.io/v1beta3
+apiVersion: notification.toolkit.fluxcd.io/v1
 kind: Alert
 metadata:
   name: web-actions-audit
