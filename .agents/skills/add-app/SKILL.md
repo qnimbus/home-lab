@@ -106,7 +106,7 @@ postBuild:
     # KOPIUR_MOVER_GID: "65534"     # default: 1000 — must match the pod's runAsGroup
 ```
 
-Don't add a `dependsOn` on `kopiur`/`kopiur-repository` for the backup component: until the kopiur CRDs and the `nas` ClusterRepository exist (fresh cluster), the first apply fails and Flux's retry picks it up. That one-off failure on bootstrap is accepted over carrying a dependency every backed-up app would need.
+Don't add a `dependsOn` on `kopiur`/`kopiur-repository` for the backup component: until the kopiur CRDs and its admission webhook exist (fresh cluster), the first apply fails (the webhook admits a policy whose `nas` ClusterRepository doesn't exist yet) and Flux's retry picks it up. That one-off failure on bootstrap is accepted over carrying a dependency every backed-up app would need.
 
 A volume on `ceph-block` (the component's default storage class) does get a `dependsOn` on the storage behind it, the accepted exception in `.agents/instructions/flux-kustomization.instructions.md`:
 
