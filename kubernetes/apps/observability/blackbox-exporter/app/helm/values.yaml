@@ -27,9 +27,6 @@ resources:
     memory: 32Mi
   limits:
     memory: 64Mi
-securityContext:
-  capabilities:
-    add: ["NET_RAW"]
 serviceMonitor:
   selfMonitor:
     enabled: true
