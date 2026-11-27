@@ -59,7 +59,13 @@ No `dependsOn` on kopiur: see the `add-app` skill.
 
 ## Sizing
 
-**The cache does not follow the volume.** `KOPIUR_CACHE_CAPACITY` is `5Gi` whatever `KOPIUR_CAPACITY` is. The cache holds what kopia has fetched from the repository (indexes and metadata on a backup, content blocks on a restore), not a copy of the volume, and `openebs-hostpath` doesn't enforce the size as a quota anyway. What bounds kopia's use is its cache budgets, which kopiur derives from the claim's capacity when none is set: 60% for content and 15% for metadata, so about 3 GiB and 768 MiB of a `5Gi` claim. This component sets no budget (`contentCacheSize`/`metadataCacheSize`, or the older `*Mb` fields). Raise the capacity only for a mover that actually runs out. It deliberately doesn't default to `KOPIUR_CAPACITY`: that would tie a volume that can grow (`ceph-block`) to one that can't (`openebs-hostpath` refuses expansion).
+**The cache claim's size doesn't follow the app's volume.** `KOPIUR_CACHE_CAPACITY` is `5Gi` for every app, whatever its `KOPIUR_CAPACITY` is:
+
+- **What the cache holds.** Pieces of the repository on the NAS that kopia fetched during a run: mostly indexes and metadata on a backup, data blocks on a restore. It is not a copy of the app's volume, so a large volume doesn't need a large cache.
+- **The claim's size is not a limit.** `openebs-hostpath` is a plain directory on the node, so nothing stops kopia writing more than the claim's `5Gi`.
+- **The cache budgets are the limit.** kopia prunes its cache to a content budget and a metadata budget. This component sets neither (`contentCacheSize`/`metadataCacheSize`, or the older `contentCacheSizeMb`/`metadataCacheSizeMb`). With no budget set, kopiur derives both from the cache claim's capacity: 60% for content and 15% for metadata, about 3 GiB and 768 MiB of a `5Gi` claim.
+- **When to raise `KOPIUR_CACHE_CAPACITY`.** Only for an app whose backups or restores fail for lack of cache space. A larger claim gives kopia larger budgets.
+- **Why it doesn't default to `KOPIUR_CAPACITY`.** The app's volume (`ceph-block`) can be expanded later, and the cache claim (`openebs-hostpath`) can't. Tying the two together would leave the cache behind whenever the volume grows.
 
 **Raising `KOPIUR_CACHE_CAPACITY` doesn't grow an existing cache claim.** kopiur grows a cache claim whose StorageClass allows expansion and never shrinks one. `openebs-hostpath` doesn't allow it, so a raise only gets a `CachePvcExpansionNotAllowed` Warning event on the `SnapshotPolicy`, and a lower value a `CachePvcShrinkRefused` one. The budgets are sized to the smaller of the spec and the claim, so neither breaks a backup. To apply the new size, delete `kopiur-cache-<claim>` between runs: it is only a cache, and the next mover gets a fresh one.
 
