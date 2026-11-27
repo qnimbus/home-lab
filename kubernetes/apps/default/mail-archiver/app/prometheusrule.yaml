@@ -1,0 +1,30 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/prometheusrule_v1.json
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: mail-archiver-rules
+spec:
+  groups:
+    - name: mail-archiver.rules
+      rules:
+        - alert: MailArchiverSyncStale
+          expr: mailarchiver_account_sync_age_seconds{enabled="true"} > 7200
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Mail Archiver hasn't synced {{ $labels.account }} for {{ $value | humanizeDuration }}; the daily bandwidth limit pauses syncing for 24 hours."
+        - alert: MailArchiverNeverSynced
+          expr: mailarchiver_account_never_synced{enabled="true"} == 1
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Mail Archiver has never completed a sync of {{ $labels.account }}."
+        - alert: MailArchiverSyncFailures
+          expr: increase(mailarchiver_sync_failures_total{reason="failed"}[1h]) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: "Mail Archiver had {{ $value | humanize }} failed sync runs in the last hour."

@@ -1,0 +1,22 @@
+---
+# yaml-language-server: $schema=https://schemas.clustrs.dev/monitoring.coreos.com/servicemonitor_v1.json
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mail-archiver
+spec:
+  endpoints:
+    - authorization:
+        credentials:
+          key: METRICS_API_KEY
+          name: mail-archiver-metrics-secret
+      interval: 60s
+      path: /api/v1/metrics
+      port: http
+      relabelings:
+        - replacement: mail-archiver.default.svc.cluster.local:5000
+          targetLabel: __address__
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: mail-archiver
+      app.kubernetes.io/service: mail-archiver

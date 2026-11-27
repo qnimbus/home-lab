@@ -31,7 +31,11 @@ spec:
               repository: ghcr.io/s1t5/mailarchiver
               tag: 2611.3@sha256:5d1e1a2b210f92186aade29bfecbac9001733ae9f51ea7a8375c9d23df24caaa
             env:
-              AllowedHosts: &hostname "mail-archiver.${DOMAIN_CLUSTER}"
+              AllowedHosts: "mail-archiver.${DOMAIN_CLUSTER};mail-archiver.default.svc.cluster.local"
+              Api__AllowAttachmentDownloads: "false"
+              Api__AllowMessageDownloads: "false"
+              Api__Enabled: "true"
+              Api__EnableSwaggerUi: "false"
               BandwidthTracking__DailyLimitMb: "2500"
               BandwidthTracking__Enabled: "true"
               BandwidthTracking__PauseHoursOnLimit: "24"
@@ -52,6 +56,7 @@ spec:
                     key: username
                     name: mail-archiver-postgres-app
               LocalImport__AllowedPaths__0: &import /data/import
+              Metrics__Enabled: "true"
               TimeZone__DisplayTimeZoneId: ${CLUSTER_TIMEZONE}
             envFrom:
               - secretRef:
@@ -65,7 +70,7 @@ spec:
                   httpGet:
                     httpHeaders:
                       - name: Host
-                        value: *hostname
+                        value: &hostname "mail-archiver.${DOMAIN_CLUSTER}"
                     path: /Auth/Login
                     port: &port 5000
                   periodSeconds: 10
